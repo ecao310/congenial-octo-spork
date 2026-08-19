@@ -6,6 +6,7 @@ import {
   taxableSocialSecurity,
   totalTax,
   totalTaxWithLTCG,
+  segmentCurve,
 } from './tax';
 
 /**
@@ -373,3 +374,62 @@ describe('ltcgMarginalRateCurve', () => {
     expect(mfjFirstNonZero).toBeGreaterThan(singleFirstNonZero);
   });
 });
+
+describe('segmentCurve', () => {
+  it('groups constant rate points and classifies hills/valleys correctly', () => {
+    const mockCurve = [
+      { income: 0, marginalRate: 0 },
+      { income: 1000, marginalRate: 0 },
+      { income: 2000, marginalRate: 15 },
+      { income: 3000, marginalRate: 15 },
+      { income: 4000, marginalRate: 22 },
+      { income: 5000, marginalRate: 22 },
+      { income: 6000, marginalRate: 12 },
+      { income: 7000, marginalRate: 12 },
+      { income: 8000, marginalRate: 22 },
+    ];
+    const segments = segmentCurve(mockCurve, (p) => p.income);
+    expect(segments).toHaveLength(5);
+
+    // Segment 0: 0% -> valley
+    expect(segments[0]).toMatchObject({
+      rate: 0,
+      start: 0,
+      end: 1000,
+      type: 'valley',
+    });
+
+    // Segment 1: 15% -> flat
+    expect(segments[1]).toMatchObject({
+      rate: 15,
+      start: 2000,
+      end: 3000,
+      type: 'flat',
+    });
+
+    // Segment 2: 22% -> hill (since 22 > 15 and 22 > 12)
+    expect(segments[2]).toMatchObject({
+      rate: 22,
+      start: 4000,
+      end: 5000,
+      type: 'hill',
+    });
+
+    // Segment 3: 12% -> valley (since 12 < 22 and 12 < 22)
+    expect(segments[3]).toMatchObject({
+      rate: 12,
+      start: 6000,
+      end: 7000,
+      type: 'valley',
+    });
+
+    // Segment 4: 22% -> flat (last segment is not classified as hill/valley)
+    expect(segments[4]).toMatchObject({
+      rate: 22,
+      start: 8000,
+      end: 8000,
+      type: 'flat',
+    });
+  });
+});
+

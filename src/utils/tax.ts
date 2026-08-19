@@ -241,3 +241,65 @@ export function ltcgMarginalRateCurve(
   }
   return data;
 }
+
+export interface CurveSegment<T> {
+  rate: number;
+  start: number;
+  end: number;
+  points: T[];
+  type: 'hill' | 'valley' | 'flat';
+}
+
+/**
+ * Groups a curve into segments of constant marginal rate and classifies them.
+ */
+export function segmentCurve<T extends { marginalRate: number }>(
+  points: T[],
+  getX: (p: T) => number,
+): CurveSegment<T>[] {
+  if (points.length === 0) return [];
+
+  const rawSegments: { rate: number; start: number; end: number; points: T[] }[] = [];
+  for (const p of points) {
+    const x = getX(p);
+    const rate = p.marginalRate;
+    if (rawSegments.length === 0 || rawSegments[rawSegments.length - 1].rate !== rate) {
+      rawSegments.push({
+        rate,
+        start: x,
+        end: x,
+        points: [p]
+      });
+    } else {
+      const last = rawSegments[rawSegments.length - 1];
+      last.end = x;
+      last.points.push(p);
+    }
+  }
+
+  return rawSegments.map((seg, idx) => {
+    const prevRate = idx > 0 ? rawSegments[idx - 1].rate : null;
+    const nextRate = idx < rawSegments.length - 1 ? rawSegments[idx + 1].rate : null;
+
+    let type: 'flat' | 'hill' | 'valley' = 'flat';
+
+    if (prevRate !== null && nextRate !== null) {
+      if (seg.rate > prevRate && seg.rate > nextRate) {
+        type = 'hill';
+      } else if (seg.rate < prevRate && seg.rate < nextRate) {
+        type = 'valley';
+      }
+    } else if (prevRate === null && nextRate !== null) {
+      if (seg.rate < nextRate) {
+        type = 'valley';
+      } else if (seg.rate > nextRate) {
+        type = 'hill';
+      }
+    }
+
+    return {
+      ...seg,
+      type,
+    };
+  });
+}

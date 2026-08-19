@@ -15,8 +15,9 @@ import {
   AVG_ANNUAL_SS_BENEFIT,
   FILING_PARAMS,
   FilingStatus,
+  segmentCurve,
 } from './utils/tax';
-import type { LTCGMarginalRatePoint } from './utils/tax';
+import type { LTCGMarginalRatePoint, MarginalRatePoint, CurveSegment } from './utils/tax';
 
 const MAX_INCOME = 150_000;
 const MAX_LTCG = 200_000;
@@ -45,6 +46,7 @@ const TOOLTIP_STYLE: React.CSSProperties = {
   border: '1px solid rgba(56, 189, 248, 0.3)',
   borderRadius: '8px',
   color: '#f8fafc',
+  padding: '0.75rem',
 };
 
 interface TooltipPayloadPoint {
@@ -57,15 +59,20 @@ interface CustomTooltipProps {
   active?: boolean;
   payload?: Array<{ payload: TooltipPayloadPoint }>;
   ssBenefit: number;
+  segments: CurveSegment<MarginalRatePoint>[];
 }
 
-const CustomTooltip: React.FC<CustomTooltipProps> = ({
+export const CustomTooltip: React.FC<CustomTooltipProps> = ({
   active,
   payload,
   ssBenefit,
+  segments,
 }) => {
   if (!active || !payload || !payload.length) return null;
   const point = payload[0].payload;
+  const segment = segments.find(
+    (seg) => point.income >= seg.start && point.income <= seg.end,
+  );
   return (
     <div style={TOOLTIP_STYLE}>
       <div style={{ fontWeight: 600, marginBottom: '0.25rem' }}>
@@ -77,6 +84,16 @@ const CustomTooltip: React.FC<CustomTooltipProps> = ({
       <div>
         Total Federal Tax: <strong style={{ color: '#ea580c' }}>{formatCurrency(point.totalTax)}</strong>
       </div>
+      {segment && segment.type === 'hill' && (
+        <div style={{ marginTop: '0.5rem', borderTop: '1px solid rgba(255, 255, 255, 0.1)', paddingTop: '0.5rem', fontSize: '0.875rem', color: '#94a3b8' }}>
+          Consider avoiding this tax hill by staying under {formatCurrency(segment.start)} or over {formatCurrency(segment.end)}
+        </div>
+      )}
+      {segment && segment.type === 'valley' && (
+        <div style={{ marginTop: '0.5rem', borderTop: '1px solid rgba(255, 255, 255, 0.1)', paddingTop: '0.5rem', fontSize: '0.875rem', color: '#94a3b8' }}>
+          Consider filling out this tax valley at {formatCurrency(point.income)}
+        </div>
+      )}
     </div>
   );
 };
@@ -86,16 +103,21 @@ interface LTCGTooltipProps {
   payload?: Array<{ payload: LTCGMarginalRatePoint }>;
   ordinaryIncome: number;
   ssBenefit: number;
+  segments: CurveSegment<LTCGMarginalRatePoint>[];
 }
 
-const LTCGTooltip: React.FC<LTCGTooltipProps> = ({
+export const LTCGTooltip: React.FC<LTCGTooltipProps> = ({
   active,
   payload,
   ordinaryIncome,
   ssBenefit,
+  segments,
 }) => {
   if (!active || !payload || !payload.length) return null;
   const point = payload[0].payload;
+  const segment = segments.find(
+    (seg) => point.ltcg >= seg.start && point.ltcg <= seg.end,
+  );
   return (
     <div style={TOOLTIP_STYLE}>
       <div style={{ fontWeight: 600, marginBottom: '0.25rem' }}>
@@ -107,6 +129,16 @@ const LTCGTooltip: React.FC<LTCGTooltipProps> = ({
       <div>
         Total Federal Tax: <strong style={{ color: '#ea580c' }}>{formatCurrency(point.totalTax)}</strong>
       </div>
+      {segment && segment.type === 'hill' && (
+        <div style={{ marginTop: '0.5rem', borderTop: '1px solid rgba(255, 255, 255, 0.1)', paddingTop: '0.5rem', fontSize: '0.875rem', color: '#94a3b8' }}>
+          Consider avoiding this tax hill by staying under {formatCurrency(segment.start)} or over {formatCurrency(segment.end)}
+        </div>
+      )}
+      {segment && segment.type === 'valley' && (
+        <div style={{ marginTop: '0.5rem', borderTop: '1px solid rgba(255, 255, 255, 0.1)', paddingTop: '0.5rem', fontSize: '0.875rem', color: '#94a3b8' }}>
+          Consider filling out this tax valley at {formatCurrency(point.ltcg)}
+        </div>
+      )}
     </div>
   );
 };
@@ -121,11 +153,21 @@ const App: React.FC = () => {
     [ssBenefit, filingStatus],
   );
 
+  const segments = useMemo(
+    () => segmentCurve(curve, (p) => p.income),
+    [curve],
+  );
+
   const { ssBase50, ssBase85 } = FILING_PARAMS[filingStatus];
 
   const ltcgCurve = useMemo(
     () => ltcgMarginalRateCurve(ssBenefit, ordinaryIncome, MAX_LTCG, 250, filingStatus),
     [ssBenefit, ordinaryIncome, filingStatus],
+  );
+
+  const ltcgSegments = useMemo(
+    () => segmentCurve(ltcgCurve, (p) => p.ltcg),
+    [ltcgCurve],
   );
 
   return (
@@ -206,7 +248,7 @@ const App: React.FC = () => {
               domain={[0, 'auto']}
             />
             <Tooltip
-              content={<CustomTooltip ssBenefit={ssBenefit} />}
+              content={<CustomTooltip ssBenefit={ssBenefit} segments={segments} />}
             />
             <Area
               type="stepAfter"
@@ -355,6 +397,7 @@ const App: React.FC = () => {
                   <LTCGTooltip
                     ordinaryIncome={ordinaryIncome}
                     ssBenefit={ssBenefit}
+                    segments={ltcgSegments}
                   />
                 }
               />

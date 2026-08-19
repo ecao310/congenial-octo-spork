@@ -324,4 +324,14 @@
 - Added test in `src/App.test.tsx` asserting the footer text and tax professional disclaimer are rendered.
 - Verified: `npx tsc -b`, `npm run lint`, `npm test` (42 passed), and `npm run build` all pass cleanly.
 
+## 2026-08-19 — Task: On mouseover on graph, add to tool tip. "Consider filling out this tax valley at $x". "Consider avoiding this tax hill by staying under $y or over $z".
+
+- Created a robust, general curve segmentation utility `segmentCurve` in `src/utils/tax.ts` that groups contiguous points of constant marginal rate and classifies them as `hill`, `valley`, or `flat` based on whether the rate is a local maximum or local minimum.
+- Updated `CustomTooltip` and `LTCGTooltip` in `src/App.tsx` to display appropriate planning recommendations:
+  - If the hovered point is inside a `hill` (e.g. the Social Security torpedo spike), it recommends: `"Consider avoiding this tax hill by staying under $y or over $z"` where $y and $z are the bounds of that hill.
+  - If the hovered point is inside a `valley` (e.g. the post-torpedo drop or initial 0% zone), it recommends: `"Consider filling out this tax valley at $x"` where $x is the hovered income or LTCG.
+- Added named exports for `CustomTooltip` and `LTCGTooltip` in `src/App.tsx` and wrote comprehensive unit tests in `src/App.test.tsx` to verify tooltip recommendations for both ordinary and capital gains graphs.
+- Verified: `npx tsc -b`, `npm run lint`, `npm test` (62 passed), and `npm run build` all pass cleanly.
+
+
 

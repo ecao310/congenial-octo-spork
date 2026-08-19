@@ -1,5 +1,5 @@
 import { render, screen, fireEvent } from '@testing-library/react';
-import App from './App';
+import App, { CustomTooltip, LTCGTooltip } from './App';
 import { MAX_ANNUAL_SS_BENEFIT, AVG_ANNUAL_SS_BENEFIT } from './utils/tax';
 
 describe('App', () => {
@@ -135,3 +135,110 @@ describe('App', () => {
     expect(slider).toHaveValue('50000');
   });
 });
+
+describe('Tooltip Recommendations', () => {
+  const mockOrdinarySegments = [
+    { rate: 0, start: 0, end: 14000, points: [], type: 'valley' as const },
+    { rate: 15, start: 16000, end: 22000, points: [], type: 'flat' as const },
+    { rate: 22.2, start: 24000, end: 40000, points: [], type: 'hill' as const },
+    { rate: 12, start: 42000, end: 44000, points: [], type: 'valley' as const },
+  ];
+
+  const mockLtcgSegments = [
+    { rate: 10.2, start: 0, end: 10000, points: [], type: 'hill' as const },
+    { rate: 0, start: 12000, end: 12000, points: [], type: 'valley' as const },
+  ];
+
+  describe('CustomTooltip', () => {
+    it('does not render if not active', () => {
+      const { container } = render(
+        <CustomTooltip
+          active={false}
+          ssBenefit={20000}
+          segments={mockOrdinarySegments}
+        />,
+      );
+      expect(container.firstChild).toBeNull();
+    });
+
+    it('renders normal information without recommendation on a flat segment', () => {
+      render(
+        <CustomTooltip
+          active={true}
+          payload={[{ payload: { income: 20000, marginalRate: 15, totalTax: 768 } }]}
+          ssBenefit={23712}
+          segments={mockOrdinarySegments}
+        />,
+      );
+      expect(screen.getByText(/Other income \$20,000/)).toBeInTheDocument();
+      expect(screen.getByText(/Marginal Rate:/)).toBeInTheDocument();
+      expect(screen.queryByText(/Consider avoiding/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/Consider filling out/)).not.toBeInTheDocument();
+    });
+
+    it('renders tax hill recommendation on a hill segment', () => {
+      render(
+        <CustomTooltip
+          active={true}
+          payload={[{ payload: { income: 30000, marginalRate: 22.2, totalTax: 2813 } }]}
+          ssBenefit={23712}
+          segments={mockOrdinarySegments}
+        />,
+      );
+      expect(
+        screen.getByText(
+          /Consider avoiding this tax hill by staying under \$24,000 or over \$40,000/,
+        ),
+      ).toBeInTheDocument();
+    });
+
+    it('renders tax valley recommendation on a valley segment', () => {
+      render(
+        <CustomTooltip
+          active={true}
+          payload={[{ payload: { income: 42000, marginalRate: 12, totalTax: 5330 } }]}
+          ssBenefit={23712}
+          segments={mockOrdinarySegments}
+        />,
+      );
+      expect(
+        screen.getByText(/Consider filling out this tax valley at \$42,000/),
+      ).toBeInTheDocument();
+    });
+  });
+
+  describe('LTCGTooltip', () => {
+    it('renders tax hill recommendation on a hill segment', () => {
+      render(
+        <LTCGTooltip
+          active={true}
+          payload={[{ payload: { ltcg: 4000, marginalRate: 10.2, totalTax: 3221 } }]}
+          ordinaryIncome={30000}
+          ssBenefit={23712}
+          segments={mockLtcgSegments}
+        />,
+      );
+      expect(
+        screen.getByText(
+          /Consider avoiding this tax hill by staying under \$0 or over \$10,000/,
+        ),
+      ).toBeInTheDocument();
+    });
+
+    it('renders tax valley recommendation on a valley segment', () => {
+      render(
+        <LTCGTooltip
+          active={true}
+          payload={[{ payload: { ltcg: 12000, marginalRate: 0, totalTax: 3890 } }]}
+          ordinaryIncome={30000}
+          ssBenefit={23712}
+          segments={mockLtcgSegments}
+        />,
+      );
+      expect(
+        screen.getByText(/Consider filling out this tax valley at \$12,000/),
+      ).toBeInTheDocument();
+    });
+  });
+});
+

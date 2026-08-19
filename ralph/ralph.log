@@ -150,3 +150,15 @@
   doesn't collide with the existing queryByText(/\$25,000/) absence check.
 - Verified: npx tsc -b, npm run lint, npm test (38 passed), npm run build all
   clean (pre-existing >500kB chunk warning only).
+
+## 2026-08-19 — Fix: flip forgotten checkbox for the mitigation-strategies task
+
+- The previous iteration completed the "strategies to mitigate tax torpedo"
+  task fully (commit 4a85fce: App.tsx section, index.css styles, tests, log
+  entry above) but never flipped its PLAN.md checkbox from [ ] to [x] — the
+  commit's PLAN.md diff only added the three new human-added backlog bullets.
+- Per loop rules, fixing a previous-iteration bug is this iteration's task.
+  Re-verified the committed work (npx tsc -b, npm run lint, npm test —
+  38 passed, npm run build — all clean), then flipped the checkbox and noted
+  the fix under Discovered Work.
+- No source changes this iteration; PLAN.md/ralph.log only.

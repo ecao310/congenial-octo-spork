@@ -1,5 +1,6 @@
 import {
   federalIncomeTax,
+  FilingStatus,
   marginalRateCurve,
   taxableSocialSecurity,
   totalTax,
@@ -7,20 +8,25 @@ import {
 
 /**
  * Line-by-line reference implementation of IRS Pub 915 (2025), Worksheet 1
- * "Figuring Your Taxable Benefits", single filer, assuming no tax-exempt
- * interest, exclusions, or Schedule 1 adjustments (lines 4, 5, and 7 = 0).
+ * "Figuring Your Taxable Benefits", assuming no tax-exempt interest,
+ * exclusions, or Schedule 1 adjustments (lines 4, 5, and 7 = 0).
  * See docs/irs-pub915-worksheet1-2025.md.
  */
-function pub915Worksheet1(ssBenefit: number, otherIncome: number): number {
+function pub915Worksheet1(
+  ssBenefit: number,
+  otherIncome: number,
+  filingStatus: FilingStatus = 'single',
+): number {
   const line1 = ssBenefit; // box 5 of Forms SSA-1099/RRB-1099
   const line2 = 0.5 * line1;
   const line3 = otherIncome; // Form 1040 lines 1z, 2b, 3b, 4b, 5b, 7, 8
   const line6 = line2 + line3;
   const line8 = line6; // provisional income
-  const line9 = 25_000; // single-filer base amount
+  const line9 = filingStatus === 'single' ? 25_000 : 32_000; // base amount
   const line10 = Math.max(0, line8 - line9);
   if (line10 === 0) return 0; // none of the benefits are taxable
-  const line11 = 9_000; // single filer: $34,000 - $25,000
+  // single: $34,000 - $25,000; MFJ: $44,000 - $32,000
+  const line11 = filingStatus === 'single' ? 9_000 : 12_000;
   const line12 = Math.max(0, line10 - line11);
   const line13 = Math.min(line10, line11);
   const line14 = 0.5 * line13;
@@ -84,6 +90,55 @@ describe('IRS Pub 915 Worksheet 1 (2025)', () => {
   });
 });
 
+describe('IRS Pub 915 Worksheet 1 (2025), married filing jointly', () => {
+  it('is zero with provisional income exactly at the $32,000 base amount', () => {
+    expect(taxableSocialSecurity(10_000, 27_000, 'mfj')).toBe(0);
+    expect(pub915Worksheet1(10_000, 27_000, 'mfj')).toBe(0);
+  });
+
+  it('phases in at 50 cents per dollar just above the base amount', () => {
+    expect(taxableSocialSecurity(10_000, 27_002, 'mfj')).toBe(1);
+    expect(pub915Worksheet1(10_000, 27_002, 'mfj')).toBe(1);
+  });
+
+  it('caps tier 1 at $6,000 with provisional income exactly at $44,000', () => {
+    // line 10 = 12,000, line 12 = 0, line 14 = 6,000, line 15 = 6,000
+    expect(taxableSocialSecurity(20_000, 34_000, 'mfj')).toBe(6_000);
+    expect(pub915Worksheet1(20_000, 34_000, 'mfj')).toBe(6_000);
+  });
+
+  it('adds 85 cents per dollar above the $44,000 threshold', () => {
+    expect(taxableSocialSecurity(20_000, 34_001, 'mfj')).toBeCloseTo(6_000.85, 8);
+    expect(pub915Worksheet1(20_000, 34_001, 'mfj')).toBeCloseTo(6_000.85, 8);
+  });
+
+  it('caps at 85% of benefits', () => {
+    expect(taxableSocialSecurity(10_000, 100_000, 'mfj')).toBe(8_500);
+    expect(pub915Worksheet1(10_000, 100_000, 'mfj')).toBe(8_500);
+  });
+
+  it('agrees with the worksheet across a grid of benefits and incomes', () => {
+    const benefits = [0, 1, 2_000, 5_980, 10_000, 24_000, 40_000, 60_000];
+    const incomes = [
+      0, 5_000, 15_000, 31_999, 32_000, 38_000, 43_999, 44_000, 44_001,
+      50_000, 100_000,
+    ];
+    const mismatches: string[] = [];
+    for (const ss of benefits) {
+      for (const income of incomes) {
+        const actual = taxableSocialSecurity(ss, income, 'mfj');
+        const expected = pub915Worksheet1(ss, income, 'mfj');
+        if (Math.abs(actual - expected) > 1e-8) {
+          mismatches.push(
+            `ssBenefit=${ss}, otherIncome=${income}: ${actual} !== ${expected}`,
+          );
+        }
+      }
+    }
+    expect(mismatches).toEqual([]);
+  });
+});
+
 describe('taxableSocialSecurity', () => {
   it('is zero when provisional income is at or below the first threshold', () => {
     expect(taxableSocialSecurity(30000, 5000)).toBe(0);
@@ -123,6 +178,12 @@ describe('federalIncomeTax', () => {
     // 11925 * 0.10 + (48475 - 11925) * 0.12 + (50000 - 48475) * 0.22
     expect(federalIncomeTax(50000)).toBeCloseTo(5914, 2);
   });
+
+  it('uses the wider MFJ brackets', () => {
+    expect(federalIncomeTax(20000, 'mfj')).toBe(2000); // all in the 10% bracket
+    // 23850 * 0.10 + (96950 - 23850) * 0.12 + (100000 - 96950) * 0.22
+    expect(federalIncomeTax(100000, 'mfj')).toBeCloseTo(11828, 2);
+  });
 });
 
 describe('totalTax', () => {
@@ -133,6 +194,16 @@ describe('totalTax', () => {
   it('taxes other income plus the taxable portion of benefits', () => {
     // taxable SS = 26600; taxable income = 40000 + 26600 - 15750 = 50850
     expect(totalTax(40000, 40000)).toBeCloseTo(federalIncomeTax(50850), 2);
+  });
+
+  it('applies the MFJ standard deduction and thresholds', () => {
+    expect(totalTax(30000, 0, 'mfj')).toBe(0); // under the $31,500 deduction
+    // taxable SS = 6000 + 0.85 * (60000 - 44000) = 19600;
+    // taxable income = 40000 + 19600 - 31500 = 28100
+    expect(totalTax(40000, 40000, 'mfj')).toBeCloseTo(
+      federalIncomeTax(28100, 'mfj'),
+      2,
+    );
   });
 });
 
@@ -168,5 +239,24 @@ describe('marginalRateCurve', () => {
     const data = marginalRateCurve(45000, 100000, 250);
     const point = data.find((d) => d.income === 45000)!;
     expect(point.marginalRate).toBeCloseTo(40.7, 1);
+  });
+
+  it('uses MFJ deduction and brackets with no benefits', () => {
+    const data = marginalRateCurve(0, 100000, 250, 'mfj');
+    const at = (income: number) =>
+      data.find((d) => d.income === income)!.marginalRate;
+    expect(at(30000)).toBe(0); // under the $31,500 standard deduction
+    expect(at(40000)).toBe(10);
+    expect(at(80000)).toBe(12);
+  });
+
+  it('shows the MFJ torpedo phasing in later, then reverting after the cap', () => {
+    const data = marginalRateCurve(30000, 100000, 250, 'mfj');
+    const at = (income: number) =>
+      data.find((d) => d.income === income)!.marginalRate;
+    // 85% band (provisional 55,000 > 44,000), 12% bracket: 1.85 * 12%
+    expect(at(40000)).toBeCloseTo(22.2, 1);
+    // benefits fully taxed (cap hit near $51,941), back to the plain 12% rate
+    expect(at(60000)).toBeCloseTo(12, 1);
   });
 });

@@ -12,9 +12,15 @@ import {
   marginalRateCurve,
   MAX_ANNUAL_SS_BENEFIT,
   AVG_ANNUAL_SS_BENEFIT,
+  FilingStatus,
 } from './utils/tax';
 
 const MAX_INCOME = 150_000;
+
+const FILING_STATUS_OPTIONS: { value: FilingStatus; label: string }[] = [
+  { value: 'single', label: 'Single' },
+  { value: 'mfj', label: 'Married Filing Jointly' },
+];
 
 const formatCurrency = (value: number): string =>
   new Intl.NumberFormat('en-US', {
@@ -31,20 +37,42 @@ const formatCompact = (value: number): string =>
 
 const App: React.FC = () => {
   const [ssBenefit, setSsBenefit] = useState<number>(AVG_ANNUAL_SS_BENEFIT);
+  const [filingStatus, setFilingStatus] = useState<FilingStatus>('single');
 
   const curve = useMemo(
-    () => marginalRateCurve(ssBenefit, MAX_INCOME),
-    [ssBenefit],
+    () => marginalRateCurve(ssBenefit, MAX_INCOME, 250, filingStatus),
+    [ssBenefit, filingStatus],
   );
 
   return (
     <div className="card">
       <h1>Marginal Tax Rate</h1>
       <p className="subtitle">
-        Federal marginal rate on the next dollar of other income for a single
-        filer (2025 brackets, standard deduction), with Social Security taxed
-        under the 50%/85% provisional-income rules.
+        Federal marginal rate on the next dollar of other income for{' '}
+        {filingStatus === 'single'
+          ? 'a single filer'
+          : 'a married couple filing jointly'}{' '}
+        (2025 brackets, standard deduction), with Social Security taxed under
+        the 50%/85% provisional-income rules.
       </p>
+
+      <fieldset className="input-group filing-status">
+        <legend>Filing Status</legend>
+        <div className="segmented">
+          {FILING_STATUS_OPTIONS.map(({ value, label }) => (
+            <label key={value} className="segmented-option">
+              <input
+                type="radio"
+                name="filing-status"
+                value={value}
+                checked={filingStatus === value}
+                onChange={() => setFilingStatus(value)}
+              />
+              <span>{label}</span>
+            </label>
+          ))}
+        </div>
+      </fieldset>
 
       <div className="input-group">
         <div className="slider-header">

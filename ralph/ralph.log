@@ -5,13 +5,16 @@
 - This file (ralph/ralph.log) is the single ralph memory file. It is tracked
   in git (un-ignored via `!ralph/ralph.log` in .gitignore, which otherwise
   ignores `*.log`). The old ralph/log.md was merged in here and deleted.
-- Tax math: src/utils/tax.ts, single filer, 2025 params. Verified line-by-line
-  against IRS Pub 915 (2025) Worksheet 1 — reference doc at
+- Tax math: src/utils/tax.ts, 2025 params for both filing statuses via
+  FILING_PARAMS (type FilingStatus = 'single' | 'mfj'). Every tax function
+  takes a trailing filingStatus param defaulting to 'single'. Verified
+  line-by-line against IRS Pub 915 (2025) Worksheet 1 — reference doc at
   docs/irs-pub915-worksheet1-2025.md, reference implementation + grid
-  cross-check in src/utils/tax.test.ts.
-- MFJ thresholds (for the MFJ/single selector task): base $32,000, second
-  threshold $44,000 (line 11 = $12,000). Single: $25,000 / $34,000 ($9,000).
-  MFJ 2025 standard deduction: $31,500; MFJ brackets differ from single too.
+  cross-checks (both statuses) in src/utils/tax.test.ts.
+- MFJ 2025 params: SS thresholds $32,000 / $44,000 (line 11 = $12,000);
+  single $25,000 / $34,000 ($9,000). Standard deduction $31,500 (single
+  $15,750). MFJ brackets: 23,850 / 96,950 / 206,700 / 394,600 / 501,050 /
+  751,600 (verified vs Tax Foundation + NTU).
 - Verify with: npx tsc -b && npm run lint && npm test && npm run build.
 
 ## 2026-08-19 — Task: Get IRS worksheet. Create test cases for the calculation.
@@ -75,3 +78,32 @@
   ralph/ralph.log instead of log.md) sitting uncommitted in the working tree;
   committed it as part of this task.
 - Docs/notes-only change — no source touched, so no build/test run needed.
+
+## 2026-08-19 — Task: MFJ or single option selector. Default to Single.
+
+- tax.ts restructured: STANDARD_DEDUCTION / BRACKETS / SS_BASE_* consts
+  replaced by exported FILING_PARAMS record keyed by FilingStatus
+  ('single' | 'mfj'). MFJ figures verified via web search (Tax Foundation,
+  NTU): brackets 23,850/96,950/206,700/394,600/501,050/751,600, standard
+  deduction 31,500, SS thresholds 32,000/44,000.
+- taxableSocialSecurity/federalIncomeTax/totalTax/marginalRateCurve all take
+  a trailing `filingStatus: FilingStatus = 'single'` param — existing single
+  call sites unchanged. marginalRateCurve's param order is (ss, maxIncome,
+  step, filingStatus), so App now passes step=250 explicitly.
+- App.tsx: fieldset + legend "Filing Status" with a two-option segmented radio
+  control (Single default, Married Filing Jointly), state threaded into
+  marginalRateCurve; subtitle now says "a single filer" / "a married couple
+  filing jointly" per selection. index.css: fieldset reset + .segmented /
+  .segmented-option styles (hidden native radio, styled span, checked =
+  sky-blue pill, focus-visible ring via input:focus-visible + span).
+- Tests: pub915Worksheet1 reference generalized to take filingStatus
+  (line 9 = 32,000, line 11 = 12,000 for MFJ); new MFJ describe block with
+  boundary cases at provisional 32,000/44,000 + 8x11 grid cross-check; MFJ
+  cases for federalIncomeTax (2,000 @ 20k; 11,828 @ 100k), totalTax, and
+  marginalRateCurve (0% under 31.5k deduction; 22.2% torpedo at 40k income
+  with 30k benefits, reverts to 12% at 60k). App.test.tsx: default-Single +
+  switch-to-MFJ tests (role 'group'/'radio', subtitle text).
+- Verified: npx tsc -b, npm run lint, npm test (36 passed), npm run build
+  all clean.
+- Noticed: human added two new backlog bullets mid-iteration (overlay total
+  tax paid; "Other Income" x-axis label cut off) — left for next iterations.

@@ -1,0 +1,77 @@
+# Ralph notes — durable notes at top, per-iteration write-ups appended below
+
+## Durable notes
+
+- This file (ralph/ralph.log) is the single ralph memory file. It is tracked
+  in git (un-ignored via `!ralph/ralph.log` in .gitignore, which otherwise
+  ignores `*.log`). The old ralph/log.md was merged in here and deleted.
+- Tax math: src/utils/tax.ts, single filer, 2025 params. Verified line-by-line
+  against IRS Pub 915 (2025) Worksheet 1 — reference doc at
+  docs/irs-pub915-worksheet1-2025.md, reference implementation + grid
+  cross-check in src/utils/tax.test.ts.
+- MFJ thresholds (for the MFJ/single selector task): base $32,000, second
+  threshold $44,000 (line 11 = $12,000). Single: $25,000 / $34,000 ($9,000).
+  MFJ 2025 standard deduction: $31,500; MFJ brackets differ from single too.
+- Verify with: npx tsc -b && npm run lint && npm test && npm run build.
+
+## 2026-08-19 — Task: Get IRS worksheet. Create test cases for the calculation.
+
+- Fetched IRS Pub 915 (tax year 2025) Worksheet 1 "Figuring Your Taxable Benefits"
+  from https://www.irs.gov/publications/p915 and saved it (lines 1-19 + the
+  publication's worked example) to docs/irs-pub915-worksheet1-2025.md.
+- Added a line-by-line reference implementation `pub915Worksheet1()` in
+  src/utils/tax.test.ts (single filer, lines 4/5/7 = 0) and a new describe
+  block "IRS Pub 915 Worksheet 1 (2025)" with:
+  - the publication's worked example ($5,980 benefits + $28,990 other income
+    -> $2,990 taxable), verified against both the reference and
+    taxableSocialSecurity();
+  - boundary cases at provisional income $25,000, $25,002, $34,000, $34,001;
+  - an 8x11 grid cross-check (benefits 0..60k x incomes 0..100k) asserting
+    taxableSocialSecurity() === worksheet result within 1e-8, reporting all
+    mismatches at once.
+- Existing taxableSocialSecurity() matched the worksheet on every case — no
+  production-code changes needed.
+- Discovered work (fixed): vite.config.ts used `defineConfig({...} as any)`,
+  which failed eslint (no-explicit-any) and hid the `test` key from tsc.
+  Switched to `import { defineConfig } from 'vitest/config'` and dropped the
+  cast. (First attempt via `/// <reference types="vitest/config" />` did not
+  augment the type in vitest 4; the import does.)
+- Verified: `npx tsc -b`, `npm run lint`, `npm test` (24 passed), `npm run build`
+  all clean.
+
+## 2026-08-19 — Task: Make SS benefit input a slider from 0 to max yearly SS benefit. Default to avg.
+
+- Verified SSA 2025 figures via web search: max benefit claiming at age 70 is
+  $5,108/mo -> $61,296/yr; average retired-worker benefit is $1,976/mo (Jan
+  2025, after 2.5% COLA) -> $23,712/yr.
+- Added MAX_ANNUAL_SS_BENEFIT (61,296) and AVG_ANNUAL_SS_BENEFIT (23,712)
+  constants to src/utils/tax.ts with an SSA-sourced comment.
+- App.tsx: replaced the number input with <input type="range"> min=0,
+  max=MAX_ANNUAL_SS_BENEFIT, step=12 (keeps values on monthly-dollar
+  boundaries, so both the avg default and the max are exact stops). Default
+  state is now AVG_ANNUAL_SS_BENEFIT. Added a live currency readout next to
+  the label and $0 / $61,296 (2025 max) endpoint labels under the track.
+- index.css: range-specific overrides (the generic `input` rule's box
+  padding/border looked wrong on a track): accent-color #38bdf8, transparent
+  background, focus-visible outline; plus .slider-header/.slider-value/
+  .slider-range-labels styles.
+- App.test.tsx rewritten for the slider: role='slider', default value
+  23712 + '$23,712' readout, min/max attributes, change -> value + readout
+  update. Note: jest-dom toHaveValue returns a *string* for range inputs
+  (only type=number coerces), so assertions compare strings.
+- Verified: npx tsc -b, npm run lint, npm test (24 passed), npm run build
+  all clean.
+
+## 2026-08-19 — Task: Combine log.md and ralph.log. update instructions to use ralph.log. delete log.md.
+
+- Merged ralph/log.md's durable notes into a "Durable notes" section at the
+  top of this file; per-iteration entries follow below it.
+- ralph/ralph.log was gitignored (`*.log`) while log.md was tracked, so the
+  combined file would have been local-only. Added `!ralph/ralph.log` to
+  .gitignore and git-added this file so the notes stay in the repo.
+- Deleted ralph/log.md (git rm). Only remaining "log.md" mention in the repo
+  is the task bullet wording in ralph/PLAN.md, which stays verbatim by rule.
+- ralph/PROMPT.md already had the instruction change (notes go in
+  ralph/ralph.log instead of log.md) sitting uncommitted in the working tree;
+  committed it as part of this task.
+- Docs/notes-only change — no source touched, so no build/test run needed.

@@ -202,3 +202,21 @@
   one.
 - Verified: npx tsc -b, npm run lint, npm test (41 passed), npm run build all
   clean (pre-existing >500kB chunk warning only).
+
+## 2026-08-19 — Task: "Other Income" text below graph is cut off.
+
+- Root cause: the tax panel's XAxis label used position 'insideBottom' with
+  offset -5 — negative offset pushes the label *below* the axis box, and with
+  the chart's margin.bottom=0 and default axis height 30, the text baseline
+  landed at y=225 in a 220px SVG, clipping the bottom of the text.
+- Fix in App.tsx: XAxis height={50} (room for ticks + label inside the axis
+  box) and offset 5 (positive = up/inside). index.css: .chart-container--tax
+  height 220px -> 240px so the plot area isn't squeezed by the taller axis.
+- Verified via vite preview + headless Chrome. --dump-dom needs
+  --virtual-time-budget=5000 or the React app hasn't rendered yet (dump was
+  6KB of empty shell without it). Rendered geometry: SVG 240px tall, axis
+  line y=190, tick labels y=198, label baseline y=235 with dy=0 — fully
+  inside, no collision. Screenshot crop confirms label fully visible (static
+  text isn't affected by the mount-animation screenshot gotcha).
+- Verified: npx tsc -b, npm run lint, npm test (41 passed), npm run build all
+  clean (pre-existing >500kB chunk warning only).

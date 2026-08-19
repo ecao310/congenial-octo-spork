@@ -172,10 +172,11 @@ const App: React.FC = () => {
               domain={[0, MAX_INCOME]}
               tickFormatter={formatCompact}
               stroke="#94a3b8"
+              height={50}
               label={{
                 value: 'Other Income ($)',
                 position: 'insideBottom',
-                offset: -5,
+                offset: 5,
                 fill: '#94a3b8',
               }}
             />
@@ -258,25 +259,6 @@ const App: React.FC = () => {
             though: long-term capital gains and qualified dividends count
             toward provisional income in full, even when they fall in the 0%
             capital-gains bracket.
-          </li>
-          <li>
-            <strong>Delay benefits and draw pre-tax accounts first.</strong>{' '}
-            Spending from traditional IRAs and 401(k)s in the gap years before
-            claiming at 70 funds the delay, and the smaller remaining balance
-            means smaller required distributions landing on top of benefits
-            later. A larger, delayed benefit is still at most 85% taxable.
-          </li>
-          <li>
-            <strong>Give from an IRA.</strong> After age 70½, a qualified
-            charitable distribution sends money straight from a traditional IRA
-            to charity: it counts toward required minimum distributions but
-            never appears in adjusted gross income or provisional income (up to
-            $108,000 per person in 2025).
-          </li>
-          <li>
-            <strong>Don&apos;t hide in municipal bonds.</strong> Tax-exempt
-            interest is added back when computing provisional income, so
-            shifting savings into munis does not steer around the torpedo.
           </li>
           <li>
             <strong>If you can&apos;t go under it, go past it.</strong> Once

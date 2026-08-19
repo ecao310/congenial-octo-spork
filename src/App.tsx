@@ -100,6 +100,7 @@ const App: React.FC = () => {
         />
         <div className="slider-range-labels">
           <span>$0</span>
+          <span>{formatCurrency(AVG_ANNUAL_SS_BENEFIT)} (2025 avg)</span>
           <span>{formatCurrency(MAX_ANNUAL_SS_BENEFIT)} (2025 max)</span>
         </div>
       </div>
@@ -135,7 +136,9 @@ const App: React.FC = () => {
             />
             <Tooltip
               formatter={(value) => [`${Number(value)}%`, 'Marginal Rate']}
-              labelFormatter={(income) => `Other income ${formatCurrency(Number(income))}`}
+              labelFormatter={(income) =>
+                `Other income ${formatCurrency(Number(income))} · Total income ${formatCurrency(Number(income) + ssBenefit)}`
+              }
               contentStyle={TOOLTIP_STYLE}
             />
             <Area
@@ -181,7 +184,9 @@ const App: React.FC = () => {
             />
             <Tooltip
               formatter={(value) => [formatCurrency(Number(value)), 'Total Federal Tax']}
-              labelFormatter={(income) => `Other income ${formatCurrency(Number(income))}`}
+              labelFormatter={(income) =>
+                `Other income ${formatCurrency(Number(income))} · Total income ${formatCurrency(Number(income) + ssBenefit)}`
+              }
               contentStyle={TOOLTIP_STYLE}
             />
             <Area
@@ -194,7 +199,9 @@ const App: React.FC = () => {
           </AreaChart>
         </ResponsiveContainer>
       </div>
-      <p className="chart-axis-label">Other Income ($)</p>
+      <p className="chart-axis-label">
+        Other Income ($) &middot; Total income = Other income + {formatCurrency(ssBenefit)} SS
+      </p>
 
       <section className="explainer" aria-labelledby="tax-torpedo-heading">
         <h2 id="tax-torpedo-heading">What is the tax torpedo?</h2>
@@ -229,30 +236,16 @@ const App: React.FC = () => {
 
       <section className="explainer" aria-labelledby="torpedo-strategies-heading">
         <h2 id="torpedo-strategies-heading">How to mitigate the tax torpedo</h2>
-        <p>
-          The torpedo is driven entirely by provisional income, so every
-          strategy comes down to the same idea: in the years you collect
-          benefits, meet your spending with dollars that add little or nothing
-          to provisional income.
-        </p>
         <ul>
           <li>
             <strong>Spend from Roth accounts.</strong> Qualified withdrawals
             from a Roth IRA or Roth 401(k) are excluded from provisional income
-            entirely, so a dollar of Roth spending never drags benefits into
-            taxable income. Converting traditional balances to Roth in
-            low-income years — for example, after retiring but before claiming
-            benefits — pre-pays the tax outside the torpedo zone and shrinks
-            the future required minimum distributions that push many retirees
-            into it.
+            entirely.
           </li>
           <li>
             <strong>Spend from taxable accounts.</strong> Selling from a
             taxable brokerage account adds only the gain to provisional income;
-            the return of your own cost basis is tax-free. Mind the fine print,
-            though: long-term capital gains and qualified dividends count
-            toward provisional income in full, even when they fall in the 0%
-            capital-gains bracket.
+            the return of your own cost basis is tax-free.
           </li>
           <li>
             <strong>If you can&apos;t go under it, go past it.</strong> Once

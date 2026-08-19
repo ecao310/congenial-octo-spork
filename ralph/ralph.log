@@ -294,3 +294,12 @@
   restoring the combined file to the working tree.
 - Verified: npx tsc -b, npm run lint, npm test (41 passed), npm run build all
   clean (pre-existing >500kB chunk warning only).
+
+## 2026-08-19 — Task: Add number for total income near graph. SS + other income. Add avg SS text near the max SS text.
+
+- Added average Social Security benefit label `<span>{formatCurrency(AVG_ANNUAL_SS_BENEFIT)} (2025 avg)</span>` to `.slider-range-labels` in `App.tsx`, sitting between `$0` and the max benefit label `$61,296 (2025 max)`.
+- Added dynamic Total Income display to the chart tooltips (`Other income $X · Total income $Y` where total income = other income + SS benefit) for both the marginal rate chart and the total federal tax chart.
+- Added live Total Income relationship note to the chart axis label below the graphs: `Other Income ($) · Total income = Other income + $X SS`.
+- Updated `src/App.test.tsx` to assert that the average and maximum benefit labels render under the slider and that the total income text updates when the slider is moved.
+- Verified: `npx tsc -b`, `npm run lint`, `npm test` (41 passed), and `npm run build` all pass cleanly.
+

@@ -13,7 +13,7 @@ Backlog
 [ ] Add animation to make obvious when y-axis max changes due to SS benefit change.
 [ ] Fix hero text now that MFJ is an option.
 [ ] Filing status selector should not take up all horizontal space if not necessary.
-[ ] In a new section, create a new graph about Capital gains stacking. LTCG counts fully toward PI but is taxed in its own bracket. When extra ordinary income pushes SS into the tax base, it can also shove gains from the 0% bracket to 15% — stacking two effects. Marginal rates over 49% show up here. As input, create 1 slider total for non-LTCG, non-SS income. on graph, LTCG is the horizontal axis.
+[x] In a new section, create a new graph about Capital gains stacking. LTCG counts fully toward PI but is taxed in its own bracket. When extra ordinary income pushes SS into the tax base, it can also shove gains from the 0% bracket to 15% — stacking two effects. Marginal rates over 49% show up here. As input, create 1 slider total for non-LTCG, non-SS income. on graph, LTCG is the horizontal axis.
 
 Discovered Work
 [x] Fix pre-existing `as any` in vite.config.ts (eslint no-explicit-any error + tsc blindspot) by importing defineConfig from vitest/config

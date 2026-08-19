@@ -131,3 +131,113 @@ export function marginalRateCurve(
   }
   return data;
 }
+
+/* ------------------------------------------------------------------ */
+/*  Long-Term Capital Gains (LTCG) stacking                           */
+/* ------------------------------------------------------------------ */
+
+/** 2025 LTCG rate thresholds by filing status (Rev. Proc. 2024-40).
+ *  The `upTo` values refer to total taxable income (ordinary + gains). */
+export const LTCG_BRACKETS: Record<FilingStatus, { upTo: number; rate: number }[]> = {
+  single: [
+    { upTo: 48_350, rate: 0 },
+    { upTo: 533_400, rate: 0.15 },
+    { upTo: Infinity, rate: 0.20 },
+  ],
+  mfj: [
+    { upTo: 96_700, rate: 0 },
+    { upTo: 600_050, rate: 0.15 },
+    { upTo: Infinity, rate: 0.20 },
+  ],
+};
+
+/**
+ * Federal tax on LTCG stacked on top of ordinary income + taxable SS.
+ *
+ * Ordinary income (including taxable SS) fills the brackets first; LTCG is
+ * then taxed at its own preferential rates, but the bracket thresholds are
+ * measured against the full taxable income (ordinary + LTCG).
+ *
+ * LTCG also counts toward provisional income for SS taxability, so adding
+ * LTCG can drag SS benefits into taxable income at ordinary rates — the
+ * "stacking" effect.
+ */
+export function totalTaxWithLTCG(
+  ordinaryIncome: number,
+  ssBenefit: number,
+  ltcg: number,
+  filingStatus: FilingStatus = 'single',
+): number {
+  const { standardDeduction, brackets } = FILING_PARAMS[filingStatus];
+  const ltcgBrackets = LTCG_BRACKETS[filingStatus];
+
+  // LTCG counts toward provisional income (IRS uses full AGI + half SS).
+  const totalOtherIncome = ordinaryIncome + ltcg;
+  const taxableSS = taxableSocialSecurity(ssBenefit, totalOtherIncome, filingStatus);
+
+  // Ordinary taxable income (before LTCG): ordinary + taxable SS − deduction.
+  const ordinaryTaxable = Math.max(0, ordinaryIncome + taxableSS - standardDeduction);
+
+  // Total taxable income (ordinary + LTCG).
+  const totalTaxable = ordinaryTaxable + ltcg;
+
+  // --- Ordinary income tax (uses ordinary brackets up to ordinaryTaxable) ---
+  let ordinaryTax = 0;
+  {
+    let lower = 0;
+    for (const { upTo, rate } of brackets) {
+      if (ordinaryTaxable <= lower) break;
+      ordinaryTax += (Math.min(ordinaryTaxable, upTo) - lower) * rate;
+      lower = upTo;
+    }
+  }
+
+  // --- LTCG tax (fills LTCG brackets from ordinaryTaxable to totalTaxable) ---
+  let ltcgTax = 0;
+  {
+    let lower = 0;
+    for (const { upTo, rate } of ltcgBrackets) {
+      // The LTCG band occupies [ordinaryTaxable, totalTaxable].
+      const bandStart = Math.max(ordinaryTaxable, lower);
+      const bandEnd = Math.min(totalTaxable, upTo);
+      if (bandEnd > bandStart) {
+        ltcgTax += (bandEnd - bandStart) * rate;
+      }
+      lower = upTo;
+    }
+  }
+
+  return ordinaryTax + ltcgTax;
+}
+
+export interface LTCGMarginalRatePoint {
+  ltcg: number;
+  marginalRate: number;
+  totalTax: number;
+}
+
+/**
+ * Effective marginal rate on the next dollar of LTCG, sampled from $0 to
+ * maxLTCG. Captures both the LTCG bracket rate and the SS torpedo
+ * amplification (ordinary income dragged in by LTCG raising provisional
+ * income).
+ */
+export function ltcgMarginalRateCurve(
+  ssBenefit: number,
+  ordinaryIncome: number,
+  maxLTCG = 200_000,
+  step = 250,
+  filingStatus: FilingStatus = 'single',
+): LTCGMarginalRatePoint[] {
+  const data: LTCGMarginalRatePoint[] = [];
+  for (let ltcg = 0; ltcg <= maxLTCG; ltcg += step) {
+    const taxHere = totalTaxWithLTCG(ordinaryIncome, ssBenefit, ltcg, filingStatus);
+    const rate = totalTaxWithLTCG(ordinaryIncome, ssBenefit, ltcg + 1, filingStatus) - taxHere;
+    data.push({
+      ltcg,
+      marginalRate: Math.round(rate * 10_000) / 100,
+      totalTax: Math.round(taxHere),
+    });
+  }
+  return data;
+}

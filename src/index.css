@@ -255,6 +255,22 @@ h1 {
   margin-bottom: 0;
 }
 
+/* Amber accent for the LTCG section */
+.section-heading-amber {
+  background: linear-gradient(to right, #f59e0b, #f97316);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.slider-value.amber {
+  color: #f59e0b;
+}
+
+.slider-amber {
+  accent-color: #f59e0b !important;
+}
+
 footer {
   margin-top: 2.5rem;
   padding-top: 1.5rem;

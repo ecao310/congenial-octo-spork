@@ -20,7 +20,7 @@ describe('App', () => {
     const slider = screen.getByRole('slider', { name: /social security benefit/i });
     expect(slider).toHaveAttribute('min', '0');
     expect(slider).toHaveAttribute('max', String(MAX_ANNUAL_SS_BENEFIT));
-    expect(screen.getByText('$0')).toBeInTheDocument();
+    expect(screen.getAllByText('$0').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('$23,712 (2025 avg)')).toBeInTheDocument();
     expect(screen.getByText('$61,296 (2025 max)')).toBeInTheDocument();
   });
@@ -101,5 +101,31 @@ describe('App', () => {
     expect(
       screen.getByText(/consult a qualified tax professional/i),
     ).toBeInTheDocument();
+  });
+
+  it('renders the Capital Gains Stacking section heading', () => {
+    render(<App />);
+    expect(
+      screen.getByRole('heading', { name: /capital gains stacking/i }),
+    ).toBeInTheDocument();
+  });
+
+  it('renders the ordinary income slider defaulting to $30,000', () => {
+    render(<App />);
+    const slider = screen.getByRole('slider', {
+      name: /other ordinary income/i,
+    });
+    expect(slider).toHaveValue('30000');
+    expect(slider).toHaveAttribute('min', '0');
+    expect(slider).toHaveAttribute('max', '150000');
+  });
+
+  it('updates the ordinary income slider readout when moved', () => {
+    render(<App />);
+    const slider = screen.getByRole('slider', {
+      name: /other ordinary income/i,
+    });
+    fireEvent.change(slider, { target: { value: '50000' } });
+    expect(slider).toHaveValue('50000');
   });
 });

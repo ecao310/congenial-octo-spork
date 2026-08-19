@@ -10,13 +10,17 @@ import {
 } from 'recharts';
 import {
   marginalRateCurve,
+  ltcgMarginalRateCurve,
   MAX_ANNUAL_SS_BENEFIT,
   AVG_ANNUAL_SS_BENEFIT,
   FILING_PARAMS,
   FilingStatus,
 } from './utils/tax';
+import type { LTCGMarginalRatePoint } from './utils/tax';
 
 const MAX_INCOME = 150_000;
+const MAX_LTCG = 200_000;
+const DEFAULT_ORDINARY_INCOME = 30_000;
 
 const FILING_STATUS_OPTIONS: { value: FilingStatus; label: string }[] = [
   { value: 'single', label: 'Single' },
@@ -77,9 +81,40 @@ const CustomTooltip: React.FC<CustomTooltipProps> = ({
   );
 };
 
+interface LTCGTooltipProps {
+  active?: boolean;
+  payload?: Array<{ payload: LTCGMarginalRatePoint }>;
+  ordinaryIncome: number;
+  ssBenefit: number;
+}
+
+const LTCGTooltip: React.FC<LTCGTooltipProps> = ({
+  active,
+  payload,
+  ordinaryIncome,
+  ssBenefit,
+}) => {
+  if (!active || !payload || !payload.length) return null;
+  const point = payload[0].payload;
+  return (
+    <div style={TOOLTIP_STYLE}>
+      <div style={{ fontWeight: 600, marginBottom: '0.25rem' }}>
+        LTCG {formatCurrency(point.ltcg)} · Total income {formatCurrency(point.ltcg + ordinaryIncome + ssBenefit)}
+      </div>
+      <div>
+        Marginal Rate: <strong style={{ color: '#f59e0b' }}>{point.marginalRate}%</strong>
+      </div>
+      <div>
+        Total Federal Tax: <strong style={{ color: '#ea580c' }}>{formatCurrency(point.totalTax)}</strong>
+      </div>
+    </div>
+  );
+};
+
 const App: React.FC = () => {
   const [ssBenefit, setSsBenefit] = useState<number>(AVG_ANNUAL_SS_BENEFIT);
   const [filingStatus, setFilingStatus] = useState<FilingStatus>('single');
+  const [ordinaryIncome, setOrdinaryIncome] = useState<number>(DEFAULT_ORDINARY_INCOME);
 
   const curve = useMemo(
     () => marginalRateCurve(ssBenefit, MAX_INCOME, 250, filingStatus),
@@ -87,6 +122,11 @@ const App: React.FC = () => {
   );
 
   const { ssBase50, ssBase85 } = FILING_PARAMS[filingStatus];
+
+  const ltcgCurve = useMemo(
+    () => ltcgMarginalRateCurve(ssBenefit, ordinaryIncome, MAX_LTCG, 250, filingStatus),
+    [ssBenefit, ordinaryIncome, filingStatus],
+  );
 
   return (
     <div className="card">
@@ -238,6 +278,102 @@ const App: React.FC = () => {
           The right mix depends on account balances, state taxes, Medicare
           premium surcharges, and more. The chart above makes the goal concrete:
           keep provisional income out of the spike, or jump clean over it.
+        </p>
+      </section>
+
+      {/* ───── Capital Gains Stacking ───── */}
+      <section className="explainer" aria-labelledby="ltcg-stacking-heading">
+        <h2 id="ltcg-stacking-heading" className="section-heading-amber">
+          Capital Gains Stacking
+        </h2>
+        <p>
+          Long-term capital gains (LTCG) count fully toward{' '}
+          <strong>provisional income</strong> for Social Security taxability,
+          yet they are taxed in their own preferential bracket (0%/15%/20%).
+          When ordinary income pushes Social Security benefits into the
+          taxable base, LTCG can simultaneously shove gains out of the
+          0% bracket into 15%&nbsp;— stacking two effects at once.
+        </p>
+
+        <div className="input-group">
+          <div className="slider-header">
+            <label htmlFor="ordinary-income">Other Ordinary Income (non-LTCG, non-SS)</label>
+            <span className="slider-value amber">{formatCurrency(ordinaryIncome)}</span>
+          </div>
+          <input
+            id="ordinary-income"
+            type="range"
+            min={0}
+            max={MAX_INCOME}
+            step={500}
+            value={ordinaryIncome}
+            onChange={(e) => setOrdinaryIncome(Number(e.target.value))}
+            className="slider-amber"
+          />
+          <div className="slider-range-labels">
+            <span>$0</span>
+            <span>{formatCurrency(MAX_INCOME)}</span>
+          </div>
+        </div>
+
+        <div className="chart-container">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart
+              data={ltcgCurve}
+              margin={{ top: 10, right: 10, left: 10, bottom: 0 }}
+            >
+              <defs>
+                <linearGradient id="ltcgGradient" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.5} />
+                  <stop offset="95%" stopColor="#f59e0b" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255, 255, 255, 0.1)" />
+              <XAxis
+                dataKey="ltcg"
+                type="number"
+                domain={[0, MAX_LTCG]}
+                tickFormatter={formatCompact}
+                stroke="#94a3b8"
+              />
+              <YAxis
+                stroke="#94a3b8"
+                tickFormatter={(value) => `${value}%`}
+                width={70}
+                domain={[0, 'auto']}
+              />
+              <Tooltip
+                content={
+                  <LTCGTooltip
+                    ordinaryIncome={ordinaryIncome}
+                    ssBenefit={ssBenefit}
+                  />
+                }
+              />
+              <Area
+                type="stepAfter"
+                dataKey="marginalRate"
+                stroke="#f59e0b"
+                strokeWidth={2}
+                fill="url(#ltcgGradient)"
+              />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+        <p className="chart-axis-label">
+          Long-Term Capital Gains ($) &middot; Ordinary income {formatCurrency(ordinaryIncome)} + {formatCurrency(ssBenefit)} SS
+        </p>
+
+        <p>
+          The chart shows the <strong>effective marginal tax rate</strong> on
+          each additional dollar of long-term capital gains, given the
+          ordinary income and Social Security benefit set above. Because
+          LTCG raises provisional income, it can drag Social Security
+          benefits into taxable territory (taxed at ordinary rates) while
+          simultaneously pushing the gains themselves from the 0% bracket
+          to 15%. In the worst zone, a single dollar of LTCG can trigger
+          both effects, producing combined marginal rates that far exceed
+          the statutory 15% capital-gains rate.
         </p>
       </section>
 

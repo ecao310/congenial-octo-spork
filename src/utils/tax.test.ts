@@ -1,9 +1,11 @@
 import {
   federalIncomeTax,
   FilingStatus,
+  ltcgMarginalRateCurve,
   marginalRateCurve,
   taxableSocialSecurity,
   totalTax,
+  totalTaxWithLTCG,
 } from './tax';
 
 /**
@@ -273,5 +275,101 @@ describe('marginalRateCurve', () => {
     expect(at(40000)).toBeCloseTo(22.2, 1);
     // benefits fully taxed (cap hit near $51,941), back to the plain 12% rate
     expect(at(60000)).toBeCloseTo(12, 1);
+  });
+});
+
+describe('totalTaxWithLTCG', () => {
+  it('matches totalTax when LTCG is zero', () => {
+    expect(totalTaxWithLTCG(40000, 30000, 0)).toBeCloseTo(totalTax(40000, 30000), 2);
+    expect(totalTaxWithLTCG(40000, 30000, 0, 'mfj')).toBeCloseTo(totalTax(40000, 30000, 'mfj'), 2);
+  });
+
+  it('taxes LTCG at 0% when total taxable income stays below the threshold', () => {
+    // Single: standard deduction $15,750, 0% LTCG threshold $48,350.
+    // ordinaryIncome = 0, ssBenefit = 0, ltcg = 10,000.
+    // ordinaryTaxable = 0, totalTaxable = 10,000 < 48,350 → 0% on all LTCG.
+    expect(totalTaxWithLTCG(0, 0, 10000)).toBe(0);
+  });
+
+  it('taxes LTCG at 15% when ordinary income pushes past the 0% threshold', () => {
+    // Single: ordinary income of $60,000, no SS. ordinaryTaxable = 60000 - 15750 = 44250.
+    // 44250 < 48350, so the first $4100 of LTCG is at 0%, rest at 15%.
+    const tax = totalTaxWithLTCG(60000, 0, 10000);
+    const ordinaryPart = totalTaxWithLTCG(60000, 0, 0);
+    const ltcgPart = tax - ordinaryPart;
+    // $4,100 at 0% + $5,900 at 15% = $885
+    expect(ltcgPart).toBeCloseTo(885, 0);
+  });
+
+  it('uses the MFJ 0% threshold ($96,700)', () => {
+    // MFJ: ordinary income $120k, no SS. ordinaryTaxable = 120000 - 31500 = 88500.
+    // 88500 < 96700, so first $8200 of LTCG at 0%, rest at 15%.
+    const tax = totalTaxWithLTCG(120000, 0, 10000, 'mfj');
+    const ordinaryPart = totalTaxWithLTCG(120000, 0, 0, 'mfj');
+    const ltcgPart = tax - ordinaryPart;
+    expect(ltcgPart).toBeCloseTo(0.15 * (10000 - 8200), 0);
+  });
+
+  it('LTCG triggers the SS torpedo by raising provisional income', () => {
+    // Single: $20k ordinary, $24k SS, adding LTCG should drag SS into taxability.
+    // Without LTCG: provisional = 20000 + 12000 = 32000 → some SS taxable.
+    // With $20k LTCG: provisional = 40000 + 12000 = 52000 → much more SS taxable.
+    const taxWithout = totalTaxWithLTCG(20000, 24000, 0);
+    const taxWith = totalTaxWithLTCG(20000, 24000, 20000);
+    const increase = taxWith - taxWithout;
+    // LTCG sits in the 0% bracket at these income levels, so the increase
+    // comes entirely from dragged-in SS being taxed at ordinary rates.
+    // Without the torpedo the increase would be $0 (all LTCG at 0%).
+    expect(increase).toBeGreaterThan(0);
+    // And the effective rate on the $20k of LTCG should exceed 0% — proof
+    // that the SS torpedo is adding ordinary tax via the stacking channel.
+    expect(increase / 20000).toBeGreaterThan(0.05);
+  });
+});
+
+describe('ltcgMarginalRateCurve', () => {
+  it('samples from zero to maxLTCG inclusive', () => {
+    const data = ltcgMarginalRateCurve(0, 0, 10000, 250);
+    expect(data).toHaveLength(41);
+    expect(data[0].ltcg).toBe(0);
+    expect(data[40].ltcg).toBe(10000);
+  });
+
+  it('shows 0% marginal rate on LTCG when all income is below the threshold', () => {
+    // Single: no SS, no ordinary income, LTCG starts at $0.
+    const data = ltcgMarginalRateCurve(0, 0, 50000, 250);
+    const at = (ltcg: number) => data.find((d) => d.ltcg === ltcg)!.marginalRate;
+    expect(at(0)).toBe(0);
+    expect(at(10000)).toBe(0);
+  });
+
+  it('shows elevated marginal rates from SS torpedo stacking', () => {
+    // Single: $30k ordinary, $30k SS. LTCG raises provisional income,
+    // dragging SS into taxability at ordinary rates while LTCG itself
+    // is taxed at capital-gains rates. The combined effect produces
+    // marginal rates well above the bare 15% LTCG rate.
+    const data = ltcgMarginalRateCurve(30000, 30000, 100000, 250);
+    const maxRate = Math.max(...data.map((d) => d.marginalRate));
+    // The stacking pushes the effective marginal rate above 25%
+    // (15% LTCG + torpedo-amplified ordinary tax on dragged-in SS).
+    expect(maxRate).toBeGreaterThan(25);
+  });
+
+  it('reports total tax as non-decreasing', () => {
+    const data = ltcgMarginalRateCurve(24000, 30000, 100000, 250);
+    for (let i = 1; i < data.length; i++) {
+      expect(data[i].totalTax).toBeGreaterThanOrEqual(data[i - 1].totalTax);
+    }
+  });
+
+  it('uses MFJ thresholds so LTCG stays at 0% longer', () => {
+    // MFJ 0% threshold is $96,700 vs single $48,350.
+    const dataSingle = ltcgMarginalRateCurve(0, 60000, 100000, 250);
+    const dataMfj = ltcgMarginalRateCurve(0, 60000, 100000, 250, 'mfj');
+    // Single: ordinaryTaxable = 60k - 15750 = 44250. 0% zone = $4100 of LTCG.
+    // MFJ: ordinaryTaxable = 60k - 31500 = 28500. 0% zone = $68200 of LTCG.
+    const singleFirstNonZero = dataSingle.find((d) => d.marginalRate > 0)!.ltcg;
+    const mfjFirstNonZero = dataMfj.find((d) => d.marginalRate > 0)!.ltcg;
+    expect(mfjFirstNonZero).toBeGreaterThan(singleFirstNonZero);
   });
 });

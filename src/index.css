@@ -255,6 +255,20 @@ h1 {
   margin-bottom: 0;
 }
 
+footer {
+  margin-top: 2.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  text-align: center;
+}
+
+footer p {
+  font-size: 0.8125rem;
+  color: #64748b;
+  margin: 0;
+  line-height: 1.6;
+}
+
 @media (max-width: 768px) {
   #root {
     padding: 1rem;

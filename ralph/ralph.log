@@ -315,3 +315,13 @@
 - Updated `src/App.test.tsx` to verify that the separate total tax panel heading is no longer rendered.
 - Verified: `npx tsc -b`, `npm run lint`, `npm test` (41 passed), and `npm run build` all pass cleanly.
 
+## 2026-08-19 — Task: Move and edit footer that this is not tax advice and to consult a professional.
+
+- Moved the tax disclaimer out of the "How to mitigate the tax torpedo" `<section>` into a dedicated `<footer>` element at the bottom of the card.
+- Updated the footer text to: "This tool is for educational purposes only and does not constitute tax or financial advice. Please consult a qualified tax professional regarding your specific situation."
+- Kept the closing strategic summary inside the mitigation section: "The right mix depends on account balances, state taxes, Medicare premium surcharges, and more. The chart above makes the goal concrete: keep provisional income out of the spike, or jump clean over it."
+- Added `footer` styles to `src/index.css` (2.5rem top margin, subtle top border, muted slate text, centered).
+- Added test in `src/App.test.tsx` asserting the footer text and tax professional disclaimer are rendered.
+- Verified: `npx tsc -b`, `npm run lint`, `npm test` (42 passed), and `npm run build` all pass cleanly.
+
+

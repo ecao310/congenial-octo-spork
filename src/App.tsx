@@ -235,12 +235,19 @@ const App: React.FC = () => {
           </li>
         </ul>
         <p>
-          None of this is tax advice — the right mix depends on account
-          balances, state taxes, Medicare premium surcharges, and more. But the
-          chart above makes the goal concrete: keep provisional income out of
-          the spike, or jump clean over it.
+          The right mix depends on account balances, state taxes, Medicare
+          premium surcharges, and more. The chart above makes the goal concrete:
+          keep provisional income out of the spike, or jump clean over it.
         </p>
       </section>
+
+      <footer>
+        <p>
+          This tool is for educational purposes only and does not constitute tax
+          or financial advice. Please consult a qualified tax professional
+          regarding your specific situation.
+        </p>
+      </footer>
     </div>
   );
 };

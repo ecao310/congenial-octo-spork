@@ -92,4 +92,14 @@ describe('App', () => {
       screen.getByText(/a married couple filing jointly/i),
     ).toBeInTheDocument();
   });
+
+  it('renders the tax advice disclaimer footer', () => {
+    render(<App />);
+    expect(
+      screen.getByText(/not constitute tax or financial advice/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/consult a qualified tax professional/i),
+    ).toBeInTheDocument();
+  });
 });

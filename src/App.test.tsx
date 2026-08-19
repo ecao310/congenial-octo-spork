@@ -69,10 +69,7 @@ describe('App', () => {
     expect(screen.getByText('Spend from Roth accounts.')).toBeInTheDocument();
     expect(screen.getByText('Spend from taxable accounts.')).toBeInTheDocument();
     expect(
-      screen.getByText(/qualified charitable distribution/i),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(/added back when computing provisional income/i),
+      screen.getByText("If you can't go under it, go past it."),
     ).toBeInTheDocument();
   });
 

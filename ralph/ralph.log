@@ -220,3 +220,33 @@
   text isn't affected by the mount-animation screenshot gotcha).
 - Verified: npx tsc -b, npm run lint, npm test (41 passed), npm run build all
   clean (pre-existing >500kB chunk warning only).
+
+## 2026-08-19 — Fix: failing test from human content edit swept into c400999
+
+- HEAD was red: App.test.tsx's "lists strategies" test failed because commit
+  c400999 (the axis-label fix) also removed three of the six mitigation
+  strategy bullets (delay-SS-to-70, QCDs, munis) from App.tsx. That removal
+  was a clean, content-only trim not mentioned in the commit message or the
+  previous log entry — a human edit sitting in the working tree that the
+  previous iteration's commit swept in after its test run. Lesson for future
+  iterations: diff-check what you're committing (git diff --stat vs the files
+  you touched) before `git commit -a`.
+- Treated the trim as intentional human curation (consistent with the new
+  human backlog bullet "Remove graph for total tax paid"), so fixed the TEST
+  to match the three-strategy copy: dropped the QCD/muni assertions, now
+  asserts the third remaining bullet "If you can't go under it, go past it."
+- Human edits landed mid-iteration in PLAN.md: un-checked ""Other Income"
+  text below graph is cut off" (re-opened — presumably still clipped on
+  their screen despite the c400999 fix; next iteration should re-verify at
+  multiple viewport widths, not just 800px), and added two new bullets
+  (remove total-tax graph in favor of tooltip; not-tax-advice footer). Note
+  the footer task overlaps with the existing closing caveat paragraph in the
+  mitigation section.
+- Human is ALSO actively editing App.tsx (further trimming the Roth/taxable
+  bullet copy + removing the section intro paragraph) — left that edit
+  UNCOMMITTED in the working tree on purpose; committed only App.test.tsx +
+  ralph files. Tests verified green both against HEAD's App.tsx alone (via
+  stash) and with the human's edit in place (41 passed each way; the three
+  asserted strings survive the trim).
+- Verified: npx tsc -b, npm run lint, npm test (41 passed), npm run build all
+  clean (pre-existing >500kB chunk warning only).

@@ -172,13 +172,6 @@ const App: React.FC = () => {
               domain={[0, MAX_INCOME]}
               tickFormatter={formatCompact}
               stroke="#94a3b8"
-              height={50}
-              label={{
-                value: 'Other Income ($)',
-                position: 'insideBottom',
-                offset: 5,
-                fill: '#94a3b8',
-              }}
             />
             <YAxis
               stroke="#94a3b8"
@@ -201,6 +194,7 @@ const App: React.FC = () => {
           </AreaChart>
         </ResponsiveContainer>
       </div>
+      <p className="chart-axis-label">Other Income ($)</p>
 
       <section className="explainer" aria-labelledby="tax-torpedo-heading">
         <h2 id="tax-torpedo-heading">What is the tax torpedo?</h2>

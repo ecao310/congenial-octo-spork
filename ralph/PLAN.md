@@ -6,7 +6,7 @@ Backlog
 [x] Create text section below graph explaining the tax torpedo.
 [x] Create text section for strategies to mitigate tax torpedo. Consider Roths, taxable accounts, etc.
 [x] Overlay total tax paid on the graph.
-[ ] "Other Income" text below graph is cut off.
+[x] "Other Income" text below graph is cut off.
 [ ] Add number for total income near graph. SS + other income. Add avg SS text near the max SS text.
 [ ] Remove graph for total tax paid. Instead, show total paid on mouse-over tool tip.
 [ ] Add footer that this is not tax advice and to consult a professional.

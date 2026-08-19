@@ -212,8 +212,18 @@ h1 {
 }
 
 .chart-container--tax {
-  height: 240px;
+  height: 220px;
   margin-top: 0.25rem;
+}
+
+/* Rendered as HTML rather than an SVG <XAxis label> so it can never be
+   clipped by the chart's viewport. The padding-left offsets the text to the
+   centre of the plot area, which starts after the 70px y-axis. */
+.chart-axis-label {
+  margin: 0.25rem 0 0;
+  padding-left: 70px;
+  text-align: center;
+  color: #94a3b8;
 }
 
 .explainer {

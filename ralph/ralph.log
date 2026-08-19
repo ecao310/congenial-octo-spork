@@ -250,3 +250,47 @@
   asserted strings survive the trim).
 - Verified: npx tsc -b, npm run lint, npm test (41 passed), npm run build all
   clean (pre-existing >500kB chunk warning only).
+
+## 2026-08-19 — Task: "Other Income" text below graph is cut off (re-opened)
+
+- The human re-opened this after c400999's offset/height tweak. Measured the
+  actual geometry with a DOM probe (dist/measure.html: a copy of the built
+  index.html plus a script that reports getBBox/getBoundingClientRect, dumped
+  with `chrome --headless --dump-dom --virtual-time-budget=8000`; far more
+  reliable than eyeballing screenshots, and it works around the mount-
+  animation gotcha that leaves series invisible in headless shots).
+- Result: c400999 did not actually fix it, it just made it marginal. The SVG
+  <text> label's bbox bottom sat at y=238.0 inside a 240px-tall SVG — 2px of
+  clearance at every viewport width (375/640/768/1280 all identical, since the
+  label's y is derived from axis geometry, not from the font). SVGs clip at
+  their viewport, so any font whose descender is deeper than the headless
+  fallback's (Inter, listed first in font-family, is NOT installed on this
+  box but very likely is on the human's), or a larger browser default font
+  size, eats through those 2px and clips "($)" .
+- Fix: stop putting the label inside the SVG at all. Dropped the XAxis
+  `label`/`height={50}` and render `<p className="chart-axis-label">Other
+  Income ($)</p>` as normal HTML below the chart, where block flow can never
+  clip it. Centred it over the *plot area* (not the container) with
+  `padding-left: 70px` + `text-align: center`: the plot starts at
+  margin.left(10) + YAxis width(70) = 80 and ends at svgW - margin.right(10),
+  so its centre is svgW/2 + 35, which is exactly where a 70px left pad puts
+  centred text. `.chart-container--tax` height 240px -> 220px since the axis
+  no longer needs the extra 20px.
+- Verified with the probe at 375/640/768/1280: label text centre lands on the
+  plot-area centre to the 0.1px (240.5/310.5/374.5/420.0 vs plot centres
+  240.5/310.5/374.5/420.0), and the nearest overflow:hidden ancestor's bottom
+  is ~1000px below the label — i.e. structurally unclippable now. Cropped
+  screenshot at 900px confirms visually.
+- Noted but NOT fixed (not this task, and it renders fine): the last x-axis
+  tick "150K" has its bbox right edge exactly equal to the SVG width at every
+  breakpoint — recharts flushes the final tick against the viewport, so it is
+  ~0.5px from clipping. If it ever looks shaved, give the chart a larger
+  margin.right.
+- The human's uncommitted App.tsx edit (further trimming the mitigation
+  bullet copy + dropping the section intro) is STILL in the working tree and
+  is STILL deliberately left uncommitted, per the previous iteration. My
+  App.tsx hunks are in the chart section and don't overlap it, so I committed
+  by checking out HEAD's App.tsx, re-applying only my edit, committing, then
+  restoring the combined file to the working tree.
+- Verified: npx tsc -b, npm run lint, npm test (41 passed), npm run build all
+  clean (pre-existing >500kB chunk warning only).

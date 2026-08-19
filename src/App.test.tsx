@@ -1,5 +1,6 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import App from './App';
+import { MAX_ANNUAL_SS_BENEFIT, AVG_ANNUAL_SS_BENEFIT } from './utils/tax';
 
 describe('App', () => {
   it('renders the heading', () => {
@@ -7,23 +8,25 @@ describe('App', () => {
     expect(screen.getByRole('heading', { name: /marginal tax rate/i })).toBeInTheDocument();
   });
 
-  it('renders the benefit input with its default value', () => {
+  it('renders the benefit slider defaulting to the 2025 average benefit', () => {
     render(<App />);
-    const input = screen.getByLabelText(/social security benefit/i);
-    expect(input).toHaveValue(24000);
+    const slider = screen.getByRole('slider', { name: /social security benefit/i });
+    expect(slider).toHaveValue(String(AVG_ANNUAL_SS_BENEFIT));
+    expect(screen.getByText('$23,712')).toBeInTheDocument();
   });
 
-  it('updates the input value when changed', () => {
+  it('spans $0 to the 2025 maximum yearly benefit', () => {
     render(<App />);
-    const input = screen.getByLabelText(/social security benefit/i);
-    fireEvent.change(input, { target: { value: '36000' } });
-    expect(input).toHaveValue(36000);
+    const slider = screen.getByRole('slider', { name: /social security benefit/i });
+    expect(slider).toHaveAttribute('min', '0');
+    expect(slider).toHaveAttribute('max', String(MAX_ANNUAL_SS_BENEFIT));
   });
 
-  it('clamps negative input to zero', () => {
+  it('updates the value and readout when moved', () => {
     render(<App />);
-    const input = screen.getByLabelText(/social security benefit/i);
-    fireEvent.change(input, { target: { value: '-500' } });
-    expect(input).toHaveValue(0);
+    const slider = screen.getByRole('slider', { name: /social security benefit/i });
+    fireEvent.change(slider, { target: { value: '36000' } });
+    expect(slider).toHaveValue('36000');
+    expect(screen.getByText('$36,000')).toBeInTheDocument();
   });
 });

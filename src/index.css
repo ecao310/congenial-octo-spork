@@ -77,6 +77,46 @@ input:focus {
   box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.2);
 }
 
+input[type='range'] {
+  padding: 0;
+  border: none;
+  background: transparent;
+  accent-color: #38bdf8;
+  height: 2rem;
+  cursor: pointer;
+}
+
+input[type='range']:focus {
+  box-shadow: none;
+}
+
+input[type='range']:focus-visible {
+  outline: 2px solid rgba(56, 189, 248, 0.6);
+  outline-offset: 2px;
+  border-radius: 0.75rem;
+}
+
+.slider-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1rem;
+}
+
+.slider-value {
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: #38bdf8;
+  font-variant-numeric: tabular-nums;
+}
+
+.slider-range-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.75rem;
+  color: #64748b;
+}
+
 h1 {
   font-size: 2.5rem;
   font-weight: 800;

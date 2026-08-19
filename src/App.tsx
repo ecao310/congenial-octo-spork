@@ -8,7 +8,11 @@ import {
   AreaChart,
   Area,
 } from 'recharts';
-import { marginalRateCurve } from './utils/tax';
+import {
+  marginalRateCurve,
+  MAX_ANNUAL_SS_BENEFIT,
+  AVG_ANNUAL_SS_BENEFIT,
+} from './utils/tax';
 
 const MAX_INCOME = 150_000;
 
@@ -26,7 +30,7 @@ const formatCompact = (value: number): string =>
   }).format(value);
 
 const App: React.FC = () => {
-  const [ssBenefit, setSsBenefit] = useState<number>(24000);
+  const [ssBenefit, setSsBenefit] = useState<number>(AVG_ANNUAL_SS_BENEFIT);
 
   const curve = useMemo(
     () => marginalRateCurve(ssBenefit, MAX_INCOME),
@@ -43,15 +47,23 @@ const App: React.FC = () => {
       </p>
 
       <div className="input-group">
-        <label htmlFor="ss-benefit">Annual Social Security Benefit ($)</label>
+        <div className="slider-header">
+          <label htmlFor="ss-benefit">Annual Social Security Benefit</label>
+          <span className="slider-value">{formatCurrency(ssBenefit)}</span>
+        </div>
         <input
           id="ss-benefit"
-          type="number"
+          type="range"
           min={0}
-          step={1000}
+          max={MAX_ANNUAL_SS_BENEFIT}
+          step={12}
           value={ssBenefit}
-          onChange={(e) => setSsBenefit(Math.max(0, Number(e.target.value)))}
+          onChange={(e) => setSsBenefit(Number(e.target.value))}
         />
+        <div className="slider-range-labels">
+          <span>$0</span>
+          <span>{formatCurrency(MAX_ANNUAL_SS_BENEFIT)} (2025 max)</span>
+        </div>
       </div>
 
       <div className="chart-container">

@@ -6,6 +6,14 @@ export interface MarginalRatePoint {
 /** 2025 federal parameters, single filer. */
 export const STANDARD_DEDUCTION = 15_750;
 
+/**
+ * SSA 2025 benefit figures (monthly x 12). Max is for a worker claiming at
+ * age 70 ($5,108/mo); average retired-worker benefit is $1,976/mo after the
+ * 2.5% COLA (January 2025).
+ */
+export const MAX_ANNUAL_SS_BENEFIT = 61_296;
+export const AVG_ANNUAL_SS_BENEFIT = 23_712;
+
 const BRACKETS = [
   { upTo: 11_925, rate: 0.1 },
   { upTo: 48_475, rate: 0.12 },

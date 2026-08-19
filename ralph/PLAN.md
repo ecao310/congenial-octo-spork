@@ -8,6 +8,9 @@ Backlog
 [ ] Overlay total tax paid on the graph.
 [ ] "Other Income" text below graph is cut off.
 [ ] Add number for total income near graph. SS + other income. Add avg SS text near the max SS text.
+[ ] Add animation to make obvious when y-axis max changes due to SS benefit change.
+[ ] Fix hero text now that MFJ is an option.
+[ ] Filing status selector should not take up all horizontal space if not necessary.
 
 Discovered Work
 [x] Fix pre-existing `as any` in vite.config.ts (eslint no-explicit-any error + tsc blindspot) by importing defineConfig from vitest/config

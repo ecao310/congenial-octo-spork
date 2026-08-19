@@ -231,6 +231,20 @@ h1 {
   font-weight: 600;
 }
 
+.explainer ul {
+  margin: 0 0 1rem;
+  padding-left: 1.25rem;
+  color: #94a3b8;
+}
+
+.explainer li {
+  margin-bottom: 0.75rem;
+}
+
+.explainer li:last-child {
+  margin-bottom: 0;
+}
+
 @media (max-width: 768px) {
   #root {
     padding: 1rem;

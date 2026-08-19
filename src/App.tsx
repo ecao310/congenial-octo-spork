@@ -177,6 +177,68 @@ const App: React.FC = () => {
           every year.
         </p>
       </section>
+
+      <section className="explainer" aria-labelledby="torpedo-strategies-heading">
+        <h2 id="torpedo-strategies-heading">How to mitigate the tax torpedo</h2>
+        <p>
+          The torpedo is driven entirely by provisional income, so every
+          strategy comes down to the same idea: in the years you collect
+          benefits, meet your spending with dollars that add little or nothing
+          to provisional income.
+        </p>
+        <ul>
+          <li>
+            <strong>Spend from Roth accounts.</strong> Qualified withdrawals
+            from a Roth IRA or Roth 401(k) are excluded from provisional income
+            entirely, so a dollar of Roth spending never drags benefits into
+            taxable income. Converting traditional balances to Roth in
+            low-income years — for example, after retiring but before claiming
+            benefits — pre-pays the tax outside the torpedo zone and shrinks
+            the future required minimum distributions that push many retirees
+            into it.
+          </li>
+          <li>
+            <strong>Spend from taxable accounts.</strong> Selling from a
+            taxable brokerage account adds only the gain to provisional income;
+            the return of your own cost basis is tax-free. Mind the fine print,
+            though: long-term capital gains and qualified dividends count
+            toward provisional income in full, even when they fall in the 0%
+            capital-gains bracket.
+          </li>
+          <li>
+            <strong>Delay benefits and draw pre-tax accounts first.</strong>{' '}
+            Spending from traditional IRAs and 401(k)s in the gap years before
+            claiming at 70 funds the delay, and the smaller remaining balance
+            means smaller required distributions landing on top of benefits
+            later. A larger, delayed benefit is still at most 85% taxable.
+          </li>
+          <li>
+            <strong>Give from an IRA.</strong> After age 70½, a qualified
+            charitable distribution sends money straight from a traditional IRA
+            to charity: it counts toward required minimum distributions but
+            never appears in adjusted gross income or provisional income (up to
+            $108,000 per person in 2025).
+          </li>
+          <li>
+            <strong>Don&apos;t hide in municipal bonds.</strong> Tax-exempt
+            interest is added back when computing provisional income, so
+            shifting savings into munis does not steer around the torpedo.
+          </li>
+          <li>
+            <strong>If you can&apos;t go under it, go past it.</strong> Once
+            the 85% cap is reached, extra income is taxed at plain bracket
+            rates again. Bunching income — say, one large Roth conversion —
+            into a single year can cost less than sitting in the middle of the
+            spike year after year.
+          </li>
+        </ul>
+        <p>
+          None of this is tax advice — the right mix depends on account
+          balances, state taxes, Medicare premium surcharges, and more. But the
+          chart above makes the goal concrete: keep provisional income out of
+          the spike, or jump clean over it.
+        </p>
+      </section>
     </div>
   );
 };

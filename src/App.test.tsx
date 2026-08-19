@@ -54,6 +54,21 @@ describe('App', () => {
     expect(screen.queryByText(/\$25,000/)).not.toBeInTheDocument();
   });
 
+  it('lists strategies to mitigate the tax torpedo', () => {
+    render(<App />);
+    expect(
+      screen.getByRole('heading', { name: /how to mitigate the tax torpedo/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Spend from Roth accounts.')).toBeInTheDocument();
+    expect(screen.getByText('Spend from taxable accounts.')).toBeInTheDocument();
+    expect(
+      screen.getByText(/qualified charitable distribution/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/added back when computing provisional income/i),
+    ).toBeInTheDocument();
+  });
+
   it('switches to Married Filing Jointly', () => {
     render(<App />);
     const mfj = screen.getByRole('radio', { name: 'Married Filing Jointly' });

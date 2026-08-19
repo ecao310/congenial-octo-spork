@@ -129,3 +129,24 @@
   target phrases outside the <strong> tags.
 - Verified: npx tsc -b, npm run lint, npm test (37 passed), npm run build all
   clean (pre-existing >500kB chunk warning only).
+
+## 2026-08-19 — Task: Create text section for strategies to mitigate tax torpedo.
+
+- Added a second <section class="explainer"> in App.tsx after the "What is
+  the tax torpedo?" section: h2 "How to mitigate the tax torpedo", an intro
+  framing everything as controlling provisional income, a <ul> of six
+  strategies (Roth spending + low-income-year conversions; taxable-account
+  basis spending with the LTCG/qualified-dividend caveat; delay SS to 70 while
+  drawing pre-tax accounts; QCDs after 70½ — limit $108,000/person in 2025,
+  verified via web search vs PG Calc/Fidelity; muni interest is added back
+  into provisional income, so munis don't help; bunch income past the 85% cap
+  in one year rather than straddling the spike), and a closing
+  not-tax-advice caveat mentioning state tax/IRMAA dependence.
+- index.css: .explainer ul/li styles (muted color, 1.25rem indent, 0.75rem
+  li spacing, no trailing margin).
+- App.test.tsx: new test asserting the strategies heading, the two "Spend
+  from ..." <strong> labels (exact direct-text matches), and the QCD/muni
+  phrases (regexes against text outside <strong>). Confirmed the new copy
+  doesn't collide with the existing queryByText(/\$25,000/) absence check.
+- Verified: npx tsc -b, npm run lint, npm test (38 passed), npm run build all
+  clean (pre-existing >500kB chunk warning only).

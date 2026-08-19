@@ -40,6 +40,20 @@ describe('App', () => {
     expect(screen.getByText(/a single filer/i)).toBeInTheDocument();
   });
 
+  it('explains the tax torpedo with thresholds for the selected filing status', () => {
+    render(<App />);
+    expect(
+      screen.getByRole('heading', { name: /what is the tax torpedo/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/provisional income passes \$25,000/)).toBeInTheDocument();
+    expect(screen.getByText(/past \$34,000/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Jointly' }));
+    expect(screen.getByText(/provisional income passes \$32,000/)).toBeInTheDocument();
+    expect(screen.getByText(/past \$44,000/)).toBeInTheDocument();
+    expect(screen.queryByText(/\$25,000/)).not.toBeInTheDocument();
+  });
+
   it('switches to Married Filing Jointly', () => {
     render(<App />);
     const mfj = screen.getByRole('radio', { name: 'Married Filing Jointly' });

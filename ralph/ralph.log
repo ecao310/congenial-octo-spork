@@ -107,3 +107,25 @@
   all clean.
 - Noticed: human added two new backlog bullets mid-iteration (overlay total
   tax paid; "Other Income" x-axis label cut off) — left for next iterations.
+
+## 2026-08-19 — Task: Create text section below graph explaining the tax torpedo.
+
+- Added a <section class="explainer"> after .chart-container in App.tsx
+  (h2 "What is the tax torpedo?" + three paragraphs): provisional-income
+  mechanics (50c/85c drag-in), the 1.85x effective-rate math (12% -> 22.2%,
+  22% -> 40.7%), and the 85%-of-benefits cap that ends the spike, plus a note
+  that the thresholds aren't inflation-indexed.
+- Thresholds in the copy are live: destructured ssBase50/ssBase85 from
+  FILING_PARAMS[filingStatus], rendered with formatCurrency, so the text
+  shows $25,000/$34,000 for Single and $32,000/$44,000 for MFJ and updates
+  with the segmented control. Copy says so explicitly.
+- Deliberately no mitigation content — "strategies to mitigate" is its own
+  next backlog task.
+- index.css: .explainer block (top border + 2.5rem gap, slate-muted <p>,
+  brighter <strong>, 1.5rem h2).
+- App.test.tsx: new test asserting the heading renders, Single thresholds
+  appear, and switching to MFJ swaps them ($25,000 gone, $32,000/$44,000
+  present). Note getByText matches direct text nodes only, so the assertions
+  target phrases outside the <strong> tags.
+- Verified: npx tsc -b, npm run lint, npm test (37 passed), npm run build all
+  clean (pre-existing >500kB chunk warning only).

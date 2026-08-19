@@ -204,6 +204,33 @@ h1 {
   margin-top: 2rem;
 }
 
+.explainer {
+  margin-top: 2.5rem;
+  padding-top: 2rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.explainer h2 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin: 0 0 0.75rem;
+  color: #f8fafc;
+}
+
+.explainer p {
+  color: #94a3b8;
+  margin: 0 0 1rem;
+}
+
+.explainer p:last-child {
+  margin-bottom: 0;
+}
+
+.explainer strong {
+  color: #e2e8f0;
+  font-weight: 600;
+}
+
 @media (max-width: 768px) {
   #root {
     padding: 1rem;

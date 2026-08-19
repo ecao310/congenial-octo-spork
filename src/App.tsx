@@ -12,6 +12,7 @@ import {
   marginalRateCurve,
   MAX_ANNUAL_SS_BENEFIT,
   AVG_ANNUAL_SS_BENEFIT,
+  FILING_PARAMS,
   FilingStatus,
 } from './utils/tax';
 
@@ -43,6 +44,8 @@ const App: React.FC = () => {
     () => marginalRateCurve(ssBenefit, MAX_INCOME, 250, filingStatus),
     [ssBenefit, filingStatus],
   );
+
+  const { ssBase50, ssBase85 } = FILING_PARAMS[filingStatus];
 
   return (
     <div className="card">
@@ -143,6 +146,37 @@ const App: React.FC = () => {
           </AreaChart>
         </ResponsiveContainer>
       </div>
+
+      <section className="explainer" aria-labelledby="tax-torpedo-heading">
+        <h2 id="tax-torpedo-heading">What is the tax torpedo?</h2>
+        <p>
+          Social Security benefits are not taxed dollar-for-dollar. The taxable
+          share depends on <strong>provisional income</strong> — other income
+          plus half of your benefits. Once provisional income passes{' '}
+          {formatCurrency(ssBase50)}, each extra dollar of other income also
+          drags up to 50&cent; of benefits into taxable income; past{' '}
+          {formatCurrency(ssBase85)}, it drags in up to 85&cent;. (The
+          thresholds shown are for the filing status selected above.)
+        </p>
+        <p>
+          So one more dollar earned can raise taxable income by as much as
+          $1.85, and the marginal rate jumps to up to 1.85&times; the statutory
+          bracket: income in the 12% bracket is effectively taxed at{' '}
+          <strong>22.2%</strong>, and income in the 22% bracket at{' '}
+          <strong>40.7%</strong>. That spike above the ordinary bracket rates is
+          the <strong>tax torpedo</strong>.
+        </p>
+        <p>
+          The torpedo ends as abruptly as it begins. At most 85% of benefits
+          can ever be taxable, and once that cap is reached, additional income
+          stops pulling in benefits — the marginal rate falls straight back to
+          the ordinary bracket, creating the cliff on the right side of the
+          spike. Larger benefits stretch the torpedo across a wider income
+          range (try the slider above), and because the thresholds are fixed in
+          law rather than indexed for inflation, more retirees sail into it
+          every year.
+        </p>
+      </section>
     </div>
   );
 };

@@ -1,7 +1,6 @@
 # Growth Projector
 
-A minimal single-input webapp: enter an initial amount and see its projected
-compound growth at 7% per year over 30 years, charted with Recharts.
+See peaks and valleys of marginal tax rates, and how they interact with LTCG and the 50-85% rule.
 
 Built with Vite + React + TypeScript, tested with Vitest, and deployed to
 GitHub Pages via GitHub Actions.

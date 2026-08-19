@@ -8,7 +8,7 @@ Backlog
 [x] Overlay total tax paid on the graph.
 [x] "Other Income" text below graph is cut off.
 [x] Add number for total income near graph. SS + other income. Add avg SS text near the max SS text.
-[ ] Remove graph for total tax paid. Instead, show total paid on mouse-over tool tip.
+[x] Remove graph for total tax paid. Instead, show total paid on mouse-over tool tip.
 [ ] Add footer that this is not tax advice and to consult a professional.
 [ ] Add animation to make obvious when y-axis max changes due to SS benefit change.
 [ ] Fix hero text now that MFJ is an option.

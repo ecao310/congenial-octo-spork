@@ -49,11 +49,11 @@ describe('App', () => {
     expect(screen.getByText(/a single filer/i)).toBeInTheDocument();
   });
 
-  it('renders the total federal tax panel below the rate chart', () => {
+  it('does not render a separate total federal tax panel', () => {
     render(<App />);
     expect(
-      screen.getByRole('heading', { name: /total federal tax paid/i }),
-    ).toBeInTheDocument();
+      screen.queryByRole('heading', { name: /total federal tax paid/i }),
+    ).not.toBeInTheDocument();
   });
 
   it('explains the tax torpedo with thresholds for the selected filing status', () => {

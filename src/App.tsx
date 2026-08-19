@@ -43,6 +43,40 @@ const TOOLTIP_STYLE: React.CSSProperties = {
   color: '#f8fafc',
 };
 
+interface TooltipPayloadPoint {
+  income: number;
+  marginalRate: number;
+  totalTax: number;
+}
+
+interface CustomTooltipProps {
+  active?: boolean;
+  payload?: Array<{ payload: TooltipPayloadPoint }>;
+  ssBenefit: number;
+}
+
+const CustomTooltip: React.FC<CustomTooltipProps> = ({
+  active,
+  payload,
+  ssBenefit,
+}) => {
+  if (!active || !payload || !payload.length) return null;
+  const point = payload[0].payload;
+  return (
+    <div style={TOOLTIP_STYLE}>
+      <div style={{ fontWeight: 600, marginBottom: '0.25rem' }}>
+        Other income {formatCurrency(point.income)} · Total income {formatCurrency(point.income + ssBenefit)}
+      </div>
+      <div>
+        Marginal Rate: <strong style={{ color: '#38bdf8' }}>{point.marginalRate}%</strong>
+      </div>
+      <div>
+        Total Federal Tax: <strong style={{ color: '#ea580c' }}>{formatCurrency(point.totalTax)}</strong>
+      </div>
+    </div>
+  );
+};
+
 const App: React.FC = () => {
   const [ssBenefit, setSsBenefit] = useState<number>(AVG_ANNUAL_SS_BENEFIT);
   const [filingStatus, setFilingStatus] = useState<FilingStatus>('single');
@@ -109,7 +143,6 @@ const App: React.FC = () => {
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart
             data={curve}
-            syncId="income"
             margin={{ top: 10, right: 10, left: 10, bottom: 0 }}
           >
             <defs>
@@ -123,9 +156,7 @@ const App: React.FC = () => {
               dataKey="income"
               type="number"
               domain={[0, MAX_INCOME]}
-              tick={false}
-              tickLine={false}
-              height={10}
+              tickFormatter={formatCompact}
               stroke="#94a3b8"
             />
             <YAxis
@@ -135,11 +166,7 @@ const App: React.FC = () => {
               domain={[0, 'auto']}
             />
             <Tooltip
-              formatter={(value) => [`${Number(value)}%`, 'Marginal Rate']}
-              labelFormatter={(income) =>
-                `Other income ${formatCurrency(Number(income))} · Total income ${formatCurrency(Number(income) + ssBenefit)}`
-              }
-              contentStyle={TOOLTIP_STYLE}
+              content={<CustomTooltip ssBenefit={ssBenefit} />}
             />
             <Area
               type="stepAfter"
@@ -147,54 +174,6 @@ const App: React.FC = () => {
               stroke="#38bdf8"
               strokeWidth={2}
               fill="url(#rateGradient)"
-            />
-          </AreaChart>
-        </ResponsiveContainer>
-      </div>
-
-      <h2 className="chart-panel-title" id="total-tax-panel-title">
-        Total Federal Tax Paid
-      </h2>
-      <div className="chart-container chart-container--tax">
-        <ResponsiveContainer width="100%" height="100%">
-          <AreaChart
-            data={curve}
-            syncId="income"
-            margin={{ top: 10, right: 10, left: 10, bottom: 0 }}
-          >
-            <defs>
-              <linearGradient id="taxGradient" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#ea580c" stopOpacity={0.5} />
-                <stop offset="95%" stopColor="#ea580c" stopOpacity={0} />
-              </linearGradient>
-            </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255, 255, 255, 0.1)" />
-            <XAxis
-              dataKey="income"
-              type="number"
-              domain={[0, MAX_INCOME]}
-              tickFormatter={formatCompact}
-              stroke="#94a3b8"
-            />
-            <YAxis
-              stroke="#94a3b8"
-              tickFormatter={(value) => `$${formatCompact(Number(value))}`}
-              width={70}
-              domain={[0, 'auto']}
-            />
-            <Tooltip
-              formatter={(value) => [formatCurrency(Number(value)), 'Total Federal Tax']}
-              labelFormatter={(income) =>
-                `Other income ${formatCurrency(Number(income))} · Total income ${formatCurrency(Number(income) + ssBenefit)}`
-              }
-              contentStyle={TOOLTIP_STYLE}
-            />
-            <Area
-              type="linear"
-              dataKey="totalTax"
-              stroke="#ea580c"
-              strokeWidth={2}
-              fill="url(#taxGradient)"
             />
           </AreaChart>
         </ResponsiveContainer>

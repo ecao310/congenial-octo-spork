@@ -303,3 +303,15 @@
 - Updated `src/App.test.tsx` to assert that the average and maximum benefit labels render under the slider and that the total income text updates when the slider is moved.
 - Verified: `npx tsc -b`, `npm run lint`, `npm test` (41 passed), and `npm run build` all pass cleanly.
 
+## 2026-08-19 — Task: Remove graph for total tax paid. Instead, show total paid on mouse-over tool tip.
+
+- Removed the second "Total Federal Tax Paid" AreaChart panel and heading from `App.tsx`.
+- Restored standard x-axis ticks and formatting (`tickFormatter={formatCompact}`) on the primary Marginal Tax Rate chart.
+- Added a `CustomTooltip` component to the primary AreaChart that displays:
+  - Header: Other income and total income (`Other income $X · Total income $Y`)
+  - Series 1: Marginal Rate (e.g. `22.2%` with sky-blue accent)
+  - Series 2: Total Federal Tax (e.g. `$10,183` with orange accent)
+- Removed unused `.chart-panel-title` and `.chart-container--tax` CSS rules from `src/index.css`.
+- Updated `src/App.test.tsx` to verify that the separate total tax panel heading is no longer rendered.
+- Verified: `npx tsc -b`, `npm run lint`, `npm test` (41 passed), and `npm run build` all pass cleanly.
+

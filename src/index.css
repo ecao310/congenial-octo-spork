@@ -204,6 +204,18 @@ h1 {
   margin-top: 2rem;
 }
 
+.chart-panel-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #94a3b8;
+  margin: 1.5rem 0 0;
+}
+
+.chart-container--tax {
+  height: 220px;
+  margin-top: 0.25rem;
+}
+
 .explainer {
   margin-top: 2.5rem;
   padding-top: 2rem;

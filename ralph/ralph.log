@@ -162,3 +162,43 @@
   38 passed, npm run build — all clean), then flipped the checkbox and noted
   the fix under Discovered Work.
 - No source changes this iteration; PLAN.md/ralph.log only.
+
+## 2026-08-19 — Task: Overlay total tax paid on the graph.
+
+- Implemented as a synced companion panel rather than a literal dual-axis
+  overlay: the dataviz skill's hard rule is "never two y-scales on one plot"
+  ($ vs % axis alignment is arbitrary and invents correlation). Sanctioned
+  form is two aligned charts — so the marginal-rate chart now hands its x
+  ticks + "Other Income ($)" label to a second AreaChart directly below
+  ("Total Federal Tax Paid", 220px), both recharts syncId="income" so the
+  crosshair/tooltips track together. Top chart keeps its x-axis (tick={false},
+  height 10) so the plots stay width-aligned via the shared YAxis width=70.
+- tax.ts: MarginalRatePoint gained totalTax (whole dollars); marginalRateCurve
+  computes it from the totalTax(income) call it was already making.
+- Series color #ea580c (orange-600), picked by running the skill's
+  validate_palette.js against surface #0f172a: passes CVD ΔE 26.7 / normal
+  34.9 / contrast ≥3:1 with the existing sky #38bdf8. (Validator also flags
+  sky itself as above the dark lightness band — pre-existing brand accent,
+  left alone; the two series never share a plot.)
+- Tooltip style deduped into TOOLTIP_STYLE const; tax tooltip shows
+  formatCurrency. Y-axis $ compact ticks. type="linear" (tax is piecewise
+  linear, not stepped).
+- index.css: .chart-panel-title (slate text token, per skill: text never
+  wears series color) + .chart-container--tax.
+- Tests: tax.test.ts — curve totalTax matches totalTax() at sampled points,
+  and is non-decreasing; App.test.tsx — panel heading renders. 41 pass.
+- Verified visually: served dist via vite preview, headless Chrome screenshot.
+  Gotcha for future iterations: instant screenshot catches recharts'
+  left-to-right mount animation mid-reveal (series look truncated), and
+  --virtual-time-budget leaves the animation clip-path rect at width=0
+  (series invisible). Verified instead via --dump-dom: both stroke paths span
+  the full plot width (x 80→657 @ 800px window, 601 samples), panels align
+  exactly; screenshot line shape matches hand-computed totals ($10,183 at
+  $65K other income; $30K axis max ≈ tax at $150K).
+- Note: "Other Income ($)" label (still clipped — its own backlog task) now
+  lives on the BOTTOM panel's x-axis; fix it there.
+- Human added a new backlog bullet mid-iteration (capital-gains stacking
+  graph, LTCG on x-axis) — committed with this iteration, left for a future
+  one.
+- Verified: npx tsc -b, npm run lint, npm test (41 passed), npm run build all
+  clean (pre-existing >500kB chunk warning only).

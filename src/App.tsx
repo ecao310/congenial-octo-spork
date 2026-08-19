@@ -36,6 +36,13 @@ const formatCompact = (value: number): string =>
     maximumFractionDigits: 1,
   }).format(value);
 
+const TOOLTIP_STYLE: React.CSSProperties = {
+  background: 'rgba(15, 23, 42, 0.95)',
+  border: '1px solid rgba(56, 189, 248, 0.3)',
+  borderRadius: '8px',
+  color: '#f8fafc',
+};
+
 const App: React.FC = () => {
   const [ssBenefit, setSsBenefit] = useState<number>(AVG_ANNUAL_SS_BENEFIT);
   const [filingStatus, setFilingStatus] = useState<FilingStatus>('single');
@@ -99,11 +106,63 @@ const App: React.FC = () => {
 
       <div className="chart-container">
         <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={curve} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
+          <AreaChart
+            data={curve}
+            syncId="income"
+            margin={{ top: 10, right: 10, left: 10, bottom: 0 }}
+          >
             <defs>
               <linearGradient id="rateGradient" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="5%" stopColor="#38bdf8" stopOpacity={0.5} />
                 <stop offset="95%" stopColor="#38bdf8" stopOpacity={0} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255, 255, 255, 0.1)" />
+            <XAxis
+              dataKey="income"
+              type="number"
+              domain={[0, MAX_INCOME]}
+              tick={false}
+              tickLine={false}
+              height={10}
+              stroke="#94a3b8"
+            />
+            <YAxis
+              stroke="#94a3b8"
+              tickFormatter={(value) => `${value}%`}
+              width={70}
+              domain={[0, 'auto']}
+            />
+            <Tooltip
+              formatter={(value) => [`${Number(value)}%`, 'Marginal Rate']}
+              labelFormatter={(income) => `Other income ${formatCurrency(Number(income))}`}
+              contentStyle={TOOLTIP_STYLE}
+            />
+            <Area
+              type="stepAfter"
+              dataKey="marginalRate"
+              stroke="#38bdf8"
+              strokeWidth={2}
+              fill="url(#rateGradient)"
+            />
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+
+      <h2 className="chart-panel-title" id="total-tax-panel-title">
+        Total Federal Tax Paid
+      </h2>
+      <div className="chart-container chart-container--tax">
+        <ResponsiveContainer width="100%" height="100%">
+          <AreaChart
+            data={curve}
+            syncId="income"
+            margin={{ top: 10, right: 10, left: 10, bottom: 0 }}
+          >
+            <defs>
+              <linearGradient id="taxGradient" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor="#ea580c" stopOpacity={0.5} />
+                <stop offset="95%" stopColor="#ea580c" stopOpacity={0} />
               </linearGradient>
             </defs>
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(255, 255, 255, 0.1)" />
@@ -122,26 +181,21 @@ const App: React.FC = () => {
             />
             <YAxis
               stroke="#94a3b8"
-              tickFormatter={(value) => `${value}%`}
+              tickFormatter={(value) => `$${formatCompact(Number(value))}`}
               width={70}
               domain={[0, 'auto']}
             />
             <Tooltip
-              formatter={(value) => [`${Number(value)}%`, 'Marginal Rate']}
+              formatter={(value) => [formatCurrency(Number(value)), 'Total Federal Tax']}
               labelFormatter={(income) => `Other income ${formatCurrency(Number(income))}`}
-              contentStyle={{
-                background: 'rgba(15, 23, 42, 0.95)',
-                border: '1px solid rgba(56, 189, 248, 0.3)',
-                borderRadius: '8px',
-                color: '#f8fafc',
-              }}
+              contentStyle={TOOLTIP_STYLE}
             />
             <Area
-              type="stepAfter"
-              dataKey="marginalRate"
-              stroke="#38bdf8"
+              type="linear"
+              dataKey="totalTax"
+              stroke="#ea580c"
               strokeWidth={2}
-              fill="url(#rateGradient)"
+              fill="url(#taxGradient)"
             />
           </AreaChart>
         </ResponsiveContainer>

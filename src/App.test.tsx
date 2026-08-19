@@ -40,6 +40,13 @@ describe('App', () => {
     expect(screen.getByText(/a single filer/i)).toBeInTheDocument();
   });
 
+  it('renders the total federal tax panel below the rate chart', () => {
+    render(<App />);
+    expect(
+      screen.getByRole('heading', { name: /total federal tax paid/i }),
+    ).toBeInTheDocument();
+  });
+
   it('explains the tax torpedo with thresholds for the selected filing status', () => {
     render(<App />);
     expect(

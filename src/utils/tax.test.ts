@@ -250,6 +250,21 @@ describe('marginalRateCurve', () => {
     expect(at(80000)).toBe(12);
   });
 
+  it('includes the total tax at each sampled income', () => {
+    const data = marginalRateCurve(30000, 100000, 250);
+    const at = (income: number) => data.find((d) => d.income === income)!;
+    expect(at(0).totalTax).toBe(0);
+    expect(at(40000).totalTax).toBe(Math.round(totalTax(40000, 30000)));
+    expect(at(80000).totalTax).toBe(Math.round(totalTax(80000, 30000)));
+  });
+
+  it('reports total tax as non-decreasing in income', () => {
+    const data = marginalRateCurve(30000, 100000, 250);
+    for (let i = 1; i < data.length; i++) {
+      expect(data[i].totalTax).toBeGreaterThanOrEqual(data[i - 1].totalTax);
+    }
+  });
+
   it('shows the MFJ torpedo phasing in later, then reverting after the cap', () => {
     const data = marginalRateCurve(30000, 100000, 250, 'mfj');
     const at = (income: number) =>

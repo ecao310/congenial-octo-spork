@@ -1,6 +1,8 @@
 export interface MarginalRatePoint {
   income: number;
   marginalRate: number;
+  /** Total federal tax (whole dollars) at this income level. */
+  totalTax: number;
 }
 
 export type FilingStatus = 'single' | 'mfj';
@@ -107,8 +109,9 @@ export function totalTax(
 }
 
 /**
- * Marginal tax rate (in percent) on the next dollar of other income, sampled
- * from $0 to maxIncome, for a fixed annual Social Security benefit.
+ * Marginal tax rate (in percent) on the next dollar of other income, plus the
+ * total federal tax at each level, sampled from $0 to maxIncome, for a fixed
+ * annual Social Security benefit.
  */
 export function marginalRateCurve(
   ssBenefit: number,
@@ -118,10 +121,13 @@ export function marginalRateCurve(
 ): MarginalRatePoint[] {
   const data: MarginalRatePoint[] = [];
   for (let income = 0; income <= maxIncome; income += step) {
-    const rate =
-      totalTax(income + 1, ssBenefit, filingStatus) -
-      totalTax(income, ssBenefit, filingStatus);
-    data.push({ income, marginalRate: Math.round(rate * 10_000) / 100 });
+    const taxHere = totalTax(income, ssBenefit, filingStatus);
+    const rate = totalTax(income + 1, ssBenefit, filingStatus) - taxHere;
+    data.push({
+      income,
+      marginalRate: Math.round(rate * 10_000) / 100,
+      totalTax: Math.round(taxHere),
+    });
   }
   return data;
 }

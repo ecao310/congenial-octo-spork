@@ -222,64 +222,72 @@ const App: React.FC = () => {
         Other Income ($) &middot; Total income = Other income + {formatCurrency(ssBenefit)} SS
       </p>
 
-      <section className="explainer" aria-labelledby="tax-torpedo-heading">
-        <h2 id="tax-torpedo-heading">What is the tax torpedo?</h2>
-        <p>
-          Social Security benefits are not taxed dollar-for-dollar. The taxable
-          share depends on <strong>provisional income</strong> — other income
-          plus half of your benefits. Once provisional income passes{' '}
-          {formatCurrency(ssBase50)}, each extra dollar of other income also
-          drags up to 50&cent; of benefits into taxable income; past{' '}
-          {formatCurrency(ssBase85)}, it drags in up to 85&cent;. (The
-          thresholds shown are for the filing status selected above.)
-        </p>
-        <p>
-          So one more dollar earned can raise taxable income by as much as
-          $1.85, and the marginal rate jumps to up to 1.85&times; the statutory
-          bracket: income in the 12% bracket is effectively taxed at{' '}
-          <strong>22.2%</strong>, and income in the 22% bracket at{' '}
-          <strong>40.7%</strong>. That spike above the ordinary bracket rates is
-          the <strong>tax torpedo</strong>.
-        </p>
-        <p>
-          The torpedo ends as abruptly as it begins. At most 85% of benefits
-          can ever be taxable, and once that cap is reached, additional income
-          stops pulling in benefits — the marginal rate falls straight back to
-          the ordinary bracket, creating the cliff on the right side of the
-          spike. Larger benefits stretch the torpedo across a wider income
-          range (try the slider above), and because the thresholds are fixed in
-          law rather than indexed for inflation, more retirees sail into it
-          every year.
-        </p>
-      </section>
+      <details className="explainer">
+        <summary>
+          <h2 id="tax-torpedo-heading">What is the tax torpedo?</h2>
+        </summary>
+        <div className="explainer-content">
+          <p>
+            Social Security benefits are not taxed dollar-for-dollar. The taxable
+            share depends on <strong>provisional income</strong> — other income
+            plus half of your benefits. Once provisional income passes{' '}
+            {formatCurrency(ssBase50)}, each extra dollar of other income also
+            drags up to 50&cent; of benefits into taxable income; past{' '}
+            {formatCurrency(ssBase85)}, it drags in up to 85&cent;. (The
+            thresholds shown are for the filing status selected above.)
+          </p>
+          <p>
+            So one more dollar earned can raise taxable income by as much as
+            $1.85, and the marginal rate jumps to up to 1.85&times; the statutory
+            bracket: income in the 12% bracket is effectively taxed at{' '}
+            <strong>22.2%</strong>, and income in the 22% bracket at{' '}
+            <strong>40.7%</strong>. That spike above the ordinary bracket rates is
+            the <strong>tax torpedo</strong>.
+          </p>
+          <p>
+            The torpedo ends as abruptly as it begins. At most 85% of benefits
+            can ever be taxable, and once that cap is reached, additional income
+            stops pulling in benefits — the marginal rate falls straight back to
+            the ordinary bracket, creating the cliff on the right side of the
+            spike. Larger benefits stretch the torpedo across a wider income
+            range (try the slider above), and because the thresholds are fixed in
+            law rather than indexed for inflation, more retirees sail into it
+            every year.
+          </p>
+        </div>
+      </details>
 
-      <section className="explainer" aria-labelledby="torpedo-strategies-heading">
-        <h2 id="torpedo-strategies-heading">How to mitigate the tax torpedo</h2>
-        <ul>
-          <li>
-            <strong>Spend from Roth accounts.</strong> Qualified withdrawals
-            from a Roth IRA or Roth 401(k) are excluded from provisional income
-            entirely.
-          </li>
-          <li>
-            <strong>Spend from taxable accounts.</strong> Selling from a
-            taxable brokerage account adds only the gain to provisional income;
-            the return of your own cost basis is tax-free.
-          </li>
-          <li>
-            <strong>If you can&apos;t go under it, go past it.</strong> Once
-            the 85% cap is reached, extra income is taxed at plain bracket
-            rates again. Bunching income — say, one large Roth conversion —
-            into a single year can cost less than sitting in the middle of the
-            spike year after year.
-          </li>
-        </ul>
-        <p>
-          The right mix depends on account balances, state taxes, Medicare
-          premium surcharges, and more. The chart above makes the goal concrete:
-          keep provisional income out of the spike, or jump clean over it.
-        </p>
-      </section>
+      <details className="explainer">
+        <summary>
+          <h2 id="torpedo-strategies-heading">How to mitigate the tax torpedo</h2>
+        </summary>
+        <div className="explainer-content">
+          <ul>
+            <li>
+              <strong>Spend from Roth accounts.</strong> Qualified withdrawals
+              from a Roth IRA or Roth 401(k) are excluded from provisional income
+              entirely.
+            </li>
+            <li>
+              <strong>Spend from taxable accounts.</strong> Selling from a
+              taxable brokerage account adds only the gain to provisional income;
+              the return of your own cost basis is tax-free.
+            </li>
+            <li>
+              <strong>If you can&apos;t go under it, go past it.</strong> Once
+              the 85% cap is reached, extra income is taxed at plain bracket
+              rates again. Bunching income — say, one large Roth conversion —
+              into a single year can cost less than sitting in the middle of the
+              spike year after year.
+            </li>
+          </ul>
+          <p>
+            The right mix depends on account balances, state taxes, Medicare
+            premium surcharges, and more. The chart above makes the goal concrete:
+            keep provisional income out of the spike, or jump clean over it.
+          </p>
+        </div>
+      </details>
 
       {/* ───── Capital Gains Stacking ───── */}
       <section className="explainer" aria-labelledby="ltcg-stacking-heading">

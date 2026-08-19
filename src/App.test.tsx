@@ -56,11 +56,14 @@ describe('App', () => {
     ).not.toBeInTheDocument();
   });
 
-  it('explains the tax torpedo with thresholds for the selected filing status', () => {
+  it('explains the tax torpedo with thresholds for the selected filing status and defaults to collapsed', () => {
     render(<App />);
-    expect(
-      screen.getByRole('heading', { name: /what is the tax torpedo/i }),
-    ).toBeInTheDocument();
+    const heading = screen.getByRole('heading', { name: /what is the tax torpedo/i });
+    expect(heading).toBeInTheDocument();
+    const details = heading.closest('details');
+    expect(details).toBeInTheDocument();
+    expect(details).not.toHaveAttribute('open');
+
     expect(screen.getByText(/provisional income passes \$25,000/)).toBeInTheDocument();
     expect(screen.getByText(/past \$34,000/)).toBeInTheDocument();
 
@@ -70,11 +73,14 @@ describe('App', () => {
     expect(screen.queryByText(/\$25,000/)).not.toBeInTheDocument();
   });
 
-  it('lists strategies to mitigate the tax torpedo', () => {
+  it('lists strategies to mitigate the tax torpedo and defaults to collapsed', () => {
     render(<App />);
-    expect(
-      screen.getByRole('heading', { name: /how to mitigate the tax torpedo/i }),
-    ).toBeInTheDocument();
+    const heading = screen.getByRole('heading', { name: /how to mitigate the tax torpedo/i });
+    expect(heading).toBeInTheDocument();
+    const details = heading.closest('details');
+    expect(details).toBeInTheDocument();
+    expect(details).not.toHaveAttribute('open');
+
     expect(screen.getByText('Spend from Roth accounts.')).toBeInTheDocument();
     expect(screen.getByText('Spend from taxable accounts.')).toBeInTheDocument();
     expect(

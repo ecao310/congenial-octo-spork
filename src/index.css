@@ -407,6 +407,64 @@ details.explainer summary:focus-visible {
   accent-color: #8b5cf6 !important;
 }
 
+/* Rose accent for the IRMAA cliffs section */
+.section-heading-rose {
+  background: linear-gradient(to right, #f43f5e, #fb7185);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.tier-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0 0 1.25rem;
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.tier-table caption {
+  caption-side: bottom;
+  padding-top: 0.5rem;
+  font-size: 0.75rem;
+  color: #64748b;
+  text-align: left;
+  line-height: 1.5;
+}
+
+.tier-table th,
+.tier-table td {
+  padding: 0.4rem 0.5rem;
+  text-align: right;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  white-space: nowrap;
+}
+
+.tier-table thead th {
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.tier-table tbody th {
+  font-weight: 500;
+  text-align: left;
+  color: rgba(255, 255, 255, 0.87);
+}
+
+.tier-table tbody tr:last-child th,
+.tier-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.tier-table .tier-row-current th,
+.tier-table .tier-row-current td {
+  background: rgba(244, 63, 94, 0.12);
+  color: #fda4af;
+}
+
 .ceiling-select {
   width: 100%;
   padding: 0.6rem 0.75rem;
@@ -464,6 +522,10 @@ details.explainer summary:focus-visible {
 
 .stat-value.violet {
   color: #a78bfa;
+}
+
+.stat-value.rose {
+  color: #fb7185;
 }
 
 .stat-note {

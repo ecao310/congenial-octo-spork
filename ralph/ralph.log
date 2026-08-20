@@ -1036,3 +1036,109 @@ now doubled — IRMAA reads MAGI from two years earlier AND that MAGI includes t
 tax-exempt interest slider added here, which the SS thresholds and the senior
 deduction treat differently. `conversionMeasureValue`'s 'magi' case is already
 the IRMAA definition (agi + muni); do not reuse it for the senior deduction.
+
+================================================================================
+## IRMAA cliffs on the ordinary-income chart
+
+### Sources checked before hardcoding anything
+
+CMS's own fact sheet 403s WebFetch, so the 2025 schedule was cross-checked
+against irmaahub.com and valuepenguin.com. They agree on everything except one
+obvious typo (valuepenguin prints the tier-3 Part B *surcharge* as $259.90; it
+is $295.90, since $480.90 - $185.00). Final table, keyed to 2023 MAGI:
+
+  tier  single >   joint >    Part B/mo  Part B surch.  Part D surch.
+  0     -          -          185.00     0              0
+  1     106,000    212,000    259.00     74.00          13.70
+  2     133,000    266,000    370.00     185.00         35.30
+  3     167,000    334,000    480.90     295.90         57.00
+  4     200,000    400,000    591.90     406.90         78.60
+  5     500,000    750,000    628.90     443.90         85.80
+
+The joint top tier is $750,000, NOT double $500,000 — irmaahub prints
+$1,000,000 and is wrong. The $500k/$750k tier came from the Bipartisan Budget
+Act of 2018 and is fixed in statute rather than indexed, so it never doubled.
+The PLAN bullet's "double for MFJ except the top tier" was right; a source was
+not. There is a test asserting exactly this.
+
+### Numbers worth keeping (single, average benefit $23,712, no muni)
+
+- Annualized Part B + Part D surcharge per enrollee: 1,052.40 / 2,643.60 /
+  4,234.80 / 5,826.00 / 6,356.40. The *steps* are 1,052.40, then 1,591.20
+  three times, then 530.40 — the three middle cliffs cost exactly the same to
+  cross, which is a nicer fact than any of the levels.
+- Cliff placement on the other-income axis: past the 85% cap the benefit is a
+  fixed $20,155.20 of AGI, so every cliff sits exactly that much below its MAGI
+  figure — 85,844.80 / 112,844.80 / 146,844.80 / 179,844.80 / 479,844.80. Only
+  the first three fit inside MAX_INCOME = 150,000.
+- Inside the torpedo the shift is worse than a constant: at the MAX benefit
+  ($61,296) the 85% cap has not bound by $106,000 of MAGI, MAGI climbs at $1.85
+  per dollar earned, and cliff 1 lands at $56,404.97 of other income instead of
+  $85,844.80. Asserted with toBeCloseTo.
+- MFJ: cliff 1 needs $212,000 of MAGI = $191,844.80 of other income, past the
+  right edge of the chart. So a joint return draws NO reference lines at all and
+  the section takes its "No cliff falls inside the chart above" branch. Do not
+  treat that as a bug; there is a test for it.
+- Muni interest shifts the *cliffs* left exactly 1:1 (it is in Medicare's MAGI
+  and in provisional income, and past the cap the second channel is closed).
+  But it moves the *scenario MAGI* by more than 1:1 when the cap has not bound:
+  at the app default, $10,000 of muni takes MAGI 41,178 -> 59,678, not 51,178,
+  because it also drags $8,500 more of benefits into AGI. My first draft of that
+  App test asserted 51,178. Corrected.
+
+### Implementation
+
+tax.ts gained a self-contained IRMAA section placed *before* the Roth section,
+because the pre-existing IRMAA_TIER1_MAGI is now spread from IRMAA_TIERS[1] and
+conversionCeilings() reads it at module-eval time. New API: IRMAA_TIERS,
+PART_B_STANDARD_PREMIUM, IRMAA_PREMIUM_YEAR/MAGI_YEAR/LOOKBACK_YEARS,
+partBSurchargeMonthly, irmaaMagi, irmaaTierFor, irmaaFor, otherIncomeAtIrmaaMagi,
+irmaaCliffs.
+
+- Thresholds are exclusive (`magi > tier.magiOver`), because the statute charges
+  the tier "in excess of" the amount. Tier 0 uses -Infinity as its floor.
+- otherIncomeAtIrmaaMagi inverts MAGI by bisection over [0, targetMagi].
+  targetMagi is always a valid upper bracket since MAGI >= other income. MAGI is
+  continuous and strictly increasing (slope 1 / 1.5 / 1.85), so this is exact,
+  not approximate. 60 iterations.
+- All premium arithmetic goes through a toCents() rounder; 74 + 13.7 times 12
+  is 1052.3999999999999 in raw float and the tests assert 1052.4 exactly.
+- beneficiaries is a separate axis from `seniors`: Medicare is charged per
+  enrollee, so MFJ + both-65 pays every surcharge twice off one MAGI. App
+  derives it as `filingStatus === 'mfj' && seniors === 2 ? 2 : 1` — deliberately
+  floored at 1 rather than 0, since the two-year lag means a 63-year-old's
+  income today still sets their first premium.
+
+App.tsx: ReferenceLines (rose, dashed, labelled "IRMAA n") for the cliffs inside
+[0, MAX_INCOME]; chart top margin 10 -> 22 to make room for the labels and right
+margin 10 -> 28 because cliff 3 sits at 97.9% of the axis and its label would
+otherwise clip. CustomTooltip gained optional filingStatus/muniInterest/
+beneficiaries props (optional so the four existing tooltip tests still pass
+unchanged) and now always shows the annualized surcharge plus the MAGI room to
+the next cliff. New rose section under the muni one: 5-tile stat grid, the full
+premium table with the in-force row highlighted, and an explicit x-axis caveat —
+2025 premiums are set by 2023 MAGI, so today's income is really setting the 2027
+premium under a schedule CMS has not published, and Form SSA-44 appeals a
+life-changing event rather than waiting the lag out.
+
+### The one testing thing worth remembering
+
+ResponsiveContainer measures its parent and jsdom reports every element as
+zero-sized, so recharts renders NOTHING in the main App suite — no reference
+lines to assert on. src/App.chart.test.tsx works around this by vi.mock'ing the
+recharts module and re-exporting ResponsiveContainer wrapped at a fixed
+800x400. That is the only way to test anything that lives inside the SVG. It
+asserts the labels, the left-to-right ordering, the equal leftward shift when
+muni is added, and that MFJ drops the lines entirely.
+
+### Verification
+
+npx tsc -b, npm run lint, npx vitest run (146 passed, was 133), npm run build —
+all clean; only the pre-existing >500kB chunk warning.
+
+Next up: MFS-lived-with-spouse filing status ($0/$0 provisional thresholds).
+Note IRMAA has its own MFS thresholds ($106,000 / $394,000 — NOT the single or
+joint ones), so IRMAA_TIERS[].magiOver will need a third key and the
+Record<FilingStatus, number> shape will do that automatically. Also note the
+positional-argument backlog item is getting worse: irmaaCliffs already takes
+four positional args and irmaaMagi takes five.

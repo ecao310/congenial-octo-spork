@@ -13,6 +13,16 @@ import {
   maxConversionUnder,
   sizeConversion,
   IRMAA_TIER1_MAGI,
+  IRMAA_TIERS,
+  IRMAA_MAGI_YEAR,
+  IRMAA_PREMIUM_YEAR,
+  PART_B_STANDARD_PREMIUM,
+  partBSurchargeMonthly,
+  irmaaMagi,
+  irmaaTierFor,
+  irmaaFor,
+  otherIncomeAtIrmaaMagi,
+  irmaaCliffs,
   FILING_PARAMS,
   LTCG_BRACKETS,
   AVG_ANNUAL_SS_BENEFIT,
@@ -1057,5 +1067,173 @@ describe('muniInterestEffect', () => {
       Math.round(direct * 10_000) / 100,
       6,
     );
+  });
+});
+
+describe('IRMAA (Medicare income-related monthly adjustment amount)', () => {
+  const SS = AVG_ANNUAL_SS_BENEFIT; // $23,712
+  /** 85% of the average benefit — the cap the torpedo tops out at. */
+  const SS_CAP = 0.85 * AVG_ANNUAL_SS_BENEFIT; // $20,155.20
+
+  it('reads MAGI from the return filed two years before the premium year', () => {
+    expect(IRMAA_PREMIUM_YEAR).toBe(2025);
+    expect(IRMAA_MAGI_YEAR).toBe(2023);
+  });
+
+  it('matches the 2025 CMS premium schedule', () => {
+    expect(PART_B_STANDARD_PREMIUM).toBe(185);
+    expect(IRMAA_TIERS.map((t) => t.partBMonthly)).toEqual([
+      185, 259, 370, 480.9, 591.9, 628.9,
+    ]);
+    expect(IRMAA_TIERS.map((t) => t.partDSurchargeMonthly)).toEqual([
+      0, 13.7, 35.3, 57, 78.6, 85.8,
+    ]);
+    expect(IRMAA_TIERS.map(partBSurchargeMonthly)).toEqual([
+      0, 74, 185, 295.9, 406.9, 443.9,
+    ]);
+    expect(IRMAA_TIERS.slice(1).map((t) => t.magiOver.single)).toEqual([
+      106_000, 133_000, 167_000, 200_000, 500_000,
+    ]);
+  });
+
+  it('doubles the joint thresholds except at the statutory top tier', () => {
+    for (const tier of IRMAA_TIERS.slice(1, 5)) {
+      expect(tier.magiOver.mfj).toBe(2 * tier.magiOver.single);
+    }
+    // $500,000/$750,000 came from the Bipartisan Budget Act of 2018 and is
+    // fixed in statute rather than indexed, so it never doubled.
+    expect(IRMAA_TIERS[5].magiOver.single).toBe(500_000);
+    expect(IRMAA_TIERS[5].magiOver.mfj).toBe(750_000);
+  });
+
+  it('keeps the conversion ceiling and the tier table in sync', () => {
+    expect(IRMAA_TIER1_MAGI.single).toBe(IRMAA_TIERS[1].magiOver.single);
+    expect(IRMAA_TIER1_MAGI.mfj).toBe(IRMAA_TIERS[1].magiOver.mfj);
+  });
+
+  it('adds tax-exempt interest back into MAGI but never into the tax base', () => {
+    // AGI at $50,000 of other income: the 85% cap already binds.
+    expect(irmaaMagi(50_000, SS)).toBeCloseTo(50_000 + SS_CAP, 6);
+    // The interest lands in MAGI twice over: once directly, and once through
+    // the benefits it drags in — except here the cap has already bound, so
+    // only the direct dollar counts.
+    expect(irmaaMagi(50_000, SS, 0, 'single', 10_000)).toBeCloseTo(
+      60_000 + SS_CAP,
+      6,
+    );
+    // Capital gains are ordinary AGI for this purpose, preferential rate or not.
+    expect(irmaaMagi(50_000, SS, 20_000)).toBeCloseTo(70_000 + SS_CAP, 6);
+  });
+
+  it('treats the thresholds as exclusive cliffs', () => {
+    expect(irmaaTierFor(106_000).tier).toBe(0);
+    expect(irmaaTierFor(106_000.01).tier).toBe(1);
+    expect(irmaaTierFor(133_000).tier).toBe(1);
+    expect(irmaaTierFor(133_000.01).tier).toBe(2);
+    expect(irmaaTierFor(500_001).tier).toBe(5);
+    expect(irmaaTierFor(1e9).tier).toBe(5);
+    // A joint return at the same MAGI sits two tiers lower.
+    expect(irmaaTierFor(220_000, 'mfj').tier).toBe(1);
+    expect(irmaaTierFor(220_000, 'single').tier).toBe(4);
+  });
+
+  it('annualizes the Part B and Part D surcharges per beneficiary', () => {
+    const standard = irmaaFor(50_000);
+    expect(standard.tier).toBe(0);
+    expect(standard.annualSurcharge).toBe(0);
+    expect(standard.annualPartB).toBe(2_220); // 185 x 12
+    expect(standard.nextThreshold).toBe(106_000);
+    expect(standard.headroom).toBe(56_000);
+    expect(standard.nextStep).toBe(1_052.4);
+
+    const tier1 = irmaaFor(106_001);
+    expect(tier1.tier).toBe(1);
+    // (74.00 Part B + 13.70 Part D) x 12
+    expect(tier1.annualSurcharge).toBe(1_052.4);
+    expect(tier1.annualPartB).toBe(3_108); // 259 x 12
+    expect(tier1.nextStep).toBe(1_591.2);
+
+    const top = irmaaFor(600_000);
+    expect(top.tier).toBe(5);
+    expect(top.annualSurcharge).toBe(6_356.4);
+    expect(top.nextThreshold).toBeNull();
+    expect(top.headroom).toBeNull();
+    expect(top.nextStep).toBe(0);
+  });
+
+  it('charges a couple twice off one MAGI figure', () => {
+    const couple = irmaaFor(213_000, 'mfj', 2);
+    expect(couple.tier).toBe(1);
+    expect(couple.beneficiaries).toBe(2);
+    expect(couple.annualSurcharge).toBe(2 * 1_052.4);
+    expect(couple.nextStep).toBe(2 * 1_591.2);
+    // Per-beneficiary figures stay per-beneficiary.
+    expect(couple.partBMonthly).toBe(259);
+    expect(couple.partBSurchargeMonthly).toBe(74);
+  });
+
+  it('inverts MAGI onto the chart’s other-income axis', () => {
+    // Past the 85% cap the benefit is a fixed $20,155.20 of AGI, so the cliff
+    // arrives that much earlier than its MAGI figure reads.
+    expect(otherIncomeAtIrmaaMagi(106_000, SS)).toBeCloseTo(106_000 - SS_CAP, 4);
+    expect(irmaaMagi(otherIncomeAtIrmaaMagi(106_000, SS), SS)).toBeCloseTo(
+      106_000,
+      4,
+    );
+    // With no benefit at all there is nothing to drag in, so it is 1:1.
+    expect(otherIncomeAtIrmaaMagi(106_000, 0)).toBeCloseTo(106_000, 4);
+    // Already over the threshold with no other income: clamp at zero.
+    expect(otherIncomeAtIrmaaMagi(106_000, 0, 'single', 200_000)).toBe(0);
+  });
+
+  it('moves the cliff more than a dollar per dollar inside the torpedo', () => {
+    // At the maximum benefit the 85% cap has not bound by $106,000 of MAGI, so
+    // MAGI climbs at $1.85 per dollar earned and the first cliff arrives at
+    // $56,405 of other income rather than $85,845.
+    const x = otherIncomeAtIrmaaMagi(106_000, MAX_ANNUAL_SS_BENEFIT);
+    expect(x).toBeCloseTo(56_404.97, 2);
+    expect(irmaaMagi(x, MAX_ANNUAL_SS_BENEFIT)).toBeCloseTo(106_000, 4);
+    expect(x).toBeLessThan(otherIncomeAtIrmaaMagi(106_000, SS));
+  });
+
+  it('shifts every cliff left by each dollar of tax-exempt interest', () => {
+    const plain = irmaaCliffs(SS);
+    const withMuni = irmaaCliffs(SS, 'single', 10_000);
+    for (let i = 0; i < plain.length; i += 1) {
+      expect(plain[i].otherIncome - withMuni[i].otherIncome).toBeCloseTo(10_000, 4);
+    }
+  });
+
+  it('places the five cliffs with their annual cost', () => {
+    const cliffs = irmaaCliffs(SS);
+    expect(cliffs.map((c) => c.tier)).toEqual([1, 2, 3, 4, 5]);
+    expect(cliffs.map((c) => c.magi)).toEqual([
+      106_000, 133_000, 167_000, 200_000, 500_000,
+    ]);
+    expect(cliffs[0].otherIncome).toBeCloseTo(85_844.8, 4);
+    expect(cliffs[1].otherIncome).toBeCloseTo(112_844.8, 4);
+    expect(cliffs[2].otherIncome).toBeCloseTo(146_844.8, 4);
+    expect(cliffs.map((c) => c.annualSurcharge)).toEqual([
+      1_052.4, 2_643.6, 4_234.8, 5_826, 6_356.4,
+    ]);
+    // The three middle cliffs cost exactly the same to cross.
+    expect(cliffs.map((c) => c.step)).toEqual([
+      1_052.4, 1_591.2, 1_591.2, 1_591.2, 530.4,
+    ]);
+    // A couple both on Medicare pays each step twice.
+    expect(irmaaCliffs(SS, 'mfj', 0, 2).map((c) => c.step)).toEqual([
+      2_104.8, 3_182.4, 3_182.4, 3_182.4, 1_060.8,
+    ]);
+  });
+
+  it('dwarfs the income tax on the dollar that crosses it', () => {
+    // One dollar over the tier-1 threshold costs $1,052.40 of Medicare premium
+    // on top of whatever the income tax takes — a marginal rate of six figures
+    // on that dollar, and the reason the cliff is worth drawing at all.
+    const x = otherIncomeAtIrmaaMagi(106_000, SS);
+    const incomeTaxOnTheDollar = totalTax(x + 1, SS) - totalTax(x, SS);
+    expect(incomeTaxOnTheDollar).toBeLessThan(1);
+    expect(irmaaFor(irmaaMagi(x + 1, SS)).annualSurcharge).toBe(1_052.4);
+    expect(irmaaFor(irmaaMagi(x - 1, SS)).annualSurcharge).toBe(0);
   });
 });

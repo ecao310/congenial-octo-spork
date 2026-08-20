@@ -364,6 +364,99 @@ describe('App', () => {
     fireEvent.change(slider, { target: { value: '50000' } });
     expect(slider).toHaveValue('50000');
   });
+
+  describe('IRMAA cliffs', () => {
+    /** The IRMAA section, so figures can be asserted in context. */
+    const irmaaSection = (): HTMLElement | null =>
+      screen
+        .getByRole('heading', { name: /medicare.s irmaa cliffs/i })
+        .closest('section');
+
+    it('prices the default scenario against the first cliff', () => {
+      render(<App />);
+      const section = irmaaSection();
+      // $30,000 of other income drags $11,177.60 of benefits into AGI, and
+      // there is no tax-exempt interest, so Medicare's MAGI is $41,178.
+      expect(section).toHaveTextContent('$41,178');
+      expect(section).toHaveTextContent('None');
+      // $106,000 - $41,177.60 of room, then the whole first surcharge at once.
+      expect(section).toHaveTextContent('$64,822');
+      expect(section).toHaveTextContent('$1,052/yr');
+    });
+
+    it('places the on-chart cliffs at less other income than their MAGI', () => {
+      render(<App />);
+      const section = irmaaSection();
+      // The 85% cap has already bound at these incomes, so every cliff sits
+      // exactly $20,155.20 of taxable benefits below its MAGI threshold. Only
+      // the first three fit inside the chart's $150,000 axis.
+      expect(section).toHaveTextContent('cliffs 1, 2, 3');
+      expect(section).toHaveTextContent('$85,845, $112,845, $146,845');
+    });
+
+    it('shifts the cliffs left by each dollar of tax-exempt interest', () => {
+      render(<App />);
+      fireEvent.change(
+        screen.getByRole('slider', { name: /tax-exempt \(municipal\) interest/i }),
+        { target: { value: '10000' } },
+      );
+      const section = irmaaSection();
+      expect(section).toHaveTextContent('$75,845, $102,845, $136,845');
+      // Muni interest is outside taxable income but inside Medicare's MAGI,
+      // and it lands there twice over: $10,000 directly, plus the extra
+      // $8,500 of benefits it drags into AGI at 85c on the dollar. MAGI goes
+      // $41,178 -> $59,678, not $51,178.
+      expect(section).toHaveTextContent('AGI + $10,000 tax-exempt interest');
+      expect(section).toHaveTextContent('$59,678');
+    });
+
+    it('says so when no cliff lands inside the chart', () => {
+      render(<App />);
+      fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Jointly' }));
+      const section = irmaaSection();
+      expect(section).toHaveTextContent('No cliff falls inside the chart above');
+      expect(section).toHaveTextContent('$212,000 of MAGI');
+    });
+
+    it('charges a couple both on Medicare twice off one MAGI', () => {
+      render(<App />);
+      expect(irmaaSection()).toHaveTextContent('$1,052/yr');
+
+      fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Jointly' }));
+      fireEvent.click(screen.getByRole('checkbox', { name: /age 65 or older/i }));
+      fireEvent.click(
+        screen.getByRole('checkbox', { name: /both spouses are 65 or older/i }),
+      );
+      const section = irmaaSection();
+      expect(section).toHaveTextContent('$2,105/yr');
+      expect(section).toHaveTextContent('for the two of you');
+      expect(section).toHaveTextContent('for two people on Medicare');
+    });
+
+    it('lists the 2025 premium schedule and marks the current tier', () => {
+      render(<App />);
+      const section = irmaaSection();
+      expect(section).toHaveTextContent('Up to $106,000');
+      expect(section).toHaveTextContent('Over $500,000');
+      expect(section).toHaveTextContent('$185.00');
+      expect(section).toHaveTextContent('$628.90');
+      expect(section).toHaveTextContent('+$85.80');
+      // The standard-premium row is the one in force at the default income.
+      const current = section?.querySelector('.tier-row-current th');
+      expect(current).toHaveTextContent('Up to $106,000');
+    });
+
+    it('states the two-year lag as an explicit x-axis caveat', () => {
+      render(<App />);
+      const section = irmaaSection();
+      expect(section).toHaveTextContent('The x-axis caveat.');
+      expect(section).toHaveTextContent(
+        'the 2025 premiums in the table are set by 2023 MAGI',
+      );
+      expect(section).toHaveTextContent('setting the premium for 2027');
+      expect(section).toHaveTextContent('Form SSA-44');
+    });
+  });
 });
 
 describe('Tooltip Recommendations', () => {
@@ -433,6 +526,60 @@ describe('Tooltip Recommendations', () => {
       );
       expect(
         screen.getByText(/Consider filling out this tax valley at \$42,000/),
+      ).toBeInTheDocument();
+    });
+
+    it('reports no IRMAA surcharge and the room left below the first cliff', () => {
+      render(
+        <CustomTooltip
+          active={true}
+          payload={[{ payload: { income: 20000, marginalRate: 15, totalTax: 768 } }]}
+          ssBenefit={23712}
+          segments={mockOrdinarySegments}
+        />,
+      );
+      // MAGI is $20,000 + $3,428 of taxable benefits = $23,428.
+      expect(screen.getByText('$0/yr')).toBeInTheDocument();
+      expect(
+        screen.getByText(/\$82,572 of MAGI to the next cliff, then \$1,052\/yr more/),
+      ).toBeInTheDocument();
+      expect(screen.queryByText(/tier .* of 5/)).not.toBeInTheDocument();
+    });
+
+    it('annualizes the Part B and Part D surcharge once past a cliff', () => {
+      render(
+        <CustomTooltip
+          active={true}
+          payload={[{ payload: { income: 90000, marginalRate: 22, totalTax: 17000 } }]}
+          ssBenefit={23712}
+          segments={mockOrdinarySegments}
+        />,
+      );
+      // $90,000 + the capped $20,155.20 of benefits clears $106,000 of MAGI.
+      expect(screen.getByText('$1,052/yr')).toBeInTheDocument();
+      expect(screen.getByText(/tier 1 of 5/)).toBeInTheDocument();
+      expect(
+        screen.getByText(/\$22,845 of MAGI to the next cliff, then \$1,591\/yr more/),
+      ).toBeInTheDocument();
+    });
+
+    it('adds tax-exempt interest back and doubles the surcharge for a couple', () => {
+      render(
+        <CustomTooltip
+          active={true}
+          payload={[{ payload: { income: 90000, marginalRate: 22, totalTax: 17000 } }]}
+          ssBenefit={23712}
+          segments={mockOrdinarySegments}
+          filingStatus="mfj"
+          muniInterest={10000}
+          beneficiaries={2}
+        />,
+      );
+      // A joint return is nowhere near $212,000 here, so nothing is owed - but
+      // the tax-exempt interest still counts toward the MAGI that decides it.
+      expect(screen.getByText('$0/yr')).toBeInTheDocument();
+      expect(
+        screen.getByText(/\$91,845 of MAGI to the next cliff, then \$2,105\/yr more/),
       ).toBeInTheDocument();
     });
   });

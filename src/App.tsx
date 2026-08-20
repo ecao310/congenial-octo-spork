@@ -7,6 +7,7 @@ import {
   ResponsiveContainer,
   AreaChart,
   Area,
+  ReferenceLine,
 } from 'recharts';
 import {
   marginalRateCurve,
@@ -29,12 +30,22 @@ import {
   SENIOR_DEDUCTION_PHASEOUT_RATE,
   SENIOR_DEDUCTION_PHASEOUT_START,
   seniorDeductionPhaseoutEnd,
+  irmaaMagi,
+  irmaaFor,
+  irmaaCliffs,
+  partBSurchargeMonthly,
+  IRMAA_TIERS,
+  IRMAA_MAGI_YEAR,
+  IRMAA_PREMIUM_YEAR,
+  IRMAA_LOOKBACK_YEARS,
+  PART_B_STANDARD_PREMIUM,
 } from './utils/tax';
 import type {
   LTCGMarginalRatePoint,
   MarginalRatePoint,
   CurveSegment,
   ConversionCeilingId,
+  IrmaaCliff,
 } from './utils/tax';
 
 const MAX_INCOME = 150_000;
@@ -64,6 +75,14 @@ const formatPercent = (rate: number): string =>
 const formatCents = (rate: number): string =>
   `${Math.round(rate * 10_000) / 100}\u00A2`;
 
+/** Premiums are quoted to the cent, unlike every other figure in the app. */
+const formatCurrencyCents = (value: number): string =>
+  new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 2,
+  }).format(value);
+
 const formatCompact = (value: number): string =>
   new Intl.NumberFormat('en-US', {
     notation: 'compact',
@@ -89,6 +108,10 @@ interface CustomTooltipProps {
   payload?: Array<{ payload: TooltipPayloadPoint }>;
   ssBenefit: number;
   segments: CurveSegment<MarginalRatePoint>[];
+  filingStatus?: FilingStatus;
+  muniInterest?: number;
+  /** How many people on the return are enrolled in Medicare. */
+  beneficiaries?: number;
 }
 
 export const CustomTooltip: React.FC<CustomTooltipProps> = ({
@@ -96,11 +119,22 @@ export const CustomTooltip: React.FC<CustomTooltipProps> = ({
   payload,
   ssBenefit,
   segments,
+  filingStatus = 'single',
+  muniInterest = 0,
+  beneficiaries = 1,
 }) => {
   if (!active || !payload || !payload.length) return null;
   const point = payload[0].payload;
   const segment = segments.find(
     (seg) => point.income >= seg.start && point.income <= seg.end,
+  );
+  // Medicare reads a wider MAGI than the tax chain does — tax-exempt interest
+  // is added back — so it has to be recomputed here rather than read off the
+  // curve, which only carries taxable figures.
+  const irmaa = irmaaFor(
+    irmaaMagi(point.income, ssBenefit, 0, filingStatus, muniInterest),
+    filingStatus,
+    beneficiaries,
   );
   return (
     <div style={TOOLTIP_STYLE}>
@@ -113,6 +147,19 @@ export const CustomTooltip: React.FC<CustomTooltipProps> = ({
       <div>
         Total Federal Tax: <strong style={{ color: '#ea580c' }}>{formatCurrency(point.totalTax)}</strong>
       </div>
+      <div>
+        Medicare IRMAA:{' '}
+        <strong style={{ color: '#fb7185' }}>
+          {formatCurrency(irmaa.annualSurcharge)}/yr
+        </strong>
+        {irmaa.tier > 0 ? ` (tier ${irmaa.tier} of 5)` : ''}
+      </div>
+      {irmaa.headroom !== null && (
+        <div style={{ fontSize: '0.8125rem', color: '#94a3b8' }}>
+          {formatCurrency(irmaa.headroom)} of MAGI to the next cliff, then{' '}
+          {formatCurrency(irmaa.nextStep)}/yr more
+        </div>
+      )}
       {segment && segment.type === 'hill' && (
         <div style={{ marginTop: '0.5rem', borderTop: '1px solid rgba(255, 255, 255, 0.1)', paddingTop: '0.5rem', fontSize: '0.875rem', color: '#94a3b8' }}>
           Consider avoiding this tax hill by staying under {formatCurrency(segment.start)} or over {formatCurrency(segment.end)}
@@ -274,6 +321,31 @@ const App: React.FC = () => {
     [muniInterest, ordinaryIncome, ssBenefit, plannedLtcg, filingStatus, seniors],
   );
 
+  // Medicare is per enrollee, so a joint return with both spouses over 65 pays
+  // every surcharge twice off one MAGI figure. Below 65 nobody is enrolled yet,
+  // but the two-year lookback means this year's income still sets the first
+  // premium they will see — so price one enrollee rather than none.
+  const beneficiaries = filingStatus === 'mfj' && seniors === 2 ? 2 : 1;
+
+  const cliffs = useMemo(
+    () => irmaaCliffs(ssBenefit, filingStatus, muniInterest, beneficiaries),
+    [ssBenefit, filingStatus, muniInterest, beneficiaries],
+  );
+
+  /** The cliffs that actually land inside the chart's x-axis. */
+  const cliffsOnChart: IrmaaCliff[] = cliffs.filter(
+    (c) => c.otherIncome > 0 && c.otherIncome <= MAX_INCOME,
+  );
+
+  const scenarioMagi = irmaaMagi(
+    ordinaryIncome,
+    ssBenefit,
+    plannedLtcg,
+    filingStatus,
+    muniInterest,
+  );
+  const irmaa = irmaaFor(scenarioMagi, filingStatus, beneficiaries);
+
   const measureLabel = CONVERSION_MEASURE_LABELS[sizing.ceiling.measure];
 
   return (
@@ -419,7 +491,7 @@ const App: React.FC = () => {
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart
             data={curve}
-            margin={{ top: 10, right: 10, left: 10, bottom: 0 }}
+            margin={{ top: 22, right: 28, left: 10, bottom: 0 }}
           >
             <defs>
               <linearGradient id="rateGradient" x1="0" y1="0" x2="0" y2="1">
@@ -442,8 +514,30 @@ const App: React.FC = () => {
               domain={[0, 'auto']}
             />
             <Tooltip
-              content={<CustomTooltip ssBenefit={ssBenefit} segments={segments} />}
+              content={
+                <CustomTooltip
+                  ssBenefit={ssBenefit}
+                  segments={segments}
+                  filingStatus={filingStatus}
+                  muniInterest={muniInterest}
+                  beneficiaries={beneficiaries}
+                />
+              }
             />
+            {cliffsOnChart.map((cliff) => (
+              <ReferenceLine
+                key={cliff.tier}
+                x={cliff.otherIncome}
+                stroke="#f43f5e"
+                strokeDasharray="4 4"
+                label={{
+                  value: `IRMAA ${cliff.tier}`,
+                  position: 'top',
+                  fill: '#fb7185',
+                  fontSize: 11,
+                }}
+              />
+            ))}
             <Area
               type="stepAfter"
               dataKey="marginalRate"
@@ -542,6 +636,177 @@ const App: React.FC = () => {
           provisional income entirely. Note that tax-exempt interest is also
           added back for Medicare&apos;s IRMAA MAGI, but <em>not</em> for the
           senior deduction&apos;s.
+        </p>
+      </section>
+
+      {/* ───── IRMAA cliffs ───── */}
+      <section className="explainer" aria-labelledby="irmaa-heading">
+        <h2 id="irmaa-heading" className="section-heading-rose">
+          Medicare&apos;s IRMAA cliffs
+        </h2>
+        <p>
+          Above a MAGI threshold, Medicare adds an{' '}
+          <strong>income-related monthly adjustment amount</strong> to the Part B
+          and Part D premiums of everyone on the return who is enrolled. Unlike
+          the torpedo, this is not a phase-in: one dollar over a threshold
+          triggers the whole surcharge for twelve months. The first cliff costs{' '}
+          <strong>{formatCurrency(cliffs[0].step)}</strong> a year
+          {beneficiaries > 1 ? ' for the two of you' : ''} — on a single dollar
+          of income.
+        </p>
+
+        <p>
+          {cliffsOnChart.length > 0 ? (
+            <>
+              The dashed lines on the chart above mark{' '}
+              {cliffsOnChart.length === 1
+                ? 'cliff '
+                : 'cliffs '}
+              {cliffsOnChart.map((c) => c.tier).join(', ')} at{' '}
+              {cliffsOnChart
+                .map((c) => formatCurrency(Math.round(c.otherIncome)))
+                .join(', ')}{' '}
+              of other income. They sit at less other income than their MAGI
+              figures suggest, because the benefits the torpedo drags into AGI
+              get there first
+              {muniInterest > 0
+                ? `, and the ${formatCurrency(muniInterest)} of tax-exempt interest is added straight back in on top`
+                : ''}
+              .
+            </>
+          ) : (
+            <>
+              No cliff falls inside the chart above: the first one needs{' '}
+              {formatCurrency(cliffs[0].magi)} of MAGI, which is past its right
+              edge at the benefit and filing status selected.
+            </>
+          )}
+        </p>
+
+        <dl className="stat-grid">
+          <div className="stat">
+            <dt>Medicare MAGI</dt>
+            <dd className="stat-value rose">{formatCurrency(scenarioMagi)}</dd>
+            <dd className="stat-note">
+              AGI + {formatCurrency(muniInterest)} tax-exempt interest
+            </dd>
+          </div>
+          <div className="stat">
+            <dt>Surcharge tier</dt>
+            <dd className="stat-value">
+              {irmaa.tier === 0 ? 'None' : `${irmaa.tier} of 5`}
+            </dd>
+          </div>
+          <div className="stat">
+            <dt>Surcharge per year</dt>
+            <dd className="stat-value">{formatCurrency(irmaa.annualSurcharge)}</dd>
+            <dd className="stat-note">
+              {irmaa.tier === 0
+                ? `standard ${formatCurrencyCents(PART_B_STANDARD_PREMIUM)} Part B premium only`
+                : `${formatCurrencyCents(irmaa.partBSurchargeMonthly)} Part B + ${formatCurrencyCents(
+                    irmaa.partDSurchargeMonthly,
+                  )} Part D per month${beneficiaries > 1 ? ', each' : ''}`}
+            </dd>
+          </div>
+          <div className="stat">
+            <dt>Room to the next cliff</dt>
+            <dd className="stat-value">
+              {irmaa.headroom === null
+                ? 'Top tier'
+                : formatCurrency(irmaa.headroom)}
+            </dd>
+            <dd className="stat-note">of MAGI</dd>
+          </div>
+          <div className="stat">
+            <dt>Cost of crossing it</dt>
+            <dd className="stat-value">
+              {irmaa.nextStep === 0 ? '—' : `${formatCurrency(irmaa.nextStep)}/yr`}
+            </dd>
+          </div>
+        </dl>
+
+        <p>
+          Priced at {formatCurrency(ordinaryIncome)} of other ordinary income
+          {plannedLtcg > 0
+            ? ` and ${formatCurrency(plannedLtcg)} of long-term gains`
+            : ''}{' '}
+          plus the {formatCurrency(ssBenefit)} benefit above, for{' '}
+          {beneficiaries > 1 ? 'two people' : 'one person'} on Medicare.{' '}
+          {irmaa.tier === 0
+            ? `Nothing is owed at this income, but the last ${formatCurrency(
+                irmaa.nextStep,
+              )} of the surcharge arrives all at once.`
+            : `That surcharge is on top of the standard ${formatCurrencyCents(
+                PART_B_STANDARD_PREMIUM,
+              )} Part B premium, and it is not included in any of the federal tax figures elsewhere on this page.`}
+        </p>
+
+        <table className="tier-table">
+          <caption>
+            {IRMAA_PREMIUM_YEAR} premiums, set by {IRMAA_MAGI_YEAR} MAGI. Per
+            person enrolled; the annual column is for{' '}
+            {beneficiaries > 1 ? 'both of you' : 'one enrollee'}.
+          </caption>
+          <thead>
+            <tr>
+              <th scope="col">MAGI (single)</th>
+              <th scope="col">MAGI (joint)</th>
+              <th scope="col">Part B/mo</th>
+              <th scope="col">Part D/mo</th>
+              <th scope="col">Surcharge/yr</th>
+            </tr>
+          </thead>
+          <tbody>
+            {IRMAA_TIERS.map((tier) => {
+              const annual =
+                (partBSurchargeMonthly(tier) + tier.partDSurchargeMonthly) *
+                12 *
+                beneficiaries;
+              const range = (status: FilingStatus): string =>
+                tier.tier === 0
+                  ? `Up to ${formatCurrency(IRMAA_TIERS[1].magiOver[status])}`
+                  : `Over ${formatCurrency(tier.magiOver[status])}`;
+              return (
+                <tr
+                  key={tier.tier}
+                  className={tier.tier === irmaa.tier ? 'tier-row-current' : undefined}
+                >
+                  <th scope="row">{range('single')}</th>
+                  <td>{range('mfj')}</td>
+                  <td>{formatCurrencyCents(tier.partBMonthly)}</td>
+                  <td>
+                    {tier.partDSurchargeMonthly === 0
+                      ? '—'
+                      : `+${formatCurrencyCents(tier.partDSurchargeMonthly)}`}
+                  </td>
+                  <td>{annual === 0 ? '—' : formatCurrency(annual)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+
+        <p>
+          <strong>The x-axis caveat.</strong> Medicare bills on a{' '}
+          {IRMAA_LOOKBACK_YEARS}-year lag: the {IRMAA_PREMIUM_YEAR} premiums in
+          the table are set by {IRMAA_MAGI_YEAR} MAGI, so the income on this
+          chart is really setting the premium for{' '}
+          {IRMAA_PREMIUM_YEAR + IRMAA_LOOKBACK_YEARS}, under a schedule CMS has
+          not published yet. Treat the lines as where the cliffs would fall at
+          today&apos;s thresholds, not as a bill. The lag cuts both ways: a Roth
+          conversion made now surfaces as a premium two years later, and a
+          one-off spike — a home sale, an inherited IRA — keeps costing after the
+          income is gone. Retiring or losing that income is a life-changing event
+          you can appeal on Form SSA-44 rather than simply wait out.
+        </p>
+
+        <p>
+          Note that Medicare&apos;s MAGI is <em>wider</em> than the tax
+          code&apos;s: tax-exempt interest is added straight back in, so muni
+          bonds move this line as well as the torpedo. It is also the reason the
+          cliffs are worth planning around at all — the surcharge never appears
+          on a tax return, so nothing about filing reveals that a dollar of
+          income cost {formatCurrency(cliffs[0].step)}.
         </p>
       </section>
 

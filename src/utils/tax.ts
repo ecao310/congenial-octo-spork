@@ -577,19 +577,288 @@ export function segmentCurve<T extends { marginalRate: number }>(
 }
 
 /* ------------------------------------------------------------------ */
-/*  Roth conversion sizing                                            */
+/*  IRMAA - Medicare's income-related monthly adjustment amount        */
 /* ------------------------------------------------------------------ */
 
+/** The premium year the figures below apply to. */
+export const IRMAA_PREMIUM_YEAR = 2025;
+
 /**
- * 2025 IRMAA tier-1 MAGI threshold. Medicare sets premiums from the MAGI on
- * the return filed two years earlier, so the 2025 surcharge is driven by 2023
- * income. This is a true cliff: one dollar over the threshold triggers the
- * full first-tier Part B and Part D surcharge for the whole year.
+ * Medicare sets a year's premium from the MAGI on the return filed two years
+ * earlier, because that is the most recent return the IRS has shared with SSA
+ * when premiums are set (42 U.S.C. 1395r(i)(4)). So the 2025 premium is driven
+ * by 2023 income, and this year's income sets the premium two years out.
+ */
+export const IRMAA_LOOKBACK_YEARS = 2;
+
+/** The tax year whose MAGI sets the `IRMAA_PREMIUM_YEAR` premium. */
+export const IRMAA_MAGI_YEAR = IRMAA_PREMIUM_YEAR - IRMAA_LOOKBACK_YEARS;
+
+/** 2025 standard Part B premium per beneficiary per month (CMS, Nov 2024). */
+export const PART_B_STANDARD_PREMIUM = 185;
+
+export interface IrmaaTier {
+  /** 0 for the standard premium; 1 through 5 for the surcharge tiers. */
+  tier: number;
+  /**
+   * The tier applies when MAGI is strictly *greater* than this. -Infinity for
+   * the standard tier, which has no floor.
+   */
+  magiOver: Record<FilingStatus, number>;
+  /** Total monthly Part B premium, standard premium included. */
+  partBMonthly: number;
+  /**
+   * Monthly Part D surcharge. Only the surcharge - the plan's own premium is
+   * set by the insurer, not by CMS, so there is no standard amount to add.
+   */
+  partDSurchargeMonthly: number;
+}
+
+/**
+ * 2025 IRMAA schedule, keyed to 2023 MAGI (CMS fact sheet, November 2024).
+ *
+ * The joint thresholds are exactly double the single ones except at the top:
+ * the $500,000 / $750,000 tier added by the Bipartisan Budget Act of 2018 is
+ * fixed in statute rather than indexed, so it never doubled and does not move
+ * with inflation.
+ */
+export const IRMAA_TIERS: IrmaaTier[] = [
+  {
+    tier: 0,
+    magiOver: { single: -Infinity, mfj: -Infinity },
+    partBMonthly: PART_B_STANDARD_PREMIUM,
+    partDSurchargeMonthly: 0,
+  },
+  {
+    tier: 1,
+    magiOver: { single: 106_000, mfj: 212_000 },
+    partBMonthly: 259.0,
+    partDSurchargeMonthly: 13.7,
+  },
+  {
+    tier: 2,
+    magiOver: { single: 133_000, mfj: 266_000 },
+    partBMonthly: 370.0,
+    partDSurchargeMonthly: 35.3,
+  },
+  {
+    tier: 3,
+    magiOver: { single: 167_000, mfj: 334_000 },
+    partBMonthly: 480.9,
+    partDSurchargeMonthly: 57.0,
+  },
+  {
+    tier: 4,
+    magiOver: { single: 200_000, mfj: 400_000 },
+    partBMonthly: 591.9,
+    partDSurchargeMonthly: 78.6,
+  },
+  {
+    tier: 5,
+    magiOver: { single: 500_000, mfj: 750_000 },
+    partBMonthly: 628.9,
+    partDSurchargeMonthly: 85.8,
+  },
+];
+
+/**
+ * 2025 IRMAA tier-1 MAGI threshold. This is a true cliff: one dollar over it
+ * triggers a full year of first-tier Part B and Part D surcharges.
  */
 export const IRMAA_TIER1_MAGI: Record<FilingStatus, number> = {
-  single: 106_000,
-  mfj: 212_000,
+  ...IRMAA_TIERS[1].magiOver,
 };
+
+/** Rounds to whole cents, so premium arithmetic does not leak float dust. */
+function toCents(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+/** The monthly Part B surcharge for a tier: its premium over the standard one. */
+export function partBSurchargeMonthly(tier: IrmaaTier): number {
+  return toCents(tier.partBMonthly - PART_B_STANDARD_PREMIUM);
+}
+
+/**
+ * Medicare's MAGI: AGI plus tax-exempt interest (42 U.S.C. 1395r(i)(4),
+ * incorporating IRC 6103(l)(20)). Note this is a *wider* definition than the
+ * one the OBBBA senior deduction phases out against, which never adds the
+ * tax-exempt interest back - see `seniorDeductionFor`.
+ */
+export function irmaaMagi(
+  ordinaryIncome: number,
+  ssBenefit: number,
+  ltcg = 0,
+  filingStatus: FilingStatus = 'single',
+  muniInterest = 0,
+): number {
+  const otherIncome = ordinaryIncome + ltcg;
+  const taxableSS = taxableSocialSecurity(
+    ssBenefit,
+    otherIncome,
+    filingStatus,
+    muniInterest,
+  );
+  return otherIncome + taxableSS + muniInterest;
+}
+
+/** The tier a given MAGI lands in. Thresholds are exclusive: over, not at. */
+export function irmaaTierFor(
+  magi: number,
+  filingStatus: FilingStatus = 'single',
+): IrmaaTier {
+  let found = IRMAA_TIERS[0];
+  for (const tier of IRMAA_TIERS) {
+    if (magi > tier.magiOver[filingStatus]) found = tier;
+  }
+  return found;
+}
+
+export interface IrmaaAssessment {
+  magi: number;
+  /** 0 when no surcharge applies. */
+  tier: number;
+  /** How many people on the return are enrolled in Medicare. */
+  beneficiaries: number;
+  /** Total monthly Part B premium per beneficiary, surcharge included. */
+  partBMonthly: number;
+  /** Monthly Part B surcharge per beneficiary. */
+  partBSurchargeMonthly: number;
+  /** Monthly Part D surcharge per beneficiary. */
+  partDSurchargeMonthly: number;
+  /** Part B + Part D surcharge for the whole household, annualized. */
+  annualSurcharge: number;
+  /** Total Part B premium for the household, annualized, surcharge included. */
+  annualPartB: number;
+  /** MAGI at which the next cliff triggers; null at the top tier. */
+  nextThreshold: number | null;
+  /** MAGI still available before the next cliff; null at the top tier. */
+  headroom: number | null;
+  /** What crossing the next cliff costs the household per year; 0 at the top. */
+  nextStep: number;
+}
+
+/** Household surcharge for a tier, annualized over `beneficiaries` enrollees. */
+function annualSurchargeFor(tier: IrmaaTier, beneficiaries: number): number {
+  return toCents(
+    (partBSurchargeMonthly(tier) + tier.partDSurchargeMonthly) *
+      12 *
+      beneficiaries,
+  );
+}
+
+/**
+ * What Medicare charges at a given MAGI, and how close the next cliff is.
+ *
+ * The surcharge is per enrollee, not per return, so a couple with both spouses
+ * on Medicare pays it twice off a single MAGI figure - which is why the joint
+ * thresholds being double the single ones still leaves couples worse off per
+ * dollar of income.
+ */
+export function irmaaFor(
+  magi: number,
+  filingStatus: FilingStatus = 'single',
+  beneficiaries = 1,
+): IrmaaAssessment {
+  const tier = irmaaTierFor(magi, filingStatus);
+  const next = IRMAA_TIERS[tier.tier + 1] ?? null;
+  const partBSurcharge = partBSurchargeMonthly(tier);
+  const annualSurcharge = annualSurchargeFor(tier, beneficiaries);
+  return {
+    magi,
+    tier: tier.tier,
+    beneficiaries,
+    partBMonthly: tier.partBMonthly,
+    partBSurchargeMonthly: partBSurcharge,
+    partDSurchargeMonthly: tier.partDSurchargeMonthly,
+    annualSurcharge,
+    annualPartB: toCents(tier.partBMonthly * 12 * beneficiaries),
+    nextThreshold: next ? next.magiOver[filingStatus] : null,
+    headroom: next ? next.magiOver[filingStatus] - magi : null,
+    nextStep: next
+      ? toCents(annualSurchargeFor(next, beneficiaries) - annualSurcharge)
+      : 0,
+  };
+}
+
+/**
+ * The other (non-SS, non-muni) income at which IRMAA MAGI first reaches
+ * `targetMagi`, for a fixed benefit and tax-exempt interest. Returns 0 when
+ * the threshold is already breached with no other income at all.
+ *
+ * MAGI is continuous and strictly increasing in other income - its slope is 1,
+ * 1.5 or 1.85 depending on which part of the torpedo the dollar lands in - so
+ * bisection inverts it exactly. And because the slope exceeds 1 inside the
+ * torpedo, a cliff arrives at *less* other income than its MAGI figure
+ * suggests: benefits dragged into AGI get there first.
+ */
+export function otherIncomeAtIrmaaMagi(
+  targetMagi: number,
+  ssBenefit: number,
+  filingStatus: FilingStatus = 'single',
+  muniInterest = 0,
+): number {
+  const magiAt = (income: number): number =>
+    irmaaMagi(income, ssBenefit, 0, filingStatus, muniInterest);
+  if (magiAt(0) >= targetMagi) return 0;
+  // MAGI is never below other income, so targetMagi always overshoots.
+  let low = 0;
+  let high = targetMagi;
+  for (let i = 0; i < 60; i += 1) {
+    const mid = (low + high) / 2;
+    if (magiAt(mid) < targetMagi) low = mid;
+    else high = mid;
+  }
+  return (low + high) / 2;
+}
+
+export interface IrmaaCliff {
+  /** 1 through 5. */
+  tier: number;
+  /** The MAGI threshold this cliff sits at. */
+  magi: number;
+  /** Where the cliff falls on an other-income axis. */
+  otherIncome: number;
+  /** Household annual surcharge once the cliff is crossed. */
+  annualSurcharge: number;
+  /** The jump in household annual surcharge at this cliff. */
+  step: number;
+}
+
+/**
+ * Every IRMAA cliff placed on the chart's other-income axis, for overlaying as
+ * reference lines. Tax-exempt interest shifts them left dollar for dollar (it
+ * is in Medicare's MAGI *and* in provisional income), and so does a larger
+ * benefit.
+ */
+export function irmaaCliffs(
+  ssBenefit: number,
+  filingStatus: FilingStatus = 'single',
+  muniInterest = 0,
+  beneficiaries = 1,
+): IrmaaCliff[] {
+  return IRMAA_TIERS.filter((t) => t.tier > 0).map((tier) => {
+    const magi = tier.magiOver[filingStatus];
+    const previous = IRMAA_TIERS[tier.tier - 1];
+    const annualSurcharge = annualSurchargeFor(tier, beneficiaries);
+    return {
+      tier: tier.tier,
+      magi,
+      otherIncome: otherIncomeAtIrmaaMagi(
+        magi,
+        ssBenefit,
+        filingStatus,
+        muniInterest,
+      ),
+      annualSurcharge,
+      step: toCents(annualSurcharge - annualSurchargeFor(previous, beneficiaries)),
+    };
+  });
+}
+
+/* ------------------------------------------------------------------ */
+/*  Roth conversion sizing                                            */
+/* ------------------------------------------------------------------ */
 
 /** The income definition a conversion ceiling is measured against. */
 export type ConversionMeasure =

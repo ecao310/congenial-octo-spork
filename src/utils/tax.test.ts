@@ -18,6 +18,13 @@ import {
   standardDeductionFor,
   maxSeniors,
   ADDITIONAL_STD_DEDUCTION_65,
+  deductionFor,
+  seniorDeductionFor,
+  seniorDeductionPhaseoutEnd,
+  SENIOR_DEDUCTION,
+  SENIOR_DEDUCTION_PHASEOUT_RATE,
+  SENIOR_DEDUCTION_PHASEOUT_START,
+  MAX_ANNUAL_SS_BENEFIT,
 } from './tax';
 import type { ConversionCeiling, ConversionCeilingId } from './tax';
 
@@ -666,29 +673,34 @@ describe('age 65+ additional standard deduction (2025)', () => {
     );
   });
 
-  it('pushes the first taxed dollar out by the full addition when there are no benefits', () => {
+  it('pushes the first taxed dollar out by the whole deduction stack when there are no benefits', () => {
     expect(totalTax(15_750, 0, 'single', 0)).toBe(0);
     expect(totalTax(15_751, 0, 'single', 0)).toBeGreaterThan(0);
-    expect(totalTax(17_750, 0, 'single', 1)).toBe(0);
-    expect(totalTax(17_751, 0, 'single', 1)).toBeGreaterThan(0);
+    // $15,750 base + $2,000 age-65 addition + the $6,000 senior deduction,
+    // which is unreduced this far below its $75,000 phaseout threshold.
+    expect(totalTax(23_750, 0, 'single', 1)).toBe(0);
+    expect(totalTax(23_751, 0, 'single', 1)).toBeGreaterThan(0);
   });
 
-  it('saves the addition times the marginal bracket rate', () => {
-    // Single, $30,000 of other income and the average benefit: the extra
-    // $2,000 of deduction comes off the top of the 12% bracket.
+  it('saves the whole deduction stack times the marginal bracket rate', () => {
+    // Single, $30,000 of other income and the average benefit: $2,000 of
+    // age-65 addition plus $6,000 of senior deduction, all of it coming off
+    // the top of the 12% bracket.
     expect(totalTax(30_000, SS, 'single', 0) - totalTax(30_000, SS, 'single', 1))
-      .toBeCloseTo(2_000 * 0.12, 6);
-    // MFJ at the same income is still in the 10% bracket, and each spouse's
-    // $1,600 saves $160.
-    expect(totalTax(30_000, SS, 'mfj', 0) - totalTax(30_000, SS, 'mfj', 1))
-      .toBeCloseTo(1_600 * 0.1, 6);
-    expect(totalTax(30_000, SS, 'mfj', 1) - totalTax(30_000, SS, 'mfj', 2))
-      .toBeCloseTo(1_600 * 0.1, 6);
+      .toBeCloseTo((2_000 + 6_000) * 0.12, 6);
+    // MFJ at $60,000: $1,600 + $6,000 per qualifying spouse, and both spouses
+    // land the couple in the 12% bracket. (At $30,000 the couple's taxable
+    // income runs out before the deduction does, so nothing is left to save.)
+    expect(totalTax(60_000, SS, 'mfj', 0) - totalTax(60_000, SS, 'mfj', 1))
+      .toBeCloseTo((1_600 + 6_000) * 0.12, 6);
+    expect(totalTax(60_000, SS, 'mfj', 1) - totalTax(60_000, SS, 'mfj', 2))
+      .toBeCloseTo((1_600 + 6_000) * 0.12, 6);
   });
 
-  it('widens the 0%-rate valley, but by less than the addition once benefits are being dragged in', () => {
+  it('widens the 0%-rate valley, but by less than the deduction once benefits are being dragged in', () => {
     // Taxable income is 1.5x income once provisional income clears $25,000, so
-    // $2,000 of extra deduction only buys about $1,333 of extra income room.
+    // the $8,000 of extra deduction only buys about $5,333 of extra income
+    // room.
     const lastZeroRateIncome = (seniors: number): number => {
       let last = 0;
       for (const point of marginalRateCurve(SS, 60_000, 250, 'single', seniors)) {
@@ -698,19 +710,24 @@ describe('age 65+ additional standard deduction (2025)', () => {
       return last;
     };
     expect(lastZeroRateIncome(0)).toBe(14_750);
-    expect(lastZeroRateIncome(1)).toBe(16_000);
+    expect(lastZeroRateIncome(1)).toBe(20_000);
     // The exact crossings: 1.5 * income - 6,572 = deduction.
     expect(totalTax(14_881, SS, 'single', 0)).toBe(0);
     expect(totalTax(14_882, SS, 'single', 0)).toBeGreaterThan(0);
-    expect(totalTax(16_214, SS, 'single', 1)).toBe(0);
-    expect(totalTax(16_215, SS, 'single', 1)).toBeGreaterThan(0);
+    expect(totalTax(20_214, SS, 'single', 1)).toBe(0);
+    expect(totalTax(20_215, SS, 'single', 1)).toBeGreaterThan(0);
+    expect(20_214 - 14_881).toBeCloseTo((2_000 + 6_000) / 1.5, 0);
   });
 
   it('lets the addition offset capital gains when ordinary income underruns it', () => {
     // Single, $100,000 of gains and nothing else: the whole deduction lands on
-    // the LTCG band, where the marginal rate is 15%.
+    // the LTCG band, where the marginal rate is 15%. $100,000 of AGI is
+    // $25,000 into the senior deduction's phaseout, so only $4,500 of the
+    // $6,000 survives: 17,750 + 4,500 = 22,250 of deduction, and the $2,000 +
+    // $4,500 above the base saves 15% of itself.
     expect(totalTaxWithLTCG(0, 0, 100_000, 'single', 0)).toBe(5_385);
-    expect(totalTaxWithLTCG(0, 0, 100_000, 'single', 1)).toBe(5_085);
+    expect(totalTaxWithLTCG(0, 0, 100_000, 'single', 1)).toBe(4_410);
+    expect(5_385 - 4_410).toBeCloseTo((2_000 + 4_500) * 0.15, 6);
   });
 
   it('leaves provisional-income ceilings alone but widens taxable-income ones', () => {
@@ -722,22 +739,158 @@ describe('age 65+ additional standard deduction (2025)', () => {
       maxConversionUnder(ceilingFor('ss50'), 0, SS, 0, 'single', 0),
     );
     // The top of the 12% bracket is measured against taxable income, and the
-    // 85% cap already binds by then, so the room grows dollar for dollar.
+    // 85% cap already binds by then, so the room grows dollar for dollar with
+    // the $8,000 of extra deduction.
     expect(maxConversionUnder(ceilingFor('bracket12'), 30_000, SS, 0, 'single', 0)).toBe(14_069);
-    expect(maxConversionUnder(ceilingFor('bracket12'), 30_000, SS, 0, 'single', 1)).toBe(16_069);
+    expect(maxConversionUnder(ceilingFor('bracket12'), 30_000, SS, 0, 'single', 1)).toBe(22_069);
   });
 
   it('prices a conversion more cheaply for a filer over 65', () => {
     const ceilingFor = (id: ConversionCeilingId) =>
       conversionCeilings('single').find((c) => c.id === id) as ConversionCeiling;
     const sizing = sizeConversion(ceilingFor('bracket12'), 30_000, SS, 0, 'single', 1);
-    expect(sizing.conversion).toBe(16_069);
-    expect(sizing.taxBefore).toBe(2_573);
+    expect(sizing.conversion).toBe(22_069);
+    expect(sizing.taxBefore).toBe(1_853);
     // Both scenarios end at the top of the 12% bracket, so the tax after is the
-    // same $5,578 — the over-65 filer simply gets $2,000 more converted for it.
+    // same $5,578 — the over-65 filer simply gets $8,000 more converted for it.
     expect(sizing.taxAfter).toBe(5_578);
-    expect(sizing.taxCost).toBe(3_005);
-    expect(sizing.costPerDollar).toBeCloseTo(18.7, 2);
+    expect(sizing.taxCost).toBe(3_725);
+    expect(sizing.costPerDollar).toBeCloseTo(16.88, 2);
+    // The conversion stops short of the $75,000 MAGI phaseout threshold, so the
+    // dollar past the ceiling is taxed at the plain bracket rate.
     expect(sizing.rateAboveCeiling).toBe(22);
+  });
+});
+
+describe('OBBBA senior deduction (2025-2028)', () => {
+  const SS = AVG_ANNUAL_SS_BENEFIT;
+  const MAX_SS = MAX_ANNUAL_SS_BENEFIT;
+
+  it('is $6,000 for each qualifying person below the phaseout threshold', () => {
+    expect(SENIOR_DEDUCTION).toBe(6_000);
+    expect(seniorDeductionFor('single', 1, 0)).toBe(6_000);
+    expect(seniorDeductionFor('single', 1, 75_000)).toBe(6_000);
+    expect(seniorDeductionFor('mfj', 1, 150_000)).toBe(6_000);
+    expect(seniorDeductionFor('mfj', 2, 150_000)).toBe(12_000);
+  });
+
+  it('stays zero for a filer under 65, however low the MAGI', () => {
+    expect(seniorDeductionFor('single', 0, 0)).toBe(0);
+    expect(seniorDeductionFor('mfj', 0, 10_000)).toBe(0);
+    expect(deductionFor('single', 0, 10_000)).toBe(15_750);
+  });
+
+  it('clamps the count the way the standard deduction does', () => {
+    expect(seniorDeductionFor('single', 2, 0)).toBe(6_000);
+    expect(seniorDeductionFor('mfj', 3, 0)).toBe(12_000);
+    expect(seniorDeductionFor('single', -1, 0)).toBe(0);
+  });
+
+  it("reduces each person's $6,000 by 6% of MAGI over the threshold", () => {
+    expect(SENIOR_DEDUCTION_PHASEOUT_RATE).toBe(0.06);
+    expect(SENIOR_DEDUCTION_PHASEOUT_START).toEqual({
+      single: 75_000,
+      mfj: 150_000,
+    });
+    expect(seniorDeductionFor('single', 1, 76_000)).toBeCloseTo(5_940, 6);
+    expect(seniorDeductionFor('single', 1, 125_000)).toBeCloseTo(3_000, 6);
+    // The statute reduces "the $6,000 amount", i.e. each spouse's own, so a
+    // couple where both qualify loses 12 cents per dollar rather than 6.
+    expect(seniorDeductionFor('mfj', 1, 200_000)).toBeCloseTo(3_000, 6);
+    expect(seniorDeductionFor('mfj', 2, 200_000)).toBeCloseTo(6_000, 6);
+  });
+
+  it('runs out exactly $100,000 above the threshold for both filing statuses', () => {
+    expect(seniorDeductionPhaseoutEnd('single')).toBe(175_000);
+    expect(seniorDeductionPhaseoutEnd('mfj')).toBe(250_000);
+    const cases: [FilingStatus, number][] = [
+      ['single', 1],
+      ['mfj', 1],
+      ['mfj', 2],
+    ];
+    for (const [fs, seniors] of cases) {
+      const end = seniorDeductionPhaseoutEnd(fs);
+      expect(seniorDeductionFor(fs, seniors, end - 1)).toBeGreaterThan(0);
+      expect(seniorDeductionFor(fs, seniors, end)).toBe(0);
+      expect(seniorDeductionFor(fs, seniors, end + 1_000_000)).toBe(0);
+      expect(deductionFor(fs, seniors, end)).toBe(standardDeductionFor(fs, seniors));
+    }
+  });
+
+  it('stacks on the standard deduction and its age-65 addition', () => {
+    expect(deductionFor('single', 1, 50_000)).toBe(15_750 + 2_000 + 6_000);
+    expect(deductionFor('mfj', 2, 50_000)).toBe(31_500 + 3_200 + 12_000);
+  });
+
+  it('acts as a 6% stealth surtax on income inside the phaseout range', () => {
+    // Single, $60,000 of other income and the average benefit: the 85% cap has
+    // already bound, so a dollar of income is a dollar of MAGI - but it also
+    // destroys 6 cents of deduction, so taxable income rises by $1.06 and the
+    // 22% bracket bites at 23.32%.
+    expect(totalTax(60_001, SS, 'single', 1) - totalTax(60_000, SS, 'single', 1))
+      .toBeCloseTo(0.22 * 1.06, 6);
+    expect(totalTax(60_001, SS, 'single', 0) - totalTax(60_000, SS, 'single', 0))
+      .toBeCloseTo(0.22, 6);
+  });
+
+  it('doubles that surtax when both spouses qualify', () => {
+    // MFJ, $150,000 of other income: MAGI is $170,155, i.e. $20,155 into the
+    // range, and still inside the 22% bracket either way.
+    expect(totalTax(150_001, SS, 'mfj', 1) - totalTax(150_000, SS, 'mfj', 1))
+      .toBeCloseTo(0.22 * 1.06, 6);
+    expect(totalTax(150_001, SS, 'mfj', 2) - totalTax(150_000, SS, 'mfj', 2))
+      .toBeCloseTo(0.22 * 1.12, 6);
+  });
+
+  it('multiplies with the torpedo where the two overlap', () => {
+    // Single, the maximum benefit and $50,000 of other income: benefits are
+    // still being dragged in, so a dollar earned is $1.85 of MAGI, which then
+    // destroys 6% of itself in deduction. 1.85 x 1.06 = $1.96 of taxable
+    // income, and 22% becomes 43.14% rather than the torpedo's own 40.7%.
+    const withPhaseout =
+      totalTax(50_001, MAX_SS, 'single', 1) - totalTax(50_000, MAX_SS, 'single', 1);
+    expect(withPhaseout).toBeCloseTo(0.22 * 1.85 * 1.06, 6);
+    expect(withPhaseout).toBeCloseTo(0.431_42, 6);
+    expect(
+      totalTax(50_001, MAX_SS, 'single', 0) - totalTax(50_000, MAX_SS, 'single', 0),
+    ).toBeCloseTo(0.22 * 1.85, 6);
+  });
+
+  it('puts a second hump on the marginal-rate curve', () => {
+    const rates = (seniors: number) =>
+      new Set(
+        marginalRateCurve(SS, 150_000, 250, 'single', seniors).map(
+          (p) => p.marginalRate,
+        ),
+      );
+    expect(rates(0)).toContain(22);
+    expect(rates(0)).not.toContain(23.32);
+    // 22% and 24% amplified by the 6% phaseout.
+    expect(rates(1)).toContain(23.32);
+    expect(rates(1)).toContain(25.44);
+  });
+
+  it('falls back to the plain bracket rate once the deduction is gone', () => {
+    // Single with the maximum benefit: MAGI clears $175,000 while other income
+    // is still on the chart, so this hump has a right-hand edge too.
+    expect(totalTax(120_001, MAX_SS, 'single', 1) - totalTax(120_000, MAX_SS, 'single', 1))
+      .toBeCloseTo(0.24 * 1.06, 6);
+    expect(totalTax(140_001, MAX_SS, 'single', 1) - totalTax(140_000, MAX_SS, 'single', 1))
+      .toBeCloseTo(0.24, 6);
+  });
+
+  it('prices the phaseout into a conversion ceiling and the rate past it', () => {
+    const ceiling = conversionCeilings('single').find(
+      (c) => c.id === 'bracket22',
+    ) as ConversionCeiling;
+    const plain = sizeConversion(ceiling, 30_000, SS, 0, 'single', 0);
+    const senior = sizeConversion(ceiling, 30_000, SS, 0, 'single', 1);
+    expect(plain.conversion).toBe(68_944);
+    expect(plain.rateAboveCeiling).toBe(24);
+    // $8,000 more deduction would buy $76,944 of room, but every converted
+    // dollar above $75,000 of MAGI burns 6 cents of that deduction, so the
+    // ceiling arrives $2,949 early - and the next dollar costs 25.44%.
+    expect(senior.conversion).toBe(73_995);
+    expect(senior.rateAboveCeiling).toBe(25.44);
   });
 });

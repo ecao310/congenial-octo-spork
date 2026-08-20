@@ -64,6 +64,11 @@ export function maxSeniors(filingStatus: FilingStatus): number {
   return filingStatus === 'mfj' ? 2 : 1;
 }
 
+/** Clamps a senior count to what the filing status allows. */
+function seniorCount(filingStatus: FilingStatus, seniors: number): number {
+  return Math.min(Math.max(0, Math.floor(seniors)), maxSeniors(filingStatus));
+}
+
 /**
  * The standard deduction, including the age-65-or-older addition for
  * `seniors` qualifying people on the return. The count is clamped to what the
@@ -77,10 +82,104 @@ export function standardDeductionFor(
   filingStatus: FilingStatus = 'single',
   seniors = 0,
 ): number {
-  const count = Math.min(Math.max(0, Math.floor(seniors)), maxSeniors(filingStatus));
   return (
     FILING_PARAMS[filingStatus].standardDeduction +
-    count * ADDITIONAL_STD_DEDUCTION_65[filingStatus]
+    seniorCount(filingStatus, seniors) * ADDITIONAL_STD_DEDUCTION_65[filingStatus]
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  OBBBA senior deduction (tax years 2025-2028 only)                 */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The temporary "senior deduction" added by P.L. 119-21 (the One Big Beautiful
+ * Bill Act) as IRC 151(d)(5): "there shall be allowed a deduction in an amount
+ * equal to $6,000 for each qualified individual with respect to the taxpayer",
+ * a qualified individual being someone who has attained age 65 by the end of
+ * the year. It is allowed whether or not the taxpayer itemizes, and it stacks
+ * on top of both the standard deduction and the age-65 addition above.
+ */
+export const SENIOR_DEDUCTION = 6_000;
+
+/** The only tax years the senior deduction exists for. It expires after 2028. */
+export const SENIOR_DEDUCTION_FIRST_YEAR = 2025;
+export const SENIOR_DEDUCTION_LAST_YEAR = 2028;
+
+/**
+ * The statute reduces "the $6,000 amount" - i.e. each qualified individual's
+ * own $6,000 - by 6% of MAGI over the threshold. On a joint return where both
+ * spouses qualify the reduction therefore lands twice, at an effective 12% of
+ * the excess, which is why the deduction runs out $100,000 above the threshold
+ * for every filing status rather than $200,000 above it for couples.
+ */
+export const SENIOR_DEDUCTION_PHASEOUT_RATE = 0.06;
+
+/** MAGI at which each qualifying individual's $6,000 starts shrinking. */
+export const SENIOR_DEDUCTION_PHASEOUT_START: Record<FilingStatus, number> = {
+  single: 75_000,
+  mfj: 150_000,
+};
+
+/**
+ * MAGI at which the senior deduction is gone: $175,000 single, $250,000 MFJ.
+ * Independent of how many spouses qualify, because the phaseout applies to each
+ * one's $6,000 separately.
+ */
+export function seniorDeductionPhaseoutEnd(
+  filingStatus: FilingStatus = 'single',
+): number {
+  return (
+    SENIOR_DEDUCTION_PHASEOUT_START[filingStatus] +
+    SENIOR_DEDUCTION / SENIOR_DEDUCTION_PHASEOUT_RATE
+  );
+}
+
+/**
+ * The senior deduction for `seniors` qualifying people at a given MAGI.
+ *
+ * MAGI here is AGI increased by the foreign-income exclusions of sections 911,
+ * 931 and 933, none of which this app models - so it is simply AGI, which
+ * already includes whatever share of Social Security benefits is taxable. Note
+ * this is a *different* MAGI from the one Medicare uses for IRMAA: tax-exempt
+ * interest is not added back here.
+ *
+ * Inside the phaseout range every extra dollar of income also destroys 6 cents
+ * of deduction per qualifying person, so taxable income rises by $1.06 (or
+ * $1.12 for a couple where both qualify) per dollar earned. That is a stealth
+ * surtax on top of the bracket rate, and it stacks multiplicatively with the
+ * Social Security torpedo, because the benefits the torpedo drags into taxable
+ * income are part of MAGI too.
+ */
+export function seniorDeductionFor(
+  filingStatus: FilingStatus = 'single',
+  seniors = 0,
+  magi = 0,
+): number {
+  const count = seniorCount(filingStatus, seniors);
+  if (count === 0) return 0;
+  const excess = Math.max(0, magi - SENIOR_DEDUCTION_PHASEOUT_START[filingStatus]);
+  const perPerson = Math.max(
+    0,
+    SENIOR_DEDUCTION - SENIOR_DEDUCTION_PHASEOUT_RATE * excess,
+  );
+  return count * perPerson;
+}
+
+/**
+ * Everything that comes off AGI: the standard deduction, its age-65 addition,
+ * and the temporary senior deduction. Depends on MAGI because of the senior
+ * deduction's phaseout — but the senior deduction is taken *from* AGI rather
+ * than added to it, so there is no circular definition.
+ */
+export function deductionFor(
+  filingStatus: FilingStatus = 'single',
+  seniors = 0,
+  magi = 0,
+): number {
+  return (
+    standardDeductionFor(filingStatus, seniors) +
+    seniorDeductionFor(filingStatus, seniors, magi)
   );
 }
 
@@ -130,19 +229,17 @@ export function federalIncomeTax(
   return tax;
 }
 
-/** Total federal tax on other income plus taxable Social Security, after the standard deduction. */
+/** Total federal tax on other income plus taxable Social Security, after deductions. */
 export function totalTax(
   otherIncome: number,
   ssBenefit: number,
   filingStatus: FilingStatus = 'single',
   seniors = 0,
 ): number {
-  const taxable = Math.max(
-    0,
-    otherIncome +
-      taxableSocialSecurity(ssBenefit, otherIncome, filingStatus) -
-      standardDeductionFor(filingStatus, seniors),
-  );
+  // AGI, which is also the MAGI the senior deduction phases out against.
+  const magi =
+    otherIncome + taxableSocialSecurity(ssBenefit, otherIncome, filingStatus);
+  const taxable = Math.max(0, magi - deductionFor(filingStatus, seniors, magi));
   return federalIncomeTax(taxable, filingStatus);
 }
 
@@ -209,15 +306,17 @@ export function totalTaxWithLTCG(
   seniors = 0,
 ): number {
   const { brackets } = FILING_PARAMS[filingStatus];
-  const standardDeduction = standardDeductionFor(filingStatus, seniors);
   const ltcgBrackets = LTCG_BRACKETS[filingStatus];
 
   // LTCG counts toward provisional income (IRS uses full AGI + half SS).
   const totalOtherIncome = ordinaryIncome + ltcg;
   const taxableSS = taxableSocialSecurity(ssBenefit, totalOtherIncome, filingStatus);
 
+  // Gains are part of AGI, so they phase out the senior deduction too.
+  const deduction = deductionFor(filingStatus, seniors, totalOtherIncome + taxableSS);
+
   // Ordinary taxable income (before LTCG): ordinary + taxable SS − deduction.
-  const ordinaryTaxable = Math.max(0, ordinaryIncome + taxableSS - standardDeduction);
+  const ordinaryTaxable = Math.max(0, ordinaryIncome + taxableSS - deduction);
 
   // Total taxable income. The deduction offsets ordinary income first; whatever
   // is left over offsets the LTCG stacked on top of it. Form 1040 subtracts the
@@ -225,7 +324,7 @@ export function totalTaxWithLTCG(
   // Worksheet caps the preferentially-taxed amount at total taxable income
   // (line 1), so the LTCG band is [ordinaryTaxable, totalTaxable] — which is
   // narrower than `ltcg` exactly when ordinary income underruns the deduction.
-  const totalTaxable = Math.max(0, ordinaryIncome + taxableSS + ltcg - standardDeduction);
+  const totalTaxable = Math.max(0, ordinaryIncome + taxableSS + ltcg - deduction);
 
   // --- Ordinary income tax (uses ordinary brackets up to ordinaryTaxable) ---
   let ordinaryTax = 0;
@@ -461,7 +560,9 @@ export function conversionCeilings(
  * plus `conversion` dollars of Roth conversion (ordinary income).
  *
  * Every measure here is non-decreasing in `conversion`, which is what makes the
- * binary search in `maxConversionUnder` valid.
+ * binary search in `maxConversionUnder` valid. That still holds with the senior
+ * deduction in play: a bigger conversion only ever shrinks the deduction, so
+ * taxable income rises at least as fast as the conversion itself.
  */
 export function conversionMeasureValue(
   measure: ConversionMeasure,
@@ -472,21 +573,23 @@ export function conversionMeasureValue(
   filingStatus: FilingStatus = 'single',
   seniors = 0,
 ): number {
-  const standardDeduction = standardDeductionFor(filingStatus, seniors);
   const otherIncome = ordinaryIncome + conversion + ltcg;
   const taxableSS = taxableSocialSecurity(ssBenefit, otherIncome, filingStatus);
+  // AGI (which already includes taxable SS) plus tax-exempt interest, which the
+  // app does not model yet. Also the base for the senior deduction's phaseout,
+  // where tax-exempt interest would *not* be added back.
+  const magi = otherIncome + taxableSS;
+  const deduction = deductionFor(filingStatus, seniors, magi);
   switch (measure) {
     case 'provisionalIncome':
       return otherIncome + 0.5 * ssBenefit;
     case 'magi':
-      // AGI (which already includes taxable SS) plus tax-exempt interest, which
-      // the app does not model yet.
-      return otherIncome + taxableSS;
+      return magi;
     case 'ordinaryTaxableIncome':
       // What the ordinary brackets are measured against: LTCG stacks on top.
-      return Math.max(0, ordinaryIncome + conversion + taxableSS - standardDeduction);
+      return Math.max(0, ordinaryIncome + conversion + taxableSS - deduction);
     case 'totalTaxableIncome':
-      return Math.max(0, ordinaryIncome + conversion + taxableSS + ltcg - standardDeduction);
+      return Math.max(0, magi - deduction);
   }
 }
 

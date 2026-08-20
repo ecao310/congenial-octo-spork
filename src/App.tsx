@@ -21,6 +21,13 @@ import {
   CONVERSION_MEASURE_LABELS,
   ADDITIONAL_STD_DEDUCTION_65,
   standardDeductionFor,
+  taxableSocialSecurity,
+  SENIOR_DEDUCTION,
+  SENIOR_DEDUCTION_FIRST_YEAR,
+  SENIOR_DEDUCTION_LAST_YEAR,
+  SENIOR_DEDUCTION_PHASEOUT_RATE,
+  SENIOR_DEDUCTION_PHASEOUT_START,
+  seniorDeductionPhaseoutEnd,
 } from './utils/tax';
 import type {
   LTCGMarginalRatePoint,
@@ -45,6 +52,14 @@ const formatCurrency = (value: number): string =>
     currency: 'USD',
     maximumFractionDigits: 0,
   }).format(value);
+
+/** A rate given as a fraction, rendered the way the chart axis renders it. */
+const formatPercent = (rate: number): string =>
+  `${Math.round(rate * 10_000) / 100}%`;
+
+/** A rate given as a fraction, rendered as cents lost per dollar earned. */
+const formatCents = (rate: number): string =>
+  `${Math.round(rate * 10_000) / 100}\u00A2`;
 
 const formatCompact = (value: number): string =>
   new Intl.NumberFormat('en-US', {
@@ -170,6 +185,20 @@ const App: React.FC = () => {
   const standardDeduction = standardDeductionFor(filingStatus, seniors);
   const seniorAddition = standardDeduction - baseDeduction;
 
+  // The OBBBA senior deduction, before its phaseout eats into it.
+  const seniorDeductionMax = seniors * SENIOR_DEDUCTION;
+  const phaseoutStart = SENIOR_DEDUCTION_PHASEOUT_START[filingStatus];
+  const phaseoutEnd = seniorDeductionPhaseoutEnd(filingStatus);
+  // With the age toggle off there is nothing to phase out, but the explainer
+  // still needs a rate to talk about, so describe one qualifying person.
+  const phaseoutRate = SENIOR_DEDUCTION_PHASEOUT_RATE * Math.max(1, seniors);
+  const taxableIncomePerDollar = 1 + phaseoutRate;
+  // Whether the far side of the phaseout is inside the chart's x-axis depends on
+  // how much of the benefit is taxable, so work it out rather than guess.
+  const phaseoutEndsOnChart =
+    MAX_INCOME + taxableSocialSecurity(ssBenefit, MAX_INCOME, filingStatus) >
+    phaseoutEnd;
+
   const curve = useMemo(
     () => marginalRateCurve(ssBenefit, MAX_INCOME, 250, filingStatus, seniors),
     [ssBenefit, filingStatus, seniors],
@@ -273,6 +302,31 @@ const App: React.FC = () => {
           The addition widens the 0%-rate valley to the left of the torpedo:
           taxable income stays at zero for that much longer, so the whole curve
           shifts right.
+        </p>
+        <p className="field-note">
+          {seniors > 0 ? (
+            <>
+              Senior deduction{' '}
+              <strong>{formatCurrency(seniorDeductionMax)}</strong>
+              {seniors > 1
+                ? ` (${formatCurrency(SENIOR_DEDUCTION)} per spouse)`
+                : ''}{' '}
+              on top of that, shrinking by {formatCents(phaseoutRate)} per dollar
+              of MAGI above {formatCurrency(phaseoutStart)}
+              {seniors > 1
+                ? ` (${formatCents(SENIOR_DEDUCTION_PHASEOUT_RATE)} for each spouse)`
+                : ''}{' '}
+              and gone at {formatCurrency(phaseoutEnd)}. It expires after tax
+              year {SENIOR_DEDUCTION_LAST_YEAR}.
+            </>
+          ) : (
+            <>
+              Filers 65 or older also get the temporary senior deduction —{' '}
+              {formatCurrency(SENIOR_DEDUCTION)} each, for tax years{' '}
+              {SENIOR_DEDUCTION_FIRST_YEAR}&ndash;{SENIOR_DEDUCTION_LAST_YEAR}{' '}
+              only.
+            </>
+          )}
         </p>
       </fieldset>
 
@@ -403,6 +457,68 @@ const App: React.FC = () => {
             The right mix depends on account balances, state taxes, Medicare
             premium surcharges, and more. The chart above makes the goal concrete:
             keep provisional income out of the spike, or jump clean over it.
+          </p>
+        </div>
+      </details>
+
+      <details className="explainer">
+        <summary>
+          <h2 id="senior-deduction-heading">
+            The senior deduction phaseout ({SENIOR_DEDUCTION_FIRST_YEAR}&ndash;
+            {SENIOR_DEDUCTION_LAST_YEAR})
+          </h2>
+        </summary>
+        <div className="explainer-content">
+          <p>
+            For tax years {SENIOR_DEDUCTION_FIRST_YEAR} through{' '}
+            {SENIOR_DEDUCTION_LAST_YEAR} only, anyone who reaches age 65 gets an
+            extra <strong>{formatCurrency(SENIOR_DEDUCTION)}</strong> deduction —
+            on top of the standard deduction, on top of the age-65 addition to
+            it, and whether or not they itemize. A couple filing jointly with
+            both spouses over 65 gets {formatCurrency(2 * SENIOR_DEDUCTION)}.
+          </p>
+          <p>
+            The catch is the phaseout. Each qualifying person&apos;s{' '}
+            {formatCurrency(SENIOR_DEDUCTION)} shrinks by{' '}
+            {formatCents(SENIOR_DEDUCTION_PHASEOUT_RATE)} for every dollar of
+            MAGI above {formatCurrency(phaseoutStart)}, so it is gone at{' '}
+            {formatCurrency(phaseoutEnd)} — exactly $100,000 later, for both
+            filing statuses, because a couple where both spouses qualify has
+            twice as much deduction to lose and loses it twice as fast.
+          </p>
+          <p>
+            Inside that range every extra dollar of income does double duty: it
+            is taxed, and it destroys {formatCents(phaseoutRate)} of deduction.
+            Taxable income therefore rises by{' '}
+            <strong>${taxableIncomePerDollar.toFixed(2)}</strong> per dollar
+            earned, and the 22% bracket bites at{' '}
+            <strong>{formatPercent(0.22 * taxableIncomePerDollar)}</strong>. That
+            is a surtax that appears nowhere on the rate schedule.
+          </p>
+          <p>
+            Worse, the two humps multiply. MAGI is AGI, which already includes
+            whatever share of your benefits the torpedo has dragged into taxable
+            income — so where the torpedo and the phaseout overlap, one extra
+            dollar raises taxable income by 1.85 &times;{' '}
+            {taxableIncomePerDollar.toFixed(2)} ={' '}
+            <strong>${(1.85 * taxableIncomePerDollar).toFixed(2)}</strong>, and
+            22% becomes{' '}
+            <strong>
+              {formatPercent(0.22 * 1.85 * taxableIncomePerDollar)}
+            </strong>
+            .
+          </p>
+          <p>
+            On the chart above, the second hump starts where MAGI clears{' '}
+            {formatCurrency(phaseoutStart)} — at less of your own income than
+            that, since the taxable part of your benefits counts toward MAGI too.
+            The rate falls back once the deduction is fully gone at{' '}
+            {formatCurrency(phaseoutEnd)} of MAGI, which{' '}
+            {phaseoutEndsOnChart
+              ? 'is inside the chart at the benefit selected above'
+              : 'sits past the right edge of the chart at the benefit selected above'}
+            . Note that tax-exempt interest is <em>not</em> added back for this
+            phaseout, unlike the MAGI Medicare uses for IRMAA.
           </p>
         </div>
       </details>

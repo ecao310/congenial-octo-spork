@@ -769,3 +769,161 @@ MAGI-dependent, so it cannot live in `standardDeductionFor` as a constant. It
 wants a `deductionFor(fs, seniors, magi)` that wraps this one, and MAGI depends
 on taxable SS, so watch for a circular definition (AGI does NOT include the
 deduction, so there is no actual cycle — just be explicit about it).
+
+## 2026-08-19 — Task: OBBBA senior deduction (tax years 2025–2028)
+
+Modeled the temporary $6,000-per-senior deduction and its 6% MAGI phaseout, so
+the app now shows the second hump stacked on the SS torpedo.
+
+### What the statute actually says (verified, not assumed)
+
+IRC 151(d)(5), added by P.L. 119-21 sec. 70103:
+
+  "In the case of a taxable year beginning before January 1, 2029, there shall
+   be allowed a deduction in an amount equal to $6,000 for each qualified
+   individual with respect to the taxpayer."
+  "The $6,000 amount in clause (i) shall be reduced (but not below zero) by
+   6 percent of so much of the taxpayer's modified adjusted gross income as
+   exceeds $75,000 ($150,000 in the case of a joint return)."
+
+THE KEY READING: the reduction applies to *each qualified individual's own*
+$6,000, not to the couple's combined $12,000. That is what reconciles the
+statute with the widely published "fully gone at $175,000 / $250,000":
+
+  single, 1 senior:  6,000 / 0.06  = 100,000 -> 75,000 + 100,000 = 175,000
+  mfj,    1 senior:  6,000 / 0.06  = 100,000 -> 150,000 + 100,000 = 250,000
+  mfj,    2 seniors: 12,000 / 0.12 = 100,000 -> 150,000 + 100,000 = 250,000
+
+If you instead reduced the combined $12,000 by 6%, MFJ would run to $350,000
+and contradict every published source. The phaseout range is $100,000 wide for
+every filing status and every senior count. Sources: IRS newsroom "Check your
+eligibility for the new enhanced deduction for seniors" (amount, years,
+thresholds, itemizer-agnostic), law.cornell.edu 26 USC 151 (statutory text),
+Thomson Reuters / Tax Foundation (the $175k/$250k endpoints).
+
+MAGI here = AGI + the sec. 911/931/933 foreign exclusions, which this app does
+not model — so MAGI is just AGI. Tax-exempt interest is NOT added back. That is
+a *different* MAGI from IRMAA's (AGI + tax-exempt interest); the muni-interest
+task must keep the two apart, and there is a comment in seniorDeductionFor
+saying so.
+
+No circularity: the senior deduction phases out on AGI, and it is taken *from*
+AGI rather than added to it. AGI is fully determined (including taxable SS)
+before any deduction is applied.
+
+### API
+
+New in tax.ts: SENIOR_DEDUCTION (6_000), SENIOR_DEDUCTION_FIRST_YEAR / _LAST_YEAR
+(2025 / 2028), SENIOR_DEDUCTION_PHASEOUT_RATE (0.06),
+SENIOR_DEDUCTION_PHASEOUT_START ({single: 75_000, mfj: 150_000}),
+seniorDeductionPhaseoutEnd(fs), seniorDeductionFor(fs, seniors, magi), and
+deductionFor(fs, seniors, magi) = standardDeductionFor + seniorDeductionFor.
+
+NO new positional parameter was added anywhere — the deduction is derived from
+the `seniors` count that last iteration already threaded through everything,
+plus a MAGI that each call site already had in hand. Call sites changed:
+totalTax, totalTaxWithLTCG (renamed its local `standardDeduction` -> `deduction`)
+and conversionMeasureValue. standardDeductionFor() is unchanged and still means
+*only* the standard deduction, which is what the UI's "Standard deduction $X"
+readout shows; deductionFor() is the full stack.
+
+Also factored the senior-count clamp out of standardDeductionFor into a private
+seniorCount() helper so both deductions clamp identically.
+
+Binary search in maxConversionUnder is still valid: a bigger conversion only
+ever shrinks the deduction, so taxable income remains non-decreasing (comment
+added to conversionMeasureValue).
+
+### The numbers this pinned down
+
+Marginal-rate arithmetic, which is the whole point of the feature:
+
+- Inside the phaseout, taxable income rises $1.06 per dollar earned (single, or
+  MFJ with one senior) or $1.12 (MFJ, both seniors). 22% bites at 23.32% /
+  24.64%; 24% bites at 25.44%. A surtax that is on no rate schedule.
+- IT MULTIPLIES WITH THE TORPEDO. MAGI includes the SS the torpedo drags in, so
+  in the overlap a dollar earned is 1.85 x 1.06 = $1.96 of taxable income and
+  22% becomes 43.14% (vs the torpedo's own 40.7%). MFJ both-seniors: 1.85 x 1.12
+  = $2.07 and 45.58%. Verified against totalTax at single/max benefit/$50,000.
+- Overlap only happens for a single filer at large benefits: MFJ needs MAGI
+  > $150,000 while SS is still uncapped, and with the app's single-earner max
+  benefit the 85% cap binds at ~$67,589 of other income (MAGI ~$118,600), so
+  MFJ never overlaps. Do not write an MFJ overlap test expecting 45.58% from
+  totalTax; the 1.12 factor is testable on its own at MFJ/$150,000.
+- Right edge of the hump: for single + average benefit, phaseout ends at
+  $175,000 MAGI = ~$154,845 of other income, i.e. just off the 150k chart. At
+  the maximum benefit it lands at ~$122,900 of income and IS on-chart. So the
+  explainer computes `phaseoutEndsOnChart` from
+  MAX_INCOME + taxableSocialSecurity(...) instead of asserting either way.
+  I deliberately did NOT widen MAX_INCOME to make the hump's right edge always
+  visible: it would compress the actual torpedo (0–60k) for everyone, and a
+  seniors-dependent axis is worse. Revisit if the multi-year task needs it.
+
+Concrete regressions (all now tests):
+- First taxed dollar, single, no benefits: 15,751 (no senior) -> 23,751.
+- Deduction saving, single/$30k/avg benefit: (2,000 + 6,000) x 12% = $960.
+- MFJ had to move from $30,000 to $60,000 for the saving test: at $30,000 the
+  couple's taxable income (3,428) runs out before the deduction does, so the
+  old "1,600 x 10%" assertion no longer isolates anything. At $60,000 it is
+  (1,600 + 6,000) x 12% = $912 per qualifying spouse.
+- 0%-rate valley, single/avg benefit: last zero-rate sample 14,750 -> 20,000,
+  exact crossing 14,881 -> 20,214. Still the 1.5x rule: 8,000 / 1.5 = 5,333.
+- Single, $100k of gains only: 5,385 (no senior) -> 4,410. $100k of AGI is
+  $25k into the phaseout, so only $4,500 of the $6,000 survives, and
+  (2,000 + 4,500) x 15% = $975 = 5,385 - 4,410. This test now exercises the
+  phaseout by accident of the gain size — noted in its comment.
+- Conversion to the top of the 12% bracket, single/$30k/avg: 16,069 -> 22,069
+  (+8,000 exactly, because MAGI at the ceiling is $72,224, still short of
+  $75,000). taxBefore 2,573 -> 1,853, taxAfter unchanged at 5,578, cost per
+  dollar 18.70c -> 16.88c.
+- Conversion to the top of the 22% bracket is the one that shows the phaseout
+  biting: 68,944 (no senior) vs 73,995 (senior). $8,000 of extra deduction
+  "should" buy 76,944, but each converted dollar past $75,000 of MAGI burns 6c
+  of it, so the ceiling arrives 2,949 early and rateAboveCeiling is 25.44%
+  rather than 24%.
+
+### UI
+
+Second `<p className="field-note">` in the existing Age fieldset. Off:
+"Filers 65 or older also get the temporary senior deduction — $6,000 each, for
+tax years 2025–2028 only." On: "Senior deduction $6,000 on top of that,
+shrinking by 6c per dollar of MAGI above $75,000 and gone at $175,000. It
+expires after tax year 2028." (MFJ/both: "$12,000 ($6,000 per spouse) …
+12c … above $150,000 (6c for each spouse) and gone at $250,000.")
+
+New collapsed `<details className="explainer">` "The senior deduction phaseout
+(2025–2028)", placed after the mitigation explainer and before Capital Gains
+Stacking: what it is, the per-person phaseout and why the range is $100,000 wide
+for everyone, the $1.06/23.32% surtax, the 1.85x multiplication, and where the
+hump's edges fall on the chart. All figures derive from filingStatus/seniors, so
+they track the toggles. Two module-scope formatters added: formatPercent (rate
+fraction -> "23.32%") and formatCents (-> "6c" using ¢).
+
+No CSS needed — reused .field-note, .explainer, .explainer-content.
+
+### Tests
+
++14, 89 -> 103 passing. tax.test.ts: 7 existing age-65 assertions updated for
+the new deduction stack (all 7 failures were predicted before running, and every
+observed value matched the hand computation), plus a new
+`OBBBA senior deduction (2025-2028)` describe with 11 cases. App.test.tsx: the
+age-65 conversion test renumbered, plus two new tests for the field note and the
+explainer.
+
+Testing-library gotchas hit and worked around:
+- `getByText(/senior deduction/i)` matches BOTH the field note and the explainer
+  (a collapsed <details> is still in the DOM). Anchor with /^Senior deduction/
+  and /^Filers 65 or older/.
+- `getByText(/23.32%/)` throws "found multiple elements" because the <strong>
+  and its parent <p> both match. Assert with
+  `expect(heading.closest('details')).toHaveTextContent('23.32%')` instead.
+
+Verified: npx tsc -b, npm run lint, npx vitest run (103 passed), npm run build
+all clean; only the pre-existing >500kB chunk warning.
+
+Next up: the muni-interest toggle. Two traps waiting there — tax-exempt interest
+belongs in provisional income and in IRMAA MAGI but NOT in the senior
+deduction's MAGI (see above), and it is not in AGI at all, so it needs its own
+input threaded through taxableSocialSecurity's caller rather than being folded
+into otherIncome. That will finally force the options-object refactor that is
+still sitting in the backlog.

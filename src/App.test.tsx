@@ -220,16 +220,65 @@ describe('App', () => {
     );
   });
 
-  it('feeds the age 65 deduction into the conversion sizing', () => {
+  it('feeds the age 65 deductions into the conversion sizing', () => {
     render(<App />);
     expect(screen.getAllByText('$14,069').length).toBeGreaterThanOrEqual(1);
 
     fireEvent.click(screen.getByRole('checkbox', { name: 'Age 65 or older' }));
-    // $2,000 more deduction is $2,000 more room under the top of the 12%
-    // bracket, and the tax before the conversion drops by 12% of it.
+    // $2,000 of age-65 addition plus the $6,000 senior deduction is $8,000 more
+    // room under the top of the 12% bracket, and the tax before the conversion
+    // drops by 12% of it.
     expect(screen.queryByText('$14,069')).not.toBeInTheDocument();
-    expect(screen.getAllByText('$16,069').length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText('was $2,573')).toBeInTheDocument();
+    expect(screen.getAllByText('$22,069').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText('was $1,853')).toBeInTheDocument();
+  });
+
+  it('describes the senior deduction and its phaseout beside the age toggle', () => {
+    render(<App />);
+    expect(screen.getByText(/^Filers 65 or older/)).toHaveTextContent(
+      'Filers 65 or older also get the temporary senior deduction — $6,000 each, for tax years 2025–2028 only.',
+    );
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Age 65 or older' }));
+    expect(screen.getByText(/^Senior deduction/)).toHaveTextContent(
+      'Senior deduction $6,000 on top of that, shrinking by 6¢ per dollar of MAGI above $75,000 and gone at $175,000. It expires after tax year 2028.',
+    );
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Jointly' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Both spouses are 65 or older' }));
+    // Two spouses lose 6¢ each, so the couple's $12,000 is gone $100,000 past
+    // the threshold rather than $200,000 past it.
+    expect(screen.getByText(/^Senior deduction/)).toHaveTextContent(
+      'Senior deduction $12,000 ($6,000 per spouse) on top of that, shrinking by 12¢ per dollar of MAGI above $150,000 (6¢ for each spouse) and gone at $250,000. It expires after tax year 2028.',
+    );
+  });
+
+  it('explains the senior deduction phaseout in a collapsed section', () => {
+    render(<App />);
+    const explainer = () =>
+      screen
+        .getByRole('heading', { name: /the senior deduction phaseout/i })
+        .closest('details');
+
+    expect(explainer()).toBeInTheDocument();
+    expect(explainer()).not.toHaveAttribute('open');
+
+    // 22% amplified by the 6% phaseout, and again by the torpedo's 1.85x.
+    expect(explainer()).toHaveTextContent('$1.06');
+    expect(explainer()).toHaveTextContent('23.32%');
+    expect(explainer()).toHaveTextContent('$1.96');
+    expect(explainer()).toHaveTextContent('43.14%');
+    expect(explainer()).toHaveTextContent('gone at $175,000');
+    // At the average benefit, MAGI at the right edge of the chart is $170,155,
+    // so the far side of the phaseout is off-chart.
+    expect(explainer()).toHaveTextContent('sits past the right edge of the chart');
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Age 65 or older' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Jointly' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Both spouses are 65 or older' }));
+    expect(explainer()).toHaveTextContent('24.64%');
+    expect(explainer()).toHaveTextContent('45.58%');
+    expect(explainer()).toHaveTextContent('gone at $250,000');
   });
 
   it('updates the ordinary income slider readout when moved', () => {

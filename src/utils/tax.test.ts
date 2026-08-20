@@ -6,7 +6,6 @@ import {
   marginalRateCurve,
   taxableSocialSecurity,
   totalTax,
-  totalTaxWithLTCG,
   segmentCurve,
   conversionCeilings,
   conversionMeasureValue,
@@ -85,27 +84,27 @@ describe('IRS Pub 915 Worksheet 1 (2025)', () => {
     // line 10 = 6,980, line 14 = 3,490, line 15 = line 19 = 2,990.
     const otherIncome = 18_600 + 9_400 + 990;
     expect(pub915Worksheet1(5_980, otherIncome)).toBe(2_990);
-    expect(taxableSocialSecurity(5_980, otherIncome)).toBe(2_990);
+    expect(taxableSocialSecurity({ ssBenefit: 5_980, ordinaryIncome: otherIncome })).toBe(2_990);
   });
 
   it('is zero with provisional income exactly at the $25,000 base amount', () => {
-    expect(taxableSocialSecurity(10_000, 20_000)).toBe(0);
+    expect(taxableSocialSecurity({ ssBenefit: 10_000, ordinaryIncome: 20_000 })).toBe(0);
     expect(pub915Worksheet1(10_000, 20_000)).toBe(0);
   });
 
   it('phases in at 50 cents per dollar just above the base amount', () => {
-    expect(taxableSocialSecurity(10_000, 20_002)).toBe(1);
+    expect(taxableSocialSecurity({ ssBenefit: 10_000, ordinaryIncome: 20_002 })).toBe(1);
     expect(pub915Worksheet1(10_000, 20_002)).toBe(1);
   });
 
   it('caps tier 1 at $4,500 with provisional income exactly at $34,000', () => {
     // line 10 = 9,000, line 12 = 0, line 14 = 4,500, line 15 = 4,500
-    expect(taxableSocialSecurity(10_000, 29_000)).toBe(4_500);
+    expect(taxableSocialSecurity({ ssBenefit: 10_000, ordinaryIncome: 29_000 })).toBe(4_500);
     expect(pub915Worksheet1(10_000, 29_000)).toBe(4_500);
   });
 
   it('adds 85 cents per dollar above the $34,000 threshold', () => {
-    expect(taxableSocialSecurity(10_000, 29_001)).toBeCloseTo(4_500.85, 8);
+    expect(taxableSocialSecurity({ ssBenefit: 10_000, ordinaryIncome: 29_001 })).toBeCloseTo(4_500.85, 8);
     expect(pub915Worksheet1(10_000, 29_001)).toBeCloseTo(4_500.85, 8);
   });
 
@@ -118,7 +117,9 @@ describe('IRS Pub 915 Worksheet 1 (2025)', () => {
     const mismatches: string[] = [];
     for (const ss of benefits) {
       for (const income of incomes) {
-        const actual = taxableSocialSecurity(ss, income);
+        const actual = taxableSocialSecurity(
+          { ssBenefit: ss, ordinaryIncome: income },
+        );
         const expected = pub915Worksheet1(ss, income);
         if (Math.abs(actual - expected) > 1e-8) {
           mismatches.push(
@@ -133,28 +134,38 @@ describe('IRS Pub 915 Worksheet 1 (2025)', () => {
 
 describe('IRS Pub 915 Worksheet 1 (2025), married filing jointly', () => {
   it('is zero with provisional income exactly at the $32,000 base amount', () => {
-    expect(taxableSocialSecurity(10_000, 27_000, 'mfj')).toBe(0);
+    expect(taxableSocialSecurity(
+      { ssBenefit: 10_000, ordinaryIncome: 27_000, filingStatus: 'mfj' },
+    )).toBe(0);
     expect(pub915Worksheet1(10_000, 27_000, 'mfj')).toBe(0);
   });
 
   it('phases in at 50 cents per dollar just above the base amount', () => {
-    expect(taxableSocialSecurity(10_000, 27_002, 'mfj')).toBe(1);
+    expect(taxableSocialSecurity(
+      { ssBenefit: 10_000, ordinaryIncome: 27_002, filingStatus: 'mfj' },
+    )).toBe(1);
     expect(pub915Worksheet1(10_000, 27_002, 'mfj')).toBe(1);
   });
 
   it('caps tier 1 at $6,000 with provisional income exactly at $44,000', () => {
     // line 10 = 12,000, line 12 = 0, line 14 = 6,000, line 15 = 6,000
-    expect(taxableSocialSecurity(20_000, 34_000, 'mfj')).toBe(6_000);
+    expect(taxableSocialSecurity(
+      { ssBenefit: 20_000, ordinaryIncome: 34_000, filingStatus: 'mfj' },
+    )).toBe(6_000);
     expect(pub915Worksheet1(20_000, 34_000, 'mfj')).toBe(6_000);
   });
 
   it('adds 85 cents per dollar above the $44,000 threshold', () => {
-    expect(taxableSocialSecurity(20_000, 34_001, 'mfj')).toBeCloseTo(6_000.85, 8);
+    expect(taxableSocialSecurity(
+      { ssBenefit: 20_000, ordinaryIncome: 34_001, filingStatus: 'mfj' },
+    )).toBeCloseTo(6_000.85, 8);
     expect(pub915Worksheet1(20_000, 34_001, 'mfj')).toBeCloseTo(6_000.85, 8);
   });
 
   it('caps at 85% of benefits', () => {
-    expect(taxableSocialSecurity(10_000, 100_000, 'mfj')).toBe(8_500);
+    expect(taxableSocialSecurity(
+      { ssBenefit: 10_000, ordinaryIncome: 100_000, filingStatus: 'mfj' },
+    )).toBe(8_500);
     expect(pub915Worksheet1(10_000, 100_000, 'mfj')).toBe(8_500);
   });
 
@@ -167,7 +178,9 @@ describe('IRS Pub 915 Worksheet 1 (2025), married filing jointly', () => {
     const mismatches: string[] = [];
     for (const ss of benefits) {
       for (const income of incomes) {
-        const actual = taxableSocialSecurity(ss, income, 'mfj');
+        const actual = taxableSocialSecurity(
+          { ssBenefit: ss, ordinaryIncome: income, filingStatus: 'mfj' },
+        );
         const expected = pub915Worksheet1(ss, income, 'mfj');
         if (Math.abs(actual - expected) > 1e-8) {
           mismatches.push(
@@ -182,27 +195,27 @@ describe('IRS Pub 915 Worksheet 1 (2025), married filing jointly', () => {
 
 describe('taxableSocialSecurity', () => {
   it('is zero when provisional income is at or below the first threshold', () => {
-    expect(taxableSocialSecurity(30000, 5000)).toBe(0);
-    expect(taxableSocialSecurity(50000, 0)).toBe(0);
+    expect(taxableSocialSecurity({ ssBenefit: 30000, ordinaryIncome: 5000 })).toBe(0);
+    expect(taxableSocialSecurity({ ssBenefit: 50000, ordinaryIncome: 0 })).toBe(0);
   });
 
   it('includes 50% of the excess in the middle band', () => {
     // provisional = 20000 + 10000 = 30000, excess over 25000 is 5000
-    expect(taxableSocialSecurity(20000, 20000)).toBe(2500);
+    expect(taxableSocialSecurity({ ssBenefit: 20000, ordinaryIncome: 20000 })).toBe(2500);
   });
 
   it('never exceeds 50% of benefits in the middle band', () => {
     // provisional = 32000 + 1000 = 33000, half the excess (4000) > half of benefits (1000)
-    expect(taxableSocialSecurity(2000, 32000)).toBe(1000);
+    expect(taxableSocialSecurity({ ssBenefit: 2000, ordinaryIncome: 32000 })).toBe(1000);
   });
 
   it('includes 85% of the excess above the second threshold', () => {
     // provisional = 40000 + 20000 = 60000: 4500 + 0.85 * 26000 = 26600
-    expect(taxableSocialSecurity(40000, 40000)).toBe(26600);
+    expect(taxableSocialSecurity({ ssBenefit: 40000, ordinaryIncome: 40000 })).toBe(26600);
   });
 
   it('caps at 85% of benefits', () => {
-    expect(taxableSocialSecurity(10000, 100000)).toBe(8500);
+    expect(taxableSocialSecurity({ ssBenefit: 10000, ordinaryIncome: 100000 })).toBe(8500);
   });
 });
 
@@ -229,19 +242,19 @@ describe('federalIncomeTax', () => {
 
 describe('totalTax', () => {
   it('is zero when income is under the standard deduction', () => {
-    expect(totalTax(15000, 0)).toBe(0);
+    expect(totalTax({ ordinaryIncome: 15000, ssBenefit: 0 })).toBe(0);
   });
 
   it('taxes other income plus the taxable portion of benefits', () => {
     // taxable SS = 26600; taxable income = 40000 + 26600 - 15750 = 50850
-    expect(totalTax(40000, 40000)).toBeCloseTo(federalIncomeTax(50850), 2);
+    expect(totalTax({ ordinaryIncome: 40000, ssBenefit: 40000 })).toBeCloseTo(federalIncomeTax(50850), 2);
   });
 
   it('applies the MFJ standard deduction and thresholds', () => {
-    expect(totalTax(30000, 0, 'mfj')).toBe(0); // under the $31,500 deduction
+    expect(totalTax({ ordinaryIncome: 30000, ssBenefit: 0, filingStatus: 'mfj' })).toBe(0); // under the $31,500 deduction
     // taxable SS = 6000 + 0.85 * (60000 - 44000) = 19600;
     // taxable income = 40000 + 19600 - 31500 = 28100
-    expect(totalTax(40000, 40000, 'mfj')).toBeCloseTo(
+    expect(totalTax({ ordinaryIncome: 40000, ssBenefit: 40000, filingStatus: 'mfj' })).toBeCloseTo(
       federalIncomeTax(28100, 'mfj'),
       2,
     );
@@ -250,14 +263,14 @@ describe('totalTax', () => {
 
 describe('marginalRateCurve', () => {
   it('samples from zero to maxIncome inclusive', () => {
-    const data = marginalRateCurve(0, 10000, 250);
+    const data = marginalRateCurve({ ssBenefit: 0 }, { maxIncome: 10000, step: 250 });
     expect(data).toHaveLength(41);
     expect(data[0].income).toBe(0);
     expect(data[40].income).toBe(10000);
   });
 
   it('matches plain bracket rates with no benefits', () => {
-    const data = marginalRateCurve(0, 100000, 250);
+    const data = marginalRateCurve({ ssBenefit: 0 }, { maxIncome: 100000, step: 250 });
     const at = (income: number) =>
       data.find((d) => d.income === income)!.marginalRate;
     expect(at(0)).toBe(0); // under the standard deduction
@@ -267,7 +280,10 @@ describe('marginalRateCurve', () => {
   });
 
   it('shows the 1.85x torpedo while benefits phase in, then reverts after the cap', () => {
-    const data = marginalRateCurve(30000, 100000, 250);
+    const data = marginalRateCurve(
+      { ssBenefit: 30000 },
+      { maxIncome: 100000, step: 250 },
+    );
     const at = (income: number) =>
       data.find((d) => d.income === income)!.marginalRate;
     // 85% band, 12% bracket: each extra dollar drags in $0.85 of benefits
@@ -277,13 +293,19 @@ describe('marginalRateCurve', () => {
   });
 
   it('hits 40.7% in the 22% bracket while benefits phase in', () => {
-    const data = marginalRateCurve(45000, 100000, 250);
+    const data = marginalRateCurve(
+      { ssBenefit: 45000 },
+      { maxIncome: 100000, step: 250 },
+    );
     const point = data.find((d) => d.income === 45000)!;
     expect(point.marginalRate).toBeCloseTo(40.7, 1);
   });
 
   it('uses MFJ deduction and brackets with no benefits', () => {
-    const data = marginalRateCurve(0, 100000, 250, 'mfj');
+    const data = marginalRateCurve(
+      { ssBenefit: 0, filingStatus: 'mfj' },
+      { maxIncome: 100000, step: 250 },
+    );
     const at = (income: number) =>
       data.find((d) => d.income === income)!.marginalRate;
     expect(at(30000)).toBe(0); // under the $31,500 standard deduction
@@ -292,22 +314,35 @@ describe('marginalRateCurve', () => {
   });
 
   it('includes the total tax at each sampled income', () => {
-    const data = marginalRateCurve(30000, 100000, 250);
+    const data = marginalRateCurve(
+      { ssBenefit: 30000 },
+      { maxIncome: 100000, step: 250 },
+    );
     const at = (income: number) => data.find((d) => d.income === income)!;
     expect(at(0).totalTax).toBe(0);
-    expect(at(40000).totalTax).toBe(Math.round(totalTax(40000, 30000)));
-    expect(at(80000).totalTax).toBe(Math.round(totalTax(80000, 30000)));
+    expect(at(40000).totalTax).toBe(Math.round(totalTax(
+      { ordinaryIncome: 40000, ssBenefit: 30000 },
+    )));
+    expect(at(80000).totalTax).toBe(Math.round(totalTax(
+      { ordinaryIncome: 80000, ssBenefit: 30000 },
+    )));
   });
 
   it('reports total tax as non-decreasing in income', () => {
-    const data = marginalRateCurve(30000, 100000, 250);
+    const data = marginalRateCurve(
+      { ssBenefit: 30000 },
+      { maxIncome: 100000, step: 250 },
+    );
     for (let i = 1; i < data.length; i++) {
       expect(data[i].totalTax).toBeGreaterThanOrEqual(data[i - 1].totalTax);
     }
   });
 
   it('shows the MFJ torpedo phasing in later, then reverting after the cap', () => {
-    const data = marginalRateCurve(30000, 100000, 250, 'mfj');
+    const data = marginalRateCurve(
+      { ssBenefit: 30000, filingStatus: 'mfj' },
+      { maxIncome: 100000, step: 250 },
+    );
     const at = (income: number) =>
       data.find((d) => d.income === income)!.marginalRate;
     // 85% band (provisional 55,000 > 44,000), 12% bracket: 1.85 * 12%
@@ -317,17 +352,23 @@ describe('marginalRateCurve', () => {
   });
 });
 
-describe('totalTaxWithLTCG', () => {
-  it('matches totalTax when LTCG is zero', () => {
-    expect(totalTaxWithLTCG(40000, 30000, 0)).toBeCloseTo(totalTax(40000, 30000), 2);
-    expect(totalTaxWithLTCG(40000, 30000, 0, 'mfj')).toBeCloseTo(totalTax(40000, 30000, 'mfj'), 2);
+describe('totalTax with capital gains stacked on top', () => {
+  it('is unchanged whether LTCG is zero or omitted', () => {
+    expect(totalTax({ ordinaryIncome: 40000, ssBenefit: 30000, ltcg: 0 })).toBeCloseTo(totalTax(
+      { ordinaryIncome: 40000, ssBenefit: 30000 },
+    ), 2);
+    expect(totalTax(
+      { ordinaryIncome: 40000, ssBenefit: 30000, ltcg: 0, filingStatus: 'mfj' },
+    )).toBeCloseTo(totalTax(
+      { ordinaryIncome: 40000, ssBenefit: 30000, filingStatus: 'mfj' },
+    ), 2);
   });
 
   it('taxes LTCG at 0% when total taxable income stays below the threshold', () => {
     // Single: standard deduction $15,750, 0% LTCG threshold $48,350.
     // ordinaryIncome = 0, ssBenefit = 0, ltcg = 10,000.
     // ordinaryTaxable = 0, totalTaxable = max(0, 10,000 - 15,750) = 0 → no tax.
-    expect(totalTaxWithLTCG(0, 0, 10000)).toBe(0);
+    expect(totalTax({ ordinaryIncome: 0, ssBenefit: 0, ltcg: 10000 })).toBe(0);
   });
 
   it('lets the unused standard deduction offset LTCG', () => {
@@ -338,20 +379,28 @@ describe('totalTaxWithLTCG', () => {
     //   48,350 @ 0% + 35,900 @ 15% = $5,385
     // Ignoring the spillover would tax the full $100,000 band and yield
     // $7,747.50 — overstated by 15% of the whole standard deduction.
-    expect(totalTaxWithLTCG(0, 0, 100_000)).toBeCloseTo(5_385, 2);
+    expect(totalTax({ ordinaryIncome: 0, ssBenefit: 0, ltcg: 100_000 })).toBeCloseTo(5_385, 2);
 
     // MFJ: taxable income = 100,000 - 31,500 = 68,500, entirely inside the
     // $96,700 0% bracket, so the tax is zero rather than $495.
-    expect(totalTaxWithLTCG(0, 0, 100_000, 'mfj')).toBe(0);
+    expect(totalTax(
+      { ordinaryIncome: 0, ssBenefit: 0, ltcg: 100_000, filingStatus: 'mfj' },
+    )).toBe(0);
   });
 
   it('starts taxing LTCG only after the deduction and the 0% bracket are used up', () => {
     // With no other income the 0% zone runs to 15,750 + 48,350 = $64,100 of
     // gains, not $48,350.
-    const single = ltcgMarginalRateCurve(0, 0, 100_000, 50);
+    const single = ltcgMarginalRateCurve(
+      { ssBenefit: 0, ordinaryIncome: 0 },
+      { maxLTCG: 100_000, step: 50 },
+    );
     expect(single.find((d) => d.marginalRate > 0)!.ltcg).toBe(64_100);
 
-    const mfj = ltcgMarginalRateCurve(0, 0, 200_000, 50, 'mfj');
+    const mfj = ltcgMarginalRateCurve(
+      { ssBenefit: 0, ordinaryIncome: 0, filingStatus: 'mfj' },
+      { maxLTCG: 200_000, step: 50 },
+    );
     expect(mfj.find((d) => d.marginalRate > 0)!.ltcg).toBe(31_500 + 96_700);
   });
 
@@ -361,12 +410,16 @@ describe('totalTaxWithLTCG', () => {
     for (const ordinary of [0, 5_000, 12_000, 40_000]) {
       for (const ss of [0, 24_000]) {
         for (const ltcg of [0, 10_000, 30_000, 90_000]) {
-          const taxableSS = taxableSocialSecurity(ss, ordinary + ltcg);
+          const taxableSS = taxableSocialSecurity(
+            { ssBenefit: ss, ordinaryIncome: ordinary + ltcg },
+          );
           const taxableIncome = Math.max(
             0,
             ordinary + ltcg + taxableSS - 15_750,
           );
-          const tax = totalTaxWithLTCG(ordinary, ss, ltcg);
+          const tax = totalTax(
+            { ordinaryIncome: ordinary, ssBenefit: ss, ltcg },
+          );
           // Nothing is taxed above 37%, and nothing at all when taxable
           // income is zero.
           expect(tax).toBeLessThanOrEqual(taxableIncome * 0.37 + 1e-9);
@@ -379,8 +432,10 @@ describe('totalTaxWithLTCG', () => {
   it('taxes LTCG at 15% when ordinary income pushes past the 0% threshold', () => {
     // Single: ordinary income of $60,000, no SS. ordinaryTaxable = 60000 - 15750 = 44250.
     // 44250 < 48350, so the first $4100 of LTCG is at 0%, rest at 15%.
-    const tax = totalTaxWithLTCG(60000, 0, 10000);
-    const ordinaryPart = totalTaxWithLTCG(60000, 0, 0);
+    const tax = totalTax({ ordinaryIncome: 60000, ssBenefit: 0, ltcg: 10000 });
+    const ordinaryPart = totalTax(
+      { ordinaryIncome: 60000, ssBenefit: 0, ltcg: 0 },
+    );
     const ltcgPart = tax - ordinaryPart;
     // $4,100 at 0% + $5,900 at 15% = $885
     expect(ltcgPart).toBeCloseTo(885, 0);
@@ -389,8 +444,12 @@ describe('totalTaxWithLTCG', () => {
   it('uses the MFJ 0% threshold ($96,700)', () => {
     // MFJ: ordinary income $120k, no SS. ordinaryTaxable = 120000 - 31500 = 88500.
     // 88500 < 96700, so first $8200 of LTCG at 0%, rest at 15%.
-    const tax = totalTaxWithLTCG(120000, 0, 10000, 'mfj');
-    const ordinaryPart = totalTaxWithLTCG(120000, 0, 0, 'mfj');
+    const tax = totalTax(
+      { ordinaryIncome: 120000, ssBenefit: 0, ltcg: 10000, filingStatus: 'mfj' },
+    );
+    const ordinaryPart = totalTax(
+      { ordinaryIncome: 120000, ssBenefit: 0, ltcg: 0, filingStatus: 'mfj' },
+    );
     const ltcgPart = tax - ordinaryPart;
     expect(ltcgPart).toBeCloseTo(0.15 * (10000 - 8200), 0);
   });
@@ -399,8 +458,12 @@ describe('totalTaxWithLTCG', () => {
     // Single: $20k ordinary, $24k SS, adding LTCG should drag SS into taxability.
     // Without LTCG: provisional = 20000 + 12000 = 32000 → some SS taxable.
     // With $20k LTCG: provisional = 40000 + 12000 = 52000 → much more SS taxable.
-    const taxWithout = totalTaxWithLTCG(20000, 24000, 0);
-    const taxWith = totalTaxWithLTCG(20000, 24000, 20000);
+    const taxWithout = totalTax(
+      { ordinaryIncome: 20000, ssBenefit: 24000, ltcg: 0 },
+    );
+    const taxWith = totalTax(
+      { ordinaryIncome: 20000, ssBenefit: 24000, ltcg: 20000 },
+    );
     const increase = taxWith - taxWithout;
     // LTCG sits in the 0% bracket at these income levels, so the increase
     // comes entirely from dragged-in SS being taxed at ordinary rates.
@@ -414,7 +477,10 @@ describe('totalTaxWithLTCG', () => {
 
 describe('ltcgMarginalRateCurve', () => {
   it('samples from zero to maxLTCG inclusive', () => {
-    const data = ltcgMarginalRateCurve(0, 0, 10000, 250);
+    const data = ltcgMarginalRateCurve(
+      { ssBenefit: 0, ordinaryIncome: 0 },
+      { maxLTCG: 10000, step: 250 },
+    );
     expect(data).toHaveLength(41);
     expect(data[0].ltcg).toBe(0);
     expect(data[40].ltcg).toBe(10000);
@@ -422,7 +488,10 @@ describe('ltcgMarginalRateCurve', () => {
 
   it('shows 0% marginal rate on LTCG when all income is below the threshold', () => {
     // Single: no SS, no ordinary income, LTCG starts at $0.
-    const data = ltcgMarginalRateCurve(0, 0, 50000, 250);
+    const data = ltcgMarginalRateCurve(
+      { ssBenefit: 0, ordinaryIncome: 0 },
+      { maxLTCG: 50000, step: 250 },
+    );
     const at = (ltcg: number) => data.find((d) => d.ltcg === ltcg)!.marginalRate;
     expect(at(0)).toBe(0);
     expect(at(10000)).toBe(0);
@@ -433,7 +502,10 @@ describe('ltcgMarginalRateCurve', () => {
     // dragging SS into taxability at ordinary rates while LTCG itself
     // is taxed at capital-gains rates. The combined effect produces
     // marginal rates well above the bare 15% LTCG rate.
-    const data = ltcgMarginalRateCurve(30000, 30000, 100000, 250);
+    const data = ltcgMarginalRateCurve(
+      { ssBenefit: 30000, ordinaryIncome: 30000 },
+      { maxLTCG: 100000, step: 250 },
+    );
     const maxRate = Math.max(...data.map((d) => d.marginalRate));
     // The stacking pushes the effective marginal rate above 25%
     // (15% LTCG + torpedo-amplified ordinary tax on dragged-in SS).
@@ -441,7 +513,10 @@ describe('ltcgMarginalRateCurve', () => {
   });
 
   it('reports total tax as non-decreasing', () => {
-    const data = ltcgMarginalRateCurve(24000, 30000, 100000, 250);
+    const data = ltcgMarginalRateCurve(
+      { ssBenefit: 24000, ordinaryIncome: 30000 },
+      { maxLTCG: 100000, step: 250 },
+    );
     for (let i = 1; i < data.length; i++) {
       expect(data[i].totalTax).toBeGreaterThanOrEqual(data[i - 1].totalTax);
     }
@@ -449,8 +524,14 @@ describe('ltcgMarginalRateCurve', () => {
 
   it('uses MFJ thresholds so LTCG stays at 0% longer', () => {
     // MFJ 0% threshold is $96,700 vs single $48,350.
-    const dataSingle = ltcgMarginalRateCurve(0, 60000, 100000, 250);
-    const dataMfj = ltcgMarginalRateCurve(0, 60000, 100000, 250, 'mfj');
+    const dataSingle = ltcgMarginalRateCurve(
+      { ssBenefit: 0, ordinaryIncome: 60000 },
+      { maxLTCG: 100000, step: 250 },
+    );
+    const dataMfj = ltcgMarginalRateCurve(
+      { ssBenefit: 0, ordinaryIncome: 60000, filingStatus: 'mfj' },
+      { maxLTCG: 100000, step: 250 },
+    );
     // Single: ordinaryTaxable = 60k - 15750 = 44250. 0% zone = $4100 of LTCG.
     // MFJ: ordinaryTaxable = 60k - 31500 = 28500. 0% zone = $68200 of LTCG.
     const singleFirstNonZero = dataSingle.find((d) => d.marginalRate > 0)!.ltcg;
@@ -554,41 +635,71 @@ describe('Roth conversion sizing', () => {
     // $25,427.60 and the raw headroom under $48,475 is $23,047.40. Only
     // $14,069 of it is usable: the first $10,561 of conversion also drags in
     // 85 cents of benefits per dollar, until the 85% cap ($20,155.20) binds.
-    expect(maxConversionUnder(ceiling('bracket12'), 30_000, SS)).toBe(14_069);
+    expect(maxConversionUnder(
+      ceiling('bracket12'),
+      { ordinaryIncome: 30_000, ssBenefit: SS },
+    )).toBe(14_069);
     expect(
-      conversionMeasureValue('ordinaryTaxableIncome', 30_000, SS, 0, 14_069),
+      conversionMeasureValue(
+        'ordinaryTaxableIncome',
+        { ordinaryIncome: 30_000, ssBenefit: SS, ltcg: 0 },
+        14_069,
+      ),
     ).toBeCloseTo(48_474.2, 2);
     expect(
-      conversionMeasureValue('ordinaryTaxableIncome', 30_000, SS, 0, 14_070),
+      conversionMeasureValue(
+        'ordinaryTaxableIncome',
+        { ordinaryIncome: 30_000, ssBenefit: SS, ltcg: 0 },
+        14_070,
+      ),
     ).toBeGreaterThan(48_475);
   });
 
   it('sizes a conversion straight up to a provisional-income ceiling', () => {
     // No other income, so provisional income is half the benefit ($11,856) and
     // every converted dollar adds exactly one dollar of provisional income.
-    expect(maxConversionUnder(ceiling('ss50'), 0, SS)).toBe(25_000 - 11_856);
-    expect(maxConversionUnder(ceiling('ss85'), 0, SS)).toBe(34_000 - 11_856);
-    expect(maxConversionUnder(ceiling('ss50', 'mfj'), 0, SS, 0, 'mfj')).toBe(32_000 - 11_856);
+    expect(maxConversionUnder(ceiling('ss50'), { ordinaryIncome: 0, ssBenefit: SS })).toBe(25_000 - 11_856);
+    expect(maxConversionUnder(ceiling('ss85'), { ordinaryIncome: 0, ssBenefit: SS })).toBe(34_000 - 11_856);
+    expect(maxConversionUnder(
+      ceiling('ss50', 'mfj'),
+      { ordinaryIncome: 0, ssBenefit: SS, ltcg: 0, filingStatus: 'mfj' },
+    )).toBe(32_000 - 11_856);
   });
 
   it('counts planned capital gains against the 0% capital-gains ceiling', () => {
     // $20,000 ordinary + $30,000 of gains, no benefits: total taxable income is
     // 50,000 - 15,750 = $34,250, leaving $14,100 under the $48,350 top of the
     // 0% bracket.
-    expect(maxConversionUnder(ceiling('ltcg0'), 20_000, 0, 30_000)).toBe(14_100);
+    expect(maxConversionUnder(
+      ceiling('ltcg0'),
+      { ordinaryIncome: 20_000, ssBenefit: 0, ltcg: 30_000 },
+    )).toBe(14_100);
     // Without the gains the same ceiling leaves far more room.
-    expect(maxConversionUnder(ceiling('ltcg0'), 20_000, 0, 0)).toBe(44_100);
+    expect(maxConversionUnder(
+      ceiling('ltcg0'),
+      { ordinaryIncome: 20_000, ssBenefit: 0, ltcg: 0 },
+    )).toBe(44_100);
   });
 
   it('measures the IRMAA ceiling against MAGI, which includes taxable benefits', () => {
     // $50,000 ordinary + $40,000 of benefits: the 85% cap ($34,000) already
     // binds, so MAGI is 84,000 + conversion and $22,000 fits under $106,000.
-    expect(maxConversionUnder(ceiling('irmaa1'), 50_000, 40_000)).toBe(22_000);
-    expect(conversionMeasureValue('magi', 50_000, 40_000, 0, 22_000)).toBe(106_000);
+    expect(maxConversionUnder(
+      ceiling('irmaa1'),
+      { ordinaryIncome: 50_000, ssBenefit: 40_000 },
+    )).toBe(22_000);
+    expect(conversionMeasureValue(
+      'magi',
+      { ordinaryIncome: 50_000, ssBenefit: 40_000, ltcg: 0 },
+      22_000,
+    )).toBe(106_000);
   });
 
   it('returns zero when the scenario is already over the ceiling', () => {
-    const sizing = sizeConversion(ceiling('ss50'), 30_000, SS);
+    const sizing = sizeConversion(
+      ceiling('ss50'),
+      { ordinaryIncome: 30_000, ssBenefit: SS },
+    );
     expect(sizing.conversion).toBe(0);
     expect(sizing.alreadyOver).toBe(true);
     expect(sizing.headroom).toBeCloseTo(-16_856, 6);
@@ -597,14 +708,21 @@ describe('Roth conversion sizing', () => {
   });
 
   it('flags a ceiling the search bound never reaches', () => {
-    const sizing = sizeConversion(ceiling('bracket22'), 0, 0, 0, 'single', 0, 1_000);
+    const sizing = sizeConversion(
+      ceiling('bracket22'),
+      { ordinaryIncome: 0, ssBenefit: 0, ltcg: 0, filingStatus: 'single', seniors: 0 },
+      1_000,
+    );
     expect(sizing.conversion).toBe(1_000);
     expect(sizing.unbounded).toBe(true);
-    expect(sizeConversion(ceiling('bracket22'), 0, 0).unbounded).toBe(false);
+    expect(sizeConversion(ceiling('bracket22'), { ordinaryIncome: 0, ssBenefit: 0 }).unbounded).toBe(false);
   });
 
   it('prices the conversion and the rate on the far side of the ceiling', () => {
-    const sizing = sizeConversion(ceiling('bracket12'), 30_000, SS);
+    const sizing = sizeConversion(
+      ceiling('bracket12'),
+      { ordinaryIncome: 30_000, ssBenefit: SS },
+    );
     expect(sizing.conversion).toBe(14_069);
     expect(sizing.taxBefore).toBe(2_813);
     expect(sizing.taxAfter).toBe(5_578);
@@ -629,9 +747,16 @@ describe('Roth conversion sizing', () => {
     for (const filingStatus of ['single', 'mfj'] as FilingStatus[]) {
       for (const c of conversionCeilings(filingStatus)) {
         for (const { ordinary, ss, ltcg } of scenarios) {
-          const sizing = sizeConversion(c, ordinary, ss, ltcg, filingStatus);
+          const sizing = sizeConversion(
+            c,
+            { ordinaryIncome: ordinary, ssBenefit: ss, ltcg, filingStatus },
+          );
           const at = (conversion: number) =>
-            conversionMeasureValue(c.measure, ordinary, ss, ltcg, conversion, filingStatus);
+            conversionMeasureValue(
+              c.measure,
+              { ordinaryIncome: ordinary, ssBenefit: ss, ltcg, filingStatus },
+              conversion,
+            );
           const where = `${filingStatus}/${c.id}/ordinary=${ordinary}`;
 
           if (sizing.alreadyOver) {
@@ -672,11 +797,11 @@ describe('age 65+ additional standard deduction (2025)', () => {
       // Still married, so the married rate rather than the unmarried $2,000.
       mfs: 1_600,
     });
-    expect(standardDeductionFor('single', 0)).toBe(15_750);
-    expect(standardDeductionFor('single', 1)).toBe(17_750);
-    expect(standardDeductionFor('mfj', 0)).toBe(31_500);
-    expect(standardDeductionFor('mfj', 1)).toBe(33_100);
-    expect(standardDeductionFor('mfj', 2)).toBe(34_700);
+    expect(standardDeductionFor({ filingStatus: 'single', seniors: 0 })).toBe(15_750);
+    expect(standardDeductionFor({ filingStatus: 'single', seniors: 1 })).toBe(17_750);
+    expect(standardDeductionFor({ filingStatus: 'mfj', seniors: 0 })).toBe(31_500);
+    expect(standardDeductionFor({ filingStatus: 'mfj', seniors: 1 })).toBe(33_100);
+    expect(standardDeductionFor({ filingStatus: 'mfj', seniors: 2 })).toBe(34_700);
   });
 
   it('clamps the count to what the filing status allows', () => {
@@ -684,40 +809,72 @@ describe('age 65+ additional standard deduction (2025)', () => {
     expect(maxSeniors('mfj')).toBe(2);
     // A single filer cannot claim it twice, and neither can a couple claim it
     // three times.
-    expect(standardDeductionFor('single', 2)).toBe(standardDeductionFor('single', 1));
-    expect(standardDeductionFor('mfj', 3)).toBe(standardDeductionFor('mfj', 2));
-    expect(standardDeductionFor('single', -1)).toBe(15_750);
+    expect(standardDeductionFor({ filingStatus: 'single', seniors: 2 })).toBe(standardDeductionFor(
+      { filingStatus: 'single', seniors: 1 },
+    ));
+    expect(standardDeductionFor({ filingStatus: 'mfj', seniors: 3 })).toBe(standardDeductionFor(
+      { filingStatus: 'mfj', seniors: 2 },
+    ));
+    expect(standardDeductionFor({ filingStatus: 'single', seniors: -1 })).toBe(15_750);
   });
 
   it('defaults to the base deduction everywhere, so nothing moves unless asked', () => {
-    expect(standardDeductionFor('single')).toBe(FILING_PARAMS.single.standardDeduction);
-    expect(totalTax(40_000, SS, 'single', 0)).toBe(totalTax(40_000, SS, 'single'));
-    expect(totalTaxWithLTCG(20_000, SS, 10_000, 'mfj', 0)).toBe(
-      totalTaxWithLTCG(20_000, SS, 10_000, 'mfj'),
+    expect(standardDeductionFor({ filingStatus: 'single' })).toBe(FILING_PARAMS.single.standardDeduction);
+    expect(totalTax(
+      { ordinaryIncome: 40_000, ssBenefit: SS, filingStatus: 'single', seniors: 0 },
+    )).toBe(totalTax(
+      { ordinaryIncome: 40_000, ssBenefit: SS, filingStatus: 'single' },
+    ));
+    expect(totalTax(
+      { ordinaryIncome: 20_000, ssBenefit: SS, ltcg: 10_000, filingStatus: 'mfj', seniors: 0 },
+    )).toBe(
+      totalTax(
+        { ordinaryIncome: 20_000, ssBenefit: SS, ltcg: 10_000, filingStatus: 'mfj' },
+      ),
     );
   });
 
   it('pushes the first taxed dollar out by the whole deduction stack when there are no benefits', () => {
-    expect(totalTax(15_750, 0, 'single', 0)).toBe(0);
-    expect(totalTax(15_751, 0, 'single', 0)).toBeGreaterThan(0);
+    expect(totalTax(
+      { ordinaryIncome: 15_750, ssBenefit: 0, filingStatus: 'single', seniors: 0 },
+    )).toBe(0);
+    expect(totalTax(
+      { ordinaryIncome: 15_751, ssBenefit: 0, filingStatus: 'single', seniors: 0 },
+    )).toBeGreaterThan(0);
     // $15,750 base + $2,000 age-65 addition + the $6,000 senior deduction,
     // which is unreduced this far below its $75,000 phaseout threshold.
-    expect(totalTax(23_750, 0, 'single', 1)).toBe(0);
-    expect(totalTax(23_751, 0, 'single', 1)).toBeGreaterThan(0);
+    expect(totalTax(
+      { ordinaryIncome: 23_750, ssBenefit: 0, filingStatus: 'single', seniors: 1 },
+    )).toBe(0);
+    expect(totalTax(
+      { ordinaryIncome: 23_751, ssBenefit: 0, filingStatus: 'single', seniors: 1 },
+    )).toBeGreaterThan(0);
   });
 
   it('saves the whole deduction stack times the marginal bracket rate', () => {
     // Single, $30,000 of other income and the average benefit: $2,000 of
     // age-65 addition plus $6,000 of senior deduction, all of it coming off
     // the top of the 12% bracket.
-    expect(totalTax(30_000, SS, 'single', 0) - totalTax(30_000, SS, 'single', 1))
+    expect(totalTax(
+      { ordinaryIncome: 30_000, ssBenefit: SS, filingStatus: 'single', seniors: 0 },
+    ) - totalTax(
+      { ordinaryIncome: 30_000, ssBenefit: SS, filingStatus: 'single', seniors: 1 },
+    ))
       .toBeCloseTo((2_000 + 6_000) * 0.12, 6);
     // MFJ at $60,000: $1,600 + $6,000 per qualifying spouse, and both spouses
     // land the couple in the 12% bracket. (At $30,000 the couple's taxable
     // income runs out before the deduction does, so nothing is left to save.)
-    expect(totalTax(60_000, SS, 'mfj', 0) - totalTax(60_000, SS, 'mfj', 1))
+    expect(totalTax(
+      { ordinaryIncome: 60_000, ssBenefit: SS, filingStatus: 'mfj', seniors: 0 },
+    ) - totalTax(
+      { ordinaryIncome: 60_000, ssBenefit: SS, filingStatus: 'mfj', seniors: 1 },
+    ))
       .toBeCloseTo((1_600 + 6_000) * 0.12, 6);
-    expect(totalTax(60_000, SS, 'mfj', 1) - totalTax(60_000, SS, 'mfj', 2))
+    expect(totalTax(
+      { ordinaryIncome: 60_000, ssBenefit: SS, filingStatus: 'mfj', seniors: 1 },
+    ) - totalTax(
+      { ordinaryIncome: 60_000, ssBenefit: SS, filingStatus: 'mfj', seniors: 2 },
+    ))
       .toBeCloseTo((1_600 + 6_000) * 0.12, 6);
   });
 
@@ -727,7 +884,10 @@ describe('age 65+ additional standard deduction (2025)', () => {
     // room.
     const lastZeroRateIncome = (seniors: number): number => {
       let last = 0;
-      for (const point of marginalRateCurve(SS, 60_000, 250, 'single', seniors)) {
+      for (const point of marginalRateCurve(
+        { ssBenefit: SS, filingStatus: 'single', seniors },
+        { maxIncome: 60_000, step: 250 },
+      )) {
         if (point.marginalRate !== 0) break;
         last = point.income;
       }
@@ -736,10 +896,18 @@ describe('age 65+ additional standard deduction (2025)', () => {
     expect(lastZeroRateIncome(0)).toBe(14_750);
     expect(lastZeroRateIncome(1)).toBe(20_000);
     // The exact crossings: 1.5 * income - 6,572 = deduction.
-    expect(totalTax(14_881, SS, 'single', 0)).toBe(0);
-    expect(totalTax(14_882, SS, 'single', 0)).toBeGreaterThan(0);
-    expect(totalTax(20_214, SS, 'single', 1)).toBe(0);
-    expect(totalTax(20_215, SS, 'single', 1)).toBeGreaterThan(0);
+    expect(totalTax(
+      { ordinaryIncome: 14_881, ssBenefit: SS, filingStatus: 'single', seniors: 0 },
+    )).toBe(0);
+    expect(totalTax(
+      { ordinaryIncome: 14_882, ssBenefit: SS, filingStatus: 'single', seniors: 0 },
+    )).toBeGreaterThan(0);
+    expect(totalTax(
+      { ordinaryIncome: 20_214, ssBenefit: SS, filingStatus: 'single', seniors: 1 },
+    )).toBe(0);
+    expect(totalTax(
+      { ordinaryIncome: 20_215, ssBenefit: SS, filingStatus: 'single', seniors: 1 },
+    )).toBeGreaterThan(0);
     expect(20_214 - 14_881).toBeCloseTo((2_000 + 6_000) / 1.5, 0);
   });
 
@@ -749,8 +917,12 @@ describe('age 65+ additional standard deduction (2025)', () => {
     // $25,000 into the senior deduction's phaseout, so only $4,500 of the
     // $6,000 survives: 17,750 + 4,500 = 22,250 of deduction, and the $2,000 +
     // $4,500 above the base saves 15% of itself.
-    expect(totalTaxWithLTCG(0, 0, 100_000, 'single', 0)).toBe(5_385);
-    expect(totalTaxWithLTCG(0, 0, 100_000, 'single', 1)).toBe(4_410);
+    expect(totalTax(
+      { ordinaryIncome: 0, ssBenefit: 0, ltcg: 100_000, filingStatus: 'single', seniors: 0 },
+    )).toBe(5_385);
+    expect(totalTax(
+      { ordinaryIncome: 0, ssBenefit: 0, ltcg: 100_000, filingStatus: 'single', seniors: 1 },
+    )).toBe(4_410);
     expect(5_385 - 4_410).toBeCloseTo((2_000 + 4_500) * 0.15, 6);
   });
 
@@ -759,20 +931,35 @@ describe('age 65+ additional standard deduction (2025)', () => {
       conversionCeilings(fs).find((c) => c.id === id) as ConversionCeiling;
     // Provisional income is measured before any deduction, so the addition
     // buys no extra room at all against the SS bases.
-    expect(maxConversionUnder(ceilingFor('ss50'), 0, SS, 0, 'single', 1)).toBe(
-      maxConversionUnder(ceilingFor('ss50'), 0, SS, 0, 'single', 0),
+    expect(maxConversionUnder(
+      ceilingFor('ss50'),
+      { ordinaryIncome: 0, ssBenefit: SS, ltcg: 0, filingStatus: 'single', seniors: 1 },
+    )).toBe(
+      maxConversionUnder(
+        ceilingFor('ss50'),
+        { ordinaryIncome: 0, ssBenefit: SS, ltcg: 0, filingStatus: 'single', seniors: 0 },
+      ),
     );
     // The top of the 12% bracket is measured against taxable income, and the
     // 85% cap already binds by then, so the room grows dollar for dollar with
     // the $8,000 of extra deduction.
-    expect(maxConversionUnder(ceilingFor('bracket12'), 30_000, SS, 0, 'single', 0)).toBe(14_069);
-    expect(maxConversionUnder(ceilingFor('bracket12'), 30_000, SS, 0, 'single', 1)).toBe(22_069);
+    expect(maxConversionUnder(
+      ceilingFor('bracket12'),
+      { ordinaryIncome: 30_000, ssBenefit: SS, ltcg: 0, filingStatus: 'single', seniors: 0 },
+    )).toBe(14_069);
+    expect(maxConversionUnder(
+      ceilingFor('bracket12'),
+      { ordinaryIncome: 30_000, ssBenefit: SS, ltcg: 0, filingStatus: 'single', seniors: 1 },
+    )).toBe(22_069);
   });
 
   it('prices a conversion more cheaply for a filer over 65', () => {
     const ceilingFor = (id: ConversionCeilingId) =>
       conversionCeilings('single').find((c) => c.id === id) as ConversionCeiling;
-    const sizing = sizeConversion(ceilingFor('bracket12'), 30_000, SS, 0, 'single', 1);
+    const sizing = sizeConversion(
+      ceilingFor('bracket12'),
+      { ordinaryIncome: 30_000, ssBenefit: SS, ltcg: 0, filingStatus: 'single', seniors: 1 },
+    );
     expect(sizing.conversion).toBe(22_069);
     expect(sizing.taxBefore).toBe(1_853);
     // Both scenarios end at the top of the 12% bracket, so the tax after is the
@@ -792,22 +979,22 @@ describe('OBBBA senior deduction (2025-2028)', () => {
 
   it('is $6,000 for each qualifying person below the phaseout threshold', () => {
     expect(SENIOR_DEDUCTION).toBe(6_000);
-    expect(seniorDeductionFor('single', 1, 0)).toBe(6_000);
-    expect(seniorDeductionFor('single', 1, 75_000)).toBe(6_000);
-    expect(seniorDeductionFor('mfj', 1, 150_000)).toBe(6_000);
-    expect(seniorDeductionFor('mfj', 2, 150_000)).toBe(12_000);
+    expect(seniorDeductionFor({ filingStatus: 'single', seniors: 1 }, 0)).toBe(6_000);
+    expect(seniorDeductionFor({ filingStatus: 'single', seniors: 1 }, 75_000)).toBe(6_000);
+    expect(seniorDeductionFor({ filingStatus: 'mfj', seniors: 1 }, 150_000)).toBe(6_000);
+    expect(seniorDeductionFor({ filingStatus: 'mfj', seniors: 2 }, 150_000)).toBe(12_000);
   });
 
   it('stays zero for a filer under 65, however low the MAGI', () => {
-    expect(seniorDeductionFor('single', 0, 0)).toBe(0);
-    expect(seniorDeductionFor('mfj', 0, 10_000)).toBe(0);
-    expect(deductionFor('single', 0, 10_000)).toBe(15_750);
+    expect(seniorDeductionFor({ filingStatus: 'single', seniors: 0 }, 0)).toBe(0);
+    expect(seniorDeductionFor({ filingStatus: 'mfj', seniors: 0 }, 10_000)).toBe(0);
+    expect(deductionFor({ filingStatus: 'single', seniors: 0 }, 10_000)).toBe(15_750);
   });
 
   it('clamps the count the way the standard deduction does', () => {
-    expect(seniorDeductionFor('single', 2, 0)).toBe(6_000);
-    expect(seniorDeductionFor('mfj', 3, 0)).toBe(12_000);
-    expect(seniorDeductionFor('single', -1, 0)).toBe(0);
+    expect(seniorDeductionFor({ filingStatus: 'single', seniors: 2 }, 0)).toBe(6_000);
+    expect(seniorDeductionFor({ filingStatus: 'mfj', seniors: 3 }, 0)).toBe(12_000);
+    expect(seniorDeductionFor({ filingStatus: 'single', seniors: -1 }, 0)).toBe(0);
   });
 
   it("reduces each person's $6,000 by 6% of MAGI over the threshold", () => {
@@ -818,12 +1005,12 @@ describe('OBBBA senior deduction (2025-2028)', () => {
       // Section 151(d)(5)(C)(v) requires a joint return from married filers.
       mfs: null,
     });
-    expect(seniorDeductionFor('single', 1, 76_000)).toBeCloseTo(5_940, 6);
-    expect(seniorDeductionFor('single', 1, 125_000)).toBeCloseTo(3_000, 6);
+    expect(seniorDeductionFor({ filingStatus: 'single', seniors: 1 }, 76_000)).toBeCloseTo(5_940, 6);
+    expect(seniorDeductionFor({ filingStatus: 'single', seniors: 1 }, 125_000)).toBeCloseTo(3_000, 6);
     // The statute reduces "the $6,000 amount", i.e. each spouse's own, so a
     // couple where both qualify loses 12 cents per dollar rather than 6.
-    expect(seniorDeductionFor('mfj', 1, 200_000)).toBeCloseTo(3_000, 6);
-    expect(seniorDeductionFor('mfj', 2, 200_000)).toBeCloseTo(6_000, 6);
+    expect(seniorDeductionFor({ filingStatus: 'mfj', seniors: 1 }, 200_000)).toBeCloseTo(3_000, 6);
+    expect(seniorDeductionFor({ filingStatus: 'mfj', seniors: 2 }, 200_000)).toBeCloseTo(6_000, 6);
   });
 
   it('runs out exactly $100,000 above the threshold for both filing statuses', () => {
@@ -837,16 +1024,18 @@ describe('OBBBA senior deduction (2025-2028)', () => {
     for (const [fs, seniors] of cases) {
       const end = seniorDeductionPhaseoutEnd(fs);
       if (end === null) throw new Error(`${fs} should have a phaseout end`);
-      expect(seniorDeductionFor(fs, seniors, end - 1)).toBeGreaterThan(0);
-      expect(seniorDeductionFor(fs, seniors, end)).toBe(0);
-      expect(seniorDeductionFor(fs, seniors, end + 1_000_000)).toBe(0);
-      expect(deductionFor(fs, seniors, end)).toBe(standardDeductionFor(fs, seniors));
+      expect(seniorDeductionFor({ filingStatus: fs, seniors }, end - 1)).toBeGreaterThan(0);
+      expect(seniorDeductionFor({ filingStatus: fs, seniors }, end)).toBe(0);
+      expect(seniorDeductionFor({ filingStatus: fs, seniors }, end + 1_000_000)).toBe(0);
+      expect(deductionFor({ filingStatus: fs, seniors }, end)).toBe(standardDeductionFor(
+        { filingStatus: fs, seniors },
+      ));
     }
   });
 
   it('stacks on the standard deduction and its age-65 addition', () => {
-    expect(deductionFor('single', 1, 50_000)).toBe(15_750 + 2_000 + 6_000);
-    expect(deductionFor('mfj', 2, 50_000)).toBe(31_500 + 3_200 + 12_000);
+    expect(deductionFor({ filingStatus: 'single', seniors: 1 }, 50_000)).toBe(15_750 + 2_000 + 6_000);
+    expect(deductionFor({ filingStatus: 'mfj', seniors: 2 }, 50_000)).toBe(31_500 + 3_200 + 12_000);
   });
 
   it('acts as a 6% stealth surtax on income inside the phaseout range', () => {
@@ -854,18 +1043,34 @@ describe('OBBBA senior deduction (2025-2028)', () => {
     // already bound, so a dollar of income is a dollar of MAGI - but it also
     // destroys 6 cents of deduction, so taxable income rises by $1.06 and the
     // 22% bracket bites at 23.32%.
-    expect(totalTax(60_001, SS, 'single', 1) - totalTax(60_000, SS, 'single', 1))
+    expect(totalTax(
+      { ordinaryIncome: 60_001, ssBenefit: SS, filingStatus: 'single', seniors: 1 },
+    ) - totalTax(
+      { ordinaryIncome: 60_000, ssBenefit: SS, filingStatus: 'single', seniors: 1 },
+    ))
       .toBeCloseTo(0.22 * 1.06, 6);
-    expect(totalTax(60_001, SS, 'single', 0) - totalTax(60_000, SS, 'single', 0))
+    expect(totalTax(
+      { ordinaryIncome: 60_001, ssBenefit: SS, filingStatus: 'single', seniors: 0 },
+    ) - totalTax(
+      { ordinaryIncome: 60_000, ssBenefit: SS, filingStatus: 'single', seniors: 0 },
+    ))
       .toBeCloseTo(0.22, 6);
   });
 
   it('doubles that surtax when both spouses qualify', () => {
     // MFJ, $150,000 of other income: MAGI is $170,155, i.e. $20,155 into the
     // range, and still inside the 22% bracket either way.
-    expect(totalTax(150_001, SS, 'mfj', 1) - totalTax(150_000, SS, 'mfj', 1))
+    expect(totalTax(
+      { ordinaryIncome: 150_001, ssBenefit: SS, filingStatus: 'mfj', seniors: 1 },
+    ) - totalTax(
+      { ordinaryIncome: 150_000, ssBenefit: SS, filingStatus: 'mfj', seniors: 1 },
+    ))
       .toBeCloseTo(0.22 * 1.06, 6);
-    expect(totalTax(150_001, SS, 'mfj', 2) - totalTax(150_000, SS, 'mfj', 2))
+    expect(totalTax(
+      { ordinaryIncome: 150_001, ssBenefit: SS, filingStatus: 'mfj', seniors: 2 },
+    ) - totalTax(
+      { ordinaryIncome: 150_000, ssBenefit: SS, filingStatus: 'mfj', seniors: 2 },
+    ))
       .toBeCloseTo(0.22 * 1.12, 6);
   });
 
@@ -875,18 +1080,29 @@ describe('OBBBA senior deduction (2025-2028)', () => {
     // destroys 6% of itself in deduction. 1.85 x 1.06 = $1.96 of taxable
     // income, and 22% becomes 43.14% rather than the torpedo's own 40.7%.
     const withPhaseout =
-      totalTax(50_001, MAX_SS, 'single', 1) - totalTax(50_000, MAX_SS, 'single', 1);
+      totalTax(
+        { ordinaryIncome: 50_001, ssBenefit: MAX_SS, filingStatus: 'single', seniors: 1 },
+      ) - totalTax(
+        { ordinaryIncome: 50_000, ssBenefit: MAX_SS, filingStatus: 'single', seniors: 1 },
+      );
     expect(withPhaseout).toBeCloseTo(0.22 * 1.85 * 1.06, 6);
     expect(withPhaseout).toBeCloseTo(0.431_42, 6);
     expect(
-      totalTax(50_001, MAX_SS, 'single', 0) - totalTax(50_000, MAX_SS, 'single', 0),
+      totalTax(
+        { ordinaryIncome: 50_001, ssBenefit: MAX_SS, filingStatus: 'single', seniors: 0 },
+      ) - totalTax(
+        { ordinaryIncome: 50_000, ssBenefit: MAX_SS, filingStatus: 'single', seniors: 0 },
+      ),
     ).toBeCloseTo(0.22 * 1.85, 6);
   });
 
   it('puts a second hump on the marginal-rate curve', () => {
     const rates = (seniors: number) =>
       new Set(
-        marginalRateCurve(SS, 150_000, 250, 'single', seniors).map(
+        marginalRateCurve(
+          { ssBenefit: SS, filingStatus: 'single', seniors },
+          { maxIncome: 150_000, step: 250 },
+        ).map(
           (p) => p.marginalRate,
         ),
       );
@@ -900,9 +1116,17 @@ describe('OBBBA senior deduction (2025-2028)', () => {
   it('falls back to the plain bracket rate once the deduction is gone', () => {
     // Single with the maximum benefit: MAGI clears $175,000 while other income
     // is still on the chart, so this hump has a right-hand edge too.
-    expect(totalTax(120_001, MAX_SS, 'single', 1) - totalTax(120_000, MAX_SS, 'single', 1))
+    expect(totalTax(
+      { ordinaryIncome: 120_001, ssBenefit: MAX_SS, filingStatus: 'single', seniors: 1 },
+    ) - totalTax(
+      { ordinaryIncome: 120_000, ssBenefit: MAX_SS, filingStatus: 'single', seniors: 1 },
+    ))
       .toBeCloseTo(0.24 * 1.06, 6);
-    expect(totalTax(140_001, MAX_SS, 'single', 1) - totalTax(140_000, MAX_SS, 'single', 1))
+    expect(totalTax(
+      { ordinaryIncome: 140_001, ssBenefit: MAX_SS, filingStatus: 'single', seniors: 1 },
+    ) - totalTax(
+      { ordinaryIncome: 140_000, ssBenefit: MAX_SS, filingStatus: 'single', seniors: 1 },
+    ))
       .toBeCloseTo(0.24, 6);
   });
 
@@ -910,8 +1134,14 @@ describe('OBBBA senior deduction (2025-2028)', () => {
     const ceiling = conversionCeilings('single').find(
       (c) => c.id === 'bracket22',
     ) as ConversionCeiling;
-    const plain = sizeConversion(ceiling, 30_000, SS, 0, 'single', 0);
-    const senior = sizeConversion(ceiling, 30_000, SS, 0, 'single', 1);
+    const plain = sizeConversion(
+      ceiling,
+      { ordinaryIncome: 30_000, ssBenefit: SS, ltcg: 0, filingStatus: 'single', seniors: 0 },
+    );
+    const senior = sizeConversion(
+      ceiling,
+      { ordinaryIncome: 30_000, ssBenefit: SS, ltcg: 0, filingStatus: 'single', seniors: 1 },
+    );
     expect(plain.conversion).toBe(68_944);
     expect(plain.rateAboveCeiling).toBe(24);
     // $8,000 more deduction would buy $76,944 of room, but every converted
@@ -935,7 +1165,9 @@ describe('tax-exempt (municipal) interest', () => {
       for (const income of [0, 10_000, 25_000, 60_000]) {
         for (const muni of [0, 2_500, 10_000, 40_000]) {
           for (const status of ['single', 'mfj'] as FilingStatus[]) {
-            expect(taxableSocialSecurity(ss, income, status, muni)).toBeCloseTo(
+            expect(taxableSocialSecurity(
+              { ssBenefit: ss, ordinaryIncome: income, filingStatus: status, muniInterest: muni },
+            )).toBeCloseTo(
               pub915Worksheet1(ss, income, status, muni),
               8,
             );
@@ -948,12 +1180,20 @@ describe('tax-exempt (municipal) interest', () => {
   it('counts toward provisional income exactly like other income', () => {
     // Worksheet 1 adds line 3 and line 4 together on line 6, so a dollar of
     // muni interest and a dollar of pension income are interchangeable here.
-    expect(taxableSocialSecurity(SS, 20_000, 'single', 5_000)).toBeCloseTo(
-      taxableSocialSecurity(SS, 25_000, 'single'),
+    expect(taxableSocialSecurity(
+      { ssBenefit: SS, ordinaryIncome: 20_000, filingStatus: 'single', muniInterest: 5_000 },
+    )).toBeCloseTo(
+      taxableSocialSecurity(
+        { ssBenefit: SS, ordinaryIncome: 25_000, filingStatus: 'single' },
+      ),
       8,
     );
-    expect(taxableSocialSecurity(SS, 20_000, 'mfj', 5_000)).toBeCloseTo(
-      taxableSocialSecurity(SS, 25_000, 'mfj'),
+    expect(taxableSocialSecurity(
+      { ssBenefit: SS, ordinaryIncome: 20_000, filingStatus: 'mfj', muniInterest: 5_000 },
+    )).toBeCloseTo(
+      taxableSocialSecurity(
+        { ssBenefit: SS, ordinaryIncome: 25_000, filingStatus: 'mfj' },
+      ),
       8,
     );
   });
@@ -962,19 +1202,24 @@ describe('tax-exempt (municipal) interest', () => {
     // $20,000 of other income + the average benefit. Provisional income is
     // 20,000 + 11,856 = 31,856, so 50% of the excess over $25,000 is taxable:
     // $3,428 of benefits, AGI $23,428, taxable $7,678, all at 10% = $767.80.
-    expect(totalTax(20_000, SS, 'single')).toBeCloseTo(767.8, 6);
+    expect(totalTax({ ordinaryIncome: 20_000, ssBenefit: SS, filingStatus: 'single' })).toBeCloseTo(767.8, 6);
     // Add $5,000 of muni interest: provisional income clears $34,000, so the
     // benefits dragged in rise to $6,927.60 - but AGI is only $26,927.60,
     // because the interest itself is excluded by IRC 103.
-    expect(totalTax(20_000, SS, 'single', 0, 5_000)).toBeCloseTo(1_117.76, 6);
+    expect(totalTax(
+      { ordinaryIncome: 20_000, ssBenefit: SS, filingStatus: 'single', seniors: 0, muniInterest: 5_000 },
+    )).toBeCloseTo(1_117.76, 6);
     // The same $5,000 as ordinary income costs far more: it is taxed itself
     // *and* it drags in the identical amount of benefits.
-    expect(totalTax(25_000, SS, 'single')).toBeCloseTo(1_702.812, 6);
+    expect(totalTax({ ordinaryIncome: 25_000, ssBenefit: SS, filingStatus: 'single' })).toBeCloseTo(1_702.812, 6);
   });
 
   it('moves the torpedo left on the marginal-rate curve', () => {
     const rateOnsetAt = (muni: number): number | undefined =>
-      marginalRateCurve(SS, 150_000, 250, 'single', 0, muni).find(
+      marginalRateCurve(
+        { ssBenefit: SS, filingStatus: 'single', seniors: 0, muniInterest: muni },
+        { maxIncome: 150_000, step: 250 },
+      ).find(
         (p) => p.marginalRate > 0,
       )?.income;
     // Without muni interest the first taxed dollar arrives at $15,000 of other
@@ -989,36 +1234,61 @@ describe('tax-exempt (municipal) interest', () => {
   it('costs nothing once benefits are capped at 85%', () => {
     // $100,000 of other income already puts 85% of the benefits in the tax
     // base, so there is nothing left for the interest to drag in.
-    expect(totalTax(100_000, SS, 'single', 0, 10_000)).toBe(
-      totalTax(100_000, SS, 'single'),
+    expect(totalTax(
+      { ordinaryIncome: 100_000, ssBenefit: SS, filingStatus: 'single', seniors: 0, muniInterest: 10_000 },
+    )).toBe(
+      totalTax({ ordinaryIncome: 100_000, ssBenefit: SS, filingStatus: 'single' }),
     );
     // Same with the senior deduction in play: muni interest is not added back
     // for its MAGI, so it cannot touch the phaseout either.
-    expect(totalTax(100_000, SS, 'single', 1, 10_000)).toBe(
-      totalTax(100_000, SS, 'single', 1),
+    expect(totalTax(
+      { ordinaryIncome: 100_000, ssBenefit: SS, filingStatus: 'single', seniors: 1, muniInterest: 10_000 },
+    )).toBe(
+      totalTax(
+        { ordinaryIncome: 100_000, ssBenefit: SS, filingStatus: 'single', seniors: 1 },
+      ),
     );
   });
 
   it('is added back for the IRMAA MAGI ceiling but not for AGI', () => {
     // $50,000 ordinary + $22,000 converted + $40,000 of benefits: the 85% cap
     // binds, so AGI is $106,000. Medicare adds tax-exempt interest back.
-    expect(conversionMeasureValue('magi', 50_000, 40_000, 0, 22_000)).toBe(106_000);
+    expect(conversionMeasureValue(
+      'magi',
+      { ordinaryIncome: 50_000, ssBenefit: 40_000, ltcg: 0 },
+      22_000,
+    )).toBe(106_000);
     expect(
-      conversionMeasureValue('magi', 50_000, 40_000, 0, 22_000, 'single', 0, 10_000),
+      conversionMeasureValue(
+        'magi',
+        { ordinaryIncome: 50_000, ssBenefit: 40_000, ltcg: 0, filingStatus: 'single', seniors: 0, muniInterest: 10_000 },
+        22_000,
+      ),
     ).toBe(116_000);
     // So $10,000 of muni interest costs exactly $10,000 of conversion room.
-    expect(maxConversionUnder(ceiling('irmaa1'), 50_000, 40_000)).toBe(22_000);
+    expect(maxConversionUnder(
+      ceiling('irmaa1'),
+      { ordinaryIncome: 50_000, ssBenefit: 40_000 },
+    )).toBe(22_000);
     expect(
-      maxConversionUnder(ceiling('irmaa1'), 50_000, 40_000, 0, 'single', 0, 1_000_000, 10_000),
+      maxConversionUnder(
+        ceiling('irmaa1'),
+        { ordinaryIncome: 50_000, ssBenefit: 40_000, ltcg: 0, filingStatus: 'single', seniors: 0, muniInterest: 10_000 },
+        1_000_000,
+      ),
     ).toBe(12_000);
   });
 
   it('eats provisional-income headroom dollar for dollar', () => {
     // Provisional income is 5,000 + conversion + 11,856, so $8,144 fits under
     // the $25,000 base amount - $2,000 less with $2,000 of muni interest.
-    expect(maxConversionUnder(ceiling('ss50'), 5_000, SS)).toBe(8_144);
+    expect(maxConversionUnder(ceiling('ss50'), { ordinaryIncome: 5_000, ssBenefit: SS })).toBe(8_144);
     expect(
-      maxConversionUnder(ceiling('ss50'), 5_000, SS, 0, 'single', 0, 1_000_000, 2_000),
+      maxConversionUnder(
+        ceiling('ss50'),
+        { ordinaryIncome: 5_000, ssBenefit: SS, ltcg: 0, filingStatus: 'single', seniors: 0, muniInterest: 2_000 },
+        1_000_000,
+      ),
     ).toBe(6_144);
   });
 });
@@ -1027,7 +1297,9 @@ describe('muniInterestEffect', () => {
   const SS = AVG_ANNUAL_SS_BENEFIT;
 
   it('prices the benefits the interest drags into taxable income', () => {
-    const effect = muniInterestEffect(5_000, 20_000, SS);
+    const effect = muniInterestEffect(
+      { muniInterest: 5_000, ordinaryIncome: 20_000, ssBenefit: SS },
+    );
     expect(effect.taxableSSWithout).toBe(3_428);
     expect(effect.taxableSSWith).toBe(6_928); // 6,927.60 rounded
     expect(effect.taxableSSDelta).toBe(3_500);
@@ -1043,7 +1315,9 @@ describe('muniInterestEffect', () => {
   });
 
   it('is all zeros when provisional income stays under the first threshold', () => {
-    const effect = muniInterestEffect(5_000, 5_000, SS);
+    const effect = muniInterestEffect(
+      { muniInterest: 5_000, ordinaryIncome: 5_000, ssBenefit: SS },
+    );
     expect(effect.taxableSSDelta).toBe(0);
     expect(effect.taxCost).toBe(0);
     expect(effect.costPerDollar).toBe(0);
@@ -1051,7 +1325,9 @@ describe('muniInterestEffect', () => {
   });
 
   it('is all zeros once the 85% cap already binds', () => {
-    const effect = muniInterestEffect(10_000, 100_000, SS);
+    const effect = muniInterestEffect(
+      { muniInterest: 10_000, ordinaryIncome: 100_000, ssBenefit: SS },
+    );
     expect(effect.taxableSSWithout).toBe(20_155);
     expect(effect.taxableSSDelta).toBe(0);
     expect(effect.taxCost).toBe(0);
@@ -1059,7 +1335,9 @@ describe('muniInterestEffect', () => {
   });
 
   it('reports zero cost per dollar rather than dividing by zero', () => {
-    expect(muniInterestEffect(0, 30_000, SS).costPerDollar).toBe(0);
+    expect(muniInterestEffect(
+      { muniInterest: 0, ordinaryIncome: 30_000, ssBenefit: SS },
+    ).costPerDollar).toBe(0);
   });
 
   it('counts planned capital gains in the provisional income it prices against', () => {
@@ -1068,16 +1346,26 @@ describe('muniInterestEffect', () => {
     // below the 85% cap. The gains have spent the torpedo before the interest
     // gets to it, so the same $5,000 that cost $350 without them now drags in
     // $478 and the dollar after that is free.
-    expect(muniInterestEffect(5_000, 20_000, SS, 0).taxableSSDelta).toBe(3_500);
-    const withGains = muniInterestEffect(5_000, 20_000, SS, 20_000);
+    expect(muniInterestEffect(
+      { muniInterest: 5_000, ordinaryIncome: 20_000, ssBenefit: SS, ltcg: 0 },
+    ).taxableSSDelta).toBe(3_500);
+    const withGains = muniInterestEffect(
+      { muniInterest: 5_000, ordinaryIncome: 20_000, ssBenefit: SS, ltcg: 20_000 },
+    );
     expect(withGains.taxableSSDelta).toBe(478);
     expect(withGains.ratePerNextDollar).toBe(0);
   });
 
   it('matches the marginal rate the tax chain reports at the same point', () => {
-    const effect = muniInterestEffect(5_000, 20_000, SS, 0, 'mfj', 1);
+    const effect = muniInterestEffect(
+      { muniInterest: 5_000, ordinaryIncome: 20_000, ssBenefit: SS, ltcg: 0, filingStatus: 'mfj', seniors: 1 },
+    );
     const direct =
-      totalTax(20_000, SS, 'mfj', 1, 5_001) - totalTax(20_000, SS, 'mfj', 1, 5_000);
+      totalTax(
+        { ordinaryIncome: 20_000, ssBenefit: SS, filingStatus: 'mfj', seniors: 1, muniInterest: 5_001 },
+      ) - totalTax(
+        { ordinaryIncome: 20_000, ssBenefit: SS, filingStatus: 'mfj', seniors: 1, muniInterest: 5_000 },
+      );
     expect(effect.ratePerNextDollar).toBeCloseTo(
       Math.round(direct * 10_000) / 100,
       6,
@@ -1096,13 +1384,17 @@ describe('married filing separately (lived with spouse)', () => {
 
   it('agrees with the Pub 915 worksheet run at $0 base amounts', () => {
     for (const otherIncome of [0, 1, 2_500, 11_855, 11_856, 40_000, 150_000]) {
-      expect(taxableSocialSecurity(SS, otherIncome, 'mfs')).toBeCloseTo(
+      expect(taxableSocialSecurity(
+        { ssBenefit: SS, ordinaryIncome: otherIncome, filingStatus: 'mfs' },
+      )).toBeCloseTo(
         pub915Worksheet1(SS, otherIncome, 'mfs'),
         6,
       );
     }
     // And with tax-exempt interest in provisional income too.
-    expect(taxableSocialSecurity(SS, 5_000, 'mfs', 3_000)).toBeCloseTo(
+    expect(taxableSocialSecurity(
+      { ssBenefit: SS, ordinaryIncome: 5_000, filingStatus: 'mfs', muniInterest: 3_000 },
+    )).toBeCloseTo(
       pub915Worksheet1(SS, 5_000, 'mfs', 3_000),
       6,
     );
@@ -1115,22 +1407,36 @@ describe('married filing separately (lived with spouse)', () => {
 
   it('taxes 42.5% of the benefit before any other income arrives', () => {
     // Provisional income is half the benefit, and 85% of that is taxable.
-    expect(taxableSocialSecurity(SS, 0, 'mfs')).toBeCloseTo(0.425 * SS, 6);
-    expect(taxableSocialSecurity(SS, 0, 'mfs')).toBeCloseTo(10_077.6, 6);
+    expect(taxableSocialSecurity(
+      { ssBenefit: SS, ordinaryIncome: 0, filingStatus: 'mfs' },
+    )).toBeCloseTo(0.425 * SS, 6);
+    expect(taxableSocialSecurity(
+      { ssBenefit: SS, ordinaryIncome: 0, filingStatus: 'mfs' },
+    )).toBeCloseTo(10_077.6, 6);
     // A single filer with the same benefit owes nothing on it at all.
-    expect(taxableSocialSecurity(SS, 0, 'single')).toBe(0);
+    expect(taxableSocialSecurity(
+      { ssBenefit: SS, ordinaryIncome: 0, filingStatus: 'single' },
+    )).toBe(0);
   });
 
   it('hits the 85% cap once other income reaches half the benefit', () => {
-    expect(taxableSocialSecurity(SS, SS / 2 - 1, 'mfs')).toBeCloseTo(
+    expect(taxableSocialSecurity(
+      { ssBenefit: SS, ordinaryIncome: SS / 2 - 1, filingStatus: 'mfs' },
+    )).toBeCloseTo(
       SS_CAP - 0.85,
       6,
     );
-    expect(taxableSocialSecurity(SS, SS / 2, 'mfs')).toBeCloseTo(SS_CAP, 6);
-    expect(taxableSocialSecurity(SS, 150_000, 'mfs')).toBeCloseTo(SS_CAP, 6);
+    expect(taxableSocialSecurity(
+      { ssBenefit: SS, ordinaryIncome: SS / 2, filingStatus: 'mfs' },
+    )).toBeCloseTo(SS_CAP, 6);
+    expect(taxableSocialSecurity(
+      { ssBenefit: SS, ordinaryIncome: 150_000, filingStatus: 'mfs' },
+    )).toBeCloseTo(SS_CAP, 6);
     // Tax-exempt interest is in provisional income, so it brings the cap
     // forward dollar for dollar.
-    expect(taxableSocialSecurity(SS, SS / 2 - 3_000, 'mfs', 3_000)).toBeCloseTo(
+    expect(taxableSocialSecurity(
+      { ssBenefit: SS, ordinaryIncome: SS / 2 - 3_000, filingStatus: 'mfs', muniInterest: 3_000 },
+    )).toBeCloseTo(
       SS_CAP,
       6,
     );
@@ -1139,7 +1445,10 @@ describe('married filing separately (lived with spouse)', () => {
   it('never draws the 50% band, so the curve skips straight to 1.85x', () => {
     const bands = (fs: FilingStatus): number[] => [
       ...new Set(
-        marginalRateCurve(SS, 40_000, 250, fs)
+        marginalRateCurve(
+          { ssBenefit: SS, filingStatus: fs },
+          { maxIncome: 40_000, step: 250 },
+        )
           .map((p) => p.marginalRate)
           .filter((r) => r > 0),
       ),
@@ -1152,7 +1461,10 @@ describe('married filing separately (lived with spouse)', () => {
   });
 
   it('is done with the torpedo by half the benefit', () => {
-    const curve = marginalRateCurve(SS, 40_000, 250, 'mfs');
+    const curve = marginalRateCurve(
+      { ssBenefit: SS, filingStatus: 'mfs' },
+      { maxIncome: 40_000, step: 250 },
+    );
     const amplified = curve.filter((p) => p.marginalRate > 12);
     expect(amplified[0].income).toBe(3_250);
     // The last amplified sample sits below half the benefit ($11,856); every
@@ -1187,11 +1499,11 @@ describe('married filing separately (lived with spouse)', () => {
       FILING_PARAMS.single.standardDeduction,
     );
     expect(ADDITIONAL_STD_DEDUCTION_65.mfs).toBe(1_600);
-    expect(standardDeductionFor('mfs', 0)).toBe(15_750);
-    expect(standardDeductionFor('mfs', 1)).toBe(17_350);
+    expect(standardDeductionFor({ filingStatus: 'mfs', seniors: 0 })).toBe(15_750);
+    expect(standardDeductionFor({ filingStatus: 'mfs', seniors: 1 })).toBe(17_350);
     // Only one person can claim it on a separate return.
     expect(maxSeniors('mfs')).toBe(1);
-    expect(standardDeductionFor('mfs', 2)).toBe(17_350);
+    expect(standardDeductionFor({ filingStatus: 'mfs', seniors: 2 })).toBe(17_350);
   });
 
   it('gets no senior deduction at all, at any income', () => {
@@ -1199,13 +1511,18 @@ describe('married filing separately (lived with spouse)', () => {
     expect(seniorDeductionAllowed('mfs')).toBe(false);
     expect(seniorDeductionPhaseoutEnd('mfs')).toBeNull();
     for (const magi of [0, 40_000, 75_000, 100_000, 175_000]) {
-      expect(seniorDeductionFor('mfs', 1, magi)).toBe(0);
-      expect(deductionFor('mfs', 1, magi)).toBe(standardDeductionFor('mfs', 1));
+      expect(seniorDeductionFor({ filingStatus: 'mfs', seniors: 1 }, magi)).toBe(0);
+      expect(deductionFor({ filingStatus: 'mfs', seniors: 1 }, magi)).toBe(standardDeductionFor(
+        { filingStatus: 'mfs', seniors: 1 },
+      ));
     }
     // So there is no second hump: the rate curve for a 65-year-old separate
     // filer is the same one a 64-year-old sees, shifted only by the $1,600.
     const rates = (seniors: number): number[] =>
-      marginalRateCurve(SS, 150_000, 250, 'mfs', seniors).map(
+      marginalRateCurve(
+        { ssBenefit: SS, filingStatus: 'mfs', seniors },
+        { maxIncome: 150_000, step: 250 },
+      ).map(
         (p) => p.marginalRate,
       );
     expect(new Set(rates(1))).toEqual(new Set(rates(0)));
@@ -1219,8 +1536,12 @@ describe('married filing separately (lived with spouse)', () => {
     expect(LTCG_BRACKETS.mfs[1].upTo).toBe(300_000);
     expect(LTCG_BRACKETS.mfj[1].upTo / 2).toBe(300_025);
     // $400,000 of pure gains: 0% to $48,350, 15% to $300,000, 20% after.
-    expect(totalTaxWithLTCG(0, 0, 400_000, 'mfs')).toBeCloseTo(54_597.5, 6);
-    expect(totalTaxWithLTCG(0, 0, 400_000, 'single')).toBeCloseTo(50_385, 6);
+    expect(totalTax(
+      { ordinaryIncome: 0, ssBenefit: 0, ltcg: 400_000, filingStatus: 'mfs' },
+    )).toBeCloseTo(54_597.5, 6);
+    expect(totalTax(
+      { ordinaryIncome: 0, ssBenefit: 0, ltcg: 400_000, filingStatus: 'single' },
+    )).toBeCloseTo(50_385, 6);
   });
 
   it('skips IRMAA tiers 1 through 3 entirely', () => {
@@ -1232,18 +1553,18 @@ describe('married filing separately (lived with spouse)', () => {
     expect(IRMAA_FIRST_CLIFF_MAGI.mfs).toBe(106_000);
     // Same first threshold as a single filer, four times the surcharge.
     expect(IRMAA_FIRST_CLIFF_MAGI.single).toBe(106_000);
-    expect(irmaaFor(106_001, 'mfs').annualSurcharge).toBeCloseTo(5_826, 6);
-    expect(irmaaFor(106_001, 'single').annualSurcharge).toBeCloseTo(1_052.4, 6);
+    expect(irmaaFor(106_001, { filingStatus: 'mfs' }).annualSurcharge).toBeCloseTo(5_826, 6);
+    expect(irmaaFor(106_001, { filingStatus: 'single' }).annualSurcharge).toBeCloseTo(1_052.4, 6);
   });
 
   it('walks its own tier ladder for the next cliff and its cost', () => {
-    const under = irmaaFor(106_000, 'mfs');
+    const under = irmaaFor(106_000, { filingStatus: 'mfs' });
     expect(under.tier).toBe(0);
     expect(under.nextThreshold).toBe(106_000);
     expect(under.headroom).toBe(0);
     expect(under.nextStep).toBeCloseTo(5_826, 6);
 
-    const over = irmaaFor(106_001, 'mfs');
+    const over = irmaaFor(106_001, { filingStatus: 'mfs' });
     expect(over.tier).toBe(4);
     // Not tier 5's $500,000/$750,000, and not tier 1's — the mfs ladder's.
     expect(over.nextThreshold).toBe(394_000);
@@ -1262,7 +1583,7 @@ describe('married filing separately (lived with spouse)', () => {
   });
 
   it('places its two cliffs on the other-income axis', () => {
-    const cliffs = irmaaCliffs(SS, 'mfs');
+    const cliffs = irmaaCliffs({ ssBenefit: SS, filingStatus: 'mfs' });
     expect(cliffs.map((c) => c.tier)).toEqual([4, 5]);
     // Past the cap the benefit contributes a fixed $20,155.20 to AGI, so each
     // cliff sits exactly that far below its MAGI figure.
@@ -1272,7 +1593,7 @@ describe('married filing separately (lived with spouse)', () => {
     expect(cliffs[0].step).toBeCloseTo(5_826, 6);
     expect(cliffs[1].step).toBeCloseTo(530.4, 6);
     // A single filer reaches the same $5,826 only at their fourth cliff.
-    expect(irmaaCliffs(SS, 'single')[3].annualSurcharge).toBeCloseTo(5_826, 6);
+    expect(irmaaCliffs({ ssBenefit: SS, filingStatus: 'single' })[3].annualSurcharge).toBeCloseTo(5_826, 6);
   });
 
   it('names the right IRMAA ceiling and collapses the two SS ceilings', () => {
@@ -1288,7 +1609,10 @@ describe('married filing separately (lived with spouse)', () => {
       const ceiling = ceilings.find((c) => c.id === id)!;
       expect(ceiling.amount).toBe(0);
       expect(ceiling.note).toContain('separate return');
-      const sized = sizeConversion(ceiling, 30_000, SS, 0, 'mfs');
+      const sized = sizeConversion(
+        ceiling,
+        { ordinaryIncome: 30_000, ssBenefit: SS, ltcg: 0, filingStatus: 'mfs' },
+      );
       expect(sized.alreadyOver).toBe(true);
       expect(sized.conversion).toBe(0);
       // Provisional income is already other income plus half the benefit.
@@ -1299,8 +1623,8 @@ describe('married filing separately (lived with spouse)', () => {
   it('costs more federal tax than a single filer on identical income', () => {
     // $30,000 of other income: identical brackets and standard deduction, but
     // $20,155.20 of benefits in the base instead of $11,177.60.
-    expect(totalTax(30_000, SS, 'mfs')).toBeCloseTo(3_890.12, 2);
-    expect(totalTax(30_000, SS, 'single')).toBeCloseTo(2_812.81, 2);
+    expect(totalTax({ ordinaryIncome: 30_000, ssBenefit: SS, filingStatus: 'mfs' })).toBeCloseTo(3_890.12, 2);
+    expect(totalTax({ ordinaryIncome: 30_000, ssBenefit: SS, filingStatus: 'single' })).toBeCloseTo(2_812.81, 2);
   });
 });
 
@@ -1349,16 +1673,18 @@ describe('IRMAA (Medicare income-related monthly adjustment amount)', () => {
 
   it('adds tax-exempt interest back into MAGI but never into the tax base', () => {
     // AGI at $50,000 of other income: the 85% cap already binds.
-    expect(irmaaMagi(50_000, SS)).toBeCloseTo(50_000 + SS_CAP, 6);
+    expect(irmaaMagi({ ordinaryIncome: 50_000, ssBenefit: SS })).toBeCloseTo(50_000 + SS_CAP, 6);
     // The interest lands in MAGI twice over: once directly, and once through
     // the benefits it drags in — except here the cap has already bound, so
     // only the direct dollar counts.
-    expect(irmaaMagi(50_000, SS, 0, 'single', 10_000)).toBeCloseTo(
+    expect(irmaaMagi(
+      { ordinaryIncome: 50_000, ssBenefit: SS, ltcg: 0, filingStatus: 'single', muniInterest: 10_000 },
+    )).toBeCloseTo(
       60_000 + SS_CAP,
       6,
     );
     // Capital gains are ordinary AGI for this purpose, preferential rate or not.
-    expect(irmaaMagi(50_000, SS, 20_000)).toBeCloseTo(70_000 + SS_CAP, 6);
+    expect(irmaaMagi({ ordinaryIncome: 50_000, ssBenefit: SS, ltcg: 20_000 })).toBeCloseTo(70_000 + SS_CAP, 6);
   });
 
   it('treats the thresholds as exclusive cliffs', () => {
@@ -1398,7 +1724,7 @@ describe('IRMAA (Medicare income-related monthly adjustment amount)', () => {
   });
 
   it('charges a couple twice off one MAGI figure', () => {
-    const couple = irmaaFor(213_000, 'mfj', 2);
+    const couple = irmaaFor(213_000, { filingStatus: 'mfj', beneficiaries: 2 });
     expect(couple.tier).toBe(1);
     expect(couple.beneficiaries).toBe(2);
     expect(couple.annualSurcharge).toBe(2 * 1_052.4);
@@ -1411,37 +1737,44 @@ describe('IRMAA (Medicare income-related monthly adjustment amount)', () => {
   it('inverts MAGI onto the chart’s other-income axis', () => {
     // Past the 85% cap the benefit is a fixed $20,155.20 of AGI, so the cliff
     // arrives that much earlier than its MAGI figure reads.
-    expect(otherIncomeAtIrmaaMagi(106_000, SS)).toBeCloseTo(106_000 - SS_CAP, 4);
-    expect(irmaaMagi(otherIncomeAtIrmaaMagi(106_000, SS), SS)).toBeCloseTo(
+    expect(otherIncomeAtIrmaaMagi(106_000, { ssBenefit: SS })).toBeCloseTo(106_000 - SS_CAP, 4);
+    expect(irmaaMagi(
+      { ordinaryIncome: otherIncomeAtIrmaaMagi(106_000, { ssBenefit: SS }), ssBenefit: SS },
+    )).toBeCloseTo(
       106_000,
       4,
     );
     // With no benefit at all there is nothing to drag in, so it is 1:1.
-    expect(otherIncomeAtIrmaaMagi(106_000, 0)).toBeCloseTo(106_000, 4);
+    expect(otherIncomeAtIrmaaMagi(106_000, { ssBenefit: 0 })).toBeCloseTo(106_000, 4);
     // Already over the threshold with no other income: clamp at zero.
-    expect(otherIncomeAtIrmaaMagi(106_000, 0, 'single', 200_000)).toBe(0);
+    expect(otherIncomeAtIrmaaMagi(
+      106_000,
+      { ssBenefit: 0, filingStatus: 'single', muniInterest: 200_000 },
+    )).toBe(0);
   });
 
   it('moves the cliff more than a dollar per dollar inside the torpedo', () => {
     // At the maximum benefit the 85% cap has not bound by $106,000 of MAGI, so
     // MAGI climbs at $1.85 per dollar earned and the first cliff arrives at
     // $56,405 of other income rather than $85,845.
-    const x = otherIncomeAtIrmaaMagi(106_000, MAX_ANNUAL_SS_BENEFIT);
+    const x = otherIncomeAtIrmaaMagi(106_000, { ssBenefit: MAX_ANNUAL_SS_BENEFIT });
     expect(x).toBeCloseTo(56_404.97, 2);
-    expect(irmaaMagi(x, MAX_ANNUAL_SS_BENEFIT)).toBeCloseTo(106_000, 4);
-    expect(x).toBeLessThan(otherIncomeAtIrmaaMagi(106_000, SS));
+    expect(irmaaMagi({ ordinaryIncome: x, ssBenefit: MAX_ANNUAL_SS_BENEFIT })).toBeCloseTo(106_000, 4);
+    expect(x).toBeLessThan(otherIncomeAtIrmaaMagi(106_000, { ssBenefit: SS }));
   });
 
   it('shifts every cliff left by each dollar of tax-exempt interest', () => {
-    const plain = irmaaCliffs(SS);
-    const withMuni = irmaaCliffs(SS, 'single', 10_000);
+    const plain = irmaaCliffs({ ssBenefit: SS });
+    const withMuni = irmaaCliffs(
+      { ssBenefit: SS, filingStatus: 'single', muniInterest: 10_000 },
+    );
     for (let i = 0; i < plain.length; i += 1) {
       expect(plain[i].otherIncome - withMuni[i].otherIncome).toBeCloseTo(10_000, 4);
     }
   });
 
   it('places the five cliffs with their annual cost', () => {
-    const cliffs = irmaaCliffs(SS);
+    const cliffs = irmaaCliffs({ ssBenefit: SS });
     expect(cliffs.map((c) => c.tier)).toEqual([1, 2, 3, 4, 5]);
     expect(cliffs.map((c) => c.magi)).toEqual([
       106_000, 133_000, 167_000, 200_000, 500_000,
@@ -1457,7 +1790,9 @@ describe('IRMAA (Medicare income-related monthly adjustment amount)', () => {
       1_052.4, 1_591.2, 1_591.2, 1_591.2, 530.4,
     ]);
     // A couple both on Medicare pays each step twice.
-    expect(irmaaCliffs(SS, 'mfj', 0, 2).map((c) => c.step)).toEqual([
+    expect(irmaaCliffs(
+      { ssBenefit: SS, filingStatus: 'mfj', muniInterest: 0, beneficiaries: 2 },
+    ).map((c) => c.step)).toEqual([
       2_104.8, 3_182.4, 3_182.4, 3_182.4, 1_060.8,
     ]);
   });
@@ -1466,10 +1801,12 @@ describe('IRMAA (Medicare income-related monthly adjustment amount)', () => {
     // One dollar over the tier-1 threshold costs $1,052.40 of Medicare premium
     // on top of whatever the income tax takes — a marginal rate of six figures
     // on that dollar, and the reason the cliff is worth drawing at all.
-    const x = otherIncomeAtIrmaaMagi(106_000, SS);
-    const incomeTaxOnTheDollar = totalTax(x + 1, SS) - totalTax(x, SS);
+    const x = otherIncomeAtIrmaaMagi(106_000, { ssBenefit: SS });
+    const incomeTaxOnTheDollar = totalTax({ ordinaryIncome: x + 1, ssBenefit: SS }) - totalTax(
+      { ordinaryIncome: x, ssBenefit: SS },
+    );
     expect(incomeTaxOnTheDollar).toBeLessThan(1);
-    expect(irmaaFor(irmaaMagi(x + 1, SS)).annualSurcharge).toBe(1_052.4);
-    expect(irmaaFor(irmaaMagi(x - 1, SS)).annualSurcharge).toBe(0);
+    expect(irmaaFor(irmaaMagi({ ordinaryIncome: x + 1, ssBenefit: SS })).annualSurcharge).toBe(1_052.4);
+    expect(irmaaFor(irmaaMagi({ ordinaryIncome: x - 1, ssBenefit: SS })).annualSurcharge).toBe(0);
   });
 });

@@ -142,9 +142,8 @@ export const CustomTooltip: React.FC<CustomTooltipProps> = ({
   // is added back — so it has to be recomputed here rather than read off the
   // curve, which only carries taxable figures.
   const irmaa = irmaaFor(
-    irmaaMagi(point.income, ssBenefit, 0, filingStatus, muniInterest),
-    filingStatus,
-    beneficiaries,
+    irmaaMagi({ ordinaryIncome: point.income, ssBenefit, ltcg: 0, filingStatus, muniInterest }),
+    { filingStatus, beneficiaries },
   );
   return (
     <div style={TOOLTIP_STYLE}>
@@ -243,7 +242,7 @@ const App: React.FC = () => {
   // checkbox is meaningless until the filer's is on.
   const seniors = isSenior ? (filingStatus === 'mfj' && spouseIsSenior ? 2 : 1) : 0;
   const baseDeduction = FILING_PARAMS[filingStatus].standardDeduction;
-  const standardDeduction = standardDeductionFor(filingStatus, seniors);
+  const standardDeduction = standardDeductionFor({ filingStatus, seniors });
   const seniorAddition = standardDeduction - baseDeduction;
 
   // The OBBBA senior deduction, before its phaseout eats into it. A separate
@@ -261,12 +260,20 @@ const App: React.FC = () => {
   const phaseoutEndsOnChart =
     phaseoutEnd !== null &&
     MAX_INCOME +
-      taxableSocialSecurity(ssBenefit, MAX_INCOME, filingStatus, muniInterest) >
+      taxableSocialSecurity({
+        ssBenefit,
+        ordinaryIncome: MAX_INCOME,
+        filingStatus,
+        muniInterest,
+      }) >
       phaseoutEnd;
 
   const curve = useMemo(
     () =>
-      marginalRateCurve(ssBenefit, MAX_INCOME, 250, filingStatus, seniors, muniInterest),
+      marginalRateCurve(
+        { ssBenefit, filingStatus, seniors, muniInterest },
+        { maxIncome: MAX_INCOME, step: 250 },
+      ),
     [ssBenefit, filingStatus, seniors, muniInterest],
   );
 
@@ -282,23 +289,18 @@ const App: React.FC = () => {
   // the benefit — so the whole torpedo is over by half the benefit, less
   // whatever tax-exempt interest has already been counted.
   const capBindsAt = Math.max(0, 0.5 * ssBenefit - muniInterest);
-  const taxableSSAtZeroIncome = taxableSocialSecurity(
+  const taxableSSAtZeroIncome = taxableSocialSecurity({
     ssBenefit,
-    0,
+    ordinaryIncome: 0,
     filingStatus,
     muniInterest,
-  );
+  });
 
   const ltcgCurve = useMemo(
     () =>
       ltcgMarginalRateCurve(
-        ssBenefit,
-        ordinaryIncome,
-        MAX_LTCG,
-        250,
-        filingStatus,
-        seniors,
-        muniInterest,
+        { ssBenefit, ordinaryIncome, filingStatus, seniors, muniInterest },
+        { maxLTCG: MAX_LTCG, step: 250 },
       ),
     [ssBenefit, ordinaryIncome, filingStatus, seniors, muniInterest],
   );
@@ -314,13 +316,15 @@ const App: React.FC = () => {
     const ceiling = ceilings.find((c) => c.id === ceilingId) ?? ceilings[0];
     return sizeConversion(
       ceiling,
-      ordinaryIncome,
-      ssBenefit,
-      plannedLtcg,
-      filingStatus,
-      seniors,
+      {
+        ordinaryIncome,
+        ssBenefit,
+        ltcg: plannedLtcg,
+        filingStatus,
+        seniors,
+        muniInterest,
+      },
       MAX_CONVERSION,
-      muniInterest,
     );
   }, [
     ceilings,
@@ -335,14 +339,14 @@ const App: React.FC = () => {
 
   const muniEffect = useMemo(
     () =>
-      muniInterestEffect(
+      muniInterestEffect({
         muniInterest,
         ordinaryIncome,
         ssBenefit,
-        plannedLtcg,
+        ltcg: plannedLtcg,
         filingStatus,
         seniors,
-      ),
+      }),
     [muniInterest, ordinaryIncome, ssBenefit, plannedLtcg, filingStatus, seniors],
   );
 
@@ -353,7 +357,7 @@ const App: React.FC = () => {
   const beneficiaries = filingStatus === 'mfj' && seniors === 2 ? 2 : 1;
 
   const cliffs = useMemo(
-    () => irmaaCliffs(ssBenefit, filingStatus, muniInterest, beneficiaries),
+    () => irmaaCliffs({ ssBenefit, filingStatus, muniInterest, beneficiaries }),
     [ssBenefit, filingStatus, muniInterest, beneficiaries],
   );
 
@@ -362,14 +366,14 @@ const App: React.FC = () => {
     (c) => c.otherIncome > 0 && c.otherIncome <= MAX_INCOME,
   );
 
-  const scenarioMagi = irmaaMagi(
+  const scenarioMagi = irmaaMagi({
     ordinaryIncome,
     ssBenefit,
-    plannedLtcg,
+    ltcg: plannedLtcg,
     filingStatus,
     muniInterest,
-  );
-  const irmaa = irmaaFor(scenarioMagi, filingStatus, beneficiaries);
+  });
+  const irmaa = irmaaFor(scenarioMagi, { filingStatus, beneficiaries });
 
   const measureLabel = CONVERSION_MEASURE_LABELS[sizing.ceiling.measure];
 

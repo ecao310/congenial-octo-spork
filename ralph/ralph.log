@@ -1218,3 +1218,69 @@ first cliff for every status.
 
 npx tsc -b, npm run lint, npx vitest run (170 passed, was 146), npm run build —
 all clean; only the pre-existing >500kB chunk warning.
+
+================================================================================
+## The Scenario options object
+## 2026-08-20 — recovered and committed by a later iteration
+
+Same failure mode as the MFS entry above: an iteration did the whole refactor,
+left it in the working tree, and died before flipping the checkbox or
+committing. Three modified files were waiting (App.tsx, tax.ts, tax.test.ts).
+This iteration re-verified from scratch and committed them unchanged. The
+write-up is reconstructed from the diff.
+
+### What it replaced
+
+`sizeConversion(ceiling, ordinary, ss, ltcg, filingStatus, seniors,
+maxConversion, muni)` — eight positional arguments, six of them bare numbers,
+and the backlog item recording that inserting `seniors` into the middle of that
+list had already silently rebound App.tsx's `MAX_CONVERSION` to it once.
+
+Now there is one `Scenario` interface — ordinaryIncome, ssBenefit, ltcg,
+muniInterest, filingStatus, seniors, beneficiaries — every field optional, and
+`resolveScenario()` fills the defaults. The same mistake is now a type error,
+and an unknown key is a type error too, so a typo cannot quietly land on a
+default.
+
+Two things about that resolver are deliberate and worth not "simplifying":
+
+- It is written out field by field rather than `{ ...DEFAULTS, ...scenario }`.
+  A spread lets an explicit `{ ltcg: undefined }` — which
+  `{ ...base, ltcg: someMaybeNumber }` produces at a call site — overwrite the
+  default with undefined. Field-by-field `??` cannot.
+- The sweeping functions take the range as a SECOND object
+  (`marginalRateCurve(scenario, { maxIncome, step })`), because maxIncome/step
+  describe the chart axis, not the taxpayer. Same for
+  `ltcgMarginalRateCurve(scenario, { maxLTCG, step })`. Both overwrite the
+  field they sweep, which is documented on each.
+
+### The merge that fell out of it
+
+`totalTax` and `totalTaxWithLTCG` became one function. They were already the
+same computation — `totalTax` was just the ltcg=0 case — and once both took a
+Scenario the signatures were identical, so keeping two was keeping a trap.
+`totalTaxWithLTCG` is gone entirely; no references remain anywhere in src/.
+
+Two helpers were extracted while the call sites were being rewritten:
+- `agiFor(scenario)` = ordinary + ltcg + taxableSS. It is the base for the
+  senior-deduction phaseout AND (plus muni) for IRMAA MAGI, and it was being
+  open-coded in five places. `irmaaMagi` is now one line.
+- The ordinary-bracket loop inside the old `totalTaxWithLTCG` was a duplicate
+  of `federalIncomeTax`; it now just calls it.
+
+`taxableSocialSecurity` now reads `ltcg` off the scenario itself instead of
+making each caller pre-add it into an `otherIncome` argument. Check this when
+touching the ordinary-income chart: that chart wants gains excluded, so
+App.tsx passes a scenario with no `ltcg` — which is correct, and NOT an
+oversight to be "fixed" by threading plannedLtcg in.
+
+### Verification
+
+npx tsc -b, npm run lint, npx vitest run (170 passed, unchanged — this is a
+pure refactor and the `it()`/`describe()` counts are byte-identical at 118/16
+before and after), npm run build — all clean; only the pre-existing >500kB
+chunk warning.
+
+Next up: the tax-year selector, which is the item that made this refactor
+worth doing first — a `year` field now slots into Scenario without touching a
+single call site's argument order.

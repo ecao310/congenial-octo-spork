@@ -49,7 +49,7 @@ MFS-lived-together mode. Already handled in the code ($0 thresholds), but it des
 [ ] Head of Household filing status — absent from FilingStatus today; shares the single filer's $25k/$34k SS thresholds but has its own brackets and standard deduction.
 [ ] Lump-sum election for retroactive SS awards (IRC 86(e)) — genuinely fiddly and needs prior-year income inputs; deliberately deferred until the Tier 2 items land.
 
-[ ] Replace the positional parameter lists in tax.ts with an options object. `sizeConversion` and `maxConversionUnder` now take eight positional arguments (ceiling, ordinary, ss, ltcg, filingStatus, seniors, maxConversion, muniInterest) and each new scenario input — QCDs, the tax year — adds another. Inserting `seniors` this iteration silently reassigned App.tsx's positional `MAX_CONVERSION` to it; the tests caught it, but the next insertion may not be so lucky.
+[x] Replace the positional parameter lists in tax.ts with an options object. `sizeConversion` and `maxConversionUnder` now take eight positional arguments (ceiling, ordinary, ss, ltcg, filingStatus, seniors, maxConversion, muniInterest) and each new scenario input — QCDs, the tax year — adds another. Inserting `seniors` this iteration silently reassigned App.tsx's positional `MAX_CONVERSION` to it; the tests caught it, but the next insertion may not be so lucky.
 [ ] Research and create more action items.
 
 Discovered Work

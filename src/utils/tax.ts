@@ -7,6 +7,53 @@ export interface MarginalRatePoint {
 
 export type FilingStatus = 'single' | 'mfj' | 'mfs';
 
+/**
+ * Every input a scenario has, as named fields rather than a positional list.
+ *
+ * The list had reached eight arguments — `sizeConversion(ceiling, ordinary, ss,
+ * ltcg, filingStatus, seniors, maxConversion, muni)` — six of them numbers, and
+ * inserting `seniors` in the middle once silently reassigned a caller's
+ * `MAX_CONVERSION` to it. The tests caught that one. Named fields make the same
+ * mistake a type error, and an unknown key a type error too, so a typo cannot
+ * quietly fall back to a default.
+ *
+ * Every field is optional and defaults to the un-set case: no income, no
+ * benefit, filing single, under 65, one Medicare enrollee.
+ */
+export interface Scenario {
+  /** Ordinary income other than Social Security: pensions, IRA withdrawals, wages, interest. */
+  ordinaryIncome?: number;
+  /** Annual Social Security benefit, gross — before any of it is taxed. */
+  ssBenefit?: number;
+  /** Long-term capital gains and qualified dividends, taxed in their own brackets. */
+  ltcg?: number;
+  /** Interest exempt from tax under IRC 103 — municipal bonds. */
+  muniInterest?: number;
+  filingStatus?: FilingStatus;
+  /** How many people on the return have reached 65; clamped by `maxSeniors`. */
+  seniors?: number;
+  /** Medicare enrollees on the return. IRMAA is charged per enrollee. */
+  beneficiaries?: number;
+}
+
+/**
+ * Fills in the defaults. Written out field by field rather than spread over a
+ * defaults object, because `{ ...DEFAULTS, ...scenario }` would let an explicit
+ * `{ ltcg: undefined }` — which `{ ...base, ltcg: someMaybeNumber }` produces —
+ * overwrite the default with `undefined`.
+ */
+export function resolveScenario(scenario: Scenario = {}): Required<Scenario> {
+  return {
+    ordinaryIncome: scenario.ordinaryIncome ?? 0,
+    ssBenefit: scenario.ssBenefit ?? 0,
+    ltcg: scenario.ltcg ?? 0,
+    muniInterest: scenario.muniInterest ?? 0,
+    filingStatus: scenario.filingStatus ?? 'single',
+    seniors: scenario.seniors ?? 0,
+    beneficiaries: scenario.beneficiaries ?? 1,
+  };
+}
+
 interface FilingParams {
   standardDeduction: number;
   brackets: { upTo: number; rate: number }[];
@@ -126,10 +173,8 @@ function seniorCount(filingStatus: FilingStatus, seniors: number): number {
  * torpedo: taxable income stays at zero for that much longer, so the first
  * bracket starts biting later.
  */
-export function standardDeductionFor(
-  filingStatus: FilingStatus = 'single',
-  seniors = 0,
-): number {
+export function standardDeductionFor(scenario: Scenario = {}): number {
+  const { filingStatus, seniors } = resolveScenario(scenario);
   return (
     FILING_PARAMS[filingStatus].standardDeduction +
     seniorCount(filingStatus, seniors) * ADDITIONAL_STD_DEDUCTION_65[filingStatus]
@@ -213,11 +258,8 @@ export function seniorDeductionPhaseoutEnd(
  * Social Security torpedo, because the benefits the torpedo drags into taxable
  * income are part of MAGI too.
  */
-export function seniorDeductionFor(
-  filingStatus: FilingStatus = 'single',
-  seniors = 0,
-  magi = 0,
-): number {
+export function seniorDeductionFor(scenario: Scenario = {}, magi = 0): number {
+  const { filingStatus, seniors } = resolveScenario(scenario);
   const count = seniorCount(filingStatus, seniors);
   if (count === 0) return 0;
   const start = SENIOR_DEDUCTION_PHASEOUT_START[filingStatus];
@@ -237,15 +279,8 @@ export function seniorDeductionFor(
  * deduction's phaseout — but the senior deduction is taken *from* AGI rather
  * than added to it, so there is no circular definition.
  */
-export function deductionFor(
-  filingStatus: FilingStatus = 'single',
-  seniors = 0,
-  magi = 0,
-): number {
-  return (
-    standardDeductionFor(filingStatus, seniors) +
-    seniorDeductionFor(filingStatus, seniors, magi)
-  );
+export function deductionFor(scenario: Scenario = {}, magi = 0): number {
+  return standardDeductionFor(scenario) + seniorDeductionFor(scenario, magi);
 }
 
 /**
@@ -258,7 +293,8 @@ export const AVG_ANNUAL_SS_BENEFIT = 23_712;
 
 /**
  * Taxable portion of Social Security benefits under the 50%/85% rules.
- * Provisional income = other income + tax-exempt interest + half of benefits.
+ * Provisional income = ordinary income + capital gains + tax-exempt interest +
+ * half of benefits.
  * Up to 50% of the excess over the first threshold is taxable, then up to 85%
  * of the excess over the second, capped at 85% of total benefits.
  *
@@ -268,14 +304,11 @@ export const AVG_ANNUAL_SS_BENEFIT = 23_712;
  * benefits without moving the ordinary tax base at all. See
  * `muniInterestEffect` for what that costs.
  */
-export function taxableSocialSecurity(
-  ssBenefit: number,
-  otherIncome: number,
-  filingStatus: FilingStatus = 'single',
-  muniInterest = 0,
-): number {
+export function taxableSocialSecurity(scenario: Scenario = {}): number {
+  const { ssBenefit, ordinaryIncome, ltcg, muniInterest, filingStatus } =
+    resolveScenario(scenario);
   const { ssBase50, ssBase85 } = FILING_PARAMS[filingStatus];
-  const provisional = otherIncome + muniInterest + 0.5 * ssBenefit;
+  const provisional = ordinaryIncome + ltcg + muniInterest + 0.5 * ssBenefit;
   if (provisional <= ssBase50) return 0;
   if (provisional <= ssBase85) {
     return Math.min(0.5 * (provisional - ssBase50), 0.5 * ssBenefit);
@@ -301,47 +334,44 @@ export function federalIncomeTax(
   return tax;
 }
 
-/** Total federal tax on other income plus taxable Social Security, after deductions. */
-export function totalTax(
-  otherIncome: number,
-  ssBenefit: number,
-  filingStatus: FilingStatus = 'single',
-  seniors = 0,
-  muniInterest = 0,
-): number {
-  // Tax-exempt interest raises provisional income, so it can pull benefits in…
-  const taxableSS = taxableSocialSecurity(
-    ssBenefit,
-    otherIncome,
-    filingStatus,
-    muniInterest,
-  );
-  // …but it is not part of AGI, and it is not added back for the senior
-  // deduction's MAGI either (unlike the MAGI Medicare uses for IRMAA), so the
-  // only trace it leaves in the tax base is the benefits it dragged in.
-  const magi = otherIncome + taxableSS;
-  const taxable = Math.max(0, magi - deductionFor(filingStatus, seniors, magi));
-  return federalIncomeTax(taxable, filingStatus);
+/**
+ * Adjusted gross income: ordinary income, capital gains, and whatever share of
+ * the benefit the torpedo has dragged in.
+ *
+ * Tax-exempt interest is deliberately absent. It raises provisional income, so
+ * it can pull benefits into AGI — but it never lands in AGI itself, and it is
+ * not added back for the senior deduction's MAGI either (unlike the MAGI
+ * Medicare uses for IRMAA, which does add it back; see `irmaaMagi`). The only
+ * trace it leaves in the tax base is the benefits it dragged in.
+ */
+export function agiFor(scenario: Scenario = {}): number {
+  const { ordinaryIncome, ltcg } = resolveScenario(scenario);
+  return ordinaryIncome + ltcg + taxableSocialSecurity(scenario);
 }
 
 /**
- * Marginal tax rate (in percent) on the next dollar of other income, plus the
- * total federal tax at each level, sampled from $0 to maxIncome, for a fixed
- * annual Social Security benefit.
+ * Marginal tax rate (in percent) on the next dollar of ordinary income, plus
+ * the total federal tax at each level, sampled from $0 to `maxIncome`.
+ *
+ * Sweeps the scenario's `ordinaryIncome`, so whatever it already carries there
+ * is overwritten. Every other field is honoured, `ltcg` included — pass a
+ * scenario with no gains to plot the ordinary-income chart on its own.
  */
+export interface IncomeCurveRange {
+  /** Right edge of the swept ordinary-income axis. */
+  maxIncome?: number;
+  /** Sampling interval, in dollars. */
+  step?: number;
+}
+
 export function marginalRateCurve(
-  ssBenefit: number,
-  maxIncome = 150_000,
-  step = 250,
-  filingStatus: FilingStatus = 'single',
-  seniors = 0,
-  muniInterest = 0,
+  scenario: Scenario = {},
+  { maxIncome = 150_000, step = 250 }: IncomeCurveRange = {},
 ): MarginalRatePoint[] {
   const data: MarginalRatePoint[] = [];
   for (let income = 0; income <= maxIncome; income += step) {
-    const taxHere = totalTax(income, ssBenefit, filingStatus, seniors, muniInterest);
-    const rate =
-      totalTax(income + 1, ssBenefit, filingStatus, seniors, muniInterest) - taxHere;
+    const taxHere = totalTax({ ...scenario, ordinaryIncome: income });
+    const rate = totalTax({ ...scenario, ordinaryIncome: income + 1 }) - taxHere;
     data.push({
       income,
       marginalRate: Math.round(rate * 10_000) / 100,
@@ -380,39 +410,28 @@ export const LTCG_BRACKETS: Record<FilingStatus, { upTo: number; rate: number }[
 };
 
 /**
- * Federal tax on LTCG stacked on top of ordinary income + taxable SS.
+ * Total federal income tax on the scenario: ordinary income plus whatever share
+ * of the benefit is taxable, with long-term gains stacked on top in their own
+ * brackets.
  *
- * Ordinary income (including taxable SS) fills the brackets first; LTCG is
- * then taxed at its own preferential rates, but the bracket thresholds are
- * measured against the full taxable income (ordinary + LTCG).
+ * Ordinary income (taxable SS included) fills the ordinary brackets first; LTCG
+ * is then taxed at its preferential rates, but the LTCG thresholds are measured
+ * against the *full* taxable income, ordinary and gains together.
  *
- * LTCG also counts toward provisional income for SS taxability, so adding
- * LTCG can drag SS benefits into taxable income at ordinary rates — the
- * "stacking" effect.
+ * LTCG also counts toward provisional income, so adding gains can drag benefits
+ * into taxable income at ordinary rates — the "stacking" effect. Leave `ltcg`
+ * unset and this is the plain ordinary-income tax.
+ *
+ * The Medicare IRMAA surcharge is not part of this: it is a premium, not a tax.
+ * See `irmaaFor`.
  */
-export function totalTaxWithLTCG(
-  ordinaryIncome: number,
-  ssBenefit: number,
-  ltcg: number,
-  filingStatus: FilingStatus = 'single',
-  seniors = 0,
-  muniInterest = 0,
-): number {
-  const { brackets } = FILING_PARAMS[filingStatus];
-  const ltcgBrackets = LTCG_BRACKETS[filingStatus];
+export function totalTax(scenario: Scenario = {}): number {
+  const { ordinaryIncome, filingStatus } = resolveScenario(scenario);
 
-  // LTCG counts toward provisional income (IRS uses full AGI + half SS), and so
-  // does tax-exempt interest — but only LTCG makes it into AGI below.
-  const totalOtherIncome = ordinaryIncome + ltcg;
-  const taxableSS = taxableSocialSecurity(
-    ssBenefit,
-    totalOtherIncome,
-    filingStatus,
-    muniInterest,
-  );
-
+  const taxableSS = taxableSocialSecurity(scenario);
   // Gains are part of AGI, so they phase out the senior deduction too.
-  const deduction = deductionFor(filingStatus, seniors, totalOtherIncome + taxableSS);
+  const agi = agiFor(scenario);
+  const deduction = deductionFor(scenario, agi);
 
   // Ordinary taxable income (before LTCG): ordinary + taxable SS − deduction.
   const ordinaryTaxable = Math.max(0, ordinaryIncome + taxableSS - deduction);
@@ -423,35 +442,21 @@ export function totalTaxWithLTCG(
   // Worksheet caps the preferentially-taxed amount at total taxable income
   // (line 1), so the LTCG band is [ordinaryTaxable, totalTaxable] — which is
   // narrower than `ltcg` exactly when ordinary income underruns the deduction.
-  const totalTaxable = Math.max(0, ordinaryIncome + taxableSS + ltcg - deduction);
-
-  // --- Ordinary income tax (uses ordinary brackets up to ordinaryTaxable) ---
-  let ordinaryTax = 0;
-  {
-    let lower = 0;
-    for (const { upTo, rate } of brackets) {
-      if (ordinaryTaxable <= lower) break;
-      ordinaryTax += (Math.min(ordinaryTaxable, upTo) - lower) * rate;
-      lower = upTo;
-    }
-  }
+  const totalTaxable = Math.max(0, agi - deduction);
 
   // --- LTCG tax (fills LTCG brackets from ordinaryTaxable to totalTaxable) ---
   let ltcgTax = 0;
-  {
-    let lower = 0;
-    for (const { upTo, rate } of ltcgBrackets) {
-      // The LTCG band occupies [ordinaryTaxable, totalTaxable].
-      const bandStart = Math.max(ordinaryTaxable, lower);
-      const bandEnd = Math.min(totalTaxable, upTo);
-      if (bandEnd > bandStart) {
-        ltcgTax += (bandEnd - bandStart) * rate;
-      }
-      lower = upTo;
+  let lower = 0;
+  for (const { upTo, rate } of LTCG_BRACKETS[filingStatus]) {
+    const bandStart = Math.max(ordinaryTaxable, lower);
+    const bandEnd = Math.min(totalTaxable, upTo);
+    if (bandEnd > bandStart) {
+      ltcgTax += (bandEnd - bandStart) * rate;
     }
+    lower = upTo;
   }
 
-  return ordinaryTax + ltcgTax;
+  return federalIncomeTax(ordinaryTaxable, filingStatus) + ltcgTax;
 }
 
 export interface LTCGMarginalRatePoint {
@@ -462,38 +467,28 @@ export interface LTCGMarginalRatePoint {
 
 /**
  * Effective marginal rate on the next dollar of LTCG, sampled from $0 to
- * maxLTCG. Captures both the LTCG bracket rate and the SS torpedo
- * amplification (ordinary income dragged in by LTCG raising provisional
+ * `maxLTCG`. Captures both the LTCG bracket rate and the SS torpedo
+ * amplification (benefits dragged into AGI by LTCG raising provisional
  * income).
+ *
+ * Sweeps the scenario's `ltcg`, so whatever it already carries there is
+ * overwritten; every other field is honoured.
  */
+export interface LtcgCurveRange {
+  /** Right edge of the swept capital-gains axis. */
+  maxLTCG?: number;
+  /** Sampling interval, in dollars. */
+  step?: number;
+}
+
 export function ltcgMarginalRateCurve(
-  ssBenefit: number,
-  ordinaryIncome: number,
-  maxLTCG = 200_000,
-  step = 250,
-  filingStatus: FilingStatus = 'single',
-  seniors = 0,
-  muniInterest = 0,
+  scenario: Scenario = {},
+  { maxLTCG = 200_000, step = 250 }: LtcgCurveRange = {},
 ): LTCGMarginalRatePoint[] {
   const data: LTCGMarginalRatePoint[] = [];
   for (let ltcg = 0; ltcg <= maxLTCG; ltcg += step) {
-    const taxHere = totalTaxWithLTCG(
-      ordinaryIncome,
-      ssBenefit,
-      ltcg,
-      filingStatus,
-      seniors,
-      muniInterest,
-    );
-    const rate =
-      totalTaxWithLTCG(
-        ordinaryIncome,
-        ssBenefit,
-        ltcg + 1,
-        filingStatus,
-        seniors,
-        muniInterest,
-      ) - taxHere;
+    const taxHere = totalTax({ ...scenario, ltcg });
+    const rate = totalTax({ ...scenario, ltcg: ltcg + 1 }) - taxHere;
     data.push({
       ltcg,
       marginalRate: Math.round(rate * 10_000) / 100,
@@ -543,30 +538,14 @@ export interface MuniInterestEffect {
  * benefits they cannot control, rather than anywhere near the bonds that caused
  * it.
  */
-export function muniInterestEffect(
-  muniInterest: number,
-  ordinaryIncome: number,
-  ssBenefit: number,
-  ltcg = 0,
-  filingStatus: FilingStatus = 'single',
-  seniors = 0,
-): MuniInterestEffect {
-  const otherIncome = ordinaryIncome + ltcg;
-  const taxableSSWithout = taxableSocialSecurity(
-    ssBenefit,
-    otherIncome,
-    filingStatus,
-    0,
-  );
-  const taxableSSWith = taxableSocialSecurity(
-    ssBenefit,
-    otherIncome,
-    filingStatus,
-    muniInterest,
-  );
+export function muniInterestEffect(scenario: Scenario = {}): MuniInterestEffect {
+  const { muniInterest } = resolveScenario(scenario);
+  const withoutMuni: Scenario = { ...scenario, muniInterest: 0 };
 
-  const taxAt = (muni: number): number =>
-    totalTaxWithLTCG(ordinaryIncome, ssBenefit, ltcg, filingStatus, seniors, muni);
+  const taxableSSWithout = taxableSocialSecurity(withoutMuni);
+  const taxableSSWith = taxableSocialSecurity(scenario);
+
+  const taxAt = (muni: number): number => totalTax({ ...scenario, muniInterest: muni });
 
   const taxWithRaw = taxAt(muniInterest);
   const taxWithout = Math.round(taxAt(0));
@@ -806,21 +785,8 @@ export function partBSurchargeMonthly(tier: IrmaaTier): number {
  * one the OBBBA senior deduction phases out against, which never adds the
  * tax-exempt interest back - see `seniorDeductionFor`.
  */
-export function irmaaMagi(
-  ordinaryIncome: number,
-  ssBenefit: number,
-  ltcg = 0,
-  filingStatus: FilingStatus = 'single',
-  muniInterest = 0,
-): number {
-  const otherIncome = ordinaryIncome + ltcg;
-  const taxableSS = taxableSocialSecurity(
-    ssBenefit,
-    otherIncome,
-    filingStatus,
-    muniInterest,
-  );
-  return otherIncome + taxableSS + muniInterest;
+export function irmaaMagi(scenario: Scenario = {}): number {
+  return agiFor(scenario) + resolveScenario(scenario).muniInterest;
 }
 
 /** The tier a given MAGI lands in. Thresholds are exclusive: over, not at. */
@@ -876,11 +842,8 @@ function annualSurchargeFor(tier: IrmaaTier, beneficiaries: number): number {
  * thresholds being double the single ones still leaves couples worse off per
  * dollar of income.
  */
-export function irmaaFor(
-  magi: number,
-  filingStatus: FilingStatus = 'single',
-  beneficiaries = 1,
-): IrmaaAssessment {
+export function irmaaFor(magi: number, scenario: Scenario = {}): IrmaaAssessment {
+  const { filingStatus, beneficiaries } = resolveScenario(scenario);
   const tiers = irmaaTiersFor(filingStatus);
   const tier = irmaaTierFor(magi, filingStatus);
   const next = tiers[tiers.indexOf(tier) + 1] ?? null;
@@ -916,12 +879,12 @@ export function irmaaFor(
  */
 export function otherIncomeAtIrmaaMagi(
   targetMagi: number,
-  ssBenefit: number,
-  filingStatus: FilingStatus = 'single',
-  muniInterest = 0,
+  scenario: Scenario = {},
 ): number {
+  // Solves on the chart's x-axis, which is ordinary income with no gains on it,
+  // so the scenario's `ordinaryIncome` and `ltcg` are both overwritten.
   const magiAt = (income: number): number =>
-    irmaaMagi(income, ssBenefit, 0, filingStatus, muniInterest);
+    irmaaMagi({ ...scenario, ordinaryIncome: income, ltcg: 0 });
   if (magiAt(0) >= targetMagi) return 0;
   // MAGI is never below other income, so targetMagi always overshoots.
   let low = 0;
@@ -953,12 +916,8 @@ export interface IrmaaCliff {
  * is in Medicare's MAGI *and* in provisional income), and so does a larger
  * benefit.
  */
-export function irmaaCliffs(
-  ssBenefit: number,
-  filingStatus: FilingStatus = 'single',
-  muniInterest = 0,
-  beneficiaries = 1,
-): IrmaaCliff[] {
+export function irmaaCliffs(scenario: Scenario = {}): IrmaaCliff[] {
+  const { filingStatus, beneficiaries } = resolveScenario(scenario);
   const tiers = irmaaTiersFor(filingStatus);
   return tiers.slice(1).map((tier, index) => {
     const magi = tier.magiOver[filingStatus];
@@ -969,12 +928,7 @@ export function irmaaCliffs(
     return {
       tier: tier.tier,
       magi,
-      otherIncome: otherIncomeAtIrmaaMagi(
-        magi,
-        ssBenefit,
-        filingStatus,
-        muniInterest,
-      ),
+      otherIncome: otherIncomeAtIrmaaMagi(magi, scenario),
       annualSurcharge,
       step: toCents(annualSurcharge - annualSurchargeFor(previous, beneficiaries)),
     };
@@ -1098,29 +1052,24 @@ export function conversionCeilings(
  */
 export function conversionMeasureValue(
   measure: ConversionMeasure,
-  ordinaryIncome: number,
-  ssBenefit: number,
-  ltcg: number,
-  conversion: number,
-  filingStatus: FilingStatus = 'single',
-  seniors = 0,
-  muniInterest = 0,
+  scenario: Scenario = {},
+  conversion = 0,
 ): number {
-  const otherIncome = ordinaryIncome + conversion + ltcg;
-  const taxableSS = taxableSocialSecurity(
-    ssBenefit,
-    otherIncome,
-    filingStatus,
-    muniInterest,
-  );
+  const { ordinaryIncome, ltcg, muniInterest, ssBenefit } = resolveScenario(scenario);
+  // A Roth conversion is ordinary income, so it simply moves that field.
+  const converted: Scenario = {
+    ...scenario,
+    ordinaryIncome: ordinaryIncome + conversion,
+  };
+  const taxableSS = taxableSocialSecurity(converted);
   // AGI, which already includes taxable SS but never includes tax-exempt
   // interest. This is also the base for the senior deduction's phaseout, where
   // tax-exempt interest is *not* added back.
-  const agi = otherIncome + taxableSS;
-  const deduction = deductionFor(filingStatus, seniors, agi);
+  const agi = agiFor(converted);
+  const deduction = deductionFor(converted, agi);
   switch (measure) {
     case 'provisionalIncome':
-      return otherIncome + muniInterest + 0.5 * ssBenefit;
+      return ordinaryIncome + conversion + ltcg + muniInterest + 0.5 * ssBenefit;
     case 'magi':
       // The only ceiling measured this way is IRMAA, and Medicare's MAGI is
       // AGI plus tax-exempt interest — a wider definition than the one the
@@ -1147,25 +1096,11 @@ const CEILING_EPSILON = 1e-6;
  */
 export function maxConversionUnder(
   ceiling: ConversionCeiling,
-  ordinaryIncome: number,
-  ssBenefit: number,
-  ltcg = 0,
-  filingStatus: FilingStatus = 'single',
-  seniors = 0,
+  scenario: Scenario = {},
   maxConversion = 1_000_000,
-  muniInterest = 0,
 ): number {
   const measureAt = (conversion: number): number =>
-    conversionMeasureValue(
-      ceiling.measure,
-      ordinaryIncome,
-      ssBenefit,
-      ltcg,
-      conversion,
-      filingStatus,
-      seniors,
-      muniInterest,
-    );
+    conversionMeasureValue(ceiling.measure, scenario, conversion);
   const fits = (conversion: number): boolean =>
     measureAt(conversion) <= ceiling.amount + CEILING_EPSILON;
 
@@ -1216,39 +1151,16 @@ export interface ConversionSizing {
  */
 export function sizeConversion(
   ceiling: ConversionCeiling,
-  ordinaryIncome: number,
-  ssBenefit: number,
-  ltcg = 0,
-  filingStatus: FilingStatus = 'single',
-  seniors = 0,
+  scenario: Scenario = {},
   maxConversion = 1_000_000,
-  muniInterest = 0,
 ): ConversionSizing {
-  const conversion = maxConversionUnder(
-    ceiling,
-    ordinaryIncome,
-    ssBenefit,
-    ltcg,
-    filingStatus,
-    seniors,
-    maxConversion,
-    muniInterest,
-  );
+  const { ordinaryIncome } = resolveScenario(scenario);
+  const conversion = maxConversionUnder(ceiling, scenario, maxConversion);
   const headroom =
-    ceiling.amount -
-    conversionMeasureValue(
-      ceiling.measure,
-      ordinaryIncome,
-      ssBenefit,
-      ltcg,
-      0,
-      filingStatus,
-      seniors,
-      muniInterest,
-    );
+    ceiling.amount - conversionMeasureValue(ceiling.measure, scenario, 0);
 
   const taxAt = (ordinary: number): number =>
-    totalTaxWithLTCG(ordinary, ssBenefit, ltcg, filingStatus, seniors, muniInterest);
+    totalTax({ ...scenario, ordinaryIncome: ordinary });
 
   const taxBefore = Math.round(taxAt(ordinaryIncome));
   const taxAfter = Math.round(taxAt(ordinaryIncome + conversion));

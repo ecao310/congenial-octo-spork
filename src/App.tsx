@@ -56,6 +56,18 @@ import {
   UNIFORM_LIFETIME_DIVISORS,
 } from './utils/projection';
 import type { ProjectionYearRow } from './utils/projection';
+import {
+  SEQUENCING_FILL_CEILING_IDS,
+  SEQUENCING_STRATEGIES,
+  compareSequencing,
+  sequencingChartRows,
+} from './utils/sequencing';
+import type {
+  SequencingChartRow,
+  SequencingComparison,
+  SequencingStrategy,
+  SequencingStrategyId,
+} from './utils/sequencing';
 import { statesTaxingSocialSecurity } from './utils/stateTax';
 import type {
   TaxYear,
@@ -86,6 +98,21 @@ const MAX_BIRTH_YEAR = 1975;
 const MAX_TRADITIONAL_BALANCE = 3_000_000;
 const MAX_COLA = 5;
 const MAX_BALANCE_GROWTH = 10;
+
+const MAX_SPENDING = 250_000;
+const MAX_ACCOUNT_BALANCE = 3_000_000;
+
+/**
+ * One colour per withdrawal order, keyed by the same `chartKey` the data uses.
+ *
+ * Slate for the conventional order on purpose: it is the default everyone
+ * arrives with, and the other two are the departures from it.
+ */
+const SEQUENCING_COLORS: Record<SequencingStrategy['chartKey'], string> = {
+  taxableFirst: '#94a3b8',
+  proportional: '#a78bfa',
+  bracketFill: '#fbbf24',
+};
 
 const FILING_STATUS_OPTIONS: { value: FilingStatus; label: string }[] = [
   { value: 'single', label: 'Single' },
@@ -313,6 +340,59 @@ export const ProjectionTooltip: React.FC<ProjectionTooltipProps> = ({
   );
 };
 
+interface SequencingTooltipProps {
+  active?: boolean;
+  payload?: Array<{ payload: SequencingChartRow }>;
+  comparison: SequencingComparison;
+}
+
+/**
+ * Reads the year off the chart row and the detail off the comparison, rather
+ * than widening every chart row with three more fields per strategy. The rows
+ * exist to be plotted; the strategies already hold everything else.
+ */
+export const SequencingTooltip: React.FC<SequencingTooltipProps> = ({
+  active,
+  payload,
+  comparison,
+}) => {
+  if (!active || !payload || !payload.length) return null;
+  const { year } = payload[0].payload;
+  const index = year - comparison.startYear;
+  const first = comparison.strategies[0].rows[index];
+  if (!first) return null;
+  return (
+    <div style={TOOLTIP_STYLE}>
+      <div style={{ fontWeight: 600, marginBottom: '0.25rem' }}>
+        {year} &middot; age {first.age}
+      </div>
+      {comparison.strategies.map((s) => {
+        const row = s.rows[index];
+        return (
+          <div key={s.strategy.id}>
+            {s.strategy.label}:{' '}
+            <strong style={{ color: SEQUENCING_COLORS[s.strategy.chartKey] }}>
+              {formatCurrency(row.cumulativeRealTax)}
+            </strong>{' '}
+            so far &middot; {formatCurrency(row.realTotalTax)} this year
+            {/*
+              Per order, not in the header: the required distribution is read
+              off each order's own balance, and by the end of a long horizon
+              bracket filling's can be a third smaller than the conventional
+              order's. One figure at the top would be the wrong one twice.
+            */}
+            {row.rmd > 0 && ` \u00b7 ${formatCurrency(row.rmd)} required`}
+            {row.shortfall > 0 && ' \u00b7 out of money'}
+          </div>
+        );
+      })}
+      <div style={{ fontSize: '0.8125rem', color: '#94a3b8', marginTop: '0.25rem' }}>
+        Running federal tax, in {comparison.startYear} dollars
+      </div>
+    </div>
+  );
+};
+
 const App: React.FC = () => {
   const [year, setYear] = useState<TaxYear>(() => defaultTaxYear());
   const [ssBenefit, setSsBenefit] = useState<number>(() =>
@@ -330,6 +410,11 @@ const App: React.FC = () => {
   const [birthYear, setBirthYear] = useState<number>(1955);
   const [traditionalBalance, setTraditionalBalance] = useState<number>(100_000);
   const [balanceGrowth, setBalanceGrowth] = useState<number>(5);
+  const [spendingNeed, setSpendingNeed] = useState<number>(60_000);
+  const [taxableBalance, setTaxableBalance] = useState<number>(300_000);
+  const [taxableBasisPercent, setTaxableBasisPercent] = useState<number>(60);
+  const [rothBalance, setRothBalance] = useState<number>(150_000);
+  const [fillCeilingId, setFillCeilingId] = useState<ConversionCeilingId>('bracket12');
 
   const statesTaxing = statesTaxingSocialSecurity(year);
   const yearParams = taxYearParams(year);
@@ -546,6 +631,78 @@ const App: React.FC = () => {
       balanceGrowth,
     ],
   );
+
+  /**
+   * The same retirement the projection above describes, funded three ways.
+   *
+   * It shares that section's horizon, COLA, birth year, IRA balance and growth
+   * rate deliberately — two sections disagreeing about when the filer turns 73
+   * would be worse than either of them being wrong on its own. The planned
+   * capital gains stay out for the same reason they stay out of the projection.
+   */
+  const sequencing = useMemo(
+    () =>
+      compareSequencing(
+        { ordinaryIncome, ssBenefit, muniInterest, filingStatus, seniors, year },
+        {
+          startYear: year,
+          years: horizonYears,
+          colaPercent: colaAssumption,
+          birthYear,
+          spending: spendingNeed,
+          taxableBalance,
+          taxableBasisFraction: taxableBasisPercent / 100,
+          traditionalBalance,
+          rothBalance,
+          growthPercent: balanceGrowth,
+          fillCeilingId,
+        },
+      ),
+    [
+      ordinaryIncome,
+      ssBenefit,
+      muniInterest,
+      filingStatus,
+      seniors,
+      year,
+      horizonYears,
+      colaAssumption,
+      birthYear,
+      spendingNeed,
+      taxableBalance,
+      taxableBasisPercent,
+      traditionalBalance,
+      rothBalance,
+      balanceGrowth,
+      fillCeilingId,
+    ],
+  );
+
+  const sequencingRows = useMemo(() => sequencingChartRows(sequencing), [sequencing]);
+
+  /** Only the ceilings the projection can index honestly — see the module. */
+  const fillCeilings = ceilings.filter((c) => SEQUENCING_FILL_CEILING_IDS.includes(c.id));
+
+  /**
+   * By id, not by position: the order the table renders in is presentation, and
+   * the prose below compares two specific orders rather than two specific rows.
+   */
+  const seqStrategy = (id: SequencingStrategyId) =>
+    sequencing.strategies.find((s) => s.strategy.id === id) ?? sequencing.strategies[0];
+  const seqConventional = seqStrategy('taxable-first');
+  const seqBracketFill = seqStrategy('bracket-fill');
+
+  /**
+   * Zero when no order withdrew anything it was not required to — the benefit
+   * and the other income covered every year on their own. The three scores then
+   * tie because there was nothing to sequence, which is a different statement
+   * from the orders being close, and the prose below has to make it.
+   */
+  const seqVoluntary = sequencing.strategies.reduce((t, s) => t + s.voluntaryWithdrawal, 0);
+  /** Fewer than two and there is no order to choose, only one account to spend. */
+  const seqFundedAccounts = [taxableBalance, traditionalBalance, rothBalance].filter(
+    (b) => b > 0,
+  ).length;
 
   const applicableAge = rmdApplicableAge(birthYear);
   const firstRmdRow = projection.rows.find((r) => r.rmd > 0) ?? null;
@@ -1983,6 +2140,424 @@ const App: React.FC = () => {
           set as &ldquo;other income&rdquo; as separate from the balance below
           it — if what you withdraw from the IRA already is your other income,
           the required distribution replaces part of it rather than adding to it.
+        </p>
+      </section>
+
+      {/* ───── Withdrawal sequencing ───── */}
+      <section className="explainer" aria-labelledby="sequencing-heading">
+        <h2 id="sequencing-heading" className="section-heading-indigo">
+          Which account you spend first
+        </h2>
+        <p>
+          The conventional order is brokerage account, then IRA, then Roth, and
+          it has one very good argument behind it: a dollar left in a
+          tax-deferred account keeps compounding untaxed. It is also how a
+          retiree arrives at {applicableAge} holding an IRA large enough that the
+          required distribution alone drags the whole benefit past the{' '}
+          {formatCurrency(ssBase85)} base, in a year when there is no longer any
+          choice about it. These three orders fund the same retirement — the same
+          horizon, COLA, birth year, IRA balance and growth rate set above — and
+          the score is every year of federal tax, added up in {year} dollars.
+        </p>
+
+        <div className="input-group">
+          <div className="slider-header">
+            <label htmlFor="sequencing-spending">After-tax spending each year</label>
+            <span className="slider-value indigo">{formatCurrency(spendingNeed)}</span>
+          </div>
+          <input
+            id="sequencing-spending"
+            type="range"
+            min={0}
+            max={MAX_SPENDING}
+            step={1_000}
+            value={spendingNeed}
+            onChange={(e) => setSpendingNeed(Number(e.target.value))}
+            className="slider-indigo"
+          />
+          <div className="slider-range-labels">
+            <span>$0</span>
+            <span>{formatCurrency(MAX_SPENDING)}</span>
+          </div>
+          <p className="field-note">
+            What the household spends, with federal tax paid on top of it rather
+            than out of it. The benefit, the {formatCurrency(ordinaryIncome)} of
+            other income and any tax-exempt interest cover the first part;
+            withdrawals cover the rest, and the tax on those withdrawals, which
+            is why the withdrawal needed to fund a year depends on the tax and
+            the tax depends on the withdrawal.
+          </p>
+        </div>
+
+        <div className="input-group">
+          <div className="slider-header">
+            <label htmlFor="sequencing-taxable">Taxable brokerage account</label>
+            <span className="slider-value indigo">{formatCurrency(taxableBalance)}</span>
+          </div>
+          <input
+            id="sequencing-taxable"
+            type="range"
+            min={0}
+            max={MAX_ACCOUNT_BALANCE}
+            step={25_000}
+            value={taxableBalance}
+            onChange={(e) => setTaxableBalance(Number(e.target.value))}
+            className="slider-indigo"
+          />
+          <div className="slider-range-labels">
+            <span>$0</span>
+            <span>{formatCurrency(MAX_ACCOUNT_BALANCE)}</span>
+          </div>
+        </div>
+
+        <div className="input-group">
+          <div className="slider-header">
+            <label htmlFor="sequencing-basis">Of that, cost basis</label>
+            <span className="slider-value indigo">{taxableBasisPercent}%</span>
+          </div>
+          <input
+            id="sequencing-basis"
+            type="range"
+            min={0}
+            max={100}
+            step={5}
+            value={taxableBasisPercent}
+            onChange={(e) => setTaxableBasisPercent(Number(e.target.value))}
+            className="slider-indigo"
+          />
+          <div className="slider-range-labels">
+            <span>0% — all gain</span>
+            <span>100% — all basis</span>
+          </div>
+          <p className="field-note">
+            A sale recovers basis in the same proportion the account holds it, so
+            at {taxableBasisPercent}% basis,{' '}
+            {formatCents(1 - taxableBasisPercent / 100)} of every dollar sold is
+            a realised gain. Gains are taxed in their own brackets but counted in
+            full toward provisional income, so the &ldquo;tax-efficient&rdquo;
+            account is not free either — spending it can push benefits into the
+            tax base just as an IRA withdrawal does.
+          </p>
+        </div>
+
+        <div className="input-group">
+          <div className="slider-header">
+            <label htmlFor="sequencing-roth">Roth IRA</label>
+            <span className="slider-value indigo">{formatCurrency(rothBalance)}</span>
+          </div>
+          <input
+            id="sequencing-roth"
+            type="range"
+            min={0}
+            max={MAX_ACCOUNT_BALANCE}
+            step={25_000}
+            value={rothBalance}
+            onChange={(e) => setRothBalance(Number(e.target.value))}
+            className="slider-indigo"
+          />
+          <div className="slider-range-labels">
+            <span>$0</span>
+            <span>{formatCurrency(MAX_ACCOUNT_BALANCE)}</span>
+          </div>
+          <p className="field-note">
+            Qualified distributions are tax-free, stay out of provisional income
+            entirely, and are never required — the one account that can fund a
+            year without moving a single line on the return.
+          </p>
+        </div>
+
+        <div className="input-group">
+          <label htmlFor="sequencing-ceiling">Fill the IRA up to</label>
+          <select
+            id="sequencing-ceiling"
+            className="ceiling-select"
+            value={fillCeilingId}
+            onChange={(e) => setFillCeilingId(e.target.value as ConversionCeilingId)}
+          >
+            {fillCeilings.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.label} — {formatCurrency(c.amount)} of{' '}
+                {CONVERSION_MEASURE_LABELS[c.measure]}
+              </option>
+            ))}
+          </select>
+          <p className="field-note">
+            Only the bracket-filling order uses this. Medicare&apos;s first IRMAA
+            tier is on the conversion menu above but not on this one: its
+            thresholds are indexed and this projection carries a single published
+            premium schedule forward unchanged, so an IRMAA ceiling would appear
+            to tighten every year for no reason in the statute.
+          </p>
+        </div>
+
+        <table className="tier-table">
+          <caption>
+            Both figures are in {sequencing.startYear} dollars, over{' '}
+            {horizonYears} years to {sequencing.endYear}. What is left after tax
+            values the closing balances net of what is still owed on them: the
+            traditional balance run through the final year&apos;s return as
+            ordinary income, with unrealised gain stacked on top of it. That is
+            harsher than an heir spreading the balance over the ten years IRC
+            401(a)(9)(H) allows, and it is here so that an order cannot win by
+            simply never withdrawing.
+          </caption>
+          <thead>
+            <tr>
+              <th scope="col">Order</th>
+              <th scope="col">Lifetime federal tax</th>
+              <th scope="col">Left after tax</th>
+              <th scope="col">IRA left</th>
+              <th scope="col">Tax owed on it</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sequencing.strategies.map((s) => (
+              <tr key={s.strategy.id}>
+                <th scope="row">
+                  <span style={{ color: SEQUENCING_COLORS[s.strategy.chartKey] }}>
+                    {s.strategy.label}
+                  </span>
+                  <br />
+                  <span className="seq-order">{s.strategy.order}</span>
+                </th>
+                <td
+                  className={
+                    s.lifetimeRealTax === sequencing.lowestTax.lifetimeRealTax
+                      ? 'seq-best'
+                      : undefined
+                  }
+                >
+                  {formatCurrency(s.lifetimeRealTax)}
+                </td>
+                <td
+                  className={
+                    s.endingAfterTaxReal === sequencing.mostAfterTax.endingAfterTaxReal
+                      ? 'seq-best'
+                      : undefined
+                  }
+                >
+                  {formatCurrency(s.endingAfterTaxReal)}
+                </td>
+                <td>{formatCurrency(s.endingTraditional)}</td>
+                <td>
+                  {formatCurrency(s.deferredTraditionalTax)}
+                  {s.endingTraditional > 0 && ` (${s.deferredTraditionalRate}%)`}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+
+        <div className="chart-container">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart
+              data={sequencingRows}
+              margin={{ top: 10, right: 10, left: 10, bottom: 0 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255, 255, 255, 0.1)" />
+              <XAxis
+                dataKey="year"
+                type="number"
+                domain={['dataMin', 'dataMax']}
+                allowDecimals={false}
+                stroke="#94a3b8"
+              />
+              <YAxis
+                stroke="#94a3b8"
+                tickFormatter={(value) => `$${formatCompact(value)}`}
+                width={70}
+              />
+              <Tooltip content={<SequencingTooltip comparison={sequencing} />} />
+              <Legend />
+              {seqConventional.firstRmdYear !== null && (
+                <ReferenceLine
+                  x={seqConventional.firstRmdYear}
+                  stroke="#fbbf24"
+                  strokeDasharray="4 4"
+                  label={{
+                    value: 'RMDs begin',
+                    position: 'top',
+                    fill: '#fbbf24',
+                    fontSize: 11,
+                  }}
+                />
+              )}
+              {SEQUENCING_STRATEGIES.map((strategy) => (
+                <Line
+                  key={strategy.id}
+                  type="monotone"
+                  dataKey={strategy.chartKey}
+                  name={strategy.label}
+                  stroke={SEQUENCING_COLORS[strategy.chartKey]}
+                  strokeWidth={2}
+                  dot={false}
+                />
+              ))}
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+        <p className="chart-axis-label">
+          Running federal tax in {sequencing.startYear} dollars &middot; the year
+          the lines cross is the year an order stops costing money and starts
+          saving it
+        </p>
+
+        {sequencing.anyShortfall ? (
+          <p>
+            <strong>These accounts do not last {horizonYears} years.</strong> At{' '}
+            {formatCurrency(spendingNeed)} of spending a year they run dry, and
+            once they do every order is spending the same nothing — so the
+            comparison below is measuring how fast each one got there, not which
+            one is cheaper. Lower the spending, lengthen the balances, or shorten
+            the horizon before reading anything into the figures.
+          </p>
+        ) : seqVoluntary === 0 ? (
+          <p>
+            <strong>Nothing here is being sequenced.</strong> The benefit and
+            the {formatCurrency(ordinaryIncome)} of other income cover{' '}
+            {formatCurrency(spendingNeed)} of spending and the tax on it without
+            help, so no order withdraws a dollar it is not required to and all
+            three post the same {formatCurrency(sequencing.lowestTax.lifetimeRealTax)}.
+            The only money leaving an account is the required distribution, which
+            is not a choice. Raise the spending above what the income covers and
+            the orders have something to disagree about.
+          </p>
+        ) : seqFundedAccounts < 2 ? (
+          <p>
+            <strong>There is only one account to spend.</strong> Sequencing is a
+            question about which of several accounts to draw on first, and with
+            just one funded there is no order to choose — all three land on the
+            same {formatCurrency(sequencing.lowestTax.lifetimeRealTax)}. Fund a
+            second account above and the comparison starts saying something.
+          </p>
+        ) : sequencing.taxSpread < 1_000 ? (
+          <p>
+            All three orders land within{' '}
+            <strong>{formatCurrency(sequencing.taxSpread)}</strong> of each other
+            over {horizonYears} years, which is the honest answer for this filer:
+            the sequencing decision is small next to how much is being withdrawn.
+            It gets larger as the IRA does, and as the gap widens between the
+            rate paid now and the rate the required distribution will attract
+            later — try a bigger traditional balance above, or less spending.
+          </p>
+        ) : sequencing.scoresDisagree ? (
+          <p>
+            <strong>{sequencing.lowestTax.strategy.label}</strong> pays the least
+            federal tax over these {horizonYears} years —{' '}
+            {formatCurrency(sequencing.lowestTax.lifetimeRealTax)}, or{' '}
+            {formatCurrency(sequencing.taxSpread)} less than the most expensive
+            order — and finishes with less money than{' '}
+            <strong>{sequencing.mostAfterTax.strategy.label}</strong>, by{' '}
+            {formatCurrency(
+              sequencing.mostAfterTax.endingAfterTaxReal -
+                sequencing.lowestTax.endingAfterTaxReal,
+            )}
+            . That is the entire argument about sequencing in one line. The
+            cheapest-looking order got there by leaving a bill behind:{' '}
+            {sequencing.lowestTax.endingTraditional > 0 ? (
+              <>
+                {formatCurrency(sequencing.lowestTax.endingTraditional)} in the
+                IRA with{' '}
+                {formatCurrency(sequencing.lowestTax.deferredTraditionalTax)} of
+                tax still attached to it
+              </>
+            ) : (
+              /*
+                No IRA left to blame — with the traditional balance at or near
+                zero the gap is unrealised gain in the brokerage account, or a
+                Roth that got spent to keep a year's tax down. Naming the IRA
+                here would print "$0 in the IRA with $0 of tax attached", which
+                is both true and an explanation of nothing.
+              */
+              <>
+                {formatCurrency(
+                  Math.max(
+                    0,
+                    sequencing.lowestTax.endingTaxable -
+                      sequencing.lowestTax.endingTaxableBasis,
+                  ),
+                )}{' '}
+                of unrealised gain in the brokerage account, carrying{' '}
+                {formatCurrency(sequencing.lowestTax.deferredGainTax)} of tax,
+                and {formatCurrency(sequencing.lowestTax.endingRoth)} left in the
+                Roth against{' '}
+                {formatCurrency(sequencing.mostAfterTax.endingRoth)} — the
+                cheaper order spent the one account whose growth was never going
+                to be taxed
+              </>
+            )}
+            . Deferring the bill is not the same as avoiding it, and a bill
+            deferred long enough is one that arrives all at once.
+          </p>
+        ) : (
+          <p>
+            <strong>{sequencing.lowestTax.strategy.label}</strong> wins both
+            ways: {formatCurrency(sequencing.lowestTax.lifetimeRealTax)} of
+            lifetime federal tax,{' '}
+            {formatCurrency(sequencing.taxSpread)} less than the most expensive
+            order, and {formatCurrency(sequencing.afterTaxSpread)} more left over
+            once the deferred tax on every closing balance is subtracted. When
+            the two scores agree the choice is not close, because they are
+            measuring the same thing from opposite ends.
+          </p>
+        )}
+
+        <p>
+          {seqBracketFill.endingTraditional < seqConventional.endingTraditional ? (
+            <>
+              Bracket filling works by paying tax earlier than it has to.
+              Aimed at {sequencing.fillCeiling.label.toLowerCase()} it leaves the
+              IRA at {formatCurrency(seqBracketFill.endingTraditional)}{' '}
+              in {sequencing.endYear} rather than{' '}
+              {formatCurrency(seqConventional.endingTraditional)} — the
+              same money, moved into the years where the filer chose the rate
+              instead of the years where the Uniform Lifetime Table chose it.
+            </>
+          ) : traditionalBalance === 0 ? (
+            /*
+              The three ways the fill can come to nothing are different
+              statements about the filer, and the ceiling is only to blame for
+              the last of them. Ordered by what the reader can act on.
+            */
+            <>
+              There is no IRA here to fill. With the traditional balance at zero
+              the ceiling has nothing to aim at, and bracket filling is the
+              conventional order under another name — the three lines above
+              differ only in how they split the brokerage account and the Roth.
+            </>
+          ) : seqConventional.endingTraditional === 0 ? (
+            <>
+              Every order empties the IRA before {sequencing.endYear} anyway, so
+              there is nothing left for {sequencing.fillCeiling.label.toLowerCase()}{' '}
+              to change: the spending is large enough to take the whole balance
+              out over the horizon whatever order it is taken in. Bracket filling
+              only has room to work when something would otherwise be left.
+            </>
+          ) : (
+            <>
+              Bracket filling has nothing to fill here: this filer is already
+              past {sequencing.fillCeiling.label.toLowerCase()} on the income
+              they cannot turn off — the {formatCurrency(ordinaryIncome)} of
+              other income, the benefit, and the required distribution on top of
+              both — so the order collapses into the conventional one. Pick a
+              higher ceiling, or note that the ceiling is telling you something:
+              the bracket you were hoping to fill is already full.
+            </>
+          )}
+        </p>
+
+        <p>
+          Two things this understates and one it leaves out. It understates
+          bracket filling, because a dollar pulled out above what is spent lands
+          in the brokerage account, where its growth is taxable — converting the
+          same dollar to a Roth costs identical tax today and shelters that
+          growth forever, so the figures above are the floor of what the strategy
+          is worth. It understates the brokerage account, which here is pure
+          appreciation and throws off no dividends or interest until it is sold.
+          And it leaves out state tax and Medicare&apos;s IRMAA entirely: the
+          first because nine states have nine different rules, the second because
+          it is a premium rather than a tax and its two-year lag would need a
+          timeline of its own.
         </p>
       </section>
 

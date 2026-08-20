@@ -285,8 +285,11 @@ const round2 = (value: number): number => Math.round(value * 100) / 100;
  * projection treats a couple who both qualify today as staying that way — it
  * cannot know a younger spouse's birthday, and a couple where only one has
  * turned 65 is modelled as one qualifier throughout.
+ *
+ * Exported for `sequencing.ts`, which runs the same calendar over the same
+ * scenario and must age the filer identically or the two sections disagree.
  */
-function seniorsAtAge(
+export function seniorsAtAge(
   age: number,
   filingStatus: FilingStatus,
   scenarioSeniors: number,

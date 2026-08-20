@@ -709,3 +709,37 @@ footer p {
   color: #38bdf8;
   vertical-align: middle;
 }
+
+/* Indigo accent for the withdrawal-sequencing section */
+.section-heading-indigo {
+  background: linear-gradient(to right, #6366f1, #818cf8);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.slider-value.indigo {
+  color: #818cf8;
+}
+
+.slider-indigo {
+  accent-color: #6366f1 !important;
+}
+
+/*
+ * The winning cell rather than the winning row: the two scores can name
+ * different orders, and that disagreement is the point of the table.
+ */
+.tier-table td.seq-best {
+  background: rgba(99, 102, 241, 0.12);
+  color: #a5b4fc;
+  font-weight: 600;
+}
+
+/* The order itself, under the name it goes by. */
+.seq-order {
+  font-size: 0.6875rem;
+  font-weight: 400;
+  color: #64748b;
+  white-space: normal;
+}

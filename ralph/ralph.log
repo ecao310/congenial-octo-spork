@@ -1708,3 +1708,97 @@ left, and LTCG changing nothing) plus 3 for the phaseout-vs-expiry fix. 13 in
 
 npx tsc -b, npm run lint, npx vitest run (251 passed), npm run build — all
 clean; only the pre-existing >500kB chunk warning.
+
+## 2026-08-20 — Task: Withdrawal sequencing comparison
+
+Inherited a working tree from a crashed iteration that was already ~95% of the
+way there: `src/utils/sequencing.ts` (665 lines), its 38-test suite, the App
+section, and the CSS. It typechecked, linted, passed 290 tests and built. It
+also had **zero App-level tests for the new section** — which is exactly the
+hole the previous iteration's write-up warned about, and the reason a
+`src/__probe.test.tsx` was sitting in the tree console-logging rendered prose:
+that iteration was hand-eyeballing the branches when it died.
+
+So this iteration was: audit the branches properly, fix what was wrong, and
+pin every one of them with a test.
+
+### What the model does (inherited, verified, unchanged)
+
+Three orders — conventional (taxable → traditional → Roth), proportional, and
+bracket filling (traditional up to a ceiling, then taxable, then Roth) — funding
+the same retirement over the projection's horizon, COLA, birth year, IRA balance
+and growth rate. Scored two ways: lifetime federal tax in first-year dollars,
+and ending value net of the deferred bill on what is left. The second score
+exists because the first is gameable by simply not withdrawing; the leftover IRA
+is priced by running the whole balance through the final year's return rather
+than at a marginal rate, since a filer who ends with no ordinary income has a
+marginal rate of zero and that would value a seven-figure IRA at par.
+
+The tax fixed point is the non-obvious part: tax is paid on top of spending, so
+the withdrawal needed depends on the tax which depends on the withdrawal. It
+iterates to a cent in ~5 passes (the marginal rate is the convergence factor)
+with a 40-pass cap for the bracket-filling case that can oscillate, and then
+recomputes the reported tax from the plan actually chosen so the row is
+internally consistent even if the cap binds.
+
+### Four prose defects, all found by probing branches the tests never reached
+
+Same class as last iteration's: sentences asserting a *cause* nobody checked.
+
+1. **The disagreement paragraph blamed an IRA that did not exist.** With the
+   traditional balance at $0 the scores still disagree — proportional pays less
+   tax but spends Roth dollars to do it — and the prose rendered "got there by
+   leaving **$0** in the IRA with **$0** of tax still attached to it". True and
+   an explanation of nothing. Now branched on `endingTraditional > 0`: the
+   no-IRA arm names the actual bill, $406,835 of unrealised gain carrying
+   $58,432 of tax, and the Roth gap ($262,859 against $397,995).
+2. **"Already past the ceiling" was the catch-all for three different states.**
+   The else-arm fired whenever bracket filling did not shrink the IRA, which
+   covers (a) genuinely past the ceiling, (b) no IRA at all, (c) the spending
+   drains the IRA under every order. With no IRA and $30,000 of income it
+   claimed the filer was "already past the top of the 12% bracket", which is
+   nowhere near true. Split three ways; the surviving "past the ceiling" arm now
+   also names *what* breached it (other income + benefit + the RMD), since
+   `fillRoom` includes the RMD and the old "before any withdrawal" did not.
+3. **The tie paragraph misattributed a $0 spread.** At $150,000 of other income
+   nothing is withdrawn by choice at all — income covers spending and its tax —
+   yet the prose read "the sequencing decision is small next to how much is
+   being withdrawn" and advised *less* spending, which makes the tie tighter.
+   Two new arms ahead of it: nothing-to-sequence (no voluntary withdrawal) and
+   only-one-funded-account. The genuine close-race arm still fires and is tested
+   ($268 spread at $30k income / $50k spending / $25k IRA).
+4. **The tooltip quoted one order's RMD as if it were everyone's.** The header
+   showed `strategies[0].rmd`. By 2044 on a $1M IRA the conventional order is
+   required to take $82,730 and bracket filling $53,210 — the header figure was
+   wrong for two of the three lines it sat above. Moved onto each strategy's own
+   line.
+
+Also replaced `sequencing.strategies[0]` / `[2]` with lookups by id. That
+positional indexing is the same shape as the bug commit eceb968 was written to
+kill, and reordering `SEQUENCING_STRATEGIES` for presentation would have
+silently swapped which order the prose compared.
+
+### One field added
+
+`StrategyProjection.voluntaryWithdrawal` — everything withdrawn by choice, i.e.
+the whole taxable and Roth draw plus traditional above the RMD. Zero is the
+clean signal for "the orders never had a decision to make", which is what
+defect 3 needed and could not be read off the existing fields.
+
+### Tests
+
+16 in `App.test.tsx` walking every branch (both winner arms, both disagreement
+arms, all four bracket-fill arms, all three tie arms, the shortfall arm, the
+year re-date, the basis-cents readout, the absent IRMAA ceiling) plus 2 for the
+tooltip. 3 in `sequencing.test.ts` for `voluntaryWithdrawal`. 308 total, up
+from 290 — 286 after deleting the inherited probe file.
+
+Note for whoever writes the next branchy section: the engine suite passing 38
+tests told me nothing about whether the section on screen said true things. The
+probe-render-and-read-the-text loop is what found all four, and it takes about
+five minutes. Do that before writing the assertions, not instead of them.
+
+### Verification
+
+npx tsc -b, npm run lint, npx vitest run (308 passed), npm run build — all
+clean; only the pre-existing >500kB chunk warning.

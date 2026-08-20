@@ -1,8 +1,9 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { vi } from 'vitest';
-import App, { CustomTooltip, LTCGTooltip } from './App';
+import App, { CustomTooltip, LTCGTooltip, SequencingTooltip } from './App';
 import { TAX_YEAR_PARAMS, TAX_YEARS, defaultTaxYear } from './utils/tax';
 import type { TaxYear } from './utils/tax';
+import { compareSequencing } from './utils/sequencing';
 
 /**
  * The app opens on `defaultTaxYear()`, which follows the wall calendar, and
@@ -1182,5 +1183,230 @@ describe('multi-year projection', () => {
     expect(section).toHaveTextContent('Age 71 in 2026');
     expect(section).toHaveTextContent('Federal tax in 2026 dollars');
     expect(section).toHaveTextContent('in 2045');
+  });
+});
+
+/**
+ * Every conditional sentence in the sequencing section, walked branch by
+ * branch.
+ *
+ * The arithmetic has its own suite in `sequencing.test.ts`; what this covers is
+ * the prose, which is where a section this conditional goes wrong. Four of the
+ * branches below exist because the first draft asserted a cause it had not
+ * checked — that the cheapest order deferred an IRA, or that the ceiling was
+ * already breached — in states where neither was true.
+ */
+describe('withdrawal sequencing', () => {
+  const seqSection = (): HTMLElement =>
+    screen
+      .getByRole('heading', { name: /which account you spend first/i })
+      .closest('section')!;
+
+  const slider = (name: RegExp): HTMLElement => screen.getByRole('slider', { name });
+
+  const setSlider = (name: RegExp, value: string): void => {
+    fireEvent.change(slider(name), { target: { value } });
+  };
+
+  it('opens on three orders and its own account balances', () => {
+    render(<App />);
+    expect(slider(/after-tax spending each year/i)).toHaveValue('60000');
+    expect(slider(/taxable brokerage account/i)).toHaveValue('300000');
+    expect(slider(/of that, cost basis/i)).toHaveValue('60');
+    expect(slider(/roth ira/i)).toHaveValue('150000');
+    const section = seqSection();
+    expect(section).toHaveTextContent('Taxable, then traditional, then Roth');
+    expect(section).toHaveTextContent('A slice of all three every year');
+    expect(section).toHaveTextContent('Traditional up to a ceiling, then taxable, then Roth');
+    // The horizon, birth year, IRA and growth rate are the projection's, not a
+    // second set: two sections disagreeing about the applicable age would be
+    // worse than either being wrong alone.
+    expect(section).toHaveTextContent('over 20 years to 2044');
+  });
+
+  it('prices the basis slider in cents of realised gain per dollar sold', () => {
+    render(<App />);
+    setSlider(/of that, cost basis/i, '25');
+    expect(seqSection()).toHaveTextContent('at 25% basis, 75¢ of every dollar sold');
+  });
+
+  it('offers no IRMAA ceiling, because the projection cannot index one', () => {
+    render(<App />);
+    const select = screen.getByLabelText(/fill the ira up to/i);
+    expect(select).toHaveValue('bracket12');
+    const labels = Array.from(select.querySelectorAll('option')).map((o) => o.textContent);
+    expect(labels.some((l) => /12% bracket/i.test(l ?? ''))).toBe(true);
+    expect(labels.some((l) => /irmaa/i.test(l ?? ''))).toBe(false);
+  });
+
+  it('declares one winner when both scores name the same order', () => {
+    render(<App />);
+    const section = seqSection();
+    expect(section).toHaveTextContent('Conventional wins both ways');
+    expect(section).toHaveTextContent('$77,757 of lifetime federal tax');
+    expect(section).toHaveTextContent('Bracket filling works by paying tax earlier');
+    expect(section).toHaveTextContent('leaves the IRA at $1 in 2044 rather than $103,372');
+  });
+
+  it('gives bracket filling the win over a long horizon with a large IRA', () => {
+    render(<App />);
+    setSlider(/traditional ira and 401\(k\) balance/i, '2000000');
+    setSlider(/years to project/i, '30');
+    const section = seqSection();
+    expect(section).toHaveTextContent('Bracket filling wins both ways');
+    expect(section).toHaveTextContent('leaves the IRA at $1,002,990 in 2054 rather than $1,036,173');
+  });
+
+  it('blames the deferred IRA when there is a deferred IRA to blame', () => {
+    render(<App />);
+    // Born 1975 over ten years reaches no applicable age, so nothing is forced
+    // out and the conventional order can defer the whole balance.
+    setSlider(/year you were born/i, '1975');
+    setSlider(/years to project/i, '10');
+    setSlider(/other ordinary income/i, '0');
+    const section = seqSection();
+    expect(section).toHaveTextContent('Proportional pays the least federal tax over these 10 years');
+    expect(section).toHaveTextContent('finishes with less money than Bracket filling');
+    expect(section).toHaveTextContent('$66,231 in the IRA with $13,522 of tax still attached');
+  });
+
+  it('names the gain and the Roth instead when there is no IRA to blame', () => {
+    render(<App />);
+    setSlider(/traditional ira and 401\(k\) balance/i, '0');
+    const section = seqSection();
+    // The scores still disagree — the cheaper order spent Roth dollars — but
+    // the IRA had nothing to do with it. Naming it here would print "$0 in the
+    // IRA with $0 of tax attached", which explains nothing.
+    expect(section).toHaveTextContent('Proportional pays the least federal tax');
+    expect(section).toHaveTextContent(
+      '$406,835 of unrealised gain in the brokerage account, carrying $58,432 of tax',
+    );
+    expect(section).toHaveTextContent('$262,859 left in the Roth against $397,995');
+    expect(section).not.toHaveTextContent('$0 in the IRA');
+  });
+
+  it('says there is no IRA to fill rather than blaming the ceiling', () => {
+    render(<App />);
+    setSlider(/traditional ira and 401\(k\) balance/i, '0');
+    const section = seqSection();
+    expect(section).toHaveTextContent('There is no IRA here to fill');
+    expect(section).not.toHaveTextContent('already past');
+  });
+
+  it('blames the ceiling only when the income really has breached it', () => {
+    render(<App />);
+    setSlider(/other ordinary income/i, '150000');
+    const section = seqSection();
+    expect(section).toHaveTextContent(
+      'already past top of the 12% bracket on the income they cannot turn off',
+    );
+    expect(section).toHaveTextContent('the bracket you were hoping to fill is already full');
+  });
+
+  it('says nothing is being sequenced when the income covers the spending', () => {
+    render(<App />);
+    setSlider(/other ordinary income/i, '150000');
+    const section = seqSection();
+    // $150,000 plus the benefit funds $60,000 of spending and its tax outright,
+    // so the only money leaving an account is the required distribution and the
+    // three orders are the same order. That is a tie for a reason that has
+    // nothing to do with sequencing, and it is not "the difference is small".
+    expect(section).toHaveTextContent('Nothing here is being sequenced');
+    expect(section).toHaveTextContent('all three post the same $607,770');
+    expect(section).not.toHaveTextContent('land within');
+  });
+
+  it('says there is only one account when only one is funded', () => {
+    render(<App />);
+    setSlider(/traditional ira and 401\(k\) balance/i, '0');
+    setSlider(/roth ira/i, '0');
+    const section = seqSection();
+    expect(section).toHaveTextContent('There is only one account to spend');
+    expect(section).toHaveTextContent('all three land on the same $67,326');
+    expect(section).not.toHaveTextContent('Nothing here is being sequenced');
+  });
+
+  it('calls a genuinely close race close', () => {
+    render(<App />);
+    setSlider(/other ordinary income/i, '30000');
+    setSlider(/after-tax spending each year/i, '50000');
+    setSlider(/traditional ira and 401\(k\) balance/i, '25000');
+    const section = seqSection();
+    expect(section).toHaveTextContent('All three orders land within $268 of each other');
+    expect(section).not.toHaveTextContent('Nothing here is being sequenced');
+    expect(section).not.toHaveTextContent('There is only one account');
+  });
+
+  it('refuses to score a retirement the accounts could not fund', () => {
+    render(<App />);
+    setSlider(/after-tax spending each year/i, '150000');
+    const section = seqSection();
+    expect(section).toHaveTextContent('These accounts do not last 20 years');
+    expect(section).toHaveTextContent('measuring how fast each one got there');
+    // Nothing survives to the ceiling either, and the reason is the spending
+    // rather than the bracket.
+    expect(section).toHaveTextContent('Every order empties the IRA before 2044 anyway');
+    expect(section).not.toHaveTextContent('already past');
+  });
+
+  it('re-dates the comparison when the tax year changes', () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole('radio', { name: '2026' }));
+    const section = seqSection();
+    expect(section).toHaveTextContent('Both figures are in 2026 dollars');
+    expect(section).toHaveTextContent('over 20 years to 2045');
+  });
+});
+
+describe('SequencingTooltip', () => {
+  const comparison = compareSequencing(
+    { ordinaryIncome: 0, ssBenefit: 23_712, filingStatus: 'single', year: 2025 },
+    {
+      startYear: 2025,
+      years: 20,
+      birthYear: 1955,
+      spending: 60_000,
+      taxableBalance: 300_000,
+      taxableBasisFraction: 0.6,
+      traditionalBalance: 1_000_000,
+      rothBalance: 150_000,
+      growthPercent: 5,
+      fillCeilingId: 'bracket12',
+    },
+  );
+
+  it('renders nothing when inactive or off the data', () => {
+    const { container } = render(<SequencingTooltip comparison={comparison} />);
+    expect(container).toBeEmptyDOMElement();
+    const off = render(
+      <SequencingTooltip
+        active
+        payload={[{ payload: { year: 2099, taxableFirst: 0, proportional: 0, bracketFill: 0 } }]}
+        comparison={comparison}
+      />,
+    );
+    expect(off.container).toBeEmptyDOMElement();
+  });
+
+  it("quotes each order its own required distribution, not the first order's", () => {
+    // By 2044 the conventional order has compounded a balance a third larger
+    // than bracket filling's, so it is required to take a third more out. One
+    // figure in the header would have been the wrong one for two of the three
+    // lines.
+    render(
+      <SequencingTooltip
+        active
+        payload={[{ payload: { year: 2044, taxableFirst: 0, proportional: 0, bracketFill: 0 } }]}
+        comparison={comparison}
+      />,
+    );
+    const rmds = comparison.strategies.map((s) => s.rows[19].rmd);
+    expect(new Set(rmds).size).toBe(3);
+    for (const [i, s] of comparison.strategies.entries()) {
+      expect(screen.getByText(new RegExp(`^${s.strategy.label}:`))).toHaveTextContent(
+        `$${rmds[i].toLocaleString('en-US')} required`,
+      );
+    }
+    expect(screen.getByText(/2044 · age 89/)).toBeInTheDocument();
   });
 });

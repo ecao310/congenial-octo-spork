@@ -376,3 +376,16 @@
 - Verified: npx tsc -b, npm run lint, npm test (62 passed), npm run build all
   clean (pre-existing >500kB chunk warning only). Post-push verification of the
   live /preview/ URL recorded below.
+- Live verification after push (run 32324275743, 42s, green):
+  - root https://ecao310.github.io/congenial-octo-spork/ → 200, assets under
+    `/congenial-octo-spork/assets/` (main's build, unchanged).
+  - preview https://ecao310.github.io/congenial-octo-spork/preview/ → 200,
+    assets rewritten to `/congenial-octo-spork/preview/assets/`, and the JS
+    (519,685 B), CSS and vite.svg under that path all return 200 with correct
+    content types — i.e. the subpath base is right, not just present.
+  - headless Chrome `--dump-dom --virtual-time-budget=8000` on the preview URL
+    finds the rendered app copy, so it mounts and is not a blank shell.
+- Pre-existing CI annotation, not introduced here and not actionable from the
+  workflow file: "Node.js 20 is deprecated ... actions/checkout@v4,
+  actions/deploy-pages@v4, actions/upload-artifact@v4 forced to run on Node 24."
+  Same annotation appears on main's deploys. Backlogged.

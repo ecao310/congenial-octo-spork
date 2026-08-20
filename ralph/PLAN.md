@@ -42,4 +42,5 @@ Discovered Work
 [x] Fix bookkeeping: mitigation-strategies task was completed and committed (4a85fce) but its checkbox was never flipped to [x]
 [x] Fix failing test: commit c400999 swept in a human edit trimming the mitigation list from six to three strategies, leaving App.test.tsx asserting on removed QCD/muni text
 [ ] Add the nested `B/` worktree directory to .gitignore — `git worktree list` shows a worktree at ./B inside the repo, so it appears as untracked and a future `git add -A` would commit the whole checkout
+[ ] Silence the CI deprecation annotation on both deploy workflows: actions/checkout@v4, actions/deploy-pages@v4 and actions/upload-artifact@v4 target Node 20 and are being force-run on Node 24 — bump to the v5 majors once they're released/stable
 

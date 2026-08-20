@@ -389,3 +389,55 @@
   workflow file: "Node.js 20 is deprecated ... actions/checkout@v4,
   actions/deploy-pages@v4, actions/upload-artifact@v4 forced to run on Node 24."
   Same annotation appears on main's deploys. Backlogged.
+
+
+## 2026-08-19 — Task: Create more action items based on this AI agent idea (Tier 1/2/3 dump)
+
+Planning-only iteration: no source changes. Converted the free-form Tier 1/2/3
+idea dump in PLAN.md into 13 concrete, one-iteration-sized backlog bullets,
+inserted above `[ ] Research and create more action items.` so future runs pick
+them topmost-first in priority order.
+
+What was already built (so it did NOT become an item):
+- Tier 1 "tax torpedo curve" → `marginalRateCurve` + the main AreaChart.
+- Tier 1 "capital gains stacking" → `totalTaxWithLTCG` / `ltcgMarginalRateCurve`
+  + the amber LTCG section.
+So Roth conversion sizing is the only Tier 1 item left, and it leads the list.
+
+Figures were verified against sources before being written into the backlog,
+rather than copied from the idea dump:
+- 65+ additional standard deduction (2025): $2,000 single/HOH, $1,600 per
+  qualifying spouse MFJ. Separate from, not replaced by, the new senior deduction.
+- OBBBA senior deduction: $6,000 per filer 65+ (so $12,000 if both MFJ spouses
+  qualify), tax years 2025–2028, phased out at 6% of MAGI over $75,000 single /
+  $150,000 MFJ, gone at $175,000 / $250,000. The 6% phaseout is itself a stealth
+  surtax that stacks on the SS torpedo — good chart material, noted as such.
+- IRMAA 2025: base Part B $185.00/mo, 2023 MAGI (AGI + tax-exempt interest),
+  cliffs at $106k / $133k / $167k / $200k / $500k single, doubled for MFJ except
+  the top tier. Per-tier premium table not pinned down here — the implementing
+  iteration should pull it from SSA POMS HI 01101.020 or CMS directly.
+- States still taxing SS for 2025: CO, CT, MN, MT, NM, RI, UT, VT, WV (WV
+  phasing out — 65% exempt for 2025, fully exempt for 2026).
+
+Two corrections to the idea dump, folded into the bullets rather than left to
+bite a future iteration:
+- "MFS-lived-together mode. Already handled in the code ($0 thresholds)" is
+  FALSE. `FilingStatus` is `'single' | 'mfj'` only; there is no MFS entry in
+  `FILING_PARAMS`. The bullet says so explicitly.
+- Not in the dump at all: every constant in tax.ts is hardcoded to 2025
+  (Rev. Proc. 2024-40 brackets, OBBBA standard deductions, $61,296 max /
+  $23,712 avg SS). It is now Aug 2026 and the 2026 figures are published
+  (Rev. Proc. 2025-32: $16,100 single / $32,200 MFJ standard deduction, shifted
+  brackets; $202.90 base Part B premium). Added a tax-year-selector bullet.
+  Deliberate note in that bullet: the SS provisional-income thresholds
+  ($25k/$34k, $32k/$44k) are NOT indexed and must stay frozen across years —
+  that contrast is the app's thesis, so it should be surfaced, not smoothed over.
+- Also added Head of Household, which no tier mentioned and the code lacks.
+
+Verified: `npx tsc -b`, `npm run lint`, `npm test` (62 passed) all clean — no
+code touched, run as a sanity check that the tree was already green.
+
+Hazard for the next iteration (already backlogged under Discovered Work, not
+fixed here since it wasn't this iteration's task): `./B` is a nested git
+worktree and is untracked, so `git add -A` would commit an entire second
+checkout. Commit explicit paths until `.gitignore` covers it.

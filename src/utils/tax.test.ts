@@ -25,21 +25,51 @@ import {
   irmaaTiersFor,
   firstIrmaaTier,
   seniorDeductionAllowed,
-  FILING_PARAMS,
-  LTCG_BRACKETS,
-  AVG_ANNUAL_SS_BENEFIT,
+  SS_BASES,
+  SS_BASE50_ENACTED,
+  SS_BASE85_ENACTED,
+  TAX_YEARS,
+  TAX_YEAR_PARAMS,
+  taxYearParams,
+  filingParams,
+  filingParamsFor,
+  defaultTaxYear,
+  avgAnnualSSBenefit,
+  maxAnnualSSBenefit,
   standardDeductionFor,
   maxSeniors,
-  ADDITIONAL_STD_DEDUCTION_65,
   deductionFor,
   seniorDeductionFor,
   seniorDeductionPhaseoutEnd,
   SENIOR_DEDUCTION,
   SENIOR_DEDUCTION_PHASEOUT_RATE,
   SENIOR_DEDUCTION_PHASEOUT_START,
-  MAX_ANNUAL_SS_BENEFIT,
 } from './tax';
-import type { ConversionCeiling, ConversionCeilingId } from './tax';
+import type { ConversionCeiling, ConversionCeilingId, TaxYear } from './tax';
+import { vi } from 'vitest';
+
+/**
+ * Every dollar figure in this file is a 2025 one, checked against Rev. Proc.
+ * 2024-40 and IRS Pub 915 (2025). Scenarios that do not name a year inherit
+ * `defaultTaxYear()`, which follows the calendar — so the clock is pinned here
+ * rather than letting January silently re-point these assertions at a different
+ * Rev. Proc. The `tax year` describe below passes its own years explicitly.
+ */
+const PINNED_YEAR: TaxYear = 2025;
+
+beforeEach(() => {
+  // Date only: faking setTimeout as well would deadlock anything async.
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date(`${PINNED_YEAR}-07-01T00:00:00Z`));
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
+/** Shorthand for the pinned year's figures, which most assertions read. */
+const AVG_ANNUAL_SS_BENEFIT = TAX_YEAR_PARAMS[PINNED_YEAR].avgAnnualSSBenefit;
+const MAX_ANNUAL_SS_BENEFIT = TAX_YEAR_PARAMS[PINNED_YEAR].maxAnnualSSBenefit;
 
 /**
  * Line-by-line reference implementation of IRS Pub 915 (2025), Worksheet 1
@@ -234,9 +264,9 @@ describe('federalIncomeTax', () => {
   });
 
   it('uses the wider MFJ brackets', () => {
-    expect(federalIncomeTax(20000, 'mfj')).toBe(2000); // all in the 10% bracket
+    expect(federalIncomeTax(20000, { filingStatus: 'mfj' })).toBe(2000); // all in the 10% bracket
     // 23850 * 0.10 + (96950 - 23850) * 0.12 + (100000 - 96950) * 0.22
-    expect(federalIncomeTax(100000, 'mfj')).toBeCloseTo(11828, 2);
+    expect(federalIncomeTax(100000, { filingStatus: 'mfj' })).toBeCloseTo(11828, 2);
   });
 });
 
@@ -255,7 +285,7 @@ describe('totalTax', () => {
     // taxable SS = 6000 + 0.85 * (60000 - 44000) = 19600;
     // taxable income = 40000 + 19600 - 31500 = 28100
     expect(totalTax({ ordinaryIncome: 40000, ssBenefit: 40000, filingStatus: 'mfj' })).toBeCloseTo(
-      federalIncomeTax(28100, 'mfj'),
+      federalIncomeTax(28100, { filingStatus: 'mfj' }),
       2,
     );
   });
@@ -602,13 +632,13 @@ describe('segmentCurve', () => {
 describe('Roth conversion sizing', () => {
   const SS = AVG_ANNUAL_SS_BENEFIT; // $23,712
   const ceiling = (id: ConversionCeilingId, filingStatus: FilingStatus = 'single'): ConversionCeiling => {
-    const found = conversionCeilings(filingStatus).find((c) => c.id === id);
+    const found = conversionCeilings({ filingStatus }).find((c) => c.id === id);
     if (!found) throw new Error(`no ceiling ${id}`);
     return found;
   };
 
   it('takes its ceiling amounts from the same tables the charts use', () => {
-    const single = conversionCeilings('single');
+    const single = conversionCeilings({ filingStatus: 'single' });
     expect(single.map((c) => c.id)).toEqual([
       'bracket12',
       'bracket22',
@@ -619,9 +649,9 @@ describe('Roth conversion sizing', () => {
     ]);
     expect(ceiling('bracket12').amount).toBe(48_475);
     expect(ceiling('bracket22').amount).toBe(103_350);
-    expect(ceiling('ss50').amount).toBe(FILING_PARAMS.single.ssBase50);
-    expect(ceiling('ss85').amount).toBe(FILING_PARAMS.single.ssBase85);
-    expect(ceiling('ltcg0').amount).toBe(LTCG_BRACKETS.single[0].upTo);
+    expect(ceiling('ss50').amount).toBe(SS_BASES.single.ssBase50);
+    expect(ceiling('ss85').amount).toBe(SS_BASES.single.ssBase85);
+    expect(ceiling('ltcg0').amount).toBe(filingParams(PINNED_YEAR, 'single').ltcgBrackets[0].upTo);
     expect(ceiling('irmaa1').amount).toBe(IRMAA_FIRST_CLIFF_MAGI.single);
 
     expect(ceiling('bracket12', 'mfj').amount).toBe(96_950);
@@ -745,7 +775,7 @@ describe('Roth conversion sizing', () => {
     ];
     const failures: string[] = [];
     for (const filingStatus of ['single', 'mfj'] as FilingStatus[]) {
-      for (const c of conversionCeilings(filingStatus)) {
+      for (const c of conversionCeilings({ filingStatus })) {
         for (const { ordinary, ss, ltcg } of scenarios) {
           const sizing = sizeConversion(
             c,
@@ -791,7 +821,11 @@ describe('age 65+ additional standard deduction (2025)', () => {
   const SS = AVG_ANNUAL_SS_BENEFIT;
 
   it('adds $2,000 for a single filer and $1,600 per qualifying spouse for MFJ', () => {
-    expect(ADDITIONAL_STD_DEDUCTION_65).toEqual({
+    expect({
+      single: filingParams(PINNED_YEAR, 'single').additionalStdDeduction65,
+      mfj: filingParams(PINNED_YEAR, 'mfj').additionalStdDeduction65,
+      mfs: filingParams(PINNED_YEAR, 'mfs').additionalStdDeduction65,
+    }).toEqual({
       single: 2_000,
       mfj: 1_600,
       // Still married, so the married rate rather than the unmarried $2,000.
@@ -819,7 +853,9 @@ describe('age 65+ additional standard deduction (2025)', () => {
   });
 
   it('defaults to the base deduction everywhere, so nothing moves unless asked', () => {
-    expect(standardDeductionFor({ filingStatus: 'single' })).toBe(FILING_PARAMS.single.standardDeduction);
+    expect(standardDeductionFor({ filingStatus: 'single' })).toBe(
+      filingParams(PINNED_YEAR, 'single').standardDeduction,
+    );
     expect(totalTax(
       { ordinaryIncome: 40_000, ssBenefit: SS, filingStatus: 'single', seniors: 0 },
     )).toBe(totalTax(
@@ -928,7 +964,7 @@ describe('age 65+ additional standard deduction (2025)', () => {
 
   it('leaves provisional-income ceilings alone but widens taxable-income ones', () => {
     const ceilingFor = (id: ConversionCeilingId, fs: FilingStatus = 'single') =>
-      conversionCeilings(fs).find((c) => c.id === id) as ConversionCeiling;
+      conversionCeilings({ filingStatus: fs }).find((c) => c.id === id) as ConversionCeiling;
     // Provisional income is measured before any deduction, so the addition
     // buys no extra room at all against the SS bases.
     expect(maxConversionUnder(
@@ -955,7 +991,7 @@ describe('age 65+ additional standard deduction (2025)', () => {
 
   it('prices a conversion more cheaply for a filer over 65', () => {
     const ceilingFor = (id: ConversionCeilingId) =>
-      conversionCeilings('single').find((c) => c.id === id) as ConversionCeiling;
+      conversionCeilings({ filingStatus: 'single' }).find((c) => c.id === id) as ConversionCeiling;
     const sizing = sizeConversion(
       ceilingFor('bracket12'),
       { ordinaryIncome: 30_000, ssBenefit: SS, ltcg: 0, filingStatus: 'single', seniors: 1 },
@@ -1131,7 +1167,7 @@ describe('OBBBA senior deduction (2025-2028)', () => {
   });
 
   it('prices the phaseout into a conversion ceiling and the rate past it', () => {
-    const ceiling = conversionCeilings('single').find(
+    const ceiling = conversionCeilings({ filingStatus: 'single' }).find(
       (c) => c.id === 'bracket22',
     ) as ConversionCeiling;
     const plain = sizeConversion(
@@ -1155,7 +1191,7 @@ describe('OBBBA senior deduction (2025-2028)', () => {
 describe('tax-exempt (municipal) interest', () => {
   const SS = AVG_ANNUAL_SS_BENEFIT; // $23,712
   const ceiling = (id: ConversionCeilingId): ConversionCeiling => {
-    const found = conversionCeilings('single').find((c) => c.id === id);
+    const found = conversionCeilings({ filingStatus: 'single' }).find((c) => c.id === id);
     if (!found) throw new Error(`no ceiling ${id}`);
     return found;
   };
@@ -1401,8 +1437,8 @@ describe('married filing separately (lived with spouse)', () => {
   });
 
   it('has both provisional-income thresholds at $0', () => {
-    expect(FILING_PARAMS.mfs.ssBase50).toBe(0);
-    expect(FILING_PARAMS.mfs.ssBase85).toBe(0);
+    expect(SS_BASES.mfs.ssBase50).toBe(0);
+    expect(SS_BASES.mfs.ssBase85).toBe(0);
   });
 
   it('taxes 42.5% of the benefit before any other income arrives', () => {
@@ -1480,25 +1516,25 @@ describe('married filing separately (lived with spouse)', () => {
   it('borrows the single filer brackets until $375,800 and then diverges', () => {
     // Section 1(j)(2)(D). The tax at each break matches Rev. Proc. 2024-40's
     // own "the tax is" column.
-    expect(federalIncomeTax(250_525, 'mfs')).toBeCloseTo(57_231, 6);
-    expect(federalIncomeTax(375_800, 'mfs')).toBeCloseTo(101_077.25, 6);
+    expect(federalIncomeTax(250_525, { filingStatus: 'mfs' })).toBeCloseTo(57_231, 6);
+    expect(federalIncomeTax(375_800, { filingStatus: 'mfs' })).toBeCloseTo(101_077.25, 6);
     for (const taxable of [0, 11_925, 48_475, 103_350, 197_300, 375_800]) {
-      expect(federalIncomeTax(taxable, 'mfs')).toBeCloseTo(
-        federalIncomeTax(taxable, 'single'),
+      expect(federalIncomeTax(taxable, { filingStatus: 'mfs' })).toBeCloseTo(
+        federalIncomeTax(taxable, { filingStatus: 'single' }),
         6,
       );
     }
     // Past $375,800 a separate return is already at 37% while a single one
     // still has $250,550 of 35% bracket left.
-    expect(federalIncomeTax(400_000, 'mfs')).toBeCloseTo(110_031.25, 6);
-    expect(federalIncomeTax(400_000, 'single')).toBeCloseTo(109_547.25, 6);
+    expect(federalIncomeTax(400_000, { filingStatus: 'mfs' })).toBeCloseTo(110_031.25, 6);
+    expect(federalIncomeTax(400_000, { filingStatus: 'single' })).toBeCloseTo(109_547.25, 6);
   });
 
   it('shares the single standard deduction but takes the married age-65 amount', () => {
-    expect(FILING_PARAMS.mfs.standardDeduction).toBe(
-      FILING_PARAMS.single.standardDeduction,
+    expect(filingParams(PINNED_YEAR, 'mfs').standardDeduction).toBe(
+      filingParams(PINNED_YEAR, 'single').standardDeduction,
     );
-    expect(ADDITIONAL_STD_DEDUCTION_65.mfs).toBe(1_600);
+    expect(filingParams(PINNED_YEAR, 'mfs').additionalStdDeduction65).toBe(1_600);
     expect(standardDeductionFor({ filingStatus: 'mfs', seniors: 0 })).toBe(15_750);
     expect(standardDeductionFor({ filingStatus: 'mfs', seniors: 1 })).toBe(17_350);
     // Only one person can claim it on a separate return.
@@ -1529,12 +1565,12 @@ describe('married filing separately (lived with spouse)', () => {
   });
 
   it('halves the 0% capital-gains band but not the 15% one', () => {
-    expect(LTCG_BRACKETS.mfs[0].upTo).toBe(48_350);
-    expect(LTCG_BRACKETS.mfs[0].upTo).toBe(LTCG_BRACKETS.mfj[0].upTo / 2);
+    expect(filingParams(PINNED_YEAR, 'mfs').ltcgBrackets[0].upTo).toBe(48_350);
+    expect(filingParams(PINNED_YEAR, 'mfs').ltcgBrackets[0].upTo).toBe(filingParams(PINNED_YEAR, 'mfj').ltcgBrackets[0].upTo / 2);
     // $600,050 / 2 is $300,025; Rev. Proc. 2024-40 prints $300,000, because
     // each status is inflation-adjusted and rounded from its own base amount.
-    expect(LTCG_BRACKETS.mfs[1].upTo).toBe(300_000);
-    expect(LTCG_BRACKETS.mfj[1].upTo / 2).toBe(300_025);
+    expect(filingParams(PINNED_YEAR, 'mfs').ltcgBrackets[1].upTo).toBe(300_000);
+    expect(filingParams(PINNED_YEAR, 'mfj').ltcgBrackets[1].upTo / 2).toBe(300_025);
     // $400,000 of pure gains: 0% to $48,350, 15% to $300,000, 20% after.
     expect(totalTax(
       { ordinaryIncome: 0, ssBenefit: 0, ltcg: 400_000, filingStatus: 'mfs' },
@@ -1597,11 +1633,11 @@ describe('married filing separately (lived with spouse)', () => {
   });
 
   it('names the right IRMAA ceiling and collapses the two SS ceilings', () => {
-    const ceilings = conversionCeilings('mfs');
+    const ceilings = conversionCeilings({ filingStatus: 'mfs' });
     const irmaa = ceilings.find((c) => c.id === 'irmaa1')!;
     expect(irmaa.label).toBe('IRMAA tier 4 (Medicare surcharge)');
     expect(irmaa.amount).toBe(106_000);
-    expect(conversionCeilings('single').find((c) => c.id === 'irmaa1')!.label).toBe(
+    expect(conversionCeilings({ filingStatus: 'single' }).find((c) => c.id === 'irmaa1')!.label).toBe(
       'IRMAA tier 1 (Medicare surcharge)',
     );
     // Both Social Security ceilings are $0, so neither can be sized against.
@@ -1808,5 +1844,150 @@ describe('IRMAA (Medicare income-related monthly adjustment amount)', () => {
     expect(incomeTaxOnTheDollar).toBeLessThan(1);
     expect(irmaaFor(irmaaMagi({ ordinaryIncome: x + 1, ssBenefit: SS })).annualSurcharge).toBe(1_052.4);
     expect(irmaaFor(irmaaMagi({ ordinaryIncome: x - 1, ssBenefit: SS })).annualSurcharge).toBe(0);
+  });
+});
+
+describe('tax year', () => {
+  it('defaults to the calendar year, clamped to the years on file', () => {
+    // The pinned clock is the point: an un-yeared scenario follows the wall
+    // calendar, so it moves to next year's figures on its own.
+    expect(defaultTaxYear()).toBe(PINNED_YEAR);
+    for (const year of TAX_YEARS) {
+      expect(defaultTaxYear(year)).toBe(year);
+    }
+    const first = TAX_YEARS[0];
+    const last = TAX_YEARS[TAX_YEARS.length - 1];
+    // Before the first year on file and after the last, clamp rather than
+    // throw: the app has to keep working in the January before a Rev. Proc.
+    // is published, and the nearest year on file is the closest thing to right.
+    expect(defaultTaxYear(first - 5)).toBe(first);
+    expect(defaultTaxYear(last + 5)).toBe(last);
+    // The invariant behind both clamps: whatever comes back is a year with
+    // parameters behind it, for any calendar year at all.
+    for (let year = first - 5; year <= last + 5; year++) {
+      expect(TAX_YEARS).toContain(defaultTaxYear(year));
+    }
+  });
+
+  it('is a well-formed schedule for every year and filing status', () => {
+    for (const year of TAX_YEARS) {
+      const params = taxYearParams(year);
+      expect(params.year).toBe(year);
+      expect(params.source).not.toBe('');
+      expect(params.maxAnnualSSBenefit).toBeGreaterThan(params.avgAnnualSSBenefit);
+      for (const status of ['single', 'mfj', 'mfs'] as FilingStatus[]) {
+        const filing = filingParams(year, status);
+        for (const schedule of [filing.brackets, filing.ltcgBrackets]) {
+          // Ascending, and open-ended at the top so no income falls off the end.
+          const tops = schedule.map((b) => b.upTo);
+          expect(tops).toEqual([...tops].sort((a, b) => a - b));
+          expect(tops[tops.length - 1]).toBe(Infinity);
+          const rates = schedule.map((b) => b.rate);
+          expect(rates).toEqual([...rates].sort((a, b) => a - b));
+        }
+        expect(filing.standardDeduction).toBeGreaterThan(0);
+        expect(filing.additionalStdDeduction65).toBeGreaterThan(0);
+      }
+      // IRC 63(c)(2) files single and separate under "any other case", and
+      // 1(j)(2)(D) halves the joint brackets — which reproduces the single
+      // schedule until a separate return runs out of 35% band.
+      expect(filingParams(year, 'mfs').standardDeduction).toBe(
+        filingParams(year, 'single').standardDeduction,
+      );
+      const mfs = filingParams(year, 'mfs').brackets;
+      const single = filingParams(year, 'single').brackets;
+      expect(mfs.slice(0, -2)).toEqual(single.slice(0, -2));
+      expect(mfs[mfs.length - 2].upTo).toBeCloseTo(
+        filingParams(year, 'mfj').brackets[mfs.length - 2].upTo / 2,
+        6,
+      );
+    }
+  });
+
+  it('reads 2026 off Rev. Proc. 2025-32 and the 2.8% COLA', () => {
+    const single = filingParams(2026, 'single');
+    expect(single.standardDeduction).toBe(16_100);
+    expect(single.additionalStdDeduction65).toBe(2_050);
+    expect(single.brackets.find((b) => b.rate === 0.12)?.upTo).toBe(50_400);
+    expect(single.ltcgBrackets[0].upTo).toBe(49_450);
+    expect(filingParams(2026, 'mfj').standardDeduction).toBe(32_200);
+    expect(filingParams(2026, 'mfj').additionalStdDeduction65).toBe(1_650);
+    expect(filingParams(2026, 'mfj').ltcgBrackets[0].upTo).toBe(98_900);
+    expect(taxYearParams(2026).colaPercent).toBe(2.8);
+    expect(maxAnnualSSBenefit(2026)).toBe(62_172); // $5,181/mo at age 70
+    expect(avgAnnualSSBenefit(2026)).toBe(24_852); // $2,071/mo, January 2026
+    // Every 2026 figure is above its 2025 counterpart, because all of them are
+    // indexed. The thresholds tested below are the exception that matters.
+    expect(single.standardDeduction).toBeGreaterThan(
+      filingParams(2025, 'single').standardDeduction,
+    );
+    expect(avgAnnualSSBenefit(2026)).toBeGreaterThan(avgAnnualSSBenefit(2025));
+  });
+
+  it('applies the selected year to the deduction, brackets and gain bands', () => {
+    expect(standardDeductionFor({ year: 2025 })).toBe(15_750);
+    expect(standardDeductionFor({ year: 2026 })).toBe(16_100);
+    expect(standardDeductionFor({ year: 2026, seniors: 1 })).toBe(18_150);
+    // The same nominal income costs less in 2026: the bands all widened.
+    expect(federalIncomeTax(60_000, { year: 2026 })).toBeLessThan(
+      federalIncomeTax(60_000, { year: 2025 }),
+    );
+    const gains = { ordinaryIncome: 0, ltcg: 49_000 };
+    // $49,000 of pure gains clears the 2025 0% band by $650 but fits inside the
+    // 2026 one — and the standard deduction covers the excess either way.
+    expect(filingParamsFor({ year: 2025 }).ltcgBrackets[0].upTo).toBe(48_350);
+    expect(filingParamsFor({ year: 2026 }).ltcgBrackets[0].upTo).toBe(49_450);
+    expect(totalTax({ ...gains, year: 2026 })).toBeLessThanOrEqual(
+      totalTax({ ...gains, year: 2025 }),
+    );
+  });
+
+  it('never indexes the Social Security thresholds', () => {
+    expect(SS_BASE50_ENACTED).toBe(1983);
+    expect(SS_BASE85_ENACTED).toBe(1993);
+    const scenario = { ordinaryIncome: 20_000, ssBenefit: 30_000 };
+    // Same benefit, same other income, same taxable share — the one figure on
+    // this page a new tax year cannot move.
+    const taxable = TAX_YEARS.map((year) =>
+      taxableSocialSecurity({ ...scenario, year }),
+    );
+    expect(new Set(taxable).size).toBe(1);
+    // And the two ceilings measured against those thresholds hold still while
+    // the two bracket ceilings and the gain band all move.
+    const amount = (year: TaxYear, id: ConversionCeilingId): number =>
+      conversionCeilings({ year }).find((c) => c.id === id)!.amount;
+    expect(amount(2026, 'ss50')).toBe(amount(2025, 'ss50'));
+    expect(amount(2026, 'ss85')).toBe(amount(2025, 'ss85'));
+    expect(amount(2025, 'bracket12')).toBe(48_475);
+    expect(amount(2026, 'bracket12')).toBe(50_400);
+    expect(amount(2025, 'ltcg0')).toBe(48_350);
+    expect(amount(2026, 'ltcg0')).toBe(49_450);
+  });
+
+  it('taxes a larger share of the average benefit every year', () => {
+    // The app's whole argument, as a number. The 50% base is frozen at $25,000
+    // while the average benefit rises with each COLA, and half the benefit
+    // counts toward provisional income — so the room for other income before
+    // any benefit is taxable shrinks by half the COLA, every year.
+    const headroom = (year: TaxYear): number =>
+      SS_BASES.single.ssBase50 - 0.5 * avgAnnualSSBenefit(year);
+    expect(headroom(2025)).toBeCloseTo(13_144, 6);
+    expect(headroom(2026)).toBeCloseTo(12_574, 6);
+    expect(headroom(2026)).toBeLessThan(headroom(2025));
+    expect(headroom(2025) - headroom(2026)).toBeCloseTo(
+      0.5 * (avgAnnualSSBenefit(2026) - avgAnnualSSBenefit(2025)),
+      6,
+    );
+    // Stated the other way: at a fixed $20,000 of other income, the average
+    // retiree has a bigger share of their benefit in the tax base each year.
+    const share = (year: TaxYear): number =>
+      taxableSocialSecurity({
+        ordinaryIncome: 20_000,
+        ssBenefit: avgAnnualSSBenefit(year),
+        year,
+      }) / avgAnnualSSBenefit(year);
+    expect(share(2025)).toBeCloseTo(0.1446, 4);
+    expect(share(2026)).toBeCloseTo(0.1494, 4);
+    expect(share(2026)).toBeGreaterThan(share(2025));
   });
 });

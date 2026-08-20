@@ -12,15 +12,20 @@ import {
 import {
   marginalRateCurve,
   ltcgMarginalRateCurve,
-  MAX_ANNUAL_SS_BENEFIT,
-  AVG_ANNUAL_SS_BENEFIT,
-  FILING_PARAMS,
+  maxAnnualSSBenefit,
+  avgAnnualSSBenefit,
+  SS_BASES,
+  SS_BASE50_ENACTED,
+  SS_BASE85_ENACTED,
+  TAX_YEARS,
+  defaultTaxYear,
+  taxYearParams,
+  filingParams,
   FilingStatus,
   segmentCurve,
   conversionCeilings,
   sizeConversion,
   CONVERSION_MEASURE_LABELS,
-  ADDITIONAL_STD_DEDUCTION_65,
   standardDeductionFor,
   taxableSocialSecurity,
   muniInterestEffect,
@@ -43,6 +48,7 @@ import {
   PART_B_STANDARD_PREMIUM,
 } from './utils/tax';
 import type {
+  TaxYear,
   LTCGMarginalRatePoint,
   MarginalRatePoint,
   CurveSegment,
@@ -229,7 +235,10 @@ export const LTCGTooltip: React.FC<LTCGTooltipProps> = ({
 };
 
 const App: React.FC = () => {
-  const [ssBenefit, setSsBenefit] = useState<number>(AVG_ANNUAL_SS_BENEFIT);
+  const [year, setYear] = useState<TaxYear>(() => defaultTaxYear());
+  const [ssBenefit, setSsBenefit] = useState<number>(() =>
+    avgAnnualSSBenefit(defaultTaxYear()),
+  );
   const [filingStatus, setFilingStatus] = useState<FilingStatus>('single');
   const [ordinaryIncome, setOrdinaryIncome] = useState<number>(DEFAULT_ORDINARY_INCOME);
   const [plannedLtcg, setPlannedLtcg] = useState<number>(0);
@@ -238,11 +247,30 @@ const App: React.FC = () => {
   const [spouseIsSenior, setSpouseIsSenior] = useState<boolean>(false);
   const [muniInterest, setMuniInterest] = useState<number>(0);
 
+  const yearParams = taxYearParams(year);
+  const yearFiling = filingParams(year, filingStatus);
+
+  /**
+   * Switching years re-prices the benefit as well as the brackets. Someone who
+   * has not moved the slider gets the new year's average, because watching the
+   * COLA raise the benefit while the thresholds sit still is the entire point
+   * of the comparison. Someone who picked a figure keeps it, clamped to the new
+   * year's maximum so the slider can never sit past its own right edge.
+   */
+  const changeYear = (next: TaxYear): void => {
+    setSsBenefit((current) =>
+      current === avgAnnualSSBenefit(year)
+        ? avgAnnualSSBenefit(next)
+        : Math.min(current, maxAnnualSSBenefit(next)),
+    );
+    setYear(next);
+  };
+
   // Only a joint return can claim the addition twice, and the spouse's
   // checkbox is meaningless until the filer's is on.
   const seniors = isSenior ? (filingStatus === 'mfj' && spouseIsSenior ? 2 : 1) : 0;
-  const baseDeduction = FILING_PARAMS[filingStatus].standardDeduction;
-  const standardDeduction = standardDeductionFor({ filingStatus, seniors });
+  const baseDeduction = yearFiling.standardDeduction;
+  const standardDeduction = standardDeductionFor({ filingStatus, seniors, year });
   const seniorAddition = standardDeduction - baseDeduction;
 
   // The OBBBA senior deduction, before its phaseout eats into it. A separate
@@ -265,16 +293,17 @@ const App: React.FC = () => {
         ordinaryIncome: MAX_INCOME,
         filingStatus,
         muniInterest,
+        year,
       }) >
       phaseoutEnd;
 
   const curve = useMemo(
     () =>
       marginalRateCurve(
-        { ssBenefit, filingStatus, seniors, muniInterest },
+        { ssBenefit, filingStatus, seniors, muniInterest, year },
         { maxIncome: MAX_INCOME, step: 250 },
       ),
-    [ssBenefit, filingStatus, seniors, muniInterest],
+    [ssBenefit, filingStatus, seniors, muniInterest, year],
   );
 
   const segments = useMemo(
@@ -282,7 +311,23 @@ const App: React.FC = () => {
     [curve],
   );
 
-  const { ssBase50, ssBase85 } = FILING_PARAMS[filingStatus];
+  // Never read off the tax year: IRC 86(c) has never been indexed. See SS_BASES.
+  const { ssBase50, ssBase85 } = SS_BASES[filingStatus];
+
+  const bracket12Top = yearFiling.brackets.find((b) => b.rate === 0.12)?.upTo ?? 0;
+  const ltcg0Top = yearFiling.ltcgBrackets[0].upTo;
+
+  /**
+   * How much other income each year's *average* retired-worker benefit leaves
+   * before any of that benefit becomes taxable: the 50% base, less the half of
+   * the benefit that provisional income already counts. The base has not moved
+   * since {@link SS_BASE50_ENACTED} and the benefit rises with every COLA, so
+   * this shrinks year over year without anyone changing the law. Meaningless at
+   * the $0 bases of a separate return, where it is never rendered.
+   */
+  const frozenBaseHeadroom = TAX_YEARS.map(
+    (y) => `${formatCurrency(ssBase50 - 0.5 * avgAnnualSSBenefit(y))} in ${y}`,
+  ).join(', ');
 
   // With both bases at $0 the 85% cap binds as soon as provisional income
   // reaches the benefit itself — other income + muni + half the benefit >=
@@ -294,15 +339,16 @@ const App: React.FC = () => {
     ordinaryIncome: 0,
     filingStatus,
     muniInterest,
+    year,
   });
 
   const ltcgCurve = useMemo(
     () =>
       ltcgMarginalRateCurve(
-        { ssBenefit, ordinaryIncome, filingStatus, seniors, muniInterest },
+        { ssBenefit, ordinaryIncome, filingStatus, seniors, muniInterest, year },
         { maxLTCG: MAX_LTCG, step: 250 },
       ),
-    [ssBenefit, ordinaryIncome, filingStatus, seniors, muniInterest],
+    [ssBenefit, ordinaryIncome, filingStatus, seniors, muniInterest, year],
   );
 
   const ltcgSegments = useMemo(
@@ -310,7 +356,12 @@ const App: React.FC = () => {
     [ltcgCurve],
   );
 
-  const ceilings = useMemo(() => conversionCeilings(filingStatus), [filingStatus]);
+  // Two of the six ceilings are bracket tops and a third is the 0% capital-gain
+  // band, so the whole list moves with the tax year.
+  const ceilings = useMemo(
+    () => conversionCeilings({ filingStatus, year }),
+    [filingStatus, year],
+  );
 
   const sizing = useMemo(() => {
     const ceiling = ceilings.find((c) => c.id === ceilingId) ?? ceilings[0];
@@ -323,6 +374,7 @@ const App: React.FC = () => {
         filingStatus,
         seniors,
         muniInterest,
+        year,
       },
       MAX_CONVERSION,
     );
@@ -335,6 +387,7 @@ const App: React.FC = () => {
     filingStatus,
     seniors,
     muniInterest,
+    year,
   ]);
 
   const muniEffect = useMemo(
@@ -346,8 +399,9 @@ const App: React.FC = () => {
         ltcg: plannedLtcg,
         filingStatus,
         seniors,
+        year,
       }),
-    [muniInterest, ordinaryIncome, ssBenefit, plannedLtcg, filingStatus, seniors],
+    [muniInterest, ordinaryIncome, ssBenefit, plannedLtcg, filingStatus, seniors, year],
   );
 
   // Medicare is per enrollee, so a joint return with both spouses over 65 pays
@@ -382,9 +436,63 @@ const App: React.FC = () => {
       <h1>Marginal Tax Rate</h1>
       <p className="subtitle">
         Federal marginal rate on the next dollar of other income for{' '}
-        {FILING_STATUS_PROSE[filingStatus]} (2025 brackets, standard deduction),
+        {FILING_STATUS_PROSE[filingStatus]} ({year} brackets, standard
+        deduction),
         with Social Security taxed under the 50%/85% provisional-income rules.
       </p>
+
+      <fieldset className="input-group filing-status">
+        <legend>Tax Year</legend>
+        <div className="segmented">
+          {TAX_YEARS.map((value) => (
+            <label key={value} className="segmented-option">
+              <input
+                type="radio"
+                name="tax-year"
+                value={value}
+                checked={year === value}
+                onChange={() => changeYear(value)}
+              />
+              <span>{value}</span>
+            </label>
+          ))}
+        </div>
+        <p className="field-note">
+          {yearParams.source}. Standard deduction{' '}
+          <strong>{formatCurrency(yearFiling.standardDeduction)}</strong>, 12%
+          bracket to {formatCurrency(bracket12Top)}, 0% capital-gain band to{' '}
+          {formatCurrency(ltcg0Top)}, average retired-worker benefit{' '}
+          {formatCurrency(avgAnnualSSBenefit(year))} after the{' '}
+          {yearParams.colaPercent}% COLA.
+        </p>
+        <p className="field-note">
+          <strong>The Social Security thresholds are not on that list.</strong>{' '}
+          Every other figure here — brackets, standard deduction, capital-gain
+          bands, the benefit itself — is adjusted for inflation every year. The
+          provisional-income thresholds in IRC 86(c) never have been.
+        </p>
+        {ssBase50 > 0 ? (
+          <p className="field-note">
+            Congress set {formatCurrency(ssBase50)} in {SS_BASE50_ENACTED} and{' '}
+            {formatCurrency(ssBase85)} in {SS_BASE85_ENACTED} and has not
+            touched either since. Half the benefit counts toward provisional
+            income, so every COLA eats into that {formatCurrency(ssBase50)} base
+            from the inside: at each year&apos;s average retired-worker benefit,
+            the other income you can have before <em>any</em> benefit is taxable
+            comes to <strong>{frozenBaseHeadroom}</strong>. Same real income,
+            more tax, every year — and the share of beneficiaries owing tax on
+            benefits ratchets up without Congress ever voting on it.
+          </p>
+        ) : (
+          <p className="field-note">
+            On a separate return that lived with the spouse, 86(c)(1)(C) sets
+            both thresholds to {formatCurrency(0)} outright rather than freezing
+            them somewhere. There is no headroom for a COLA to erode: the
+            benefit is in the tax base from the first dollar, in every year on
+            offer.
+          </p>
+        )}
+      </fieldset>
 
       <fieldset className="input-group filing-status">
         <legend>Filing Status</legend>
@@ -452,7 +560,7 @@ const App: React.FC = () => {
           Standard deduction <strong>{formatCurrency(standardDeduction)}</strong>
           {seniorAddition > 0
             ? ` — ${formatCurrency(baseDeduction)} base plus ${formatCurrency(seniorAddition)} for age 65 or older.`
-            : `. Turning 65 adds ${formatCurrency(ADDITIONAL_STD_DEDUCTION_65[filingStatus])}${
+            : `. Turning 65 adds ${formatCurrency(yearFiling.additionalStdDeduction65)}${
                 filingStatus === 'mfj' ? ' per qualifying spouse' : ''
               }.`}{' '}
           The addition widens the 0%-rate valley to the left of the torpedo:
@@ -502,15 +610,15 @@ const App: React.FC = () => {
           id="ss-benefit"
           type="range"
           min={0}
-          max={MAX_ANNUAL_SS_BENEFIT}
+          max={maxAnnualSSBenefit(year)}
           step={12}
           value={ssBenefit}
           onChange={(e) => setSsBenefit(Number(e.target.value))}
         />
         <div className="slider-range-labels">
           <span>$0</span>
-          <span>{formatCurrency(AVG_ANNUAL_SS_BENEFIT)} (2025 avg)</span>
-          <span>{formatCurrency(MAX_ANNUAL_SS_BENEFIT)} (2025 max)</span>
+          <span>{formatCurrency(avgAnnualSSBenefit(year))} ({year} avg)</span>
+          <span>{formatCurrency(maxAnnualSSBenefit(year))} ({year} max)</span>
         </div>
       </div>
 
@@ -859,10 +967,10 @@ const App: React.FC = () => {
         <p>
           <strong>The x-axis caveat.</strong> Medicare bills on a{' '}
           {IRMAA_LOOKBACK_YEARS}-year lag: the {IRMAA_PREMIUM_YEAR} premiums in
-          the table are set by {IRMAA_MAGI_YEAR} MAGI, so the income on this
-          chart is really setting the premium for{' '}
-          {IRMAA_PREMIUM_YEAR + IRMAA_LOOKBACK_YEARS}, under a schedule CMS has
-          not published yet. Treat the lines as where the cliffs would fall at
+          the table are set by {IRMAA_MAGI_YEAR} MAGI, so the {year} income on
+          this chart is really setting the premium for{' '}
+          {year + IRMAA_LOOKBACK_YEARS}, under a schedule CMS has not published
+          yet. Treat the lines as where the cliffs would fall at
           today&apos;s thresholds, not as a bill. The lag cuts both ways: a Roth
           conversion made now surfaces as a premium two years later, and a
           one-off spike — a home sale, an inherited IRA — keeps costing after the
@@ -954,8 +1062,8 @@ const App: React.FC = () => {
               <li>
                 <strong>Price out filing jointly.</strong> A separate return
                 that lived with the spouse gives up the{' '}
-                {formatCurrency(FILING_PARAMS.mfj.ssBase50)} and{' '}
-                {formatCurrency(FILING_PARAMS.mfj.ssBase85)} thresholds, the{' '}
+                {formatCurrency(SS_BASES.mfj.ssBase50)} and{' '}
+                {formatCurrency(SS_BASES.mfj.ssBase85)} thresholds, the{' '}
                 {formatCurrency(SENIOR_DEDUCTION)} senior deduction, and the
                 lower IRMAA tiers all at once. Separate filing is usually driven
                 by something else — income-driven student-loan repayment, a

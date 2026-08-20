@@ -7,6 +7,9 @@ export interface MarginalRatePoint {
 
 export type FilingStatus = 'single' | 'mfj' | 'mfs';
 
+/** A tax year this app has published figures for. See `TAX_YEAR_PARAMS`. */
+export type TaxYear = 2025 | 2026;
+
 /**
  * Every input a scenario has, as named fields rather than a positional list.
  *
@@ -18,7 +21,7 @@ export type FilingStatus = 'single' | 'mfj' | 'mfs';
  * quietly fall back to a default.
  *
  * Every field is optional and defaults to the un-set case: no income, no
- * benefit, filing single, under 65, one Medicare enrollee.
+ * benefit, filing single, under 65, one Medicare enrollee, current tax year.
  */
 export interface Scenario {
   /** Ordinary income other than Social Security: pensions, IRA withdrawals, wages, interest. */
@@ -34,6 +37,12 @@ export interface Scenario {
   seniors?: number;
   /** Medicare enrollees on the return. IRMAA is charged per enrollee. */
   beneficiaries?: number;
+  /**
+   * Which year's brackets, standard deduction and capital-gain bands to use.
+   * Defaults to the current calendar year — see `defaultTaxYear`. The Social
+   * Security thresholds ignore this, because they are not indexed at all.
+   */
+  year?: TaxYear;
 }
 
 /**
@@ -51,99 +60,283 @@ export function resolveScenario(scenario: Scenario = {}): Required<Scenario> {
     filingStatus: scenario.filingStatus ?? 'single',
     seniors: scenario.seniors ?? 0,
     beneficiaries: scenario.beneficiaries ?? 1,
+    year: scenario.year ?? defaultTaxYear(),
   };
 }
 
-interface FilingParams {
-  standardDeduction: number;
-  brackets: { upTo: number; rate: number }[];
-  /** Provisional-income thresholds for Social Security taxability. */
-  ssBase50: number;
-  ssBase85: number;
+/** One rate band. `upTo` is the top of the band; the last band is Infinity. */
+export interface Bracket {
+  upTo: number;
+  rate: number;
 }
 
-/** 2025 federal parameters by filing status (Rev. Proc. 2024-40; OBBBA standard deductions). */
-export const FILING_PARAMS: Record<FilingStatus, FilingParams> = {
-  single: {
-    standardDeduction: 15_750,
-    brackets: [
-      { upTo: 11_925, rate: 0.1 },
-      { upTo: 48_475, rate: 0.12 },
-      { upTo: 103_350, rate: 0.22 },
-      { upTo: 197_300, rate: 0.24 },
-      { upTo: 250_525, rate: 0.32 },
-      { upTo: 626_350, rate: 0.35 },
-      { upTo: Infinity, rate: 0.37 },
-    ],
-    ssBase50: 25_000,
-    ssBase85: 34_000,
-  },
-  mfj: {
-    standardDeduction: 31_500,
-    brackets: [
-      { upTo: 23_850, rate: 0.1 },
-      { upTo: 96_950, rate: 0.12 },
-      { upTo: 206_700, rate: 0.22 },
-      { upTo: 394_600, rate: 0.24 },
-      { upTo: 501_050, rate: 0.32 },
-      { upTo: 751_600, rate: 0.35 },
-      { upTo: Infinity, rate: 0.37 },
-    ],
-    ssBase50: 32_000,
-    ssBase85: 44_000,
-  },
+/** The inflation-adjusted figures for one filing status in one tax year. */
+export interface FilingYearParams {
+  /** Base standard deduction, IRC 63(c) as amended by the OBBBA. */
+  standardDeduction: number;
+  /**
+   * Additional standard deduction per qualifying person age 65 or older,
+   * IRC 63(f)(1). The same amount applies again for blindness, which this app
+   * does not model.
+   */
+  additionalStdDeduction65: number;
+  /** Ordinary-income rate schedule, IRC 1(j). */
+  brackets: Bracket[];
+  /**
+   * Long-term capital gain and qualified dividend rate schedule, IRC 1(h).
+   * The `upTo` values refer to total taxable income (ordinary + gains).
+   */
+  ltcgBrackets: Bracket[];
+}
+
+/** Everything about a tax year that this app needs. */
+export interface TaxYearParams {
+  year: TaxYear;
+  /** Where the inflation-adjusted figures come from. */
+  source: string;
+  filing: Record<FilingStatus, FilingYearParams>;
+  /**
+   * SSA maximum annual benefit for a worker who claims at age 70 in this year.
+   * Not last year's maximum times the COLA: it also depends on the earnings
+   * record and delayed retirement credits of whoever turns 70 this year.
+   */
+  maxAnnualSSBenefit: number;
+  /** SSA average annual benefit for a retired worker in January of this year. */
+  avgAnnualSSBenefit: number;
+  /** The COLA that produced this year's benefit figures, in percent. */
+  colaPercent: number;
+}
+
+/**
+ * The Social Security provisional-income thresholds, which are the one set of
+ * figures on this page that does *not* move.
+ *
+ * IRC 86(c) wrote $25,000/$32,000 into the statute in 1983 and $34,000/$44,000
+ * in 1993, and neither has ever been indexed for inflation. Every other number
+ * in this file — brackets, standard deduction, capital-gain bands, the benefit
+ * itself — is adjusted annually. So each COLA pushes the same real income
+ * further past a threshold that has not moved in decades, and the share of
+ * beneficiaries paying tax on benefits ratchets up year after year by design.
+ * That contrast is the whole point of the tax-year selector, so these live
+ * outside `TAX_YEAR_PARAMS` rather than being repeated identically in it.
+ */
+export const SS_BASES: Record<FilingStatus, { ssBase50: number; ssBase85: number }> = {
+  single: { ssBase50: 25_000, ssBase85: 34_000 },
+  mfj: { ssBase50: 32_000, ssBase85: 44_000 },
   /**
    * Married filing separately, having lived with the spouse at some point in
    * the year.
    *
-   * The brackets are section 1(j)(2)(D)'s — identical to a single filer's until
-   * $375,800, where a separate return tops out at 37% while a single one still
-   * has room in the 35% band — and the standard deduction is the same $15,750,
-   * because section 63(c)(2) files both statuses under "any other case".
-   *
-   * The Social Security bases are the whole story. IRC 86(c)(1)(C) and
-   * 86(c)(2)(C) set both of them to zero for a married taxpayer who does not
-   * file jointly and does not live apart from their spouse for the *entire*
-   * year. A $0 base and a $0 adjusted base leave the 50% tier zero dollars
-   * wide, so the formula collapses to 85% of provisional income capped at 85%
-   * of benefits: 42.5% of the benefit is already taxable before a single dollar
-   * of other income arrives, and the cap binds as soon as other income reaches
-   * half the benefit. There is no valley and no hump — just the ceiling,
-   * immediately.
+   * IRC 86(c)(1)(C) and 86(c)(2)(C) set both the base and the adjusted base to
+   * zero for a married taxpayer who does not file jointly and does not live
+   * apart from their spouse for the *entire* year. A $0 base and a $0 adjusted
+   * base leave the 50% tier zero dollars wide, so the formula collapses to 85%
+   * of provisional income capped at 85% of benefits: 42.5% of the benefit is
+   * already taxable before a single dollar of other income arrives, and the cap
+   * binds as soon as other income reaches half the benefit. There is no valley
+   * and no hump — just the ceiling, immediately.
    *
    * A separate filer who lived apart from their spouse for all twelve months is
    * treated as unmarried by 86(c) instead, and should use `single`.
    */
-  mfs: {
-    standardDeduction: 15_750,
-    brackets: [
-      { upTo: 11_925, rate: 0.1 },
-      { upTo: 48_475, rate: 0.12 },
-      { upTo: 103_350, rate: 0.22 },
-      { upTo: 197_300, rate: 0.24 },
-      { upTo: 250_525, rate: 0.32 },
-      { upTo: 375_800, rate: 0.35 },
-      { upTo: Infinity, rate: 0.37 },
-    ],
-    ssBase50: 0,
-    ssBase85: 0,
+  mfs: { ssBase50: 0, ssBase85: 0 },
+};
+
+/** The year each threshold in `SS_BASES` was last set by Congress. */
+export const SS_BASE50_ENACTED = 1983;
+export const SS_BASE85_ENACTED = 1993;
+
+/**
+ * Federal parameters by tax year.
+ *
+ * Adding a year means adding one entry here; nothing downstream changes. The
+ * separate-return brackets are the joint ones halved (IRC 1(j)(2)(D)), which
+ * makes them identical to a single filer's until the 35% band, where a separate
+ * return tops out and jumps to 37% while a single one still has room. The
+ * separate-return standard deduction is the single one, because IRC 63(c)(2)
+ * files both statuses under "any other case".
+ */
+export const TAX_YEAR_PARAMS: Record<TaxYear, TaxYearParams> = {
+  2025: {
+    year: 2025,
+    source: 'Rev. Proc. 2024-40; OBBBA standard deductions; SSA (2.5% COLA)',
+    maxAnnualSSBenefit: 61_296, // $5,108/mo at age 70
+    avgAnnualSSBenefit: 23_712, // $1,976/mo, January 2025
+    colaPercent: 2.5,
+    filing: {
+      single: {
+        standardDeduction: 15_750,
+        additionalStdDeduction65: 2_000,
+        brackets: [
+          { upTo: 11_925, rate: 0.1 },
+          { upTo: 48_475, rate: 0.12 },
+          { upTo: 103_350, rate: 0.22 },
+          { upTo: 197_300, rate: 0.24 },
+          { upTo: 250_525, rate: 0.32 },
+          { upTo: 626_350, rate: 0.35 },
+          { upTo: Infinity, rate: 0.37 },
+        ],
+        ltcgBrackets: [
+          { upTo: 48_350, rate: 0 },
+          { upTo: 533_400, rate: 0.15 },
+          { upTo: Infinity, rate: 0.2 },
+        ],
+      },
+      mfj: {
+        standardDeduction: 31_500,
+        additionalStdDeduction65: 1_600,
+        brackets: [
+          { upTo: 23_850, rate: 0.1 },
+          { upTo: 96_950, rate: 0.12 },
+          { upTo: 206_700, rate: 0.22 },
+          { upTo: 394_600, rate: 0.24 },
+          { upTo: 501_050, rate: 0.32 },
+          { upTo: 751_600, rate: 0.35 },
+          { upTo: Infinity, rate: 0.37 },
+        ],
+        ltcgBrackets: [
+          { upTo: 96_700, rate: 0 },
+          { upTo: 600_050, rate: 0.15 },
+          { upTo: Infinity, rate: 0.2 },
+        ],
+      },
+      mfs: {
+        standardDeduction: 15_750,
+        // A separate filer is still married, so they get the married $1,600
+        // rather than the $2,000 an unmarried person gets.
+        additionalStdDeduction65: 1_600,
+        brackets: [
+          { upTo: 11_925, rate: 0.1 },
+          { upTo: 48_475, rate: 0.12 },
+          { upTo: 103_350, rate: 0.22 },
+          { upTo: 197_300, rate: 0.24 },
+          { upTo: 250_525, rate: 0.32 },
+          { upTo: 375_800, rate: 0.35 },
+          { upTo: Infinity, rate: 0.37 },
+        ],
+        // The 0% band is exactly half the joint one, and so happens to match a
+        // single filer's. The 15% band is not: half of $600,050 would be
+        // $300,025, but each status is adjusted for inflation from its own base
+        // amount and rounded separately, so Rev. Proc. 2024-40 prints $300,000.
+        ltcgBrackets: [
+          { upTo: 48_350, rate: 0 },
+          { upTo: 300_000, rate: 0.15 },
+          { upTo: Infinity, rate: 0.2 },
+        ],
+      },
+    },
+  },
+  2026: {
+    year: 2026,
+    source: 'Rev. Proc. 2025-32; SSA (2.8% COLA)',
+    maxAnnualSSBenefit: 62_172, // $5,181/mo at age 70
+    avgAnnualSSBenefit: 24_852, // $2,071/mo, January 2026
+    colaPercent: 2.8,
+    filing: {
+      single: {
+        standardDeduction: 16_100,
+        additionalStdDeduction65: 2_050,
+        // The OBBBA gave the bottom two brackets an extra inflation adjustment
+        // (roughly 4% against 2.3% for the rest), so the 12% band widened by
+        // more than the bands above it.
+        brackets: [
+          { upTo: 12_400, rate: 0.1 },
+          { upTo: 50_400, rate: 0.12 },
+          { upTo: 105_700, rate: 0.22 },
+          { upTo: 201_775, rate: 0.24 },
+          { upTo: 256_225, rate: 0.32 },
+          { upTo: 640_600, rate: 0.35 },
+          { upTo: Infinity, rate: 0.37 },
+        ],
+        ltcgBrackets: [
+          { upTo: 49_450, rate: 0 },
+          { upTo: 545_500, rate: 0.15 },
+          { upTo: Infinity, rate: 0.2 },
+        ],
+      },
+      mfj: {
+        standardDeduction: 32_200,
+        additionalStdDeduction65: 1_650,
+        brackets: [
+          { upTo: 24_800, rate: 0.1 },
+          { upTo: 100_800, rate: 0.12 },
+          { upTo: 211_400, rate: 0.22 },
+          { upTo: 403_550, rate: 0.24 },
+          { upTo: 512_450, rate: 0.32 },
+          { upTo: 768_700, rate: 0.35 },
+          { upTo: Infinity, rate: 0.37 },
+        ],
+        ltcgBrackets: [
+          { upTo: 98_900, rate: 0 },
+          { upTo: 613_700, rate: 0.15 },
+          { upTo: Infinity, rate: 0.2 },
+        ],
+      },
+      mfs: {
+        standardDeduction: 16_100,
+        additionalStdDeduction65: 1_650,
+        brackets: [
+          { upTo: 12_400, rate: 0.1 },
+          { upTo: 50_400, rate: 0.12 },
+          { upTo: 105_700, rate: 0.22 },
+          { upTo: 201_775, rate: 0.24 },
+          { upTo: 256_225, rate: 0.32 },
+          { upTo: 384_350, rate: 0.35 },
+          { upTo: Infinity, rate: 0.37 },
+        ],
+        // Half of $613,700 is $306,850 exactly, so for 2026 the separate 15%
+        // band really is the halved joint one — unlike 2025, where separate
+        // rounding put it $25 below half.
+        ltcgBrackets: [
+          { upTo: 49_450, rate: 0 },
+          { upTo: 306_850, rate: 0.15 },
+          { upTo: Infinity, rate: 0.2 },
+        ],
+      },
+    },
   },
 };
 
+/** Every year this app has figures for, ascending. */
+export const TAX_YEARS: TaxYear[] = [2025, 2026];
+
 /**
- * 2025 additional standard deduction for a taxpayer age 65 or older
- * (Rev. Proc. 2024-40 section 2.15). The base amount is $1,600 per qualifying
- * person, raised to $2,000 for someone who is unmarried and not a surviving
- * spouse. The same amounts apply again for blindness, which this app does not
- * model.
+ * The year to start on: the calendar year, when there are figures for it.
+ *
+ * Clamped into `TAX_YEARS` rather than left to fail, so the app keeps working
+ * in January of a year whose Rev. Proc. has not been published yet (and in any
+ * year after that, if nobody adds the new figures). It falls back to the most
+ * recent year on file, which is the closest thing to correct that exists.
  */
-export const ADDITIONAL_STD_DEDUCTION_65: Record<FilingStatus, number> = {
-  single: 2_000,
-  mfj: 1_600,
-  // A separate filer is still married, so they get the married $1,600 rather
-  // than the $2,000 an unmarried person gets.
-  mfs: 1_600,
-};
+export function defaultTaxYear(calendarYear = new Date().getFullYear()): TaxYear {
+  const first = TAX_YEARS[0];
+  const last = TAX_YEARS[TAX_YEARS.length - 1];
+  if (calendarYear <= first) return first;
+  if (calendarYear >= last) return last;
+  // Matched against the list rather than cast into it, so a gap in the years on
+  // file (2025 and 2027 but not 2026) falls back to a year that exists instead
+  // of returning one with no parameters behind it.
+  return TAX_YEARS.find((y) => y === calendarYear) ?? last;
+}
+
+/** The parameters for one tax year. */
+export function taxYearParams(year: TaxYear = defaultTaxYear()): TaxYearParams {
+  return TAX_YEAR_PARAMS[year];
+}
+
+/** The parameters for one filing status in one tax year. */
+export function filingParams(
+  year: TaxYear = defaultTaxYear(),
+  filingStatus: FilingStatus = 'single',
+): FilingYearParams {
+  return TAX_YEAR_PARAMS[year].filing[filingStatus];
+}
+
+/** The same, read straight off a scenario. */
+export function filingParamsFor(scenario: Scenario = {}): FilingYearParams {
+  const { year, filingStatus } = resolveScenario(scenario);
+  return filingParams(year, filingStatus);
+}
 
 /**
  * How many people on the return can claim the age-65 addition.
@@ -175,9 +368,9 @@ function seniorCount(filingStatus: FilingStatus, seniors: number): number {
  */
 export function standardDeductionFor(scenario: Scenario = {}): number {
   const { filingStatus, seniors } = resolveScenario(scenario);
+  const { standardDeduction, additionalStdDeduction65 } = filingParamsFor(scenario);
   return (
-    FILING_PARAMS[filingStatus].standardDeduction +
-    seniorCount(filingStatus, seniors) * ADDITIONAL_STD_DEDUCTION_65[filingStatus]
+    standardDeduction + seniorCount(filingStatus, seniors) * additionalStdDeduction65
   );
 }
 
@@ -284,12 +477,18 @@ export function deductionFor(scenario: Scenario = {}, magi = 0): number {
 }
 
 /**
- * SSA 2025 benefit figures (monthly x 12). Max is for a worker claiming at
- * age 70 ($5,108/mo); average retired-worker benefit is $1,976/mo after the
- * 2.5% COLA (January 2025).
+ * SSA benefit figures for a tax year (monthly x 12). Max is for a worker
+ * claiming at age 70; average is the retired-worker benefit in January of that
+ * year. Both move with the COLA — unlike the thresholds in `SS_BASES`, which
+ * is exactly why the torpedo widens every year.
  */
-export const MAX_ANNUAL_SS_BENEFIT = 61_296;
-export const AVG_ANNUAL_SS_BENEFIT = 23_712;
+export function maxAnnualSSBenefit(year: TaxYear = defaultTaxYear()): number {
+  return taxYearParams(year).maxAnnualSSBenefit;
+}
+
+export function avgAnnualSSBenefit(year: TaxYear = defaultTaxYear()): number {
+  return taxYearParams(year).avgAnnualSSBenefit;
+}
 
 /**
  * Taxable portion of Social Security benefits under the 50%/85% rules.
@@ -307,7 +506,8 @@ export const AVG_ANNUAL_SS_BENEFIT = 23_712;
 export function taxableSocialSecurity(scenario: Scenario = {}): number {
   const { ssBenefit, ordinaryIncome, ltcg, muniInterest, filingStatus } =
     resolveScenario(scenario);
-  const { ssBase50, ssBase85 } = FILING_PARAMS[filingStatus];
+  // Deliberately not read off the tax year: IRC 86(c) has never been indexed.
+  const { ssBase50, ssBase85 } = SS_BASES[filingStatus];
   const provisional = ordinaryIncome + ltcg + muniInterest + 0.5 * ssBenefit;
   if (provisional <= ssBase50) return 0;
   if (provisional <= ssBase85) {
@@ -320,13 +520,18 @@ export function taxableSocialSecurity(scenario: Scenario = {}): number {
   );
 }
 
+/**
+ * The ordinary-income tax on an already-computed taxable income, under the
+ * scenario's filing status and tax year. Takes the whole scenario rather than
+ * the two fields it reads, so a caller cannot pass a status and forget a year.
+ */
 export function federalIncomeTax(
   taxableIncome: number,
-  filingStatus: FilingStatus = 'single',
+  scenario: Scenario = {},
 ): number {
   let tax = 0;
   let lower = 0;
-  for (const { upTo, rate } of FILING_PARAMS[filingStatus].brackets) {
+  for (const { upTo, rate } of filingParamsFor(scenario).brackets) {
     if (taxableIncome <= lower) break;
     tax += (Math.min(taxableIncome, upTo) - lower) * rate;
     lower = upTo;
@@ -385,30 +590,6 @@ export function marginalRateCurve(
 /*  Long-Term Capital Gains (LTCG) stacking                           */
 /* ------------------------------------------------------------------ */
 
-/** 2025 LTCG rate thresholds by filing status (Rev. Proc. 2024-40).
- *  The `upTo` values refer to total taxable income (ordinary + gains). */
-export const LTCG_BRACKETS: Record<FilingStatus, { upTo: number; rate: number }[]> = {
-  single: [
-    { upTo: 48_350, rate: 0 },
-    { upTo: 533_400, rate: 0.15 },
-    { upTo: Infinity, rate: 0.20 },
-  ],
-  mfj: [
-    { upTo: 96_700, rate: 0 },
-    { upTo: 600_050, rate: 0.15 },
-    { upTo: Infinity, rate: 0.20 },
-  ],
-  // The 0% band is exactly half the joint one, and so happens to match a single
-  // filer's. The 15% band is not: half of $600,050 would be $300,025, but each
-  // status is adjusted for inflation from its own base amount and rounded
-  // separately, so Rev. Proc. 2024-40 prints $300,000.
-  mfs: [
-    { upTo: 48_350, rate: 0 },
-    { upTo: 300_000, rate: 0.15 },
-    { upTo: Infinity, rate: 0.20 },
-  ],
-};
-
 /**
  * Total federal income tax on the scenario: ordinary income plus whatever share
  * of the benefit is taxable, with long-term gains stacked on top in their own
@@ -426,7 +607,7 @@ export const LTCG_BRACKETS: Record<FilingStatus, { upTo: number; rate: number }[
  * See `irmaaFor`.
  */
 export function totalTax(scenario: Scenario = {}): number {
-  const { ordinaryIncome, filingStatus } = resolveScenario(scenario);
+  const { ordinaryIncome } = resolveScenario(scenario);
 
   const taxableSS = taxableSocialSecurity(scenario);
   // Gains are part of AGI, so they phase out the senior deduction too.
@@ -447,7 +628,7 @@ export function totalTax(scenario: Scenario = {}): number {
   // --- LTCG tax (fills LTCG brackets from ordinaryTaxable to totalTaxable) ---
   let ltcgTax = 0;
   let lower = 0;
-  for (const { upTo, rate } of LTCG_BRACKETS[filingStatus]) {
+  for (const { upTo, rate } of filingParamsFor(scenario).ltcgBrackets) {
     const bandStart = Math.max(ordinaryTaxable, lower);
     const bandEnd = Math.min(totalTaxable, upTo);
     if (bandEnd > bandStart) {
@@ -456,7 +637,7 @@ export function totalTax(scenario: Scenario = {}): number {
     lower = upTo;
   }
 
-  return federalIncomeTax(ordinaryTaxable, filingStatus) + ltcgTax;
+  return federalIncomeTax(ordinaryTaxable, scenario) + ltcgTax;
 }
 
 export interface LTCGMarginalRatePoint {
@@ -972,16 +1153,23 @@ export const CONVERSION_MEASURE_LABELS: Record<ConversionMeasure, string> = {
   magi: 'MAGI',
 };
 
-function bracketTop(filingStatus: FilingStatus, rate: number): number {
-  const bracket = FILING_PARAMS[filingStatus].brackets.find((b) => b.rate === rate);
+function bracketTop(scenario: Scenario, rate: number): number {
+  const bracket = filingParamsFor(scenario).brackets.find((b) => b.rate === rate);
   return bracket ? bracket.upTo : Infinity;
 }
 
-/** The ceilings a retiree might size a Roth conversion against, for one filing status. */
-export function conversionCeilings(
-  filingStatus: FilingStatus = 'single',
-): ConversionCeiling[] {
-  const { ssBase50, ssBase85 } = FILING_PARAMS[filingStatus];
+/**
+ * The ceilings a retiree might size a Roth conversion against.
+ *
+ * Takes the whole scenario because three of the six ceilings move with the tax
+ * year — the two bracket tops and the 0% capital-gain band — while the two
+ * Social Security bases never do. Only `filingStatus` and `year` are read; the
+ * income fields are ignored, since a ceiling is a fixed line, not a position
+ * relative to one.
+ */
+export function conversionCeilings(scenario: Scenario = {}): ConversionCeiling[] {
+  const { filingStatus } = resolveScenario(scenario);
+  const { ssBase50, ssBase85 } = SS_BASES[filingStatus];
   // Both bases are $0 on a separate return that lived with the spouse, so the
   // two Social Security ceilings collapse onto each other. Say so rather than
   // offering the same $0 twice with different explanations.
@@ -992,14 +1180,14 @@ export function conversionCeilings(
       id: 'bracket12',
       label: 'Top of the 12% bracket',
       measure: 'ordinaryTaxableIncome',
-      amount: bracketTop(filingStatus, 0.12),
+      amount: bracketTop(scenario, 0.12),
       note: 'The next dollar of ordinary income is taxed at 22% instead of 12%.',
     },
     {
       id: 'bracket22',
       label: 'Top of the 22% bracket',
       measure: 'ordinaryTaxableIncome',
-      amount: bracketTop(filingStatus, 0.22),
+      amount: bracketTop(scenario, 0.22),
       note: 'The next dollar of ordinary income is taxed at 24% instead of 22%.',
     },
     {
@@ -1024,7 +1212,7 @@ export function conversionCeilings(
       id: 'ltcg0',
       label: 'Top of the 0% capital-gains bracket',
       measure: 'totalTaxableIncome',
-      amount: LTCG_BRACKETS[filingStatus][0].upTo,
+      amount: filingParamsFor(scenario).ltcgBrackets[0].upTo,
       note: 'Past this, long-term gains stacked on top of ordinary income are taxed at 15% rather than 0%.',
     },
     {

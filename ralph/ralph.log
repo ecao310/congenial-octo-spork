@@ -1284,3 +1284,103 @@ chunk warning.
 Next up: the tax-year selector, which is the item that made this refactor
 worth doing first — a `year` field now slots into Scenario without touching a
 single call site's argument order.
+
+================================================================================
+## The tax-year selector
+## 2026-08-20
+
+Third time this failure mode has shown up in this log: an iteration did the
+whole task, left four modified files in the working tree, and died before
+flipping the checkbox or committing. This iteration verified the work from
+scratch — including re-checking every 2026 figure against the primary source —
+made two small additions of its own, and committed.
+
+### What it does
+
+`TAX_YEAR_PARAMS: Record<TaxYear, TaxYearParams>` replaces `FILING_PARAMS`,
+`LTCG_BRACKETS`, `ADDITIONAL_STD_DEDUCTION_65`, `MAX_ANNUAL_SS_BENEFIT` and
+`AVG_ANNUAL_SS_BENEFIT`. `Scenario` gained a `year` field, so every call site
+that already took a Scenario picked the year up for free — which is exactly the
+payoff the previous iteration's refactor was for. Adding 2027 means adding one
+entry and one member to `TAX_YEARS`; nothing downstream changes.
+
+`federalIncomeTax(taxableIncome, scenario)` now takes the whole scenario rather
+than a bare `filingStatus`, so a caller cannot pass a status and forget a year.
+
+### The part that is the actual point
+
+`SS_BASES` lives OUTSIDE `TAX_YEAR_PARAMS`, deliberately, and is commented to
+say why. IRC 86(c) wrote $25,000/$32,000 in 1983 and $34,000/$44,000 in 1993 and
+neither has ever been indexed. Everything else in the file is. Putting the
+bases in the per-year record would have meant repeating them identically twice
+and losing the contrast that the whole app exists to show.
+
+The UI states it: half the benefit counts toward provisional income, so each
+COLA eats the $25,000 base from the inside. Other income you can have before
+*any* benefit is taxable, at each year's average retired-worker benefit:
+$13,144 in 2025, $12,574 in 2026. Same real income, more tax, no vote.
+
+On a separate return there is no headroom to erode — 86(c)(1)(C) zeroes both
+bases outright — so that paragraph is swapped for one saying so rather than
+rendering a meaningless number.
+
+### Every 2026 figure, verified against the primary source
+
+The Rev. Proc. 2025-32 PDF would not render (no poppler on this box) and
+WebFetch got binary garbage out of it. Extracted the text instead by pulling
+FlateDecode streams with python zlib and stripping whitespace — the PDF's
+kerning splits digits ("20 25 - 32"), so searching only works on the flattened
+string. Worth repeating next time a Rev. Proc. needs checking.
+
+Confirmed verbatim from section 4:
+- Rate tables: single/MFJ/MFS every threshold, including the MFS 35% band
+  topping out at $384,350 while single still has room to $640,600.
+- .14 Standard Deduction: $32,200 MFJ, $16,100 unmarried, $16,100 MFS.
+- .14(3) Aged or blind: $1,650, raised to $2,050 if unmarried and not a
+  surviving spouse. So single 2,050 / mfj 1,650 / mfs 1,650.
+- .03 Maximum Capital Gains Rate: MFJ $98,900/$613,700, MFS $49,450/$306,850,
+  All Other Individuals $49,450/$545,500.
+
+SSA, separately: 2.8% COLA, $5,181/mo at age 70 ($62,172/yr), average retired
+worker $2,071/mo in January 2026 ($24,852/yr).
+
+Two things fell out of the numbers that are in code comments now:
+- The OBBBA gave the bottom two brackets an extra inflation bump. Single 12%
+  top went 48,475 -> 50,400 (+3.97%) while the 22% top went 103,350 -> 105,700
+  (+2.27%). The 12% band widened by more than the bands above it.
+- The 2025 MFS 15% LTCG band was $300,000 where half the joint band is
+  $300,025 (separate rounding from separate base amounts). In 2026 it is
+  $306,850, which IS exactly half of $613,700. The discrepancy is a
+  rounding artifact, not a rule — do not "fix" either year to match the other.
+
+### What this iteration added
+
+- `defaultTaxYear` returned `calendarYear as TaxYear` for anything between the
+  first and last year on file. That cast is only true while TAX_YEARS is
+  contiguous; a future list of 2025 and 2027 would have handed 2026 back with
+  no parameters behind it. Now it matches against the list and falls back to
+  the last year. Test asserts the general invariant — every calendar year from
+  first-5 to last+5 maps to a year that is actually on file.
+
+### Clock pinning, which both test files needed
+
+`defaultTaxYear()` reads `new Date()`, so an un-yeared scenario follows the wall
+calendar. Every existing assertion is a 2025 dollar figure. Both test files now
+`vi.useFakeTimers({ toFake: ['Date'] })` pinned to 2025-07-01 — Date only,
+because faking setTimeout deadlocks React Testing Library and anything async.
+One App test deliberately drops back to real timers: it checks that whatever
+`defaultTaxYear()` returns *today* is a year the selector can render, so
+shipping past the last year on file cannot open the app on a blank schedule.
+
+### The gap left behind, logged as a new backlog item
+
+IRMAA is NOT year-parameterized. Picking 2026 still shows the 2025 premiums
+($185/mo base Part B, cliffs at $106k/$133k/$167k/$200k/$500k). The backlog
+bullet named FILING_PARAMS, LTCG_BRACKETS and the SS constants, so this stayed
+in scope, but the section is now a year stale when 2026 is selected. Filed
+under Discovered Work with the 2026 figures ($202.90 base premium) to pick up.
+
+### Verification
+
+npx tsc -b, npm run lint, npx vitest run (184 passed, was 170), npm run build —
+all clean; only the pre-existing >500kB chunk warning.

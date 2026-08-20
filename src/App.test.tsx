@@ -1,6 +1,29 @@
 import { render, screen, fireEvent } from '@testing-library/react';
+import { vi } from 'vitest';
 import App, { CustomTooltip, LTCGTooltip } from './App';
-import { MAX_ANNUAL_SS_BENEFIT, AVG_ANNUAL_SS_BENEFIT } from './utils/tax';
+import { TAX_YEAR_PARAMS, TAX_YEARS, defaultTaxYear } from './utils/tax';
+import type { TaxYear } from './utils/tax';
+
+/**
+ * The app opens on `defaultTaxYear()`, which follows the wall calendar, and
+ * nearly every figure asserted below is a 2025 one. Pinning the clock keeps
+ * those assertions meaningful instead of having them re-point at whatever
+ * Rev. Proc. the calendar happens to be on. The `tax year selector` describe
+ * clicks its way to 2026 rather than relying on the default.
+ */
+const PINNED_YEAR: TaxYear = 2025;
+const AVG_ANNUAL_SS_BENEFIT = TAX_YEAR_PARAMS[PINNED_YEAR].avgAnnualSSBenefit;
+const MAX_ANNUAL_SS_BENEFIT = TAX_YEAR_PARAMS[PINNED_YEAR].maxAnnualSSBenefit;
+
+beforeEach(() => {
+  // Date only: React Testing Library needs the real setTimeout.
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date(`${PINNED_YEAR}-07-01T00:00:00Z`));
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 describe('App', () => {
   /** The tax-exempt interest section, so figures can be asserted in context. */
@@ -738,3 +761,117 @@ describe('Tooltip Recommendations', () => {
   });
 });
 
+
+describe('tax year selector', () => {
+  const yearRadio = (year: number): HTMLElement =>
+    screen.getByRole('radio', { name: String(year) });
+
+  it('offers every year on file and opens on the calendar year', () => {
+    render(<App />);
+    expect(screen.getByRole('group', { name: /tax year/i })).toBeInTheDocument();
+    expect(yearRadio(2025)).toBeChecked();
+    expect(yearRadio(2026)).not.toBeChecked();
+    expect(screen.getByText(/Rev\. Proc\. 2024-40/)).toBeInTheDocument();
+    expect(screen.getByText(/2025 brackets, standard deduction/)).toBeInTheDocument();
+  });
+
+  it('re-prices deduction, brackets, gain band and benefit for 2026', () => {
+    render(<App />);
+    expect(screen.getByText(/^Standard deduction/)).toHaveTextContent(
+      'Standard deduction $15,750. Turning 65 adds $2,000.',
+    );
+
+    fireEvent.click(yearRadio(2026));
+    expect(yearRadio(2026)).toBeChecked();
+    expect(yearRadio(2025)).not.toBeChecked();
+
+    expect(screen.getByText(/2026 brackets, standard deduction/)).toBeInTheDocument();
+    expect(screen.getByText(/Rev\. Proc\. 2025-32/)).toBeInTheDocument();
+    expect(screen.getByText(/^Standard deduction/)).toHaveTextContent(
+      'Standard deduction $16,100. Turning 65 adds $2,050.',
+    );
+    // 12% bracket top and 0% capital-gain band, both from Rev. Proc. 2025-32.
+    expect(screen.getByText(/12% bracket to \$50,400/)).toBeInTheDocument();
+    expect(screen.getByText(/0% capital-gain band to \$49,450/)).toBeInTheDocument();
+  });
+
+  it('moves an untouched benefit slider onto the new year’s average and max', () => {
+    render(<App />);
+    const slider = screen.getByRole('slider', { name: /social security benefit/i });
+    expect(slider).toHaveValue('23712');
+    expect(slider).toHaveAttribute('max', '61296');
+
+    fireEvent.click(yearRadio(2026));
+    // Nobody moved the slider, so it follows the COLA — which is the whole
+    // comparison the selector exists to make.
+    expect(slider).toHaveValue('24852');
+    expect(slider).toHaveAttribute('max', '62172');
+    expect(screen.getByText('$24,852 (2026 avg)')).toBeInTheDocument();
+    expect(screen.getByText('$62,172 (2026 max)')).toBeInTheDocument();
+  });
+
+  it('keeps a benefit the user chose, clamped to the new year’s maximum', () => {
+    render(<App />);
+    const slider = screen.getByRole('slider', { name: /social security benefit/i });
+
+    fireEvent.change(slider, { target: { value: '40000' } });
+    fireEvent.click(yearRadio(2026));
+    expect(slider).toHaveValue('40000');
+
+    // The 2026 maximum is past the 2025 one, so going back has to clamp or the
+    // slider would sit beyond its own right edge.
+    fireEvent.change(slider, { target: { value: '62172' } });
+    fireEvent.click(yearRadio(2025));
+    expect(slider).toHaveValue('61296');
+  });
+
+  it('shows the frozen thresholds eating into the benefit year by year', () => {
+    render(<App />);
+    expect(
+      screen.getByText(/The Social Security thresholds are not on that list\./),
+    ).toBeInTheDocument();
+    // $25,000 base less half of each year's average benefit.
+    expect(screen.getByText('$13,144 in 2025, $12,574 in 2026')).toBeInTheDocument();
+    expect(screen.getByText(/set \$25,000 in 1983 and \$34,000 in 1993/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Jointly' }));
+    expect(screen.getByText('$20,144 in 2025, $19,574 in 2026')).toBeInTheDocument();
+    expect(screen.getByText(/set \$32,000 in 1983 and \$44,000 in 1993/)).toBeInTheDocument();
+  });
+
+  it('says a separate return has no headroom to erode rather than showing one', () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Separately' }));
+    expect(screen.queryByText(/in 2025, .* in 2026/)).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/sets both thresholds to \$0 outright/),
+    ).toBeInTheDocument();
+  });
+
+  it('opens on a year it actually has figures for, under the real clock', () => {
+    // Every other test here pins the clock to 2025. This one does not: it is
+    // the check that whatever `defaultTaxYear()` returns today is a year the
+    // selector can render, so shipping past the last year on file cannot leave
+    // the app opening on a blank schedule.
+    vi.useRealTimers();
+    render(<App />);
+    const opening = defaultTaxYear();
+    expect(TAX_YEARS).toContain(opening);
+    expect(yearRadio(opening)).toBeChecked();
+    expect(
+      screen.getByText(new RegExp(`${opening} brackets, standard deduction`)),
+    ).toBeInTheDocument();
+  });
+
+  it('keeps the IRMAA lag pointed two years past the selected year', () => {
+    render(<App />);
+    expect(
+      screen.getByText(/the 2025 income on this chart is really setting the premium for 2027/),
+    ).toBeInTheDocument();
+
+    fireEvent.click(yearRadio(2026));
+    expect(
+      screen.getByText(/the 2026 income on this chart is really setting the premium for 2028/),
+    ).toBeInTheDocument();
+  });
+});

@@ -15,6 +15,9 @@ import {
   FILING_PARAMS,
   LTCG_BRACKETS,
   AVG_ANNUAL_SS_BENEFIT,
+  standardDeductionFor,
+  maxSeniors,
+  ADDITIONAL_STD_DEDUCTION_65,
 } from './tax';
 import type { ConversionCeiling, ConversionCeilingId } from './tax';
 
@@ -568,7 +571,7 @@ describe('Roth conversion sizing', () => {
   });
 
   it('flags a ceiling the search bound never reaches', () => {
-    const sizing = sizeConversion(ceiling('bracket22'), 0, 0, 0, 'single', 1_000);
+    const sizing = sizeConversion(ceiling('bracket22'), 0, 0, 0, 'single', 0, 1_000);
     expect(sizing.conversion).toBe(1_000);
     expect(sizing.unbounded).toBe(true);
     expect(sizeConversion(ceiling('bracket22'), 0, 0).unbounded).toBe(false);
@@ -630,5 +633,111 @@ describe('Roth conversion sizing', () => {
       }
     }
     expect(failures).toEqual([]);
+  });
+});
+
+describe('age 65+ additional standard deduction (2025)', () => {
+  const SS = AVG_ANNUAL_SS_BENEFIT;
+
+  it('adds $2,000 for a single filer and $1,600 per qualifying spouse for MFJ', () => {
+    expect(ADDITIONAL_STD_DEDUCTION_65).toEqual({ single: 2_000, mfj: 1_600 });
+    expect(standardDeductionFor('single', 0)).toBe(15_750);
+    expect(standardDeductionFor('single', 1)).toBe(17_750);
+    expect(standardDeductionFor('mfj', 0)).toBe(31_500);
+    expect(standardDeductionFor('mfj', 1)).toBe(33_100);
+    expect(standardDeductionFor('mfj', 2)).toBe(34_700);
+  });
+
+  it('clamps the count to what the filing status allows', () => {
+    expect(maxSeniors('single')).toBe(1);
+    expect(maxSeniors('mfj')).toBe(2);
+    // A single filer cannot claim it twice, and neither can a couple claim it
+    // three times.
+    expect(standardDeductionFor('single', 2)).toBe(standardDeductionFor('single', 1));
+    expect(standardDeductionFor('mfj', 3)).toBe(standardDeductionFor('mfj', 2));
+    expect(standardDeductionFor('single', -1)).toBe(15_750);
+  });
+
+  it('defaults to the base deduction everywhere, so nothing moves unless asked', () => {
+    expect(standardDeductionFor('single')).toBe(FILING_PARAMS.single.standardDeduction);
+    expect(totalTax(40_000, SS, 'single', 0)).toBe(totalTax(40_000, SS, 'single'));
+    expect(totalTaxWithLTCG(20_000, SS, 10_000, 'mfj', 0)).toBe(
+      totalTaxWithLTCG(20_000, SS, 10_000, 'mfj'),
+    );
+  });
+
+  it('pushes the first taxed dollar out by the full addition when there are no benefits', () => {
+    expect(totalTax(15_750, 0, 'single', 0)).toBe(0);
+    expect(totalTax(15_751, 0, 'single', 0)).toBeGreaterThan(0);
+    expect(totalTax(17_750, 0, 'single', 1)).toBe(0);
+    expect(totalTax(17_751, 0, 'single', 1)).toBeGreaterThan(0);
+  });
+
+  it('saves the addition times the marginal bracket rate', () => {
+    // Single, $30,000 of other income and the average benefit: the extra
+    // $2,000 of deduction comes off the top of the 12% bracket.
+    expect(totalTax(30_000, SS, 'single', 0) - totalTax(30_000, SS, 'single', 1))
+      .toBeCloseTo(2_000 * 0.12, 6);
+    // MFJ at the same income is still in the 10% bracket, and each spouse's
+    // $1,600 saves $160.
+    expect(totalTax(30_000, SS, 'mfj', 0) - totalTax(30_000, SS, 'mfj', 1))
+      .toBeCloseTo(1_600 * 0.1, 6);
+    expect(totalTax(30_000, SS, 'mfj', 1) - totalTax(30_000, SS, 'mfj', 2))
+      .toBeCloseTo(1_600 * 0.1, 6);
+  });
+
+  it('widens the 0%-rate valley, but by less than the addition once benefits are being dragged in', () => {
+    // Taxable income is 1.5x income once provisional income clears $25,000, so
+    // $2,000 of extra deduction only buys about $1,333 of extra income room.
+    const lastZeroRateIncome = (seniors: number): number => {
+      let last = 0;
+      for (const point of marginalRateCurve(SS, 60_000, 250, 'single', seniors)) {
+        if (point.marginalRate !== 0) break;
+        last = point.income;
+      }
+      return last;
+    };
+    expect(lastZeroRateIncome(0)).toBe(14_750);
+    expect(lastZeroRateIncome(1)).toBe(16_000);
+    // The exact crossings: 1.5 * income - 6,572 = deduction.
+    expect(totalTax(14_881, SS, 'single', 0)).toBe(0);
+    expect(totalTax(14_882, SS, 'single', 0)).toBeGreaterThan(0);
+    expect(totalTax(16_214, SS, 'single', 1)).toBe(0);
+    expect(totalTax(16_215, SS, 'single', 1)).toBeGreaterThan(0);
+  });
+
+  it('lets the addition offset capital gains when ordinary income underruns it', () => {
+    // Single, $100,000 of gains and nothing else: the whole deduction lands on
+    // the LTCG band, where the marginal rate is 15%.
+    expect(totalTaxWithLTCG(0, 0, 100_000, 'single', 0)).toBe(5_385);
+    expect(totalTaxWithLTCG(0, 0, 100_000, 'single', 1)).toBe(5_085);
+  });
+
+  it('leaves provisional-income ceilings alone but widens taxable-income ones', () => {
+    const ceilingFor = (id: ConversionCeilingId, fs: FilingStatus = 'single') =>
+      conversionCeilings(fs).find((c) => c.id === id) as ConversionCeiling;
+    // Provisional income is measured before any deduction, so the addition
+    // buys no extra room at all against the SS bases.
+    expect(maxConversionUnder(ceilingFor('ss50'), 0, SS, 0, 'single', 1)).toBe(
+      maxConversionUnder(ceilingFor('ss50'), 0, SS, 0, 'single', 0),
+    );
+    // The top of the 12% bracket is measured against taxable income, and the
+    // 85% cap already binds by then, so the room grows dollar for dollar.
+    expect(maxConversionUnder(ceilingFor('bracket12'), 30_000, SS, 0, 'single', 0)).toBe(14_069);
+    expect(maxConversionUnder(ceilingFor('bracket12'), 30_000, SS, 0, 'single', 1)).toBe(16_069);
+  });
+
+  it('prices a conversion more cheaply for a filer over 65', () => {
+    const ceilingFor = (id: ConversionCeilingId) =>
+      conversionCeilings('single').find((c) => c.id === id) as ConversionCeiling;
+    const sizing = sizeConversion(ceilingFor('bracket12'), 30_000, SS, 0, 'single', 1);
+    expect(sizing.conversion).toBe(16_069);
+    expect(sizing.taxBefore).toBe(2_573);
+    // Both scenarios end at the top of the 12% bracket, so the tax after is the
+    // same $5,578 — the over-65 filer simply gets $2,000 more converted for it.
+    expect(sizing.taxAfter).toBe(5_578);
+    expect(sizing.taxCost).toBe(3_005);
+    expect(sizing.costPerDollar).toBeCloseTo(18.7, 2);
+    expect(sizing.rateAboveCeiling).toBe(22);
   });
 });

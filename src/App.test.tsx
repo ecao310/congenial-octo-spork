@@ -180,6 +180,58 @@ describe('App', () => {
     expect(screen.getAllByText('$8,944').length).toBeGreaterThanOrEqual(1);
   });
 
+  it('offers an age 65 or older toggle, off by default, that widens the standard deduction', () => {
+    render(<App />);
+    const senior = screen.getByRole('checkbox', { name: 'Age 65 or older' });
+    expect(senior).not.toBeChecked();
+    expect(screen.getByText(/^Standard deduction/)).toHaveTextContent(
+      'Standard deduction $15,750. Turning 65 adds $2,000.',
+    );
+
+    fireEvent.click(senior);
+    expect(senior).toBeChecked();
+    expect(screen.getByText(/^Standard deduction/)).toHaveTextContent(
+      'Standard deduction $17,750 — $15,750 base plus $2,000 for age 65 or older.',
+    );
+  });
+
+  it('offers the second spouse toggle only for MFJ, and only once the first is on', () => {
+    render(<App />);
+    expect(
+      screen.queryByRole('checkbox', { name: 'Both spouses are 65 or older' }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Jointly' }));
+    const spouse = screen.getByRole('checkbox', { name: 'Both spouses are 65 or older' });
+    expect(spouse).toBeDisabled();
+    expect(screen.getByText(/^Standard deduction/)).toHaveTextContent(
+      'Standard deduction $31,500. Turning 65 adds $1,600 per qualifying spouse.',
+    );
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Age 65 or older' }));
+    expect(spouse).toBeEnabled();
+    expect(screen.getByText(/^Standard deduction/)).toHaveTextContent(
+      'Standard deduction $33,100 — $31,500 base plus $1,600 for age 65 or older.',
+    );
+
+    fireEvent.click(spouse);
+    expect(screen.getByText(/^Standard deduction/)).toHaveTextContent(
+      'Standard deduction $34,700 — $31,500 base plus $3,200 for age 65 or older.',
+    );
+  });
+
+  it('feeds the age 65 deduction into the conversion sizing', () => {
+    render(<App />);
+    expect(screen.getAllByText('$14,069').length).toBeGreaterThanOrEqual(1);
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Age 65 or older' }));
+    // $2,000 more deduction is $2,000 more room under the top of the 12%
+    // bracket, and the tax before the conversion drops by 12% of it.
+    expect(screen.queryByText('$14,069')).not.toBeInTheDocument();
+    expect(screen.getAllByText('$16,069').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText('was $2,573')).toBeInTheDocument();
+  });
+
   it('updates the ordinary income slider readout when moved', () => {
     render(<App />);
     const slider = screen.getByRole('slider', {

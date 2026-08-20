@@ -646,3 +646,126 @@ bullet. It widens the 0%-rate valley and feeds straight into the OBBBA senior
 deduction item after it. Both will change the numbers this iteration pinned
 ($14,069 etc.), so expect to update these tests when the deduction stops being
 a flat `standardDeduction` lookup.
+
+================================================================================
+Iteration: Age-65+ additional standard deduction
+================================================================================
+
+Task: add an "age 65 or older" toggle (plus a "both spouses 65+" toggle for
+MFJ) adding $2,000 (single/HOH) or $1,600 per qualifying spouse (MFJ) on top of
+the 2025 base standard deduction.
+
+### The figures
+
+Rev. Proc. 2024-40 section 2.15: the additional standard deduction for the aged
+or blind is $1,600 per qualifying person, raised to $2,000 for someone who is
+unmarried and not a surviving spouse. So single/HOH $2,000 (max one), MFJ
+$1,600 per spouse (max two). Blindness stacks the same amounts again; this app
+models age only and the code comment says so.
+
+New exports in tax.ts:
+- `ADDITIONAL_STD_DEDUCTION_65: Record<FilingStatus, number>` = {2000, 1600}
+- `maxSeniors(fs)` -> 1 for single, 2 for mfj
+- `standardDeductionFor(fs, seniors)` -> base + clamp(seniors) * addition
+
+`standardDeductionFor` is now the ONLY place the deduction is read for a
+computation. Three call sites moved off `FILING_PARAMS[fs].standardDeduction`:
+`totalTax`, `totalTaxWithLTCG`, `conversionMeasureValue`. FILING_PARAMS keeps
+the base figure (App.tsx still reads it directly, to show "base plus addition"
+in the UI note).
+
+### Plumbing: seniors is a new positional param
+
+Added `seniors = 0` after `filingStatus` on totalTax, marginalRateCurve,
+totalTaxWithLTCG, ltcgMarginalRateCurve, conversionMeasureValue,
+maxConversionUnder, sizeConversion. Default 0 = every existing caller is
+unchanged, which the "defaults to the base deduction everywhere" test pins.
+
+BUG I CAUSED AND CAUGHT MID-ITERATION, worth remembering: maxConversionUnder
+and sizeConversion end in `maxConversion = 1_000_000`, so inserting `seniors`
+before it silently rebound App.tsx's positional `MAX_CONVERSION` argument to
+`seniors` (1,000,000 seniors, clamped to 1 -> wrong deduction). Two App tests
+went red and pointed straight at it. Also had to fix one tax.test.ts call site
+(`sizeConversion(..., 'single', 1_000)` -> `..., 'single', 0, 1_000`). This is
+why I added the backlog bullet about converting these to an options object:
+seven positional params is already past the point where insertion is safe, and
+the OBBBA/muni/QCD/tax-year items each want to add another.
+
+`conversionCeilings()` needed NO change — every ceiling is measured against a
+quantity that is either pre-deduction (provisional income, MAGI) or already
+net of it (taxable income), so the amounts do not move.
+
+### Numbers this pinned down
+
+sd single 0/1/2 -> 15,750 / 17,750 / 17,750 (clamped)
+sd mfj 0/1/2/3 -> 31,500 / 33,100 / 34,700 / 34,700 (clamped)
+
+- No benefits: the first taxed dollar moves 15,751 -> 17,751, exactly +$2,000.
+- Single, $30k other income, avg benefit: tax 2,812.81 -> 2,572.81, i.e.
+  2,000 x 12%. MFJ at the same income is still in the 10% bracket, so each
+  spouse's 1,600 saves exactly 160.
+- THE INTERESTING ONE: the 0%-rate valley widens by LESS than the addition.
+  Last 0%-rate sample moves 14,750 -> 16,000, and the exact crossing moves
+  14,881 -> 16,214 — about +$1,333, not +$2,000. Once provisional income clears
+  $25,000 each dollar of income adds $1.50 of taxable income, so the extra
+  deduction is consumed at 1.5x. 2,000/1.5 = 1,333. That is the torpedo eating
+  a third of the tax break, and it is now a test.
+- Single, $100k of gains and nothing else: 5,385 -> 5,085 (2,000 x 15%). This
+  only works because of last iteration's fix letting the unused deduction
+  offset LTCG; it is a nice regression tie-in.
+- Conversion sizing, top of the 12% bracket, single/$30k/avg benefit:
+  14,069 -> 16,069 of conversion (exactly +2,000, because the 85% SS cap has
+  already bound by then so a converted dollar is a taxable dollar), taxBefore
+  2,813 -> 2,573, taxAfter identical at 5,578 (both land on the same ceiling),
+  cost per dollar 19.65c -> 18.70c.
+- ss50/ss85 conversions do not move at all: provisional income is measured
+  before any deduction.
+
+### UI
+
+New `<fieldset className="input-group filing-status"><legend>Age</legend>`
+immediately after Filing Status, before the benefit slider — it is a taxpayer
+attribute, so it belongs with filing status, and everything downstream depends
+on it. Checkbox "Age 65 or older"; a second "Both spouses are 65 or older"
+renders only for MFJ and is `disabled` until the first is checked.
+
+`spouseIsSenior` deliberately survives a switch to Single rather than being
+reset — the derived `seniors` guards on `filingStatus === 'mfj'`, so it cannot
+leak into a single-filer calculation, and toggling back restores what the user
+had.
+
+Below the checkboxes, a `.field-note` that reads either
+  "Standard deduction $15,750. Turning 65 adds $2,000."          (seniors = 0)
+  "Standard deduction $17,750 — $15,750 base plus $2,000 for age 65 or older."
+followed by the sentence about the valley widening. The two-branch phrasing is
+what the App tests assert with `toHaveTextContent`.
+
+New CSS: `.checkbox-group`, `.checkbox-option`, `.field-note`. The
+`.checkbox-option input[type='checkbox']` rule has to undo the global `input`
+rule (width 100%, padding, border, radius) or the checkbox renders as a giant
+rounded box — same trap the segmented radio control works around.
+
+### Tests
+
++12, 77 -> 89 passing. tax.test.ts +9 (amounts, clamping, the defaults-unchanged
+guard, first-taxed-dollar, bracket-rate savings for both filing statuses, the
+1.5x valley-widening result, LTCG offset, ceiling behaviour split by measure,
+priced sizing). App.test.tsx +3 (default off with the note, the MFJ-only second
+toggle and its disabled state, and the toggle flowing through to the conversion
+readout).
+
+Query note: `screen.getByText(/^Standard deduction/)` works because the
+subtitle's "standard deduction" is lowercase — a case-sensitive regex separates
+them. Use `toHaveTextContent` on that <p>, not `getByText` on the amount, since
+the amount is split between a <strong> and a sibling text node.
+
+Verified: `npx tsc -b`, `npm run lint`, `npx vitest run` (89 passed),
+`npm run build` all clean; only the pre-existing >500kB chunk warning.
+
+Next up: the OBBBA senior deduction ($6,000/$12,000 for 2025-2028, phasing out
+at 6% of MAGI over $75k/$150k). It gates behind the same age-65 toggle added
+here, so `seniors` is already threaded everywhere it needs to be — but it is
+MAGI-dependent, so it cannot live in `standardDeductionFor` as a constant. It
+wants a `deductionFor(fs, seniors, magi)` that wraps this one, and MAGI depends
+on taxable SS, so watch for a circular definition (AGI does NOT include the
+deduction, so there is no actual cycle — just be explicit about it).

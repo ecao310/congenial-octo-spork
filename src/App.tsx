@@ -19,6 +19,8 @@ import {
   conversionCeilings,
   sizeConversion,
   CONVERSION_MEASURE_LABELS,
+  ADDITIONAL_STD_DEDUCTION_65,
+  standardDeductionFor,
 } from './utils/tax';
 import type {
   LTCGMarginalRatePoint,
@@ -158,10 +160,19 @@ const App: React.FC = () => {
   const [ordinaryIncome, setOrdinaryIncome] = useState<number>(DEFAULT_ORDINARY_INCOME);
   const [plannedLtcg, setPlannedLtcg] = useState<number>(0);
   const [ceilingId, setCeilingId] = useState<ConversionCeilingId>('bracket12');
+  const [isSenior, setIsSenior] = useState<boolean>(false);
+  const [spouseIsSenior, setSpouseIsSenior] = useState<boolean>(false);
+
+  // Only a joint return can claim the addition twice, and the spouse's
+  // checkbox is meaningless until the filer's is on.
+  const seniors = isSenior ? (filingStatus === 'mfj' && spouseIsSenior ? 2 : 1) : 0;
+  const baseDeduction = FILING_PARAMS[filingStatus].standardDeduction;
+  const standardDeduction = standardDeductionFor(filingStatus, seniors);
+  const seniorAddition = standardDeduction - baseDeduction;
 
   const curve = useMemo(
-    () => marginalRateCurve(ssBenefit, MAX_INCOME, 250, filingStatus),
-    [ssBenefit, filingStatus],
+    () => marginalRateCurve(ssBenefit, MAX_INCOME, 250, filingStatus, seniors),
+    [ssBenefit, filingStatus, seniors],
   );
 
   const segments = useMemo(
@@ -172,8 +183,9 @@ const App: React.FC = () => {
   const { ssBase50, ssBase85 } = FILING_PARAMS[filingStatus];
 
   const ltcgCurve = useMemo(
-    () => ltcgMarginalRateCurve(ssBenefit, ordinaryIncome, MAX_LTCG, 250, filingStatus),
-    [ssBenefit, ordinaryIncome, filingStatus],
+    () =>
+      ltcgMarginalRateCurve(ssBenefit, ordinaryIncome, MAX_LTCG, 250, filingStatus, seniors),
+    [ssBenefit, ordinaryIncome, filingStatus, seniors],
   );
 
   const ltcgSegments = useMemo(
@@ -191,9 +203,10 @@ const App: React.FC = () => {
       ssBenefit,
       plannedLtcg,
       filingStatus,
+      seniors,
       MAX_CONVERSION,
     );
-  }, [ceilings, ceilingId, ordinaryIncome, ssBenefit, plannedLtcg, filingStatus]);
+  }, [ceilings, ceilingId, ordinaryIncome, ssBenefit, plannedLtcg, filingStatus, seniors]);
 
   const measureLabel = CONVERSION_MEASURE_LABELS[sizing.ceiling.measure];
 
@@ -225,6 +238,42 @@ const App: React.FC = () => {
             </label>
           ))}
         </div>
+      </fieldset>
+
+      <fieldset className="input-group filing-status">
+        <legend>Age</legend>
+        <div className="checkbox-group">
+          <label className="checkbox-option">
+            <input
+              type="checkbox"
+              checked={isSenior}
+              onChange={(e) => setIsSenior(e.target.checked)}
+            />
+            <span>Age 65 or older</span>
+          </label>
+          {filingStatus === 'mfj' && (
+            <label className="checkbox-option">
+              <input
+                type="checkbox"
+                checked={spouseIsSenior}
+                disabled={!isSenior}
+                onChange={(e) => setSpouseIsSenior(e.target.checked)}
+              />
+              <span>Both spouses are 65 or older</span>
+            </label>
+          )}
+        </div>
+        <p className="field-note">
+          Standard deduction <strong>{formatCurrency(standardDeduction)}</strong>
+          {seniorAddition > 0
+            ? ` — ${formatCurrency(baseDeduction)} base plus ${formatCurrency(seniorAddition)} for age 65 or older.`
+            : `. Turning 65 adds ${formatCurrency(ADDITIONAL_STD_DEDUCTION_65[filingStatus])}${
+                filingStatus === 'mfj' ? ' per qualifying spouse' : ''
+              }.`}{' '}
+          The addition widens the 0%-rate valley to the left of the torpedo:
+          taxable income stays at zero for that much longer, so the whole curve
+          shifts right.
+        </p>
       </fieldset>
 
       <div className="input-group">

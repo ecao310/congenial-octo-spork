@@ -48,6 +48,43 @@ export const FILING_PARAMS: Record<FilingStatus, FilingParams> = {
 };
 
 /**
+ * 2025 additional standard deduction for a taxpayer age 65 or older
+ * (Rev. Proc. 2024-40 section 2.15). The base amount is $1,600 per qualifying
+ * person, raised to $2,000 for someone who is unmarried and not a surviving
+ * spouse. The same amounts apply again for blindness, which this app does not
+ * model.
+ */
+export const ADDITIONAL_STD_DEDUCTION_65: Record<FilingStatus, number> = {
+  single: 2_000,
+  mfj: 1_600,
+};
+
+/** How many people on the return can claim the age-65 addition. */
+export function maxSeniors(filingStatus: FilingStatus): number {
+  return filingStatus === 'mfj' ? 2 : 1;
+}
+
+/**
+ * The standard deduction, including the age-65-or-older addition for
+ * `seniors` qualifying people on the return. The count is clamped to what the
+ * filing status allows (one person, or two spouses filing jointly).
+ *
+ * Every extra dollar of deduction widens the 0%-rate valley to the left of the
+ * torpedo: taxable income stays at zero for that much longer, so the first
+ * bracket starts biting later.
+ */
+export function standardDeductionFor(
+  filingStatus: FilingStatus = 'single',
+  seniors = 0,
+): number {
+  const count = Math.min(Math.max(0, Math.floor(seniors)), maxSeniors(filingStatus));
+  return (
+    FILING_PARAMS[filingStatus].standardDeduction +
+    count * ADDITIONAL_STD_DEDUCTION_65[filingStatus]
+  );
+}
+
+/**
  * SSA 2025 benefit figures (monthly x 12). Max is for a worker claiming at
  * age 70 ($5,108/mo); average retired-worker benefit is $1,976/mo after the
  * 2.5% COLA (January 2025).
@@ -98,12 +135,13 @@ export function totalTax(
   otherIncome: number,
   ssBenefit: number,
   filingStatus: FilingStatus = 'single',
+  seniors = 0,
 ): number {
   const taxable = Math.max(
     0,
     otherIncome +
       taxableSocialSecurity(ssBenefit, otherIncome, filingStatus) -
-      FILING_PARAMS[filingStatus].standardDeduction,
+      standardDeductionFor(filingStatus, seniors),
   );
   return federalIncomeTax(taxable, filingStatus);
 }
@@ -118,11 +156,12 @@ export function marginalRateCurve(
   maxIncome = 150_000,
   step = 250,
   filingStatus: FilingStatus = 'single',
+  seniors = 0,
 ): MarginalRatePoint[] {
   const data: MarginalRatePoint[] = [];
   for (let income = 0; income <= maxIncome; income += step) {
-    const taxHere = totalTax(income, ssBenefit, filingStatus);
-    const rate = totalTax(income + 1, ssBenefit, filingStatus) - taxHere;
+    const taxHere = totalTax(income, ssBenefit, filingStatus, seniors);
+    const rate = totalTax(income + 1, ssBenefit, filingStatus, seniors) - taxHere;
     data.push({
       income,
       marginalRate: Math.round(rate * 10_000) / 100,
@@ -167,8 +206,10 @@ export function totalTaxWithLTCG(
   ssBenefit: number,
   ltcg: number,
   filingStatus: FilingStatus = 'single',
+  seniors = 0,
 ): number {
-  const { standardDeduction, brackets } = FILING_PARAMS[filingStatus];
+  const { brackets } = FILING_PARAMS[filingStatus];
+  const standardDeduction = standardDeductionFor(filingStatus, seniors);
   const ltcgBrackets = LTCG_BRACKETS[filingStatus];
 
   // LTCG counts toward provisional income (IRS uses full AGI + half SS).
@@ -233,11 +274,13 @@ export function ltcgMarginalRateCurve(
   maxLTCG = 200_000,
   step = 250,
   filingStatus: FilingStatus = 'single',
+  seniors = 0,
 ): LTCGMarginalRatePoint[] {
   const data: LTCGMarginalRatePoint[] = [];
   for (let ltcg = 0; ltcg <= maxLTCG; ltcg += step) {
-    const taxHere = totalTaxWithLTCG(ordinaryIncome, ssBenefit, ltcg, filingStatus);
-    const rate = totalTaxWithLTCG(ordinaryIncome, ssBenefit, ltcg + 1, filingStatus) - taxHere;
+    const taxHere = totalTaxWithLTCG(ordinaryIncome, ssBenefit, ltcg, filingStatus, seniors);
+    const rate =
+      totalTaxWithLTCG(ordinaryIncome, ssBenefit, ltcg + 1, filingStatus, seniors) - taxHere;
     data.push({
       ltcg,
       marginalRate: Math.round(rate * 10_000) / 100,
@@ -427,8 +470,9 @@ export function conversionMeasureValue(
   ltcg: number,
   conversion: number,
   filingStatus: FilingStatus = 'single',
+  seniors = 0,
 ): number {
-  const { standardDeduction } = FILING_PARAMS[filingStatus];
+  const standardDeduction = standardDeductionFor(filingStatus, seniors);
   const otherIncome = ordinaryIncome + conversion + ltcg;
   const taxableSS = taxableSocialSecurity(ssBenefit, otherIncome, filingStatus);
   switch (measure) {
@@ -463,6 +507,7 @@ export function maxConversionUnder(
   ssBenefit: number,
   ltcg = 0,
   filingStatus: FilingStatus = 'single',
+  seniors = 0,
   maxConversion = 1_000_000,
 ): number {
   const measureAt = (conversion: number): number =>
@@ -473,6 +518,7 @@ export function maxConversionUnder(
       ltcg,
       conversion,
       filingStatus,
+      seniors,
     );
   const fits = (conversion: number): boolean =>
     measureAt(conversion) <= ceiling.amount + CEILING_EPSILON;
@@ -528,6 +574,7 @@ export function sizeConversion(
   ssBenefit: number,
   ltcg = 0,
   filingStatus: FilingStatus = 'single',
+  seniors = 0,
   maxConversion = 1_000_000,
 ): ConversionSizing {
   const conversion = maxConversionUnder(
@@ -536,6 +583,7 @@ export function sizeConversion(
     ssBenefit,
     ltcg,
     filingStatus,
+    seniors,
     maxConversion,
   );
   const headroom =
@@ -547,22 +595,36 @@ export function sizeConversion(
       ltcg,
       0,
       filingStatus,
+      seniors,
     );
 
   const taxBefore = Math.round(
-    totalTaxWithLTCG(ordinaryIncome, ssBenefit, ltcg, filingStatus),
+    totalTaxWithLTCG(ordinaryIncome, ssBenefit, ltcg, filingStatus, seniors),
   );
   const taxAfterRaw = totalTaxWithLTCG(
     ordinaryIncome + conversion,
     ssBenefit,
     ltcg,
     filingStatus,
+    seniors,
   );
   const taxAfter = Math.round(taxAfterRaw);
   const taxCost = taxAfter - taxBefore;
   const rateAboveCeiling =
-    totalTaxWithLTCG(ordinaryIncome + conversion + 2, ssBenefit, ltcg, filingStatus) -
-    totalTaxWithLTCG(ordinaryIncome + conversion + 1, ssBenefit, ltcg, filingStatus);
+    totalTaxWithLTCG(
+      ordinaryIncome + conversion + 2,
+      ssBenefit,
+      ltcg,
+      filingStatus,
+      seniors,
+    ) -
+    totalTaxWithLTCG(
+      ordinaryIncome + conversion + 1,
+      ssBenefit,
+      ltcg,
+      filingStatus,
+      seniors,
+    );
 
   return {
     ceiling,

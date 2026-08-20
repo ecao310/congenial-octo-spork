@@ -45,6 +45,7 @@ import {
   IRMAA_LOOKBACK_YEARS,
   partBStandardPremium,
 } from './utils/tax';
+import { statesTaxingSocialSecurity } from './utils/stateTax';
 import type {
   TaxYear,
   LTCGMarginalRatePoint,
@@ -248,6 +249,7 @@ const App: React.FC = () => {
   const [spouseIsSenior, setSpouseIsSenior] = useState<boolean>(false);
   const [muniInterest, setMuniInterest] = useState<number>(0);
 
+  const statesTaxing = statesTaxingSocialSecurity(year);
   const yearParams = taxYearParams(year);
   const yearFiling = filingParams(year, filingStatus);
 
@@ -988,6 +990,86 @@ const App: React.FC = () => {
           cliffs are worth planning around at all — the surcharge never appears
           on a tax return, so nothing about filing reveals that a dollar of
           income cost {formatCurrency(cliffs[0].step)}.
+        </p>
+      </section>
+
+      {/* ───── State treatment ───── */}
+      <section className="explainer" aria-labelledby="state-treatment-heading">
+        <h2 id="state-treatment-heading" className="section-heading-sky">
+          Does your state tax it too?
+        </h2>
+        <p>
+          Everything above this line is federal. Most states leave benefits
+          alone: {50 - statesTaxing.length} of them, plus the
+          District of Columbia, exempt Social Security outright, either because
+          they have no income tax at all or because they subtract the benefit
+          before they start.{' '}
+          <strong>{statesTaxing.length}</strong> still reach
+          some part of it in {year}
+          {year >= 2026
+            ? ' — West Virginia finished phasing its tax out this year, so the list is one shorter than it was a year ago'
+            : '; West Virginia is the next to go, from 2026 on'}
+          .
+        </p>
+        <p>
+          Nearly all of them start from the same number the chart above produces
+          — the federally taxable share of the benefit — and then subtract,
+          exempt or credit it back under an income test of their own. Montana
+          does not even do that: it takes the federal figure and stops, so the
+          torpedo arrives at full size. That makes the table below a lookup, not
+          a calculation — no two of these rules have the same shape, and a wrong
+          computation would be worse than an accurate pointer.
+        </p>
+
+        <table className="state-table">
+          <caption>
+            Rules and figures for tax year {year}, from each state&apos;s own
+            statute or revenue department. AGI means federal adjusted gross
+            income unless the rule says otherwise.
+          </caption>
+          <thead>
+            <tr>
+              <th scope="col">State</th>
+              <th scope="col">Mechanism</th>
+              <th scope="col">Income test ({year})</th>
+            </tr>
+          </thead>
+          <tbody>
+            {statesTaxing.map((rule) => (
+              <tr key={rule.abbr}>
+                <th scope="row">{rule.state}</th>
+                <td>{rule.mechanism}</td>
+                <td>{rule.test[year]}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+
+        <details className="state-details">
+          <summary>Each rule in full, and where it comes from</summary>
+          <dl className="state-rules">
+            {statesTaxing.map((rule) => (
+              <div key={rule.abbr}>
+                <dt>
+                  {rule.state}
+                  {rule.indexed ? (
+                    <span className="state-tag">indexed yearly</span>
+                  ) : null}
+                </dt>
+                <dd>{rule.rule}</dd>
+                <dd className="state-source">{rule.source}</dd>
+              </div>
+            ))}
+          </dl>
+        </details>
+
+        <p className="warning-note">
+          <strong>Check before you rely on this.</strong> State legislatures
+          rewrite these every session — three states dropped off the list for
+          2024 and a fourth for 2026 — and two of the ones left re-index their
+          thresholds annually. The figures here were read off each state&apos;s
+          own publications for tax year 2025, and 2026 where a state has
+          published it. <em>Nothing on this page computes a state tax.</em>
         </p>
       </section>
 

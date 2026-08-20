@@ -850,7 +850,9 @@ describe('tax year selector', () => {
   it('says a separate return has no headroom to erode rather than showing one', () => {
     render(<App />);
     fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Separately' }));
-    expect(screen.queryByText(/in 2025, .* in 2026/)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/\$[\d,]+ in 2025, \$[\d,]+ in 2026/),
+    ).not.toBeInTheDocument();
     expect(
       screen.getByText(/sets both thresholds to \$0 outright/),
     ).toBeInTheDocument();
@@ -903,5 +905,98 @@ describe('tax year selector', () => {
     expect(section).toHaveTextContent('From $500,000');
     expect(section).not.toHaveTextContent('$106,000');
     expect(section).not.toHaveTextContent('$185.00');
+  });
+});
+
+describe('state treatment', () => {
+  const stateSection = (): HTMLElement | null =>
+    screen
+      .getByRole('heading', { name: /does your state tax it too\?/i })
+      .closest('section');
+
+  const stateRows = (): string[] =>
+    Array.from(stateSection()!.querySelectorAll('tbody tr th')).map(
+      (cell) => cell.textContent ?? '',
+    );
+
+  it('names the nine states that taxed benefits in 2025, and no others', () => {
+    render(<App />);
+    expect(stateRows()).toEqual([
+      'Colorado',
+      'Connecticut',
+      'Minnesota',
+      'Montana',
+      'New Mexico',
+      'Rhode Island',
+      'Utah',
+      'Vermont',
+      'West Virginia',
+    ]);
+    // The other 41 plus DC are accounted for in prose, so the arithmetic is
+    // visible rather than left to the reader.
+    expect(stateSection()).toHaveTextContent(
+      '41 of them, plus the District of Columbia',
+    );
+    expect(stateSection()).toHaveTextContent(
+      'West Virginia is the next to go, from 2026 on',
+    );
+  });
+
+  it('gives every listed state a mechanism and that year’s income test', () => {
+    render(<App />);
+    const section = stateSection();
+    expect(section).toHaveTextContent('Income test (2025)');
+    expect(section).toHaveTextContent('None — the federal amount flows straight through');
+    expect(section).toHaveTextContent(
+      'AGI < $107,000 single/HOH/separate, < $133,750 joint',
+    );
+    expect(section).toHaveTextContent(
+      'AGI ≤ $50,000 single / $100,000 joint: exempt',
+    );
+    // Nine states, three columns of prose, no empty cells.
+    const cells = Array.from(section!.querySelectorAll('tbody td'));
+    expect(cells).toHaveLength(18);
+    for (const cell of cells) expect(cell.textContent).not.toBe('');
+  });
+
+  it('drops West Virginia and re-prices the indexed states for 2026', () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole('radio', { name: '2026' }));
+    const section = stateSection();
+
+    expect(stateRows()).not.toContain('West Virginia');
+    expect(stateRows()).toHaveLength(8);
+    expect(section).toHaveTextContent('42 of them, plus the District of Columbia');
+    expect(section).toHaveTextContent('West Virginia finished phasing its tax out');
+    expect(section).toHaveTextContent('Income test (2026)');
+
+    // Minnesota indexes annually, so its figures move with the year; Vermont
+    // does not, so its must not.
+    expect(section).toHaveTextContent('< $110,780 joint');
+    expect(section).not.toHaveTextContent('$108,320');
+    expect(section).toHaveTextContent('≤ $55,000 single/HOH, ≤ $70,000 joint');
+    // Rhode Island has not published 2026 figures, and says so rather than
+    // reprinting 2025's under a 2026 heading.
+    expect(section).toHaveTextContent('Not published yet');
+    expect(section).not.toHaveTextContent('$133,750');
+  });
+
+  it('keeps the full rules collapsed but cites a source for each', () => {
+    render(<App />);
+    const details = stateSection()!.querySelector('details');
+    expect(details).not.toBeNull();
+    expect((details as HTMLDetailsElement).open).toBe(false);
+    expect(details).toHaveTextContent('Each rule in full, and where it comes from');
+    expect(details).toHaveTextContent('Mont. Code Ann. § 15-30-2120');
+    expect(details).toHaveTextContent('N.M. Stat. § 7-2-5.14');
+    // Only the two states that re-index yearly carry the tag.
+    expect(details!.querySelectorAll('.state-tag')).toHaveLength(2);
+  });
+
+  it('says outright that it computes nothing', () => {
+    render(<App />);
+    expect(stateSection()).toHaveTextContent(
+      'Nothing on this page computes a state tax.',
+    );
   });
 });

@@ -1476,3 +1476,111 @@ would have looked like.
 
 npx tsc -b, npm run lint, npx vitest run (188 passed), npm run build — all
 clean; only the pre-existing >500kB chunk warning.
+
+────────────────────────────────────────────────────────────────────────
+## State treatment of Social Security benefits (`src/utils/stateTax.ts`)
+
+### What it does
+
+A new `STATE_SS_RULES` table plus a "Does your state tax it too?" section
+below the IRMAA one. Nine states for 2025, eight for 2026. Each row carries a
+mechanism, a per-year income test, the rule in prose, and a citation;
+`statesTaxingSocialSecurity(year)` filters on `exemptFrom`, which only West
+Virginia has.
+
+Deliberately not computed, and the section says so twice. No two of these
+rules share a shape — Colorado runs off age bands, Connecticut caps the taxed
+share at 25% of benefits *received*, Minnesota has two competing methods,
+Montana has no rule at all, New Mexico and Rhode Island are cliffs, Utah works
+through a credit against the flat rate, Vermont prorates over $10,000, West
+Virginia was mid-phase-out. Nine wrong models are worse than nine accurate
+pointers.
+
+### Every figure verified against a primary source
+
+- CO — HB24-1142, 55–64 band at $75k/$95k from tax year 2025; 65+ unlimited.
+- CT — $75k single/separate, $100k joint/HOH; 25% cap. OLR 2025-R-0152.
+- MN — 2025 $108,320/$84,490/$54,160; 2026 $110,780/$86,410/$55,390, off the
+  Department of Revenue's Tax Year 2026 Inflation-Adjusted Amounts.
+- MT — § 15-30-2120 confirmed as "Adjustments to federal taxable income", and
+  § 15-30-2110 confirmed repealed by Ch. 503, L. 2021 (SB 399), so the former
+  Montana-only benefit worksheet really is gone as of 2024.
+- NM — § 7-2-5.14 "Exemption — social security income…"; $100k/$150k/$75k;
+  2026 HB 92 (which would have phased in an exemption above the caps) was
+  postponed indefinitely on 22 Jan 2026, so the cliff stands.
+- RI — see below.
+- UT — SB 71 (2025) raised the credit thresholds from $45k/$75k/$37k to
+  $54k/$90k/$45k, retroactive to 2025; 2.5¢-per-dollar phase-out.
+- VT — S.51 / Act 71 (2025), retroactive to 1 Jan 2025: $55k/$70k full,
+  prorated to zero at $65k/$80k. Not indexed.
+- WV — 35% / 65% / 100% exempt for 2024 / 2025 / 2026, so the count of taxing
+  states drops nine → eight exactly when the year selector flips.
+
+The eight-state 2026 list was cross-checked independently and matches the
+table with WV removed — nothing was added for 2026 either.
+
+### Two things the sources disagreed about
+
+**Rhode Island's joint threshold.** The 2025 Taxable Social Security Income
+Worksheet says $133,750. PUB 2026-01 (the Retirement Income Tax Guide,
+published Feb 2026) says $133,500 — eight times, in the threshold list and in
+every worked example. Neither is a slip you can dismiss by repetition.
+
+Resolved by arithmetic, and it is worth remembering the trick: § 44-30-12(c)(8)
+indexes the two base amounts, $80,000 and $100,000, by one shared COLA factor.
+So the joint limit is always exactly 1.25× the single one. $107,000 × 1.25 =
+$133,750, and 2024's published pair ($104,200 / $130,250) holds to the same
+ratio. $133,500 would imply a single threshold of $106,800. The worksheet is
+right and the guide has a typo; a comment in `stateTax.ts` records why.
+
+**Whether Rhode Island has published 2026 figures.** It has not, and the
+reason is not the one I first wrote down. ADV 2025-22 (3 Nov 2025) is titled
+"Tax Year 2026 Tables", but its own contents page reads "The following items
+are for the 2025 Tax Year: Social Security and pension modification amounts…"
+— RI indexes this one modification a year behind the rest of its tables. The
+advisory list has no 2026 entry on inflation adjustments (the most recent is
+ADV 2026-17, 31 July 2026), so 2025's limits really are the latest on file and
+the row says so instead of reprinting them under a 2026 heading.
+
+### Fetch notes for the next iteration
+
+CMS was the blocked source last time; this time it was tax.ri.gov, law.justia
+and mca.legmt, all 403 to WebFetch. `curl -sL` gets the PDFs fine. There is no
+`pdftotext` on this machine and no `pypdf`/`pdfminer` in the system Python, so
+the extractor that worked was: pull every `stream…endstream`, zlib-inflate
+what inflates, then pull `(…)` literals out of the content stream. That reads
+Type1/TrueType PDFs (both RI worksheets, the retirement guide). It does *not*
+read CID/Type0 PDFs — ADV 2025-22 came back as bookmark text only, which was
+still enough to settle the question above. WebFetch refuses these PDFs
+outright.
+
+### Bugs found in the in-progress work
+
+The working tree already held an unfinished version of this task from a
+crashed iteration. Two defects in it, both fixed here:
+
+- `.state-rules dt:first-child { margin-top: 0 }` matched *every* `dt`, because
+  each one is the first child of its own wrapper `<div>`. The 0.875rem gap
+  between rules never rendered. Now `.state-rules > div:first-child dt`.
+- The Rhode Island 2026 cell explained the gap as "Rhode Island sets each
+  year's limits the autumn before", which is backwards — see above.
+
+Also worth knowing: `role="note"` is spoken for. Adding it to the new warning
+paragraph broke seven existing tests that use `getByRole('note')` to find the
+MFS warning specifically. Left as a bare `.warning-note`.
+
+### Tests
+
+205 pass, was 188. Twelve in `stateTax.test.ts` (the 2025 nine, the 2026
+eight, WV as the only row with an end date, a source and mechanism on every
+row, alphabetical order, and — the useful one — an invariant that a state's
+two year strings differ if and only if it indexes or expires, so a stale
+copy-paste in either direction fails). Five in `App.test.tsx` covering the
+rendered section: the nine rows by name, the 41-plus-DC arithmetic in prose,
+no empty cells, and the 2026 click dropping WV, re-pricing Minnesota, leaving
+Vermont alone and surfacing Rhode Island's gap.
+
+### Verification
+
+npx tsc -b, npm run lint, npx vitest run (205 passed), npm run build — all
+clean; only the pre-existing >500kB chunk warning.

@@ -1802,3 +1802,81 @@ five minutes. Do that before writing the assertions, not instead of them.
 
 npx tsc -b, npm run lint, npx vitest run (308 passed), npm run build — all
 clean; only the pre-existing >500kB chunk warning.
+
+## 2026-08-20 — Task: QCD modeling
+
+Inherited another near-complete working tree from a crashed iteration:
+`Scenario.qcd` threaded through tax.ts, the `qcdEffect` comparison, the slider,
+the section, the CSS accent, 15 engine tests and 13 App tests. It typechecked,
+linted, passed 336 tests and built. Verified the statutory figures against IRS
+Notice 2024-80 ($108,000 / $54,000 for 2025) and Notice 2025-67 ($111,000 /
+$55,000 for 2026) — both right, including the per-individual doubling on a
+joint return and the 70½ floor that neither SECURE act moved.
+
+So this iteration was the same job as the last two: probe the prose branches the
+tests never reached, and pin what survives.
+
+### What the model does (inherited, verified, unchanged)
+
+A QCD is taken *out of* `ordinaryIncome` rather than added on top of it — the
+gift is a distribution that would have been reported anyway — and capped twice:
+by the annual limit, then by the ordinary income there is to exclude it from,
+because 408(d)(8) excludes a distribution and there has to be a distribution.
+Everything downstream reads `ordinaryIncomeAfterQcd`, so the exclusion never
+reaches AGI, never reaches provisional income under 86(b)(2), and never reaches
+Medicare's MAGI two years later. The section prices it against the same gift
+taken as an ordinary distribution, which is the choice a donor actually faces —
+not against not giving.
+
+### Five prose defects, all found by rendering the section and reading it
+
+Same class as the last two iterations': sentences asserting a *cause* nobody
+checked.
+
+1. **"Provisional income stays under $25,000 either way" with $100,000 of
+   provisional income.** The no-benefits-move arm fell through to the
+   under-the-base explanation whenever `taxableSSWithout === 0`, which is also
+   true when the benefit itself is $0. Now branched on `ssBenefit === 0`.
+2. **Every flat taxable-SS line was blamed on "the 85% cap".** Section 86 has
+   two ceilings — half the benefit in the first tier, 85% in the second — and
+   flat is the only symptom either shows. With a $6,000 benefit and $30,000 of
+   income the gift moves provisional income $33,000 → $31,000 and $3,000 stays
+   taxable: that is the *50%* cap, and the 85% tier ($34,000) is never in play.
+   New `ssCapPercent` reads `taxableSSWith` against `0.85 * ssBenefit` to tell
+   them apart, and each arm now names what the cap actually is.
+3. **"The excluded dollars were not carrying any federal tax" when nothing was
+   excluded.** With $0 of ordinary income and $100,000 of gains the exclusion is
+   capped to zero, so the scenario is identical either way — and the section
+   explained a saving of $0 by describing dollars that did not exist. New
+   `excluded === 0` arm ahead of it, which names the real obstacle and, when
+   there is tax, says whose it is: $10,185 on the $125,500 of gains and taxable
+   benefit left in the base, none of it reachable by a QCD.
+4. **"The $15,750 of deductions already covered the whole return" against
+   $45,000 of AGI.** The zero-tax arm assumed the deduction was the reason.
+   With $5,000 of income and $40,000 of gains the deduction covers $15,750 of
+   it; what zeroes the bill is $29,250 of taxable income sitting under the
+   $48,350 top of the 0% gains bracket. Split on `agiWithout <= deductionTotal`.
+5. **"The next dollar is worth 0% in federal tax" as the opening pitch at $0 of
+   income.** Arithmetically right, and a reader takes it as a verdict on QCDs
+   rather than on the empty scenario. Now prompts for income instead.
+
+Also branched the "more gift than distribution" warning, which read "There is
+only $0 of ordinary income ... so that is all the chart can take out".
+
+### Tests
+
+9 new in `App.test.tsx` (both cap arms, the no-benefit arm, the under-the-base
+arm, both zero-tax arms, the nothing-excluded arm with and without tax, the
+empty-scenario prompt), 2 rewritten where the prose changed. 342 total, up from
+336. Every arm of the section is now pinned, including the negative assertions
+that keep the wrong cause from creeping back — `not.toHaveTextContent(/85%
+cap/)` is what would have caught defect 2 the first time.
+
+The probe-render-and-read-the-text loop found all five again, in about ten
+minutes. Third iteration running: the engine suite passing tells you nothing
+about whether the section on screen says true things.
+
+### Verification
+
+npx tsc -b, npm run lint, npx vitest run (342 passed), npm run build — all
+clean; only the pre-existing >500kB chunk warning.

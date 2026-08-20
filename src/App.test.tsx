@@ -1410,3 +1410,267 @@ describe('SequencingTooltip', () => {
     expect(screen.getByText(/2044 · age 89/)).toBeInTheDocument();
   });
 });
+
+/* ------------------------------------------------------------------ */
+/*  Qualified charitable distributions                                */
+/* ------------------------------------------------------------------ */
+
+describe('qualified charitable distribution', () => {
+  /** The section, so the same dollar figure elsewhere cannot satisfy a match. */
+  const qcdSection = (): HTMLElement =>
+    screen
+      .getByRole('heading', { name: /giving straight from the ira/i })
+      .closest('section')!;
+
+  const qcdSlider = (): HTMLElement =>
+    screen.getByRole('slider', { name: /qualified charitable distribution/i });
+
+  /** The note under the slider. "Capped at" appears in other sections too. */
+  const qcdNote = (): HTMLElement =>
+    qcdSlider().closest('.input-group')!.querySelector('.field-note')!;
+
+  const setSlider = (name: RegExp, value: string): void => {
+    fireEvent.change(screen.getByRole('slider', { name }), { target: { value } });
+  };
+
+  it('runs from $0 to the 2025 annual limit', () => {
+    render(<App />);
+    expect(qcdSlider()).toHaveValue('0');
+    expect(qcdSlider()).toHaveAttribute('min', '0');
+    expect(qcdSlider()).toHaveAttribute('max', '108000');
+    expect(qcdNote()).toHaveTextContent('Capped at $108,000 for 2025');
+  });
+
+  it('doubles the limit on a joint return but keeps the slider on the chart', () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole('radio', { name: /married filing jointly/i }));
+    // $216,000 is the statutory figure; the slider stops at the chart's axis.
+    expect(qcdSlider()).toHaveAttribute('max', '150000');
+    expect(qcdNote()).toHaveTextContent('Capped at $216,000 for 2025');
+    expect(qcdNote()).toHaveTextContent(/caps it per individual/);
+  });
+
+  it('re-prices both limits when the tax year changes', () => {
+    render(<App />);
+    expect(qcdSection()).toHaveTextContent('$54,000 to a split-interest entity');
+    fireEvent.click(screen.getByRole('radio', { name: '2026' }));
+    expect(qcdSlider()).toHaveAttribute('max', '111000');
+    expect(qcdNote()).toHaveTextContent('Capped at $111,000 for 2026');
+    expect(qcdSection()).toHaveTextContent('$55,000 to a split-interest entity');
+  });
+
+  it('clamps a gift parked past the limit when the year or status changes', () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole('radio', { name: '2026' }));
+    setSlider(/qualified charitable distribution/i, '111000');
+    expect(qcdSlider()).toHaveValue('111000');
+    // 2025's limit is $3,000 lower, and the slider must not sit past its edge.
+    fireEvent.click(screen.getByRole('radio', { name: '2025' }));
+    expect(qcdSlider()).toHaveValue('108000');
+
+    fireEvent.click(screen.getByRole('radio', { name: /married filing jointly/i }));
+    setSlider(/qualified charitable distribution/i, '150000');
+    // The limit is per individual, so it halves on the way back to one filer.
+    fireEvent.click(screen.getByRole('radio', { name: 'Single' }));
+    expect(qcdSlider()).toHaveValue('108000');
+  });
+
+  it('prices the benefits it takes back out of the tax base', () => {
+    render(<App />);
+    setSlider(/qualified charitable distribution/i, '10000');
+    const section = qcdSection();
+    // $30,000 of other income and the average benefit: provisional income
+    // starts at $41,856, so all $10,000 comes off inside the 85% tier.
+    expect(section).toHaveTextContent('$7,750');
+    expect(section).toHaveTextContent('$3,428 taxable, down from $11,178');
+    expect(section).toHaveTextContent('$2,045');
+    expect(section).toHaveTextContent('$768 total, down from $2,813');
+    expect(section).toHaveTextContent('20.45%');
+    expect(section).toHaveTextContent(
+      /keeps AGI at \$23,428 instead of \$41,178, which takes \$7,750 of Social Security back out/,
+    );
+  });
+
+  it('prompts with the next dollar rather than a row of zeros when unset', () => {
+    render(<App />);
+    expect(qcdSection()).toHaveTextContent(
+      /the next dollar given from the IRA rather than the checking account is worth 22\.2% in federal tax/,
+    );
+  });
+
+  it('says so when the 85% cap still binds and only the bracket rate is saved', () => {
+    render(<App />);
+    setSlider(/other ordinary income/i, '100000');
+    setSlider(/qualified charitable distribution/i, '8000');
+    expect(qcdSection()).toHaveTextContent(
+      /No benefits move: the 85% cap still binds after the gift, so the same \$20,155 — the most of a benefit that can ever be taxed — is taxable either way/,
+    );
+    expect(qcdSection()).toHaveTextContent('22.26%');
+  });
+
+  it('names the first tier\u2019s own cap rather than calling every flat line 85%', () => {
+    render(<App />);
+    // Half of a $6,000 benefit is $3,000, and $3,000 of inclusion is reached
+    // at $31,000 of provisional income — inside the 50% tier, which runs to
+    // $34,000. The gift moves provisional income from $33,000 to $31,000, so
+    // the taxable share is flat without the 85% tier ever being in play.
+    setSlider(/annual social security benefit/i, '6000');
+    setSlider(/other ordinary income/i, '30000');
+    setSlider(/qualified charitable distribution/i, '2000');
+    expect(qcdSection()).toHaveTextContent(
+      /No benefits move: the 50% cap still binds after the gift, so the same \$3,000 — half the benefit, which is everything the first tier can reach — is taxable either way/,
+    );
+    expect(qcdSection()).not.toHaveTextContent(/85% cap/);
+  });
+
+  it('blames the missing benefit, not the thresholds, when there is no benefit', () => {
+    render(<App />);
+    setSlider(/annual social security benefit/i, '0');
+    setSlider(/other ordinary income/i, '100000');
+    setSlider(/qualified charitable distribution/i, '10000');
+    expect(qcdSection()).toHaveTextContent(
+      /No benefits move, because there is no benefit on this scenario to move/,
+    );
+    // $100,000 of provisional income is not "under $25,000 either way".
+    expect(qcdSection()).not.toHaveTextContent(/stays under \$25,000/);
+  });
+
+  it('says the benefits were never taxable when provisional income is under the base', () => {
+    render(<App />);
+    setSlider(/annual social security benefit/i, '10000');
+    setSlider(/other ordinary income/i, '20000');
+    setSlider(/qualified charitable distribution/i, '5000');
+    expect(qcdSection()).toHaveTextContent(
+      /none of them were taxable to begin with — provisional income stays under \$25,000 either way/,
+    );
+  });
+
+  it('counts the Medicare surcharge the same dollars would have set', () => {
+    render(<App />);
+    setSlider(/annual social security benefit/i, '61296');
+    setSlider(/other ordinary income/i, '90000');
+    setSlider(/qualified charitable distribution/i, '10000');
+    const section = qcdSection();
+    // $142,102 of MAGI is in tier 2; taking $10,000 out drops it to tier 1.
+    expect(section).toHaveTextContent('tier 1, down from tier 2');
+    expect(section).toHaveTextContent('$1,591.20');
+    // The surcharge is two-thirds as large again as the $2,400 of tax, and it
+    // never appears on a return.
+    expect(section).toHaveTextContent(
+      /\$2,400 of federal tax, 24¢ per dollar given, plus \$1,591\.20 a year of Medicare surcharge/,
+    );
+    expect(section).toHaveTextContent(/sets the premium for 2027/);
+  });
+
+  it('warns when the gift is larger than the distribution it comes from', () => {
+    render(<App />);
+    setSlider(/other ordinary income/i, '5000');
+    setSlider(/qualified charitable distribution/i, '20000');
+    expect(qcdSection()).toHaveTextContent(/More gift than distribution/);
+    expect(qcdSection()).toHaveTextContent(
+      /only \$5,000 of ordinary income on this scenario to exclude/,
+    );
+  });
+
+  it('says the route made no difference rather than reporting a saving of $0', () => {
+    render(<App />);
+    setSlider(/other ordinary income/i, '10000');
+    setSlider(/qualified charitable distribution/i, '5000');
+    expect(qcdSection()).toHaveTextContent(/Here the route makes no difference/);
+    expect(qcdSection()).toHaveTextContent(
+      /the \$15,750 of deductions covered the whole \$10,000 of AGI/,
+    );
+    // Not a "more gift than distribution" case: $10,000 covers the $5,000.
+    expect(qcdSection()).not.toHaveTextContent(/More gift than distribution/);
+  });
+
+  it('credits the 0% gains bracket, not the deduction, when the deduction is smaller', () => {
+    render(<App />);
+    // $45,000 of AGI against $15,750 of deductions: the deductions plainly did
+    // not cover the return. What zeroes the bill is that everything left is
+    // long-term gain, and $29,250 of taxable income is under the $48,350 top
+    // of the 0% bracket.
+    setSlider(/annual social security benefit/i, '0');
+    setSlider(/other ordinary income/i, '5000');
+    setSlider(/long-term capital gains/i, '40000');
+    setSlider(/qualified charitable distribution/i, '3000');
+    expect(qcdSection()).toHaveTextContent(
+      /past the \$15,750 of deductions everything left in the base is long-term gain sitting in the 0% bracket/,
+    );
+    expect(qcdSection()).not.toHaveTextContent(/covered the whole/);
+  });
+
+  it('says nothing can be excluded when there is no distribution to exclude', () => {
+    render(<App />);
+    setSlider(/annual social security benefit/i, '30000');
+    setSlider(/other ordinary income/i, '0');
+    setSlider(/long-term capital gains/i, '100000');
+    setSlider(/qualified charitable distribution/i, '10000');
+    const section = qcdSection();
+    expect(section).toHaveTextContent(/None of this gift can be excluded/);
+    // $125,500 is the $100,000 of gains plus the $25,500 of benefit the gains
+    // dragged in — the whole of AGI, and none of it reachable by a QCD.
+    expect(section).toHaveTextContent(
+      /\$10,185 of federal tax here is on the \$125,500 of long-term gains and taxable benefit/,
+    );
+    // Not "the excluded dollars were not carrying any tax": none were excluded.
+    expect(section).not.toHaveTextContent(/excluded dollars/);
+    expect(section).toHaveTextContent(
+      /no ordinary income on this scenario to exclude the gift from/,
+    );
+  });
+
+  it('prompts for income rather than a rate when there is nothing to give from', () => {
+    render(<App />);
+    setSlider(/other ordinary income/i, '0');
+    expect(qcdSection()).toHaveTextContent(/There is nothing here to give/);
+    expect(qcdSection()).not.toHaveTextContent(/is worth 0% in federal tax/);
+  });
+
+  it('takes the gift back out of the axis label', () => {
+    render(<App />);
+    expect(
+      screen.getByText(/total income = other income \+ \$23,712 ss$/i),
+    ).toBeInTheDocument();
+    setSlider(/qualified charitable distribution/i, '10000');
+    expect(
+      screen.getByText(
+        /total income = other income \+ \$23,712 ss \u2212 \$10,000 given straight to charity/i,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('shows the exclusion on the chart tooltip', () => {
+    render(
+      <CustomTooltip
+        active
+        payload={[{ payload: { income: 30_000, marginalRate: 22.2, totalTax: 2_813 } }]}
+        ssBenefit={AVG_ANNUAL_SS_BENEFIT}
+        segments={[]}
+        qcd={10_000}
+        year={PINNED_YEAR}
+      />,
+    );
+    expect(
+      screen.getByText(/less \$10,000 given straight to charity/i),
+    ).toHaveTextContent('$20,000 of it reaches the return');
+  });
+
+  it('never quotes more given away than the income at that point on the axis', () => {
+    // The x-axis is income before the gift, so at $5,000 of income only
+    // $5,000 of a $10,000 gift can have come out of it.
+    render(
+      <CustomTooltip
+        active
+        payload={[{ payload: { income: 5_000, marginalRate: 0, totalTax: 0 } }]}
+        ssBenefit={AVG_ANNUAL_SS_BENEFIT}
+        segments={[]}
+        qcd={10_000}
+        year={PINNED_YEAR}
+      />,
+    );
+    expect(
+      screen.getByText(/less \$5,000 given straight to charity/i),
+    ).toHaveTextContent('$0 of it reaches the return');
+  });
+});

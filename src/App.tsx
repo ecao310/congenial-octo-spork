@@ -30,8 +30,13 @@ import {
   sizeConversion,
   CONVERSION_MEASURE_LABELS,
   standardDeductionFor,
+  deductionFor,
   taxableSocialSecurity,
   muniInterestEffect,
+  qcdEffect,
+  qcdLimitFor,
+  qcdSplitInterestLimit,
+  QCD_MIN_AGE,
   SENIOR_DEDUCTION,
   SENIOR_DEDUCTION_FIRST_YEAR,
   SENIOR_DEDUCTION_LAST_YEAR,
@@ -138,6 +143,14 @@ const formatCurrency = (value: number): string =>
 const formatPercent = (rate: number): string =>
   `${Math.round(rate * 10_000) / 100}%`;
 
+/**
+ * A half-year age, the way the statute writes it: 70.5 is "70½". The tax code
+ * measures the QCD age to the day, so the half is not a rounding artefact and
+ * dropping it would misstate the rule by six months.
+ */
+const formatHalfAge = (age: number): string =>
+  Number.isInteger(age) ? String(age) : `${Math.floor(age)}\u00BD`;
+
 /** A rate given as a fraction, rendered as cents lost per dollar earned. */
 const formatCents = (rate: number): string =>
   `${Math.round(rate * 10_000) / 100}\u00A2`;
@@ -177,6 +190,8 @@ interface CustomTooltipProps {
   segments: CurveSegment<MarginalRatePoint>[];
   filingStatus?: FilingStatus;
   muniInterest?: number;
+  /** Charitable distribution excluded from the x-axis income, if any. */
+  qcd?: number;
   /** How many people on the return are enrolled in Medicare. */
   beneficiaries?: number;
   /** Which year's premium schedule prices the IRMAA line. */
@@ -190,6 +205,7 @@ export const CustomTooltip: React.FC<CustomTooltipProps> = ({
   segments,
   filingStatus = 'single',
   muniInterest = 0,
+  qcd = 0,
   beneficiaries = 1,
   year = defaultTaxYear(),
 }) => {
@@ -202,14 +218,23 @@ export const CustomTooltip: React.FC<CustomTooltipProps> = ({
   // is added back — so it has to be recomputed here rather than read off the
   // curve, which only carries taxable figures.
   const irmaa = irmaaFor(
-    irmaaMagi({ ordinaryIncome: point.income, ssBenefit, ltcg: 0, filingStatus, muniInterest }),
+    irmaaMagi({ ordinaryIncome: point.income, ssBenefit, ltcg: 0, filingStatus, muniInterest, qcd }),
     { filingStatus, beneficiaries, year },
   );
+  // The x-axis is income before the gift, so the charitable exclusion has to
+  // come back out of the total the header quotes.
+  const given = Math.min(qcd, point.income);
   return (
     <div style={TOOLTIP_STYLE}>
       <div style={{ fontWeight: 600, marginBottom: '0.25rem' }}>
         Other income {formatCurrency(point.income)} · Total income {formatCurrency(point.income + ssBenefit)}
       </div>
+      {given > 0 && (
+        <div style={{ fontSize: '0.8125rem', color: '#a3e635' }}>
+          Less {formatCurrency(given)} given straight to charity —{' '}
+          {formatCurrency(point.income - given)} of it reaches the return
+        </div>
+      )}
       <div>
         Marginal Rate: <strong style={{ color: '#38bdf8' }}>{point.marginalRate}%</strong>
       </div>
@@ -405,6 +430,7 @@ const App: React.FC = () => {
   const [isSenior, setIsSenior] = useState<boolean>(false);
   const [spouseIsSenior, setSpouseIsSenior] = useState<boolean>(false);
   const [muniInterest, setMuniInterest] = useState<number>(0);
+  const [qcd, setQcd] = useState<number>(0);
   const [horizonYears, setHorizonYears] = useState<number>(20);
   const [colaAssumption, setColaAssumption] = useState<number>(2.5);
   const [birthYear, setBirthYear] = useState<number>(1955);
@@ -433,12 +459,35 @@ const App: React.FC = () => {
         ? avgAnnualSSBenefit(next)
         : Math.min(current, maxAnnualSSBenefit(next)),
     );
+    // The charitable limit is indexed too, and it can fall when the year does.
+    setQcd((current) =>
+      Math.min(current, qcdLimitFor({ filingStatus, year: next })),
+    );
     setYear(next);
+  };
+
+  /**
+   * The charitable limit is per individual, so it halves on the way from a
+   * joint return to any other one. Re-cap the gift rather than leaving the
+   * slider parked past its own right edge.
+   */
+  const changeFilingStatus = (next: FilingStatus): void => {
+    setQcd((current) => Math.min(current, qcdLimitFor({ filingStatus: next, year })));
+    setFilingStatus(next);
   };
 
   // Only a joint return can claim the addition twice, and the spouse's
   // checkbox is meaningless until the filer's is on.
   const seniors = isSenior ? (filingStatus === 'mfj' && spouseIsSenior ? 2 : 1) : 0;
+  /**
+   * The statutory annual QCD limit for this return, and the right edge of the
+   * slider. They differ only on a joint return, whose $216,000 limit is far
+   * past the chart's own axis — a slider that long would be unreadable, and the
+   * note under it states the statutory figure either way.
+   */
+  const qcdLimit = qcdLimitFor({ filingStatus, year });
+  const qcdSliderMax = Math.min(qcdLimit, MAX_INCOME);
+
   const baseDeduction = yearFiling.standardDeduction;
   const standardDeduction = standardDeductionFor({ filingStatus, seniors, year });
   const seniorAddition = standardDeduction - baseDeduction;
@@ -463,6 +512,7 @@ const App: React.FC = () => {
         ordinaryIncome: MAX_INCOME,
         filingStatus,
         muniInterest,
+        qcd,
         year,
       }) >
       phaseoutEnd;
@@ -470,10 +520,10 @@ const App: React.FC = () => {
   const curve = useMemo(
     () =>
       marginalRateCurve(
-        { ssBenefit, filingStatus, seniors, muniInterest, year },
+        { ssBenefit, filingStatus, seniors, muniInterest, qcd, year },
         { maxIncome: MAX_INCOME, step: 250 },
       ),
-    [ssBenefit, filingStatus, seniors, muniInterest, year],
+    [ssBenefit, filingStatus, seniors, muniInterest, qcd, year],
   );
 
   const segments = useMemo(
@@ -515,10 +565,10 @@ const App: React.FC = () => {
   const ltcgCurve = useMemo(
     () =>
       ltcgMarginalRateCurve(
-        { ssBenefit, ordinaryIncome, filingStatus, seniors, muniInterest, year },
+        { ssBenefit, ordinaryIncome, filingStatus, seniors, muniInterest, qcd, year },
         { maxLTCG: MAX_LTCG, step: 250 },
       ),
-    [ssBenefit, ordinaryIncome, filingStatus, seniors, muniInterest, year],
+    [ssBenefit, ordinaryIncome, filingStatus, seniors, muniInterest, qcd, year],
   );
 
   const ltcgSegments = useMemo(
@@ -544,6 +594,7 @@ const App: React.FC = () => {
         filingStatus,
         seniors,
         muniInterest,
+        qcd,
         year,
       },
       MAX_CONVERSION,
@@ -557,6 +608,7 @@ const App: React.FC = () => {
     filingStatus,
     seniors,
     muniInterest,
+    qcd,
     year,
   ]);
 
@@ -569,9 +621,10 @@ const App: React.FC = () => {
         ltcg: plannedLtcg,
         filingStatus,
         seniors,
+        qcd,
         year,
       }),
-    [muniInterest, ordinaryIncome, ssBenefit, plannedLtcg, filingStatus, seniors, year],
+    [muniInterest, ordinaryIncome, ssBenefit, plannedLtcg, filingStatus, seniors, qcd, year],
   );
 
   // Medicare is per enrollee, so a joint return with both spouses over 65 pays
@@ -581,8 +634,8 @@ const App: React.FC = () => {
   const beneficiaries = filingStatus === 'mfj' && seniors === 2 ? 2 : 1;
 
   const cliffs = useMemo(
-    () => irmaaCliffs({ ssBenefit, filingStatus, muniInterest, beneficiaries, year }),
-    [ssBenefit, filingStatus, muniInterest, beneficiaries, year],
+    () => irmaaCliffs({ ssBenefit, filingStatus, muniInterest, qcd, beneficiaries, year }),
+    [ssBenefit, filingStatus, muniInterest, qcd, beneficiaries, year],
   );
 
   /** The cliffs that actually land inside the chart's x-axis. */
@@ -596,8 +649,65 @@ const App: React.FC = () => {
     ltcg: plannedLtcg,
     filingStatus,
     muniInterest,
+    qcd,
   });
   const irmaa = irmaaFor(scenarioMagi, { filingStatus, beneficiaries, year });
+
+  /**
+   * What the charitable route is worth against the same gift taken as an
+   * ordinary distribution — priced on the same scenario every other section
+   * above the projection reads.
+   */
+  const qcdSwing = useMemo(
+    () =>
+      qcdEffect({
+        qcd,
+        ordinaryIncome,
+        ssBenefit,
+        ltcg: plannedLtcg,
+        filingStatus,
+        seniors,
+        beneficiaries,
+        muniInterest,
+        year,
+      }),
+    [
+      qcd,
+      ordinaryIncome,
+      ssBenefit,
+      plannedLtcg,
+      filingStatus,
+      seniors,
+      beneficiaries,
+      muniInterest,
+      year,
+    ],
+  );
+
+  /**
+   * Everything coming off AGI at this income — the standard deduction, its
+   * age-65 addition and whatever survives of the senior deduction's phaseout —
+   * measured without the gift, which is the case that has to be covered for the
+   * charitable route to make no difference.
+   */
+  const deductionTotal = deductionFor(
+    { filingStatus, seniors, year },
+    qcdSwing.agiWithout,
+  );
+
+  /**
+   * Which of section 86's two ceilings is holding taxable benefits flat across
+   * the gift, on the branch where they do not move at all.
+   *
+   * Both tiers have one — half the benefit in the first, 85% of it in the
+   * second — and only the second is what anyone means by "the 85% cap". They
+   * are told apart by where the flat line sits, because flat is the only
+   * symptom either one shows. The first tier's cap binds whenever the benefit
+   * is small enough that half of it fits under the tier's own width: $9,000 on
+   * a single return, $12,000 on a joint one.
+   */
+  const ssCapPercent =
+    qcdSwing.taxableSSWith >= Math.round(0.85 * ssBenefit) ? 85 : 50;
 
   /**
    * Everything the projection needs, and nothing it does not: the planned
@@ -783,7 +893,7 @@ const App: React.FC = () => {
                 name="filing-status"
                 value={value}
                 checked={filingStatus === value}
-                onChange={() => setFilingStatus(value)}
+                onChange={() => changeFilingStatus(value)}
               />
               <span>{label}</span>
             </label>
@@ -928,6 +1038,38 @@ const App: React.FC = () => {
         </p>
       </div>
 
+      <div className="input-group">
+        <div className="slider-header">
+          <label htmlFor="qcd">Qualified Charitable Distribution</label>
+          <span className="slider-value lime">{formatCurrency(qcd)}</span>
+        </div>
+        <input
+          id="qcd"
+          type="range"
+          min={0}
+          max={qcdSliderMax}
+          step={250}
+          value={qcd}
+          onChange={(e) => setQcd(Number(e.target.value))}
+          className="slider-lime"
+        />
+        <div className="slider-range-labels">
+          <span>$0</span>
+          <span>{formatCurrency(qcdSliderMax)}</span>
+        </div>
+        <p className="field-note">
+          IRA money paid straight to the charity. It comes <em>out of</em> the
+          other income on the axis below rather than on top of it, because the
+          gift is a distribution that would otherwise have been reported — so it
+          moves the whole curve to the right, exactly as far as tax-exempt
+          interest moves it to the left. Capped at{' '}
+          <strong>{formatCurrency(qcdLimit)}</strong> for {year}
+          {filingStatus === 'mfj'
+            ? ' \u2014 408(d)(8)(A) caps it per individual, so a joint return where both spouses have reached 70\u00BD and each gives from their own IRA gets it twice. The slider stops at the chart\u2019s own right edge rather than at that figure.'
+            : ' by 408(d)(8)(A), which the IRS indexes every year. Anything past it is an ordinary distribution, deductible only on an itemized return and only within the AGI limits of section 170(b).'}
+        </p>
+      </div>
+
       <div className="chart-container">
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart
@@ -961,6 +1103,7 @@ const App: React.FC = () => {
                   segments={segments}
                   filingStatus={filingStatus}
                   muniInterest={muniInterest}
+                  qcd={qcd}
                   beneficiaries={beneficiaries}
                   year={year}
                 />
@@ -994,6 +1137,9 @@ const App: React.FC = () => {
         Other Income ($) &middot; Total income = Other income + {formatCurrency(ssBenefit)} SS
         {muniInterest > 0
           ? ` + ${formatCurrency(muniInterest)} tax-exempt interest`
+          : ''}
+        {qcd > 0
+          ? ` \u2212 ${formatCurrency(qcd)} given straight to charity`
           : ''}
       </p>
 
@@ -1266,6 +1412,219 @@ const App: React.FC = () => {
           cliffs are worth planning around at all — the surcharge never appears
           on a tax return, so nothing about filing reveals that a dollar of
           income cost {formatCurrency(cliffs[0].step)}.
+        </p>
+      </section>
+
+      {/* ───── Qualified charitable distributions ───── */}
+      <section className="explainer" aria-labelledby="qcd-heading">
+        <h2 id="qcd-heading" className="section-heading-lime">
+          Giving straight from the IRA
+        </h2>
+        <p>
+          A qualified charitable distribution under IRC 408(d)(8) is IRA money
+          paid directly to the charity. It is excluded from gross income
+          outright, so it never reaches AGI — and because provisional income is
+          built out of AGI, it never reaches that either. A charitable{' '}
+          <em>deduction</em> for the same gift does neither: deductions come off
+          after AGI is fixed, so they cannot untax a single dollar of Social
+          Security. For the roughly nine in ten filers who take the standard
+          deduction, a cash gift is worth nothing at all on the return.
+        </p>
+        <p>
+          Priced at {formatCurrency(ordinaryIncome)} of other ordinary income
+          {plannedLtcg > 0
+            ? ` and ${formatCurrency(plannedLtcg)} of long-term gains`
+            : ''}{' '}
+          (the sliders further down) plus the {formatCurrency(ssBenefit)}{' '}
+          benefit above, against the same gift taken as an ordinary
+          distribution.
+        </p>
+
+        <dl className="stat-grid">
+          <div className="stat">
+            <dt>Benefits it takes back out of the tax base</dt>
+            <dd className="stat-value lime">
+              {formatCurrency(qcdSwing.taxableSSRemoved)}
+            </dd>
+            <dd className="stat-note">
+              {formatCurrency(qcdSwing.taxableSSWith)} taxable, down from{' '}
+              {formatCurrency(qcdSwing.taxableSSWithout)}
+            </dd>
+          </div>
+          <div className="stat">
+            <dt>Federal tax saved</dt>
+            <dd className="stat-value">{formatCurrency(qcdSwing.taxSaved)}</dd>
+            <dd className="stat-note">
+              {formatCurrency(qcdSwing.taxWith)} total, down from{' '}
+              {formatCurrency(qcdSwing.taxWithout)}
+            </dd>
+          </div>
+          <div className="stat">
+            <dt>Saved per dollar given</dt>
+            <dd className="stat-value">{qcdSwing.savedPerDollar}%</dd>
+            <dd className="stat-note">
+              next dollar {qcdSwing.ratePerNextDollar}%
+            </dd>
+          </div>
+          <div className="stat">
+            <dt>Medicare surcharge saved</dt>
+            <dd className="stat-value rose">
+              {formatCurrencyCents(qcdSwing.irmaaSurchargeSaved)}
+            </dd>
+            <dd className="stat-note">
+              {qcdSwing.irmaaTierWithout === qcdSwing.irmaaTierWith
+                ? qcdSwing.irmaaTierWith === 0
+                  ? `no surcharge either way at ${formatCurrency(qcdSwing.irmaaMagiWith)} of MAGI`
+                  : `tier ${qcdSwing.irmaaTierWith} either way`
+                : `tier ${qcdSwing.irmaaTierWith}, down from tier ${qcdSwing.irmaaTierWithout}`}
+              , priced on the {year} schedule
+            </dd>
+          </div>
+        </dl>
+
+        {qcd === 0 ? (
+          qcdSwing.ordinaryIncomeBefore === 0 ? (
+            <p>
+              There is nothing here to give. A QCD is an exclusion of an IRA
+              distribution rather than a deduction, so there has to be a
+              distribution to exclude, and this scenario carries no ordinary
+              income at all. Raise the other-income slider further down — the
+              app reads the whole of it as IRA money — and this section will
+              price the gift against taking the same money as a distribution.
+            </p>
+          ) : (
+            <p>
+              Move the slider above to price it. At this income the next dollar
+              given from the IRA rather than the checking account is worth{' '}
+              <strong>{qcdSwing.ratePerNextDollar}%</strong> in federal tax —
+              and that is before anything Medicare does with it two years later.
+            </p>
+          )
+        ) : qcdSwing.excluded === 0 ? (
+          <p>
+            None of this gift can be excluded. A QCD takes an IRA distribution
+            out of gross income, so there has to be a distribution to take it
+            out of, and this scenario carries{' '}
+            {formatCurrency(qcdSwing.ordinaryIncomeBefore)} of ordinary income.
+            {qcdSwing.taxWithout > 0
+              ? ` The ${formatCurrency(qcdSwing.taxWithout)} of federal tax here is on the ${formatCurrency(qcdSwing.agiWithout)} of long-term gains and taxable benefit left in the base, and the charitable route reaches neither.`
+              : ''}
+          </p>
+        ) : qcdSwing.taxSaved === 0 && qcdSwing.irmaaSurchargeSaved === 0 ? (
+          <p>
+            Here the route makes no difference.{' '}
+            {qcdSwing.taxWithout > 0
+              ? 'The excluded dollars were not carrying any federal tax, and Medicare charges the same surcharge either way.'
+              : qcdSwing.agiWithout <= deductionTotal
+                ? `There was no federal tax to save: the ${formatCurrency(deductionTotal)} of deductions covered the whole ${formatCurrency(qcdSwing.agiWithout)} of AGI, with or without the gift.`
+                : `There was no federal tax to save: past the ${formatCurrency(deductionTotal)} of deductions everything left in the base is long-term gain sitting in the 0% bracket, with or without the gift.`}{' '}
+            The gift is still worth making from the IRA rather than from cash —
+            it counts toward any required distribution and shrinks the balance
+            every later one is measured against — but this year the tax bill is
+            the same either way.
+          </p>
+        ) : (
+          <p>
+            {formatCurrency(qcdSwing.excluded)} sent straight to the charity
+            keeps AGI at <strong>{formatCurrency(qcdSwing.agiWith)}</strong>{' '}
+            instead of {formatCurrency(qcdSwing.agiWithout)}
+            {qcdSwing.taxableSSRemoved > 0 ? (
+              <>
+                , which takes{' '}
+                <strong>{formatCurrency(qcdSwing.taxableSSRemoved)}</strong> of
+                Social Security back out of the tax base along with it
+              </>
+            ) : ssBenefit === 0 ? (
+              <>
+                . No benefits move, because there is no benefit on this
+                scenario to move — the exclusion is worth its bracket rate and
+                no more
+              </>
+            ) : qcdSwing.taxableSSWithout === 0 ? (
+              <>
+                . No benefits move, because none of them were taxable to begin
+                with — provisional income stays under{' '}
+                {formatCurrency(ssBase50)} either way
+              </>
+            ) : (
+              <>
+                . No benefits move: the {ssCapPercent}% cap still binds after
+                the gift, so the same{' '}
+                {formatCurrency(qcdSwing.taxableSSWith)} —{' '}
+                {ssCapPercent === 85
+                  ? 'the most of a benefit that can ever be taxed'
+                  : 'half the benefit, which is everything the first tier can reach'}{' '}
+                — is taxable either way, and the exclusion is worth its bracket
+                rate and no more
+              </>
+            )}
+            . That is{' '}
+            <strong>{formatCurrency(qcdSwing.taxSaved)}</strong> of federal tax,{' '}
+            <strong>{qcdSwing.savedPerDollar}&cent;</strong> per dollar given
+            {qcdSwing.irmaaSurchargeSaved > 0 ? (
+              <>
+                , plus{' '}
+                <strong>
+                  {formatCurrencyCents(qcdSwing.irmaaSurchargeSaved)}
+                </strong>{' '}
+                a year of Medicare surcharge that never shows up on a tax return
+                at all — this MAGI sets the premium for{' '}
+                {year + IRMAA_LOOKBACK_YEARS}, priced here on the {year}{' '}
+                schedule because CMS has not published that one yet
+              </>
+            ) : (
+              ''
+            )}
+            .
+          </p>
+        )}
+
+        {qcdSwing.limitedByIncome && (
+          <p className="warning-note" role="note">
+            <strong>More gift than distribution.</strong>{' '}
+            {qcdSwing.excluded > 0
+              ? `There is only ${formatCurrency(qcdSwing.ordinaryIncomeBefore)} of ordinary income on this scenario to exclude, so that is all the chart can take out`
+              : 'There is no ordinary income on this scenario to exclude the gift from, so the chart can take out none of it'}{' '}
+            — a QCD is an exclusion of a distribution, not a deduction that can
+            run past the income it offsets. The slider models the whole of the
+            other-income figure as IRA money, which is the loosest bound
+            available: the app cannot tell a distribution from a pension.
+          </p>
+        )}
+
+        <p className="field-note">
+          <strong>
+            You must have reached {formatHalfAge(QCD_MIN_AGE)} to do this
+          </strong>
+          , to the day — not to the tax year, and not the required-beginning
+          age. SECURE raised the age for required distributions to 72 and SECURE
+          2.0 to 73 and then 75, but 408(d)(8)(B)(ii) still says{' '}
+          {formatHalfAge(QCD_MIN_AGE)} and neither act touched it. That gap is
+          the cheapest QCD there is: giving from the IRA before anything is
+          required to come out of it shrinks the balance every later
+          distribution is measured against, with no distribution to displace.
+        </p>
+
+        <p>
+          Once distributions <em>are</em> required, a QCD counts toward the
+          year&apos;s required amount — so the same dollars satisfy the RMD and
+          skip the tax base, which is the one move that defuses the torpedo
+          rather than dodging it. Two caveats worth knowing: the money has to go
+          from the custodian to a qualifying public charity directly, never
+          through the account owner, and donor-advised funds and private
+          foundations do not qualify. A one-time election can send up to{' '}
+          {formatCurrency(qcdSplitInterestLimit(year))} to a split-interest
+          entity instead, counted against the same annual limit rather than on
+          top of it.
+        </p>
+
+        <p className="field-note">
+          The multi-year projection and the withdrawal-order comparison below
+          both leave the gift out. Their ordinary income is inflation-indexed
+          and RMD-driven year by year, and a recurring QCD interacts with the
+          balance those sections track; carrying one number through without
+          modelling that would make two sections disagree about the same
+          retirement.
         </p>
       </section>
 

@@ -743,3 +743,23 @@ footer p {
   color: #64748b;
   white-space: normal;
 }
+
+/* Lime accent for the qualified-charitable-distribution section */
+.section-heading-lime {
+  background: linear-gradient(to right, #65a30d, #a3e635);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.slider-value.lime {
+  color: #a3e635;
+}
+
+.slider-lime {
+  accent-color: #65a30d !important;
+}
+
+.stat-value.lime {
+  color: #a3e635;
+}

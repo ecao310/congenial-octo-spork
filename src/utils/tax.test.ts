@@ -39,6 +39,15 @@ import {
   deductionFor,
   seniorDeductionFor,
   seniorDeductionPhaseoutEnd,
+  qcdAnnualLimit,
+  qcdSplitInterestLimit,
+  qcdLimitFor,
+  qcdAllowed,
+  qcdFor,
+  ordinaryIncomeAfterQcd,
+  qcdEffect,
+  agiFor,
+  QCD_MIN_AGE,
   SENIOR_DEDUCTION,
   SENIOR_DEDUCTION_PHASEOUT_RATE,
   SENIOR_DEDUCTION_PHASEOUT_START,
@@ -2086,5 +2095,229 @@ describe('tax year', () => {
     expect(share(2025)).toBeCloseTo(0.1446, 4);
     expect(share(2026)).toBeCloseTo(0.1494, 4);
     expect(share(2026)).toBeGreaterThan(share(2025));
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/*  Qualified charitable distributions (IRC 408(d)(8))                */
+/* ------------------------------------------------------------------ */
+
+describe('qualified charitable distributions', () => {
+  const SS = AVG_ANNUAL_SS_BENEFIT;
+
+  it('reads the published annual limits, which are indexed', () => {
+    // SECURE 2.0 section 307 started indexing the statutory $100,000 in 2024.
+    expect(qcdAnnualLimit(2025)).toBe(108_000); // Notice 2024-80
+    expect(qcdAnnualLimit(2026)).toBe(111_000); // Notice 2025-67
+    expect(qcdSplitInterestLimit(2025)).toBe(54_000);
+    expect(qcdSplitInterestLimit(2026)).toBe(55_000);
+    expect(qcdAnnualLimit(2026)).toBeGreaterThan(qcdAnnualLimit(2025));
+  });
+
+  it('starts at 70 1/2, which no act has moved even as the RMD age climbed', () => {
+    expect(QCD_MIN_AGE).toBe(70.5);
+    // The gap that opens up: someone with an applicable age of 75 can give from
+    // the IRA five years before anything is required to come out of it.
+    expect(QCD_MIN_AGE).toBeLessThan(73);
+  });
+
+  it('is a per-individual limit, so only a joint return gets it twice', () => {
+    expect(qcdLimitFor({ filingStatus: 'single', year: 2025 })).toBe(108_000);
+    expect(qcdLimitFor({ filingStatus: 'mfj', year: 2025 })).toBe(216_000);
+    // A separate return carries one individual, exactly like a single one.
+    expect(qcdLimitFor({ filingStatus: 'mfs', year: 2025 })).toBe(108_000);
+    expect(qcdLimitFor({ filingStatus: 'mfj', year: 2026 })).toBe(222_000);
+  });
+
+  it('caps the exclusion at the statutory limit, then at the income to take it from', () => {
+    const single = { filingStatus: 'single' as const, year: PINNED_YEAR };
+    // Under both caps: exactly what was asked for.
+    expect(qcdFor({ ...single, ordinaryIncome: 40_000, qcd: 10_000 })).toBe(10_000);
+    // Over the statutory limit.
+    expect(qcdAllowed({ ...single, ordinaryIncome: 200_000, qcd: 130_000 })).toBe(108_000);
+    expect(qcdFor({ ...single, ordinaryIncome: 200_000, qcd: 130_000 })).toBe(108_000);
+    // Allowed by law, but there is only $40,000 of ordinary income to exclude.
+    expect(qcdAllowed({ ...single, ordinaryIncome: 40_000, qcd: 50_000 })).toBe(50_000);
+    expect(qcdFor({ ...single, ordinaryIncome: 40_000, qcd: 50_000 })).toBe(40_000);
+    // Nonsense inputs clamp rather than going negative.
+    expect(qcdFor({ ...single, ordinaryIncome: 40_000, qcd: -5_000 })).toBe(0);
+    expect(qcdFor({ ...single, ordinaryIncome: -1_000, qcd: 5_000 })).toBe(0);
+  });
+
+  it('never drives ordinary income below zero', () => {
+    expect(ordinaryIncomeAfterQcd({ ordinaryIncome: 40_000, qcd: 10_000 })).toBe(30_000);
+    expect(ordinaryIncomeAfterQcd({ ordinaryIncome: 40_000, qcd: 90_000 })).toBe(0);
+    expect(ordinaryIncomeAfterQcd({ ordinaryIncome: 40_000 })).toBe(40_000);
+  });
+
+  it('takes benefits back out of the tax base, 85 cents per dollar in the top tier', () => {
+    const base = { ordinaryIncome: 40_000, ssBenefit: SS, seniors: 1, year: PINNED_YEAR };
+    // $40,000 of other income puts provisional income at $51,856, well past the
+    // $34,000 adjusted base, so every excluded dollar unwinds 85 cents.
+    expect(taxableSocialSecurity(base)).toBeCloseTo(19_677.6, 4);
+    expect(taxableSocialSecurity({ ...base, qcd: 10_000 })).toBeCloseTo(11_177.6, 4);
+    expect(
+      taxableSocialSecurity(base) - taxableSocialSecurity({ ...base, qcd: 10_000 }),
+    ).toBeCloseTo(8_500, 4);
+    // AGI falls by the gift *and* the benefits it took with it: $18,500 on a
+    // $10,000 distribution.
+    expect(agiFor(base) - agiFor({ ...base, qcd: 10_000 })).toBeCloseTo(18_500, 4);
+  });
+
+  it('is worth the torpedo rate rather than the bracket rate', () => {
+    const base = { ordinaryIncome: 40_000, ssBenefit: SS, seniors: 1, year: PINNED_YEAR };
+    const effect = qcdEffect({ ...base, qcd: 10_000 });
+    expect(effect.excluded).toBe(10_000);
+    expect(effect.taxableSSRemoved).toBe(8_500);
+    expect(effect.taxWithout).toBe(4_073);
+    expect(effect.taxWith).toBe(1_853);
+    expect(effect.taxSaved).toBe(2_220);
+    // 12% on $1.85 of taxable income per excluded dollar. A charitable
+    // deduction for the same gift would be worth nothing at all here, because
+    // this filer takes the standard deduction.
+    expect(effect.savedPerDollar).toBeCloseTo(22.2, 2);
+    expect(effect.ratePerNextDollar).toBeCloseTo(22.2, 2);
+  });
+
+  it('reports the caps it hit, and stops saving anything once it hits one', () => {
+    const byLaw = qcdEffect({
+      ordinaryIncome: 200_000,
+      ssBenefit: 30_000,
+      qcd: 130_000,
+      year: PINNED_YEAR,
+    });
+    expect(byLaw.limitedByLaw).toBe(true);
+    expect(byLaw.limitedByIncome).toBe(false);
+    expect(byLaw.excluded).toBe(108_000);
+    // The 130,001st dollar is over the limit, so it is an ordinary
+    // distribution and saves nothing.
+    expect(byLaw.ratePerNextDollar).toBe(0);
+
+    const byIncome = qcdEffect({
+      ordinaryIncome: 40_000,
+      ssBenefit: SS,
+      qcd: 50_000,
+      seniors: 1,
+      year: PINNED_YEAR,
+    });
+    expect(byIncome.limitedByLaw).toBe(false);
+    expect(byIncome.limitedByIncome).toBe(true);
+    expect(byIncome.excluded).toBe(40_000);
+    expect(byIncome.ordinaryIncomeAfter).toBe(0);
+    expect(byIncome.taxWith).toBe(0);
+    expect(byIncome.ratePerNextDollar).toBe(0);
+    // Averaged over what was asked for rather than what was excluded would
+    // read 8.1%; the exclusion that happened was worth 10.18%.
+    expect(byIncome.savedPerDollar).toBeCloseTo(10.18, 2);
+  });
+
+  it('reports zero saved per dollar rather than dividing by zero', () => {
+    const none = qcdEffect({ ordinaryIncome: 40_000, ssBenefit: SS, year: PINNED_YEAR });
+    expect(none.excluded).toBe(0);
+    expect(none.savedPerDollar).toBe(0);
+    expect(none.taxSaved).toBe(0);
+    // The slider is still worth moving, and the readout says by how much.
+    expect(none.ratePerNextDollar).toBeCloseTo(22.2, 2);
+  });
+
+  it('drops the IRMAA tier the same dollars set, two years out', () => {
+    const effect = qcdEffect({
+      ordinaryIncome: 100_000,
+      ssBenefit: 40_000,
+      seniors: 1,
+      qcd: 8_000,
+      year: PINNED_YEAR,
+    });
+    // $134,000 of MAGI is in tier 2; $126,000 is in tier 1.
+    expect(effect.irmaaMagiWithout).toBe(134_000);
+    expect(effect.irmaaMagiWith).toBe(126_000);
+    expect(effect.irmaaTierWithout).toBe(2);
+    expect(effect.irmaaTierWith).toBe(1);
+    expect(effect.irmaaSurchargeSaved).toBeCloseTo(1_591.2, 2);
+    // The surcharge saving is most of the tax saving again, and it is not in
+    // the tax figures at all.
+    expect(effect.taxSaved).toBe(2_036);
+  });
+
+  it('shifts the whole marginal-rate curve right by the amount excluded', () => {
+    const base = { ssBenefit: SS, seniors: 1, year: PINNED_YEAR };
+    const plain = marginalRateCurve(base, { maxIncome: 120_000, step: 1_000 });
+    const given = marginalRateCurve({ ...base, qcd: 10_000 }, { maxIncome: 120_000, step: 1_000 });
+    // Same rate 10 rows later, all the way along: a QCD moves the torpedo the
+    // way tax-exempt interest moves it, only in the other direction.
+    for (let i = 0; i + 10 < plain.length; i += 1) {
+      expect(given[i + 10].marginalRate).toBeCloseTo(plain[i].marginalRate, 6);
+      expect(given[i + 10].totalTax).toBe(plain[i].totalTax);
+    }
+    // And the excluded stretch is flat at zero, because none of it is income.
+    expect(given.slice(0, 10).every((p) => p.marginalRate === 0)).toBe(true);
+  });
+
+  it('moves the IRMAA cliffs right by the same amount', () => {
+    const base = { ssBenefit: SS, filingStatus: 'single' as const, year: PINNED_YEAR };
+    const plain = irmaaCliffs(base);
+    const given = irmaaCliffs({ ...base, qcd: 10_000 });
+    expect(given).toHaveLength(plain.length);
+    plain.forEach((cliff, i) => {
+      expect(given[i].magi).toBe(cliff.magi);
+      // Without the QCD term in the bisection bound this converged on the
+      // search ceiling instead of the threshold.
+      expect(given[i].otherIncome).toBeCloseTo(cliff.otherIncome + 10_000, 4);
+    });
+    expect(otherIncomeAtIrmaaMagi(106_000, { ...base, qcd: 10_000 })).toBeCloseTo(
+      otherIncomeAtIrmaaMagi(106_000, base) + 10_000,
+      4,
+    );
+  });
+
+  it('leaves more room under a conversion ceiling', () => {
+    const base = {
+      ordinaryIncome: 30_000,
+      ssBenefit: SS,
+      filingStatus: 'single' as const,
+      year: PINNED_YEAR,
+    };
+    const ss85 = conversionCeilings(base).find((c) => c.id === 'ss85')!;
+    // Provisional income is built out of gross income, so the exclusion buys
+    // headroom under a provisional-income ceiling dollar for dollar.
+    expect(conversionMeasureValue('provisionalIncome', base, 0)).toBeCloseTo(41_856, 4);
+    expect(
+      conversionMeasureValue('provisionalIncome', { ...base, qcd: 10_000 }, 0),
+    ).toBeCloseTo(31_856, 4);
+    expect(maxConversionUnder(ss85, base)).toBe(0);
+    expect(maxConversionUnder(ss85, { ...base, qcd: 10_000 })).toBe(2_144);
+  });
+
+  it('stays monotonic when a conversion un-caps an income-limited exclusion', () => {
+    // $5,000 of ordinary income and a $20,000 gift: the exclusion is capped at
+    // $5,000 until a conversion supplies more income for it to come out of, so
+    // the first $15,000 of conversion is absorbed and the measure is flat.
+    // Flat is fine; falling would break the binary search.
+    const base = { ordinaryIncome: 5_000, ssBenefit: SS, qcd: 20_000, year: PINNED_YEAR };
+    let previous = -Infinity;
+    for (let conversion = 0; conversion <= 40_000; conversion += 500) {
+      const value = conversionMeasureValue('provisionalIncome', base, conversion);
+      expect(value).toBeGreaterThanOrEqual(previous);
+      previous = value;
+    }
+    expect(conversionMeasureValue('provisionalIncome', base, 0)).toBeCloseTo(11_856, 4);
+    expect(conversionMeasureValue('provisionalIncome', base, 15_000)).toBeCloseTo(11_856, 4);
+    expect(conversionMeasureValue('provisionalIncome', base, 20_000)).toBeCloseTo(16_856, 4);
+  });
+
+  it('changes nothing at all when it is not set', () => {
+    const base = {
+      ordinaryIncome: 45_000,
+      ssBenefit: SS,
+      ltcg: 12_000,
+      muniInterest: 3_000,
+      filingStatus: 'mfj' as const,
+      seniors: 2,
+      year: PINNED_YEAR,
+    };
+    expect(totalTax({ ...base, qcd: 0 })).toBe(totalTax(base));
+    expect(taxableSocialSecurity({ ...base, qcd: 0 })).toBe(taxableSocialSecurity(base));
+    expect(agiFor({ ...base, qcd: 0 })).toBe(agiFor(base));
+    expect(irmaaMagi({ ...base, qcd: 0 })).toBe(irmaaMagi(base));
   });
 });

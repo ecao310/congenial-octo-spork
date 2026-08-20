@@ -1384,3 +1384,95 @@ under Discovered Work with the 2026 figures ($202.90 base premium) to pick up.
 
 npx tsc -b, npm run lint, npx vitest run (184 passed, was 170), npm run build —
 all clean; only the pre-existing >500kB chunk warning.
+
+================================================================================
+## Year-parameterizing IRMAA
+## 2026-08-20
+
+Fourth time now: the previous iteration did most of this task, left four files
+modified in the working tree, and died. This time it died *mid-migration* —
+tax.ts and App.tsx were fully converted, but one `describe` block in
+tax.test.ts still referenced the deleted constants, so `tsc -b` and `npm run
+lint` were both failing on arrival. Picking up unfinished work means running
+the checks before trusting any of it.
+
+### What it does
+
+`IRMAA_YEAR_PARAMS: Record<TaxYear, IrmaaYearParams>` replaces the flat
+`IRMAA_TIERS` / `PART_B_STANDARD_PREMIUM` / `IRMAA_PREMIUM_YEAR` constants.
+`irmaaTiersFor`, `firstIrmaaTier`, `irmaaTierFor` and `irmaaFirstCliffMagi` all
+take a `Scenario` now instead of a bare `FilingStatus`, so they pick the year up
+the same way everything else already did — the payoff from the Scenario refactor
+two iterations back, for the second time.
+
+It is deliberately its own table rather than a field on `TAX_YEAR_PARAMS`: the
+figures come from a CMS rule each November, not the autumn Rev. Proc., and they
+are premiums rather than tax. `Record<TaxYear, ...>` still makes them
+exhaustive, so adding 2027 fails to compile until its premiums are filled in.
+
+### The bug this turned up
+
+The committed code had `inclusiveFor: ['mfs']` on the top tier, with a comment
+asserting that the separate-return top threshold is the *only* inclusive one in
+the statute. That is wrong, and there was a passing test enshrining it
+(`irmaaTierFor(500_000, 'single').tier === 4`).
+
+42 U.S.C. 1395r(i)(3)(C)(i)(III)'s rate table ends "At least $500,000 — 85
+percent" where every row above it reads "More than". Clause (ii) carries the row
+to joint returns. CMS reproduces it verbatim in all three of its tables: the
+second-to-last row reads "Greater than $205,000 and less than $500,000" —
+exclusive at *both* ends — and the last reads "Greater than or equal to
+$500,000". So a MAGI of exactly $500,000 single or $750,000 joint was being
+priced a full tier low, missing the entire top surcharge. Fixed to all three
+statuses; logged under Discovered work.
+
+### Every figure verified against the primary source
+
+CMS.gov 403s both WebFetch and curl-with-a-browser-UA. The way through is the
+Federal Register API, which has the actual rule CMS's fact sheet summarizes:
+
+    curl -sL "https://www.federalregister.gov/api/v1/documents/2025-20251.json?fields[]=raw_text_url"
+
+then fetch that raw_text_url. Plain ASCII tables, greppable. Worth repeating —
+this is the second time in three iterations that a primary source needed an
+end-run around a fetch block (last time it was zlib-inflating a Rev. Proc. PDF).
+Note the 2025 rule (2024-26474) comes back with its tables stripped; 2026's
+(2025-20251, 90 FR 52065) is complete.
+
+Confirmed for 2026, standard premium $202.90:
+- Single  109,000 / 137,000 / 171,000 / 205,000 / >=500,000
+- Joint   218,000 / 274,000 / 342,000 / 410,000 / >=750,000
+- MFS     109,000 then >=391,000, skipping tiers 1-3 as always
+- Part B  202.90 / 284.10 / 405.80 / 527.50 / 649.20 / 689.90
+- Part D  0 / 14.50 / 37.50 / 60.40 / 83.30 / 91.00
+
+Two things worth keeping:
+- The MFS ladder is derivable, and both years confirm it: its top rung is
+  $500,000 minus the unmarried first threshold. 2025: 500k-106k = 394k. 2026:
+  500k-109k = 391k. So the separate-return top rung *fell* $3,000 while the
+  single one stayed at $500,000 — because $500,000/$750,000 is fixed in statute
+  and not indexed until years beginning after 2027 (1395r(i)(5)(C)). It is the
+  one threshold that does not move between the two years.
+- `partBSurchargeMonthly` is now a stored field transcribed from CMS's own
+  column rather than derived as `partBMonthly - standard`. That makes a year's
+  entry checkable against the fact sheet line by line; a test asserts the two
+  columns agree for every tier of every year, so the redundancy is guarded.
+
+### Tests
+
+188 pass, was 184. Added: the 2026 schedule row by row, the surcharge/premium
+agreement invariant across all years, joint-doubles-except-the-top across all
+years, the corrected inclusive top rung for all three statuses, and a
+same-MAGI-different-year case ($107,000 is tier 1 in 2025 and tier 0 in 2026 —
+identical income, $1,052.40 of surcharge one year and nothing the next).
+
+The App test asserting `Over $500,000` now asserts `From $500,000`, which is the
+UI half of the inclusive-threshold fix. Added an App test that selecting 2026
+re-prices the whole table and not just its caption — it asserts the section no
+longer contains "$106,000" or "$185.00" at all, which is what "a year stale"
+would have looked like.
+
+### Verification
+
+npx tsc -b, npm run lint, npx vitest run (188 passed), npm run build — all
+clean; only the pre-existing >500kB chunk warning.

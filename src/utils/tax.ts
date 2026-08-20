@@ -814,22 +814,18 @@ export function segmentCurve<T extends { marginalRate: number }>(
 /*  IRMAA - Medicare's income-related monthly adjustment amount        */
 /* ------------------------------------------------------------------ */
 
-/** The premium year the figures below apply to. */
-export const IRMAA_PREMIUM_YEAR = 2025;
-
 /**
  * Medicare sets a year's premium from the MAGI on the return filed two years
  * earlier, because that is the most recent return the IRS has shared with SSA
- * when premiums are set (42 U.S.C. 1395r(i)(4)). So the 2025 premium is driven
- * by 2023 income, and this year's income sets the premium two years out.
+ * when premiums are set (42 U.S.C. 1395r(i)(4)(B)). So the 2026 premium is
+ * driven by 2024 income, and this year's income sets the premium two years out.
  */
 export const IRMAA_LOOKBACK_YEARS = 2;
 
-/** The tax year whose MAGI sets the `IRMAA_PREMIUM_YEAR` premium. */
-export const IRMAA_MAGI_YEAR = IRMAA_PREMIUM_YEAR - IRMAA_LOOKBACK_YEARS;
-
-/** 2025 standard Part B premium per beneficiary per month (CMS, Nov 2024). */
-export const PART_B_STANDARD_PREMIUM = 185;
+/** The tax year whose MAGI sets a given premium year's surcharge. */
+export function irmaaMagiYear(premiumYear: TaxYear = defaultTaxYear()): number {
+  return premiumYear - IRMAA_LOOKBACK_YEARS;
+}
 
 export interface IrmaaTier {
   /** 0 for the standard premium; 1 through 5 for the surcharge tiers. */
@@ -841,12 +837,20 @@ export interface IrmaaTier {
   magiOver: Record<FilingStatus, number>;
   /**
    * Filing statuses whose threshold is inclusive - MAGI *at* `magiOver` already
-   * lands in the tier. Only the separate-return top tier works this way, and it
-   * does because 42 U.S.C. 1395r(i)(3)(C)(ii)(II) says "equal to or greater
-   * than" where every other threshold in the statute says "greater than". CMS
-   * reproduces the difference verbatim in its own premium table.
+   * lands in the tier. Only the top tier works this way, and it does for every
+   * status: the last row of the rate table at 42 U.S.C. 1395r(i)(3)(C)(i)(III)
+   * reads "At least $500,000" where every row above it reads "More than", and
+   * clauses (ii) and (iii) carry that row across to joint and separate returns.
+   * CMS reproduces the difference verbatim - "greater than or equal to" in the
+   * last row of all three of its tables, "greater than" everywhere else.
    */
   inclusiveFor?: FilingStatus[];
+  /**
+   * Monthly Part B surcharge - CMS's "income-related monthly adjustment amount"
+   * column, taken as published rather than derived, so a year's figures can be
+   * checked against the fact sheet line by line. 0 for the standard tier.
+   */
+  partBSurchargeMonthly: number;
   /** Total monthly Part B premium, standard premium included. */
   partBMonthly: number;
   /**
@@ -856,91 +860,186 @@ export interface IrmaaTier {
   partDSurchargeMonthly: number;
 }
 
-/**
- * 2025 IRMAA schedule, keyed to 2023 MAGI (CMS fact sheet, November 2024).
- *
- * The joint thresholds are exactly double the single ones except at the top:
- * the $500,000 / $750,000 tier added by the Bipartisan Budget Act of 2018 is
- * fixed in statute rather than indexed, so it never doubled and does not move
- * with inflation.
- *
- * A separate return that lived with the spouse gets its own two-step schedule
- * under 42 U.S.C. 1395r(i)(3)(C) rather than a halved version of the joint one.
- * It reuses tiers 4 and 5's premiums but reaches them at $106,000 and $394,000,
- * so tiers 1 through 3 simply do not exist for it — marked `Infinity` here and
- * filtered out by `irmaaTiersFor`. The practical effect is brutal: a separate
- * filer's first cliff is the *fourth* tier, and it costs the whole $5,826 a
- * year in one step instead of arriving in four.
- */
-export const IRMAA_TIERS: IrmaaTier[] = [
-  {
-    tier: 0,
-    magiOver: { single: -Infinity, mfj: -Infinity, mfs: -Infinity },
-    partBMonthly: PART_B_STANDARD_PREMIUM,
-    partDSurchargeMonthly: 0,
-  },
-  {
-    tier: 1,
-    magiOver: { single: 106_000, mfj: 212_000, mfs: Infinity },
-    partBMonthly: 259.0,
-    partDSurchargeMonthly: 13.7,
-  },
-  {
-    tier: 2,
-    magiOver: { single: 133_000, mfj: 266_000, mfs: Infinity },
-    partBMonthly: 370.0,
-    partDSurchargeMonthly: 35.3,
-  },
-  {
-    tier: 3,
-    magiOver: { single: 167_000, mfj: 334_000, mfs: Infinity },
-    partBMonthly: 480.9,
-    partDSurchargeMonthly: 57.0,
-  },
-  {
-    tier: 4,
-    magiOver: { single: 200_000, mfj: 400_000, mfs: 106_000 },
-    partBMonthly: 591.9,
-    partDSurchargeMonthly: 78.6,
-  },
-  {
-    tier: 5,
-    magiOver: { single: 500_000, mfj: 750_000, mfs: 394_000 },
-    inclusiveFor: ['mfs'],
-    partBMonthly: 628.9,
-    partDSurchargeMonthly: 85.8,
-  },
-];
+/** One premium year's published Medicare schedule. */
+export interface IrmaaYearParams {
+  /** Where the figures come from. */
+  source: string;
+  /** Standard Part B premium per beneficiary per month, before any surcharge. */
+  partBStandardPremium: number;
+  /** Tier 0 first, then the five surcharge tiers ascending. */
+  tiers: IrmaaTier[];
+}
 
 /**
- * The tiers a filing status can actually land in, standard-premium tier first
- * and ascending. Everything downstream — which tier a MAGI falls in, what the
- * next cliff is, where the reference lines go — walks this rather than
- * `IRMAA_TIERS`, so a separate return never sees the three tiers it has no
+ * The IRMAA schedule by premium year, keyed to the MAGI of two years earlier.
+ *
+ * This is deliberately its own table rather than a field on `TAX_YEAR_PARAMS`:
+ * the figures come from a CMS fact sheet each November, not from the autumn
+ * Rev. Proc., and they are premiums rather than tax. `Record<TaxYear, ...>`
+ * still makes them exhaustive, so adding a year to `TaxYear` fails to compile
+ * until its premiums are filled in here too.
+ *
+ * Within a year, the joint thresholds are exactly double the single ones except
+ * at the top: the $500,000 / $750,000 tier added by the Bipartisan Budget Act
+ * of 2018 is fixed in statute and not indexed until years beginning after 2027
+ * (42 U.S.C. 1395r(i)(5)(C)), which is why it is the one threshold that does
+ * not move between 2025 and 2026.
+ *
+ * A separate return that lived with the spouse gets its own two-step schedule
+ * under 42 U.S.C. 1395r(i)(3)(C)(iii) rather than a halved version of the joint
+ * one. It reuses tiers 4 and 5's premiums but reaches them at the unmarried
+ * threshold and at $500,000 less that threshold - which is why its top rung
+ * fell from $394,000 to $391,000 while the single top rung stayed at $500,000.
+ * Tiers 1 through 3 simply do not exist for it - marked `Infinity` here and
+ * filtered out by `irmaaTiersFor`. The practical effect is brutal: a separate
+ * filer's first cliff is the *fourth* tier, so the whole surcharge lands in one
+ * step instead of arriving in four.
+ */
+export const IRMAA_YEAR_PARAMS: Record<TaxYear, IrmaaYearParams> = {
+  2025: {
+    source: 'CMS fact sheet, November 2024 (2025 premiums, 2023 MAGI)',
+    partBStandardPremium: 185.0,
+    tiers: [
+      {
+        tier: 0,
+        magiOver: { single: -Infinity, mfj: -Infinity, mfs: -Infinity },
+        partBSurchargeMonthly: 0,
+        partBMonthly: 185.0,
+        partDSurchargeMonthly: 0,
+      },
+      {
+        tier: 1,
+        magiOver: { single: 106_000, mfj: 212_000, mfs: Infinity },
+        partBSurchargeMonthly: 74.0,
+        partBMonthly: 259.0,
+        partDSurchargeMonthly: 13.7,
+      },
+      {
+        tier: 2,
+        magiOver: { single: 133_000, mfj: 266_000, mfs: Infinity },
+        partBSurchargeMonthly: 185.0,
+        partBMonthly: 370.0,
+        partDSurchargeMonthly: 35.3,
+      },
+      {
+        tier: 3,
+        magiOver: { single: 167_000, mfj: 334_000, mfs: Infinity },
+        partBSurchargeMonthly: 295.9,
+        partBMonthly: 480.9,
+        partDSurchargeMonthly: 57.0,
+      },
+      {
+        tier: 4,
+        magiOver: { single: 200_000, mfj: 400_000, mfs: 106_000 },
+        partBSurchargeMonthly: 406.9,
+        partBMonthly: 591.9,
+        partDSurchargeMonthly: 78.6,
+      },
+      {
+        tier: 5,
+        magiOver: { single: 500_000, mfj: 750_000, mfs: 394_000 },
+        inclusiveFor: ['single', 'mfj', 'mfs'],
+        partBSurchargeMonthly: 443.9,
+        partBMonthly: 628.9,
+        partDSurchargeMonthly: 85.8,
+      },
+    ],
+  },
+  2026: {
+    source: 'CMS fact sheet, November 14 2025 (2026 premiums, 2024 MAGI)',
+    partBStandardPremium: 202.9,
+    tiers: [
+      {
+        tier: 0,
+        magiOver: { single: -Infinity, mfj: -Infinity, mfs: -Infinity },
+        partBSurchargeMonthly: 0,
+        partBMonthly: 202.9,
+        partDSurchargeMonthly: 0,
+      },
+      {
+        tier: 1,
+        magiOver: { single: 109_000, mfj: 218_000, mfs: Infinity },
+        partBSurchargeMonthly: 81.2,
+        partBMonthly: 284.1,
+        partDSurchargeMonthly: 14.5,
+      },
+      {
+        tier: 2,
+        magiOver: { single: 137_000, mfj: 274_000, mfs: Infinity },
+        partBSurchargeMonthly: 202.9,
+        partBMonthly: 405.8,
+        partDSurchargeMonthly: 37.5,
+      },
+      {
+        tier: 3,
+        magiOver: { single: 171_000, mfj: 342_000, mfs: Infinity },
+        partBSurchargeMonthly: 324.6,
+        partBMonthly: 527.5,
+        partDSurchargeMonthly: 60.4,
+      },
+      {
+        tier: 4,
+        magiOver: { single: 205_000, mfj: 410_000, mfs: 109_000 },
+        partBSurchargeMonthly: 446.3,
+        partBMonthly: 649.2,
+        partDSurchargeMonthly: 83.3,
+      },
+      {
+        tier: 5,
+        magiOver: { single: 500_000, mfj: 750_000, mfs: 391_000 },
+        inclusiveFor: ['single', 'mfj', 'mfs'],
+        partBSurchargeMonthly: 487.0,
+        partBMonthly: 689.9,
+        partDSurchargeMonthly: 91.0,
+      },
+    ],
+  },
+};
+
+/** One premium year's schedule. */
+export function irmaaParams(year: TaxYear = defaultTaxYear()): IrmaaYearParams {
+  return IRMAA_YEAR_PARAMS[year];
+}
+
+/** Standard Part B premium per beneficiary per month, before any surcharge. */
+export function partBStandardPremium(year: TaxYear = defaultTaxYear()): number {
+  return IRMAA_YEAR_PARAMS[year].partBStandardPremium;
+}
+
+/** Every published tier for a year, whether or not a given status can reach it. */
+export function allIrmaaTiers(year: TaxYear = defaultTaxYear()): IrmaaTier[] {
+  return IRMAA_YEAR_PARAMS[year].tiers;
+}
+
+/**
+ * The tiers a scenario's filing status can actually land in, standard-premium
+ * tier first and ascending. Everything downstream - which tier a MAGI falls in,
+ * what the next cliff is, where the reference lines go - walks this rather than
+ * the raw schedule, so a separate return never sees the three tiers it has no
  * access to.
  */
-export function irmaaTiersFor(filingStatus: FilingStatus = 'single'): IrmaaTier[] {
-  return IRMAA_TIERS.filter(
+export function irmaaTiersFor(scenario: Scenario = {}): IrmaaTier[] {
+  const { filingStatus, year } = resolveScenario(scenario);
+  return allIrmaaTiers(year).filter(
     (t) => t.tier === 0 || Number.isFinite(t.magiOver[filingStatus]),
   );
 }
 
 /** The first surcharge tier a filing status can reach. Tier 1, except for MFS. */
-export function firstIrmaaTier(filingStatus: FilingStatus = 'single'): IrmaaTier {
-  return irmaaTiersFor(filingStatus)[1];
+export function firstIrmaaTier(scenario: Scenario = {}): IrmaaTier {
+  return irmaaTiersFor(scenario)[1];
 }
 
 /**
- * 2025 MAGI at which a filing status meets its first IRMAA cliff. A true cliff:
- * one dollar over triggers a full year of Part B and Part D surcharges.
+ * The MAGI at which a scenario meets its first IRMAA cliff. A true cliff: one
+ * dollar over triggers a full year of Part B and Part D surcharges.
  */
-export const IRMAA_FIRST_CLIFF_MAGI: Record<FilingStatus, number> = {
-  single: firstIrmaaTier('single').magiOver.single,
-  mfj: firstIrmaaTier('mfj').magiOver.mfj,
-  mfs: firstIrmaaTier('mfs').magiOver.mfs,
-};
+export function irmaaFirstCliffMagi(scenario: Scenario = {}): number {
+  const { filingStatus } = resolveScenario(scenario);
+  return firstIrmaaTier(scenario).magiOver[filingStatus];
+}
 
-/** Whether a MAGI has reached a tier, honouring the one inclusive threshold. */
+/** Whether a MAGI has reached a tier, honouring the inclusive top threshold. */
 function irmaaTierReached(
   tier: IrmaaTier,
   magi: number,
@@ -955,11 +1054,6 @@ function toCents(value: number): number {
   return Math.round(value * 100) / 100;
 }
 
-/** The monthly Part B surcharge for a tier: its premium over the standard one. */
-export function partBSurchargeMonthly(tier: IrmaaTier): number {
-  return toCents(tier.partBMonthly - PART_B_STANDARD_PREMIUM);
-}
-
 /**
  * Medicare's MAGI: AGI plus tax-exempt interest (42 U.S.C. 1395r(i)(4),
  * incorporating IRC 6103(l)(20)). Note this is a *wider* definition than the
@@ -970,13 +1064,18 @@ export function irmaaMagi(scenario: Scenario = {}): number {
   return agiFor(scenario) + resolveScenario(scenario).muniInterest;
 }
 
-/** The tier a given MAGI lands in. Thresholds are exclusive: over, not at. */
+/**
+ * The tier a given MAGI lands in. Thresholds are exclusive - over, not at -
+ * except for the top one, which the statute writes as "at least".
+ */
 export function irmaaTierFor(
   magi: number,
-  filingStatus: FilingStatus = 'single',
+  scenario: Scenario = {},
 ): IrmaaTier {
-  let found = IRMAA_TIERS[0];
-  for (const tier of irmaaTiersFor(filingStatus)) {
+  const { filingStatus } = resolveScenario(scenario);
+  const tiers = irmaaTiersFor(scenario);
+  let found = tiers[0];
+  for (const tier of tiers) {
     if (irmaaTierReached(tier, magi, filingStatus)) found = tier;
   }
   return found;
@@ -1009,9 +1108,7 @@ export interface IrmaaAssessment {
 /** Household surcharge for a tier, annualized over `beneficiaries` enrollees. */
 function annualSurchargeFor(tier: IrmaaTier, beneficiaries: number): number {
   return toCents(
-    (partBSurchargeMonthly(tier) + tier.partDSurchargeMonthly) *
-      12 *
-      beneficiaries,
+    (tier.partBSurchargeMonthly + tier.partDSurchargeMonthly) * 12 * beneficiaries,
   );
 }
 
@@ -1025,10 +1122,10 @@ function annualSurchargeFor(tier: IrmaaTier, beneficiaries: number): number {
  */
 export function irmaaFor(magi: number, scenario: Scenario = {}): IrmaaAssessment {
   const { filingStatus, beneficiaries } = resolveScenario(scenario);
-  const tiers = irmaaTiersFor(filingStatus);
-  const tier = irmaaTierFor(magi, filingStatus);
+  const tiers = irmaaTiersFor(scenario);
+  const tier = irmaaTierFor(magi, scenario);
   const next = tiers[tiers.indexOf(tier) + 1] ?? null;
-  const partBSurcharge = partBSurchargeMonthly(tier);
+  const partBSurcharge = tier.partBSurchargeMonthly;
   const annualSurcharge = annualSurchargeFor(tier, beneficiaries);
   return {
     magi,
@@ -1099,7 +1196,7 @@ export interface IrmaaCliff {
  */
 export function irmaaCliffs(scenario: Scenario = {}): IrmaaCliff[] {
   const { filingStatus, beneficiaries } = resolveScenario(scenario);
-  const tiers = irmaaTiersFor(filingStatus);
+  const tiers = irmaaTiersFor(scenario);
   return tiers.slice(1).map((tier, index) => {
     const magi = tier.magiOver[filingStatus];
     // The tier below on *this* status's ladder, which is not tier - 1 for a
@@ -1174,7 +1271,7 @@ export function conversionCeilings(scenario: Scenario = {}): ConversionCeiling[]
   // two Social Security ceilings collapse onto each other. Say so rather than
   // offering the same $0 twice with different explanations.
   const basesCollapse = ssBase50 === ssBase85;
-  const firstCliff = firstIrmaaTier(filingStatus);
+  const firstCliff = firstIrmaaTier(scenario);
   return [
     {
       id: 'bracket12',
@@ -1219,7 +1316,7 @@ export function conversionCeilings(scenario: Scenario = {}): ConversionCeiling[]
       id: 'irmaa1',
       label: `IRMAA tier ${firstCliff.tier} (Medicare surcharge)`,
       measure: 'magi',
-      amount: IRMAA_FIRST_CLIFF_MAGI[filingStatus],
+      amount: irmaaFirstCliffMagi(scenario),
       note:
         'A true cliff, not a phase-in: one dollar over adds a full year of Part B and Part D surcharges. Medicare reads the MAGI from two years earlier, so this year’s conversion sets the premium two years out. The surcharge itself is not included in the tax figures below.' +
         (firstCliff.tier > 1

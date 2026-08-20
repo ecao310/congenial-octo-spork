@@ -39,13 +39,11 @@ import {
   irmaaMagi,
   irmaaFor,
   irmaaCliffs,
-  partBSurchargeMonthly,
-  IRMAA_TIERS,
-  IRMAA_FIRST_CLIFF_MAGI,
-  IRMAA_MAGI_YEAR,
-  IRMAA_PREMIUM_YEAR,
+  allIrmaaTiers,
+  irmaaFirstCliffMagi,
+  irmaaMagiYear,
   IRMAA_LOOKBACK_YEARS,
-  PART_B_STANDARD_PREMIUM,
+  partBStandardPremium,
 } from './utils/tax';
 import type {
   TaxYear,
@@ -128,6 +126,8 @@ interface CustomTooltipProps {
   muniInterest?: number;
   /** How many people on the return are enrolled in Medicare. */
   beneficiaries?: number;
+  /** Which year's premium schedule prices the IRMAA line. */
+  year?: TaxYear;
 }
 
 export const CustomTooltip: React.FC<CustomTooltipProps> = ({
@@ -138,6 +138,7 @@ export const CustomTooltip: React.FC<CustomTooltipProps> = ({
   filingStatus = 'single',
   muniInterest = 0,
   beneficiaries = 1,
+  year = defaultTaxYear(),
 }) => {
   if (!active || !payload || !payload.length) return null;
   const point = payload[0].payload;
@@ -149,7 +150,7 @@ export const CustomTooltip: React.FC<CustomTooltipProps> = ({
   // curve, which only carries taxable figures.
   const irmaa = irmaaFor(
     irmaaMagi({ ordinaryIncome: point.income, ssBenefit, ltcg: 0, filingStatus, muniInterest }),
-    { filingStatus, beneficiaries },
+    { filingStatus, beneficiaries, year },
   );
   return (
     <div style={TOOLTIP_STYLE}>
@@ -411,8 +412,8 @@ const App: React.FC = () => {
   const beneficiaries = filingStatus === 'mfj' && seniors === 2 ? 2 : 1;
 
   const cliffs = useMemo(
-    () => irmaaCliffs({ ssBenefit, filingStatus, muniInterest, beneficiaries }),
-    [ssBenefit, filingStatus, muniInterest, beneficiaries],
+    () => irmaaCliffs({ ssBenefit, filingStatus, muniInterest, beneficiaries, year }),
+    [ssBenefit, filingStatus, muniInterest, beneficiaries, year],
   );
 
   /** The cliffs that actually land inside the chart's x-axis. */
@@ -427,7 +428,7 @@ const App: React.FC = () => {
     filingStatus,
     muniInterest,
   });
-  const irmaa = irmaaFor(scenarioMagi, { filingStatus, beneficiaries });
+  const irmaa = irmaaFor(scenarioMagi, { filingStatus, beneficiaries, year });
 
   const measureLabel = CONVERSION_MEASURE_LABELS[sizing.ceiling.measure];
 
@@ -683,6 +684,7 @@ const App: React.FC = () => {
                   filingStatus={filingStatus}
                   muniInterest={muniInterest}
                   beneficiaries={beneficiaries}
+                  year={year}
                 />
               }
             />
@@ -867,7 +869,7 @@ const App: React.FC = () => {
             <dd className="stat-value">{formatCurrency(irmaa.annualSurcharge)}</dd>
             <dd className="stat-note">
               {irmaa.tier === 0
-                ? `standard ${formatCurrencyCents(PART_B_STANDARD_PREMIUM)} Part B premium only`
+                ? `standard ${formatCurrencyCents(partBStandardPremium(year))} Part B premium only`
                 : `${formatCurrencyCents(irmaa.partBSurchargeMonthly)} Part B + ${formatCurrencyCents(
                     irmaa.partDSurchargeMonthly,
                   )} Part D per month${beneficiaries > 1 ? ', each' : ''}`}
@@ -902,14 +904,14 @@ const App: React.FC = () => {
                 irmaa.nextStep,
               )} of the surcharge arrives all at once.`
             : `That surcharge is on top of the standard ${formatCurrencyCents(
-                PART_B_STANDARD_PREMIUM,
+                partBStandardPremium(year),
               )} Part B premium, and it is not included in any of the federal tax figures elsewhere on this page.`}
         </p>
 
         <table className="tier-table">
           <caption>
-            {IRMAA_PREMIUM_YEAR} premiums, set by {IRMAA_MAGI_YEAR} MAGI. Per
-            person enrolled; the annual column is for{' '}
+            {year} premiums, set by {irmaaMagiYear(year)} MAGI. Per person
+            enrolled; the annual column is for{' '}
             {beneficiaries > 1 ? 'both of you' : 'one enrollee'}.
           </caption>
           <thead>
@@ -923,21 +925,23 @@ const App: React.FC = () => {
             </tr>
           </thead>
           <tbody>
-            {IRMAA_TIERS.map((tier) => {
+            {allIrmaaTiers(year).map((tier) => {
               const annual =
-                (partBSurchargeMonthly(tier) + tier.partDSurchargeMonthly) *
+                (tier.partBSurchargeMonthly + tier.partDSurchargeMonthly) *
                 12 *
                 beneficiaries;
               const range = (status: FilingStatus): string => {
                 // Tier 0 runs up to whichever tier the status actually reaches
                 // first, which is the fourth one on a separate return.
                 if (tier.tier === 0)
-                  return `Up to ${formatCurrency(IRMAA_FIRST_CLIFF_MAGI[status])}`;
+                  return `Up to ${formatCurrency(
+                    irmaaFirstCliffMagi({ year, filingStatus: status }),
+                  )}`;
                 const floor = tier.magiOver[status];
                 // Infinity marks a tier this status has no access to at all.
                 if (!Number.isFinite(floor)) return '\u2014';
-                // The separate-return top tier is the one inclusive threshold
-                // in the statute: "equal to or greater than", not "over".
+                // The top tier is the one inclusive threshold in the
+                // statute — "at least", not "more than" — for every status.
                 const preposition = tier.inclusiveFor?.includes(status)
                   ? 'From'
                   : 'Over';
@@ -966,12 +970,11 @@ const App: React.FC = () => {
 
         <p>
           <strong>The x-axis caveat.</strong> Medicare bills on a{' '}
-          {IRMAA_LOOKBACK_YEARS}-year lag: the {IRMAA_PREMIUM_YEAR} premiums in
-          the table are set by {IRMAA_MAGI_YEAR} MAGI, so the {year} income on
-          this chart is really setting the premium for{' '}
-          {year + IRMAA_LOOKBACK_YEARS}, under a schedule CMS has not published
-          yet. Treat the lines as where the cliffs would fall at
-          today&apos;s thresholds, not as a bill. The lag cuts both ways: a Roth
+          {IRMAA_LOOKBACK_YEARS}-year lag: the {year} premiums in the table are
+          set by {irmaaMagiYear(year)} MAGI, so the {year} income on this chart
+          is really setting the premium for {year + IRMAA_LOOKBACK_YEARS}, under
+          a schedule CMS has not published yet. Treat the lines as where the
+          cliffs would fall at {year} thresholds, not as a bill. The lag cuts both ways: a Roth
           conversion made now surfaces as a premium two years later, and a
           one-off spike — a home sale, an inherited IRA — keeps costing after the
           income is gone. Retiring or losing that income is a life-changing event

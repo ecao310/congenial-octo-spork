@@ -11,12 +11,10 @@ import {
   conversionMeasureValue,
   maxConversionUnder,
   sizeConversion,
-  IRMAA_FIRST_CLIFF_MAGI,
-  IRMAA_TIERS,
-  IRMAA_MAGI_YEAR,
-  IRMAA_PREMIUM_YEAR,
-  PART_B_STANDARD_PREMIUM,
-  partBSurchargeMonthly,
+  irmaaFirstCliffMagi,
+  allIrmaaTiers,
+  irmaaMagiYear,
+  partBStandardPremium,
   irmaaMagi,
   irmaaTierFor,
   irmaaFor,
@@ -652,7 +650,7 @@ describe('Roth conversion sizing', () => {
     expect(ceiling('ss50').amount).toBe(SS_BASES.single.ssBase50);
     expect(ceiling('ss85').amount).toBe(SS_BASES.single.ssBase85);
     expect(ceiling('ltcg0').amount).toBe(filingParams(PINNED_YEAR, 'single').ltcgBrackets[0].upTo);
-    expect(ceiling('irmaa1').amount).toBe(IRMAA_FIRST_CLIFF_MAGI.single);
+    expect(ceiling('irmaa1').amount).toBe(irmaaFirstCliffMagi({ filingStatus: 'single' }));
 
     expect(ceiling('bracket12', 'mfj').amount).toBe(96_950);
     expect(ceiling('ss85', 'mfj').amount).toBe(44_000);
@@ -1583,12 +1581,14 @@ describe('married filing separately (lived with spouse)', () => {
   it('skips IRMAA tiers 1 through 3 entirely', () => {
     // 42 U.S.C. 1395r(i)(3)(C) gives a separate return its own two-step
     // schedule, which reuses tiers 4 and 5's premiums at its own thresholds.
-    expect(irmaaTiersFor('mfs').map((t) => t.tier)).toEqual([0, 4, 5]);
-    expect(irmaaTiersFor('single').map((t) => t.tier)).toEqual([0, 1, 2, 3, 4, 5]);
-    expect(firstIrmaaTier('mfs').tier).toBe(4);
-    expect(IRMAA_FIRST_CLIFF_MAGI.mfs).toBe(106_000);
+    expect(irmaaTiersFor({ filingStatus: 'mfs' }).map((t) => t.tier)).toEqual([0, 4, 5]);
+    expect(irmaaTiersFor({ filingStatus: 'single' }).map((t) => t.tier)).toEqual([
+      0, 1, 2, 3, 4, 5,
+    ]);
+    expect(firstIrmaaTier({ filingStatus: 'mfs' }).tier).toBe(4);
+    expect(irmaaFirstCliffMagi({ filingStatus: 'mfs' })).toBe(106_000);
     // Same first threshold as a single filer, four times the surcharge.
-    expect(IRMAA_FIRST_CLIFF_MAGI.single).toBe(106_000);
+    expect(irmaaFirstCliffMagi({ filingStatus: 'single' })).toBe(106_000);
     expect(irmaaFor(106_001, { filingStatus: 'mfs' }).annualSurcharge).toBeCloseTo(5_826, 6);
     expect(irmaaFor(106_001, { filingStatus: 'single' }).annualSurcharge).toBeCloseTo(1_052.4, 6);
   });
@@ -1608,14 +1608,18 @@ describe('married filing separately (lived with spouse)', () => {
     expect(over.nextStep).toBeCloseTo(530.4, 6);
   });
 
-  it('treats its top threshold as inclusive, unlike every other one', () => {
-    // 1395r(i)(3)(C)(ii)(II) says "equal to or greater than" for a separate
-    // return; every other threshold in the statute says "greater than".
-    expect(irmaaTierFor(393_999, 'mfs').tier).toBe(4);
-    expect(irmaaTierFor(394_000, 'mfs').tier).toBe(5);
-    expect(irmaaTierFor(500_000, 'single').tier).toBe(4);
-    expect(irmaaTierFor(500_001, 'single').tier).toBe(5);
-    expect(irmaaTierFor(750_000, 'mfj').tier).toBe(4);
+  it('reaches its top tier at $394,000 exactly, as every status does', () => {
+    // The last row of all three of CMS's 2025 tables reads "Greater than or
+    // equal to" — $394,000 separate, $500,000 individual, $750,000 joint —
+    // where every row above it reads "Greater than". The inclusive top rung is
+    // not an MFS quirk; it applies to all three statuses.
+    expect(irmaaTierFor(394_000, { filingStatus: 'mfs' }).tier).toBe(5);
+    expect(irmaaTierFor(500_000, { filingStatus: 'single' }).tier).toBe(5);
+    expect(irmaaTierFor(750_000, { filingStatus: 'mfj' }).tier).toBe(5);
+    // The rung below each is exclusive, so a cent under stays put.
+    expect(irmaaTierFor(393_999.99, { filingStatus: 'mfs' }).tier).toBe(4);
+    expect(irmaaTierFor(499_999.99, { filingStatus: 'single' }).tier).toBe(4);
+    expect(irmaaTierFor(749_999.99, { filingStatus: 'mfj' }).tier).toBe(4);
   });
 
   it('places its two cliffs on the other-income axis', () => {
@@ -1670,41 +1674,111 @@ describe('IRMAA (Medicare income-related monthly adjustment amount)', () => {
   const SS_CAP = 0.85 * AVG_ANNUAL_SS_BENEFIT; // $20,155.20
 
   it('reads MAGI from the return filed two years before the premium year', () => {
-    expect(IRMAA_PREMIUM_YEAR).toBe(2025);
-    expect(IRMAA_MAGI_YEAR).toBe(2023);
+    // The premium year is the tax year selected on the page, not a constant:
+    // pick 2026 and the table has to say it is priced off 2024 income.
+    expect(irmaaMagiYear(2025)).toBe(2023);
+    expect(irmaaMagiYear(2026)).toBe(2024);
+    // Un-yeared, it follows the same pinned clock as everything else here.
+    expect(irmaaMagiYear()).toBe(PINNED_YEAR - 2);
+    for (const year of TAX_YEARS) {
+      expect(irmaaMagiYear(year)).toBe(year - 2);
+    }
   });
 
   it('matches the 2025 CMS premium schedule', () => {
-    expect(PART_B_STANDARD_PREMIUM).toBe(185);
-    expect(IRMAA_TIERS.map((t) => t.partBMonthly)).toEqual([
+    // Federal Register 89 FR 89843 (Nov 14 2024) / CMS 2025 fact sheet.
+    expect(partBStandardPremium(2025)).toBe(185);
+    expect(allIrmaaTiers(2025).map((t) => t.partBMonthly)).toEqual([
       185, 259, 370, 480.9, 591.9, 628.9,
     ]);
-    expect(IRMAA_TIERS.map((t) => t.partDSurchargeMonthly)).toEqual([
+    expect(allIrmaaTiers(2025).map((t) => t.partDSurchargeMonthly)).toEqual([
       0, 13.7, 35.3, 57, 78.6, 85.8,
     ]);
-    expect(IRMAA_TIERS.map(partBSurchargeMonthly)).toEqual([
+    expect(allIrmaaTiers(2025).map((t) => t.partBSurchargeMonthly)).toEqual([
       0, 74, 185, 295.9, 406.9, 443.9,
     ]);
-    expect(IRMAA_TIERS.slice(1).map((t) => t.magiOver.single)).toEqual([
+    expect(allIrmaaTiers(2025).slice(1).map((t) => t.magiOver.single)).toEqual([
       106_000, 133_000, 167_000, 200_000, 500_000,
     ]);
+    expect(allIrmaaTiers(2025).slice(1).map((t) => t.magiOver.mfs)).toEqual([
+      Infinity, Infinity, Infinity, 106_000, 394_000,
+    ]);
+  });
+
+  it('matches the 2026 CMS premium schedule', () => {
+    // 90 FR 52065 (Nov 19 2025), the rule CMS's fact sheet reproduces. The
+    // whole point of the year selector: pick 2026 and this section re-prices
+    // rather than sitting a year stale next to 2026 brackets.
+    expect(partBStandardPremium(2026)).toBe(202.9);
+    expect(allIrmaaTiers(2026).map((t) => t.partBMonthly)).toEqual([
+      202.9, 284.1, 405.8, 527.5, 649.2, 689.9,
+    ]);
+    expect(allIrmaaTiers(2026).map((t) => t.partDSurchargeMonthly)).toEqual([
+      0, 14.5, 37.5, 60.4, 83.3, 91,
+    ]);
+    expect(allIrmaaTiers(2026).map((t) => t.partBSurchargeMonthly)).toEqual([
+      0, 81.2, 202.9, 324.6, 446.3, 487,
+    ]);
+    expect(allIrmaaTiers(2026).slice(1).map((t) => t.magiOver.single)).toEqual([
+      109_000, 137_000, 171_000, 205_000, 500_000,
+    ]);
+    // A separate return's ladder is the unmarried first threshold and then
+    // $500,000 less that threshold — so its top rung *fell* from $394,000 to
+    // $391,000 while the single top rung stayed put at $500,000.
+    expect(allIrmaaTiers(2026).slice(1).map((t) => t.magiOver.mfs)).toEqual([
+      Infinity, Infinity, Infinity, 109_000, 391_000,
+    ]);
+  });
+
+  it('keeps every year’s Part B surcharge equal to its premium over standard', () => {
+    // The surcharge column is transcribed from CMS rather than derived, so
+    // that a year's figures can be checked against the fact sheet line by
+    // line. This is the check that the two columns did not drift apart.
+    for (const year of TAX_YEARS) {
+      const standard = partBStandardPremium(year);
+      for (const tier of allIrmaaTiers(year)) {
+        expect(tier.partBMonthly - standard).toBeCloseTo(
+          tier.partBSurchargeMonthly,
+          6,
+        );
+      }
+      expect(allIrmaaTiers(year).map((t) => t.tier)).toEqual([0, 1, 2, 3, 4, 5]);
+      expect(allIrmaaTiers(year)[0].partBMonthly).toBe(standard);
+    }
   });
 
   it('doubles the joint thresholds except at the statutory top tier', () => {
-    for (const tier of IRMAA_TIERS.slice(1, 5)) {
-      expect(tier.magiOver.mfj).toBe(2 * tier.magiOver.single);
+    for (const year of TAX_YEARS) {
+      const tiers = allIrmaaTiers(year);
+      for (const tier of tiers.slice(1, 5)) {
+        expect(tier.magiOver.mfj).toBe(2 * tier.magiOver.single);
+      }
+      // $500,000/$750,000 came from the Bipartisan Budget Act of 2018 and is
+      // not indexed until years beginning after 2027, so it never doubled and
+      // is the one threshold that does not move between 2025 and 2026.
+      expect(tiers[5].magiOver.single).toBe(500_000);
+      expect(tiers[5].magiOver.mfj).toBe(750_000);
     }
-    // $500,000/$750,000 came from the Bipartisan Budget Act of 2018 and is
-    // fixed in statute rather than indexed, so it never doubled.
-    expect(IRMAA_TIERS[5].magiOver.single).toBe(500_000);
-    expect(IRMAA_TIERS[5].magiOver.mfj).toBe(750_000);
   });
 
   it('keeps the conversion ceiling and the tier table in sync', () => {
-    expect(IRMAA_FIRST_CLIFF_MAGI.single).toBe(IRMAA_TIERS[1].magiOver.single);
-    expect(IRMAA_FIRST_CLIFF_MAGI.mfj).toBe(IRMAA_TIERS[1].magiOver.mfj);
-    // A separate return's first cliff is tier 4, not tier 1.
-    expect(IRMAA_FIRST_CLIFF_MAGI.mfs).toBe(IRMAA_TIERS[4].magiOver.mfs);
+    for (const year of TAX_YEARS) {
+      const tiers = allIrmaaTiers(year);
+      expect(irmaaFirstCliffMagi({ year, filingStatus: 'single' })).toBe(
+        tiers[1].magiOver.single,
+      );
+      expect(irmaaFirstCliffMagi({ year, filingStatus: 'mfj' })).toBe(
+        tiers[1].magiOver.mfj,
+      );
+      // A separate return's first cliff is tier 4, not tier 1.
+      expect(irmaaFirstCliffMagi({ year, filingStatus: 'mfs' })).toBe(
+        tiers[4].magiOver.mfs,
+      );
+    }
+    // And the Roth ceiling follows the selected year rather than 2025's.
+    expect(
+      conversionCeilings({ year: 2026 }).find((c) => c.id === 'irmaa1')?.amount,
+    ).toBe(109_000);
   });
 
   it('adds tax-exempt interest back into MAGI but never into the tax base', () => {
@@ -1723,16 +1797,39 @@ describe('IRMAA (Medicare income-related monthly adjustment amount)', () => {
     expect(irmaaMagi({ ordinaryIncome: 50_000, ssBenefit: SS, ltcg: 20_000 })).toBeCloseTo(70_000 + SS_CAP, 6);
   });
 
-  it('treats the thresholds as exclusive cliffs', () => {
+  it('treats the thresholds as exclusive cliffs, except the top one', () => {
     expect(irmaaTierFor(106_000).tier).toBe(0);
     expect(irmaaTierFor(106_000.01).tier).toBe(1);
     expect(irmaaTierFor(133_000).tier).toBe(1);
     expect(irmaaTierFor(133_000.01).tier).toBe(2);
-    expect(irmaaTierFor(500_001).tier).toBe(5);
     expect(irmaaTierFor(1e9).tier).toBe(5);
+    // The last row of the statutory rate table at 42 U.S.C.
+    // 1395r(i)(3)(C)(i)(III) reads "At least $500,000" where every row above
+    // it reads "More than", and CMS reproduces that verbatim: "Greater than
+    // $205,000 and less than $500,000", then "Greater than or equal to
+    // $500,000". So $500,000 on the nose is already the top tier.
+    expect(irmaaTierFor(500_000).tier).toBe(5);
+    expect(irmaaTierFor(499_999.99).tier).toBe(4);
     // A joint return at the same MAGI sits two tiers lower.
-    expect(irmaaTierFor(220_000, 'mfj').tier).toBe(1);
-    expect(irmaaTierFor(220_000, 'single').tier).toBe(4);
+    expect(irmaaTierFor(220_000, { filingStatus: 'mfj' }).tier).toBe(1);
+    expect(irmaaTierFor(220_000, { filingStatus: 'single' }).tier).toBe(4);
+  });
+
+  it('re-tiers the same MAGI when the premium year changes', () => {
+    // $107,000 is over 2025's first threshold and under 2026's — the same
+    // income, a $1,052.40 surcharge one year and nothing the next.
+    expect(irmaaTierFor(107_000, { year: 2025 }).tier).toBe(1);
+    expect(irmaaTierFor(107_000, { year: 2026 }).tier).toBe(0);
+    expect(irmaaFor(107_000, { year: 2025 }).annualSurcharge).toBeCloseTo(1_052.4, 6);
+    expect(irmaaFor(107_000, { year: 2026 }).annualSurcharge).toBe(0);
+    // Tier 0 still bills the standard premium, and it went up either way.
+    expect(irmaaFor(107_000, { year: 2026 }).annualPartB).toBeCloseTo(2_434.8, 6);
+    // (81.20 Part B + 14.50 Part D) x 12, 2026's first step.
+    expect(irmaaFor(109_001, { year: 2026 }).annualSurcharge).toBeCloseTo(1_148.4, 6);
+    // And the cliffs the chart draws move with it.
+    expect(irmaaCliffs({ ssBenefit: 0, year: 2026 }).map((c) => c.magi)).toEqual([
+      109_000, 137_000, 171_000, 205_000, 500_000,
+    ]);
   });
 
   it('annualizes the Part B and Part D surcharges per beneficiary', () => {

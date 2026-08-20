@@ -579,7 +579,9 @@ describe('App', () => {
       render(<App />);
       const section = irmaaSection();
       expect(section).toHaveTextContent('Up to $106,000');
-      expect(section).toHaveTextContent('Over $500,000');
+      // "From", not "Over": the top row of CMS's table — and of the statutory
+      // rate table it comes from — is the one inclusive threshold.
+      expect(section).toHaveTextContent('From $500,000');
       expect(section).toHaveTextContent('$185.00');
       expect(section).toHaveTextContent('$628.90');
       expect(section).toHaveTextContent('+$85.80');
@@ -766,6 +768,12 @@ describe('tax year selector', () => {
   const yearRadio = (year: number): HTMLElement =>
     screen.getByRole('radio', { name: String(year) });
 
+  /** The IRMAA section, so its figures can be asserted in context. */
+  const irmaaSection = (): HTMLElement | null =>
+    screen
+      .getByRole('heading', { name: /medicare.s irmaa cliffs/i })
+      .closest('section');
+
   it('offers every year on file and opens on the calendar year', () => {
     render(<App />);
     expect(screen.getByRole('group', { name: /tax year/i })).toBeInTheDocument();
@@ -873,5 +881,27 @@ describe('tax year selector', () => {
     expect(
       screen.getByText(/the 2026 income on this chart is really setting the premium for 2028/),
     ).toBeInTheDocument();
+  });
+
+  it('re-prices the whole IRMAA schedule for 2026, not just its caption', () => {
+    render(<App />);
+    expect(irmaaSection()).toHaveTextContent('2025 premiums, set by 2023 MAGI');
+    expect(irmaaSection()).toHaveTextContent('Up to $106,000');
+    expect(irmaaSection()).toHaveTextContent('$185.00');
+
+    fireEvent.click(yearRadio(2026));
+    const section = irmaaSection();
+    expect(section).toHaveTextContent('2026 premiums, set by 2024 MAGI');
+    // Every column of the table moves: thresholds, Part B, Part D.
+    expect(section).toHaveTextContent('Up to $109,000');
+    expect(section).toHaveTextContent('Over $137,000');
+    expect(section).toHaveTextContent('$202.90');
+    expect(section).toHaveTextContent('$689.90');
+    expect(section).toHaveTextContent('+$91.00');
+    // The separate-return top rung fell while the single one stayed put.
+    expect(section).toHaveTextContent('From $391,000');
+    expect(section).toHaveTextContent('From $500,000');
+    expect(section).not.toHaveTextContent('$106,000');
+    expect(section).not.toHaveTextContent('$185.00');
   });
 });

@@ -1674,3 +1674,138 @@ describe('qualified charitable distribution', () => {
     ).toHaveTextContent('$0 of it reaches the return');
   });
 });
+
+
+describe('head of household', () => {
+  /** The filing-status fieldset, so the note can be read in context. */
+  const filingSection = (): HTMLElement =>
+    screen.getByRole('group', { name: /filing status/i });
+
+  const selectHoh = (): void => {
+    fireEvent.click(screen.getByRole('radio', { name: 'Head of Household' }));
+  };
+
+  it('offers Head of Household alongside the other three statuses', () => {
+    render(<App />);
+    const hoh = screen.getByRole('radio', { name: 'Head of Household' });
+    expect(hoh).not.toBeChecked();
+    selectHoh();
+    expect(hoh).toBeChecked();
+    expect(screen.getByRole('radio', { name: 'Single' })).not.toBeChecked();
+    // Once in the subtitle above the chart, once opening the status note.
+    expect(screen.getAllByText(/a head of household/i)).toHaveLength(2);
+  });
+
+  it('explains that the thresholds are a single filer\'s and the rest is not', () => {
+    render(<App />);
+    selectHoh();
+    const note = filingSection();
+    expect(note).toHaveTextContent(
+      /IRC 86\(c\) names only two special base amounts — \$32,000 on a joint return and \$0 on a separate one/,
+    );
+    expect(note).toHaveTextContent(
+      /takes the default, \$25,000 and \$34,000, which is exactly what Single uses/,
+    );
+    expect(note).toHaveTextContent(
+      /a \$23,625 standard deduction against \$15,750, and a 12% band running to \$64,850 instead of \$48,475/,
+    );
+  });
+
+  it('re-dates the comparison when the tax year changes', () => {
+    render(<App />);
+    selectHoh();
+    fireEvent.click(screen.getByRole('radio', { name: '2026' }));
+    expect(filingSection()).toHaveTextContent(
+      /a \$24,150 standard deduction against \$16,100, and a 12% band running to \$67,450 instead of \$50,400/,
+    );
+  });
+
+  it('warns that qualifying is the hard part, and that a widow is not here yet', () => {
+    render(<App />);
+    selectHoh();
+    const note = filingSection();
+    expect(note).toHaveTextContent(/unmarried at year end/);
+    expect(note).toHaveTextContent(/more than half the cost of keeping up your home/);
+    expect(note).toHaveTextContent(/a dependent parent being the one exception/);
+    expect(note).toHaveTextContent(/two years after it are Qualifying Surviving Spouse/);
+  });
+
+  it('shows the note only for this status, and not the separate-return warning', () => {
+    render(<App />);
+    expect(filingSection()).not.toHaveTextContent(/keeps a single filer's thresholds/);
+    selectHoh();
+    expect(filingSection()).toHaveTextContent(/keeps a single filer's thresholds/);
+    expect(filingSection()).not.toHaveTextContent(/zeroes out both thresholds/);
+    fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Jointly' }));
+    expect(filingSection()).not.toHaveTextContent(/keeps a single filer's thresholds/);
+  });
+
+  it('takes the unmarried age-65 addition with no per-spouse wording', () => {
+    render(<App />);
+    selectHoh();
+    expect(screen.getByText(/Turning 65 adds \$2,000\./)).toBeInTheDocument();
+    expect(screen.queryByText(/per qualifying spouse/)).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('checkbox', { name: /both spouses are 65 or older/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('keeps the single filer\'s torpedo thresholds in the explainer', () => {
+    render(<App />);
+    selectHoh();
+    expect(screen.getByText(/provisional income passes \$25,000/)).toBeInTheDocument();
+    expect(screen.getByText(/past \$34,000/)).toBeInTheDocument();
+  });
+
+  it('sizes conversions off its own brackets and gain bands', () => {
+    render(<App />);
+    selectHoh();
+    const menu = screen.getByLabelText(/convert up to/i);
+    expect(menu).toHaveTextContent('Top of the 12% bracket — $64,850 of taxable income');
+    expect(menu).toHaveTextContent('Top of the 22% bracket — $103,350 of taxable income');
+    expect(menu).toHaveTextContent(
+      'Top of the 0% capital-gains bracket — $64,750 of total taxable income',
+    );
+    expect(menu).toHaveTextContent('IRMAA tier 1 (Medicare surcharge) — $106,000 of MAGI');
+  });
+
+  it("shares Medicare's individual-return column rather than adding a fourth", () => {
+    render(<App />);
+    selectHoh();
+    const irmaa = screen
+      .getByRole('heading', { name: /medicare's irmaa cliffs/i })
+      .closest('section') as HTMLElement;
+    expect(irmaa).toHaveTextContent('MAGI (individual)');
+    expect(irmaa).not.toHaveTextContent('MAGI (single)');
+    expect(irmaa).toHaveTextContent(
+      /Medicare publishes three tables, not four: 42 U\.S\.C\. 1395r\(i\)\(3\)\(C\) carves out joint and separate returns and puts everyone else — single and head of household alike — in the first column/,
+    );
+    // The first cliff sits where a single filer's does.
+    expect(irmaa).toHaveTextContent(/The first cliff costs \$1,052 a year/);
+    expect(irmaa).toHaveTextContent(/Room to the next cliff/);
+  });
+
+  it('counts four statuses in the projection, not two', () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Separately' }));
+    expect(
+      screen.getByText(/The other three statuses have somewhere to climb from/),
+    ).toBeInTheDocument();
+  });
+});
+
+describe('separate-return divergence figure', () => {
+  it('re-dates with the tax year instead of quoting a 2025 constant', () => {
+    // The separate and single rate schedules part company where the separate
+    // 35% band ends, which is indexed like everything else: $375,800 in 2025,
+    // $384,350 in 2026. It used to be written into the sentence.
+    render(<App />);
+    fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Separately' }));
+    const fieldset = screen.getByRole('group', { name: /filing status/i });
+    expect(fieldset).toHaveTextContent(
+      /identical up to \$375,800 of taxable income; head of household is better than either/,
+    );
+    fireEvent.click(screen.getByRole('radio', { name: '2026' }));
+    expect(fieldset).toHaveTextContent(/identical up to \$384,350 of taxable income/);
+  });
+});

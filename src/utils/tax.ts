@@ -5,7 +5,7 @@ export interface MarginalRatePoint {
   totalTax: number;
 }
 
-export type FilingStatus = 'single' | 'mfj' | 'mfs';
+export type FilingStatus = 'single' | 'mfj' | 'mfs' | 'hoh';
 
 /** A tax year this app has published figures for. See `TAX_YEAR_PARAMS`. */
 export type TaxYear = 2025 | 2026;
@@ -201,6 +201,19 @@ export const SS_BASES: Record<FilingStatus, { ssBase50: number; ssBase85: number
    * treated as unmarried by 86(c) instead, and should use `single`.
    */
   mfs: { ssBase50: 0, ssBase85: 0 },
+  /**
+   * Head of household.
+   *
+   * IRC 86(c)(1) names exactly two special cases — $32,000 for a joint return
+   * and $0 for a separate return that lived with the spouse — and puts every
+   * other status under "$25,000, in the case of a taxpayer not described in
+   * subparagraph (A) or (C)". 86(c)(2) does the same for the $34,000 adjusted
+   * base. So a head of household gets a single filer's thresholds exactly,
+   * while getting a standard deduction half again as large and a much wider
+   * 12% bracket. The valley to the left of the torpedo is therefore longer
+   * than a single filer's and the hump starts in the same place.
+   */
+  hoh: { ssBase50: 25_000, ssBase85: 34_000 },
 };
 
 /** The year each threshold in `SS_BASES` was last set by Congress. */
@@ -216,6 +229,12 @@ export const SS_BASE85_ENACTED = 1993;
  * return tops out and jumps to 37% while a single one still has room. The
  * separate-return standard deduction is the single one, because IRC 63(c)(2)
  * files both statuses under "any other case".
+ *
+ * The head-of-household schedule is not derived from any other status: IRC
+ * 1(j)(2)(B) gives it its own bracket amounts and 63(c)(2)(B) its own standard
+ * deduction, set at 150% of the single one. The 10% and 12% bands are the ones
+ * that differ enough to matter here, because those are the bands the Social
+ * Security torpedo lands in.
  */
 export const TAX_YEAR_PARAMS: Record<TaxYear, TaxYearParams> = {
   2025: {
@@ -287,6 +306,35 @@ export const TAX_YEAR_PARAMS: Record<TaxYear, TaxYearParams> = {
           { upTo: Infinity, rate: 0.2 },
         ],
       },
+      hoh: {
+        // Rev. Proc. 2024-40 printed $22,500; the OBBBA replaced the three
+        // 63(c)(2) amounts for 2025 and raised this one to $23,625. It is
+        // exactly 1.5x the single figure, which is the ratio the statute has
+        // set since 63(c)(2)(B) was written.
+        standardDeduction: 23_625,
+        // A head of household is unmarried, so 63(f)(3) gives the larger
+        // "not married and not a surviving spouse" addition — the same $2,000
+        // a single filer gets, not the $1,600 a married one does.
+        additionalStdDeduction65: 2_000,
+        // The 10% and 12% bands are their own amounts under IRC 1(j)(2)(B),
+        // materially wider than a single filer's; from the 22% band up the
+        // schedule converges on the single one and the top three thresholds
+        // are within $25 of it.
+        brackets: [
+          { upTo: 17_000, rate: 0.1 },
+          { upTo: 64_850, rate: 0.12 },
+          { upTo: 103_350, rate: 0.22 },
+          { upTo: 197_300, rate: 0.24 },
+          { upTo: 250_500, rate: 0.32 },
+          { upTo: 626_350, rate: 0.35 },
+          { upTo: Infinity, rate: 0.37 },
+        ],
+        ltcgBrackets: [
+          { upTo: 64_750, rate: 0 },
+          { upTo: 566_700, rate: 0.15 },
+          { upTo: Infinity, rate: 0.2 },
+        ],
+      },
     },
   },
   2026: {
@@ -355,6 +403,24 @@ export const TAX_YEAR_PARAMS: Record<TaxYear, TaxYearParams> = {
         ltcgBrackets: [
           { upTo: 49_450, rate: 0 },
           { upTo: 306_850, rate: 0.15 },
+          { upTo: Infinity, rate: 0.2 },
+        ],
+      },
+      hoh: {
+        standardDeduction: 24_150,
+        additionalStdDeduction65: 2_050,
+        brackets: [
+          { upTo: 17_700, rate: 0.1 },
+          { upTo: 67_450, rate: 0.12 },
+          { upTo: 105_700, rate: 0.22 },
+          { upTo: 201_775, rate: 0.24 },
+          { upTo: 256_200, rate: 0.32 },
+          { upTo: 640_600, rate: 0.35 },
+          { upTo: Infinity, rate: 0.37 },
+        ],
+        ltcgBrackets: [
+          { upTo: 66_200, rate: 0 },
+          { upTo: 579_600, rate: 0.15 },
           { upTo: Infinity, rate: 0.2 },
         ],
       },
@@ -480,6 +546,11 @@ export const SENIOR_DEDUCTION_PHASEOUT_START: Record<FilingStatus, number | null
   single: 75_000,
   mfj: 150_000,
   mfs: null,
+  // 151(d)(5)(C)(i) names one threshold, $150,000, "in the case of a joint
+  // return", and $75,000 in every other case. A head of household is not a
+  // married individual, so clause (v) never bites and the deduction is
+  // available in full at the unmarried threshold.
+  hoh: 75_000,
 };
 
 /** Whether a filing status can claim the senior deduction at all. */
@@ -1186,6 +1257,17 @@ export interface IrmaaYearParams {
  * (42 U.S.C. 1395r(i)(5)(C)), which is why it is the one threshold that does
  * not move between 2025 and 2026.
  *
+ * Head of household is not a Medicare category at all. 42 U.S.C.
+ * 1395r(i)(3)(C) has exactly three clauses - (ii) for a joint return, (iii) for
+ * a married individual filing separately, and (i) for "an individual with a
+ * taxable year beginning in such calendar year who is not described in clause
+ * (ii) or (iii)". A head of household is not described in either, so it lands
+ * in (i) alongside single filers, and SSA's POMS HI 01101.020 heads that table
+ * "Single, head-of-household, or qualifying surviving spouse with dependent
+ * child tax filing status". Its thresholds are therefore the single column
+ * repeated, not an amount of its own - which is why the table on screen shows
+ * one "individual return" column for the two of them.
+ *
  * A separate return that lived with the spouse gets its own two-step schedule
  * under 42 U.S.C. 1395r(i)(3)(C)(iii) rather than a halved version of the joint
  * one. It reuses tiers 4 and 5's premiums but reaches them at the unmarried
@@ -1203,43 +1285,43 @@ export const IRMAA_YEAR_PARAMS: Record<TaxYear, IrmaaYearParams> = {
     tiers: [
       {
         tier: 0,
-        magiOver: { single: -Infinity, mfj: -Infinity, mfs: -Infinity },
+        magiOver: { single: -Infinity, mfj: -Infinity, mfs: -Infinity, hoh: -Infinity },
         partBSurchargeMonthly: 0,
         partBMonthly: 185.0,
         partDSurchargeMonthly: 0,
       },
       {
         tier: 1,
-        magiOver: { single: 106_000, mfj: 212_000, mfs: Infinity },
+        magiOver: { single: 106_000, mfj: 212_000, mfs: Infinity, hoh: 106_000 },
         partBSurchargeMonthly: 74.0,
         partBMonthly: 259.0,
         partDSurchargeMonthly: 13.7,
       },
       {
         tier: 2,
-        magiOver: { single: 133_000, mfj: 266_000, mfs: Infinity },
+        magiOver: { single: 133_000, mfj: 266_000, mfs: Infinity, hoh: 133_000 },
         partBSurchargeMonthly: 185.0,
         partBMonthly: 370.0,
         partDSurchargeMonthly: 35.3,
       },
       {
         tier: 3,
-        magiOver: { single: 167_000, mfj: 334_000, mfs: Infinity },
+        magiOver: { single: 167_000, mfj: 334_000, mfs: Infinity, hoh: 167_000 },
         partBSurchargeMonthly: 295.9,
         partBMonthly: 480.9,
         partDSurchargeMonthly: 57.0,
       },
       {
         tier: 4,
-        magiOver: { single: 200_000, mfj: 400_000, mfs: 106_000 },
+        magiOver: { single: 200_000, mfj: 400_000, mfs: 106_000, hoh: 200_000 },
         partBSurchargeMonthly: 406.9,
         partBMonthly: 591.9,
         partDSurchargeMonthly: 78.6,
       },
       {
         tier: 5,
-        magiOver: { single: 500_000, mfj: 750_000, mfs: 394_000 },
-        inclusiveFor: ['single', 'mfj', 'mfs'],
+        magiOver: { single: 500_000, mfj: 750_000, mfs: 394_000, hoh: 500_000 },
+        inclusiveFor: ['single', 'mfj', 'mfs', 'hoh'],
         partBSurchargeMonthly: 443.9,
         partBMonthly: 628.9,
         partDSurchargeMonthly: 85.8,
@@ -1252,43 +1334,43 @@ export const IRMAA_YEAR_PARAMS: Record<TaxYear, IrmaaYearParams> = {
     tiers: [
       {
         tier: 0,
-        magiOver: { single: -Infinity, mfj: -Infinity, mfs: -Infinity },
+        magiOver: { single: -Infinity, mfj: -Infinity, mfs: -Infinity, hoh: -Infinity },
         partBSurchargeMonthly: 0,
         partBMonthly: 202.9,
         partDSurchargeMonthly: 0,
       },
       {
         tier: 1,
-        magiOver: { single: 109_000, mfj: 218_000, mfs: Infinity },
+        magiOver: { single: 109_000, mfj: 218_000, mfs: Infinity, hoh: 109_000 },
         partBSurchargeMonthly: 81.2,
         partBMonthly: 284.1,
         partDSurchargeMonthly: 14.5,
       },
       {
         tier: 2,
-        magiOver: { single: 137_000, mfj: 274_000, mfs: Infinity },
+        magiOver: { single: 137_000, mfj: 274_000, mfs: Infinity, hoh: 137_000 },
         partBSurchargeMonthly: 202.9,
         partBMonthly: 405.8,
         partDSurchargeMonthly: 37.5,
       },
       {
         tier: 3,
-        magiOver: { single: 171_000, mfj: 342_000, mfs: Infinity },
+        magiOver: { single: 171_000, mfj: 342_000, mfs: Infinity, hoh: 171_000 },
         partBSurchargeMonthly: 324.6,
         partBMonthly: 527.5,
         partDSurchargeMonthly: 60.4,
       },
       {
         tier: 4,
-        magiOver: { single: 205_000, mfj: 410_000, mfs: 109_000 },
+        magiOver: { single: 205_000, mfj: 410_000, mfs: 109_000, hoh: 205_000 },
         partBSurchargeMonthly: 446.3,
         partBMonthly: 649.2,
         partDSurchargeMonthly: 83.3,
       },
       {
         tier: 5,
-        magiOver: { single: 500_000, mfj: 750_000, mfs: 391_000 },
-        inclusiveFor: ['single', 'mfj', 'mfs'],
+        magiOver: { single: 500_000, mfj: 750_000, mfs: 391_000, hoh: 500_000 },
+        inclusiveFor: ['single', 'mfj', 'mfs', 'hoh'],
         partBSurchargeMonthly: 487.0,
         partBMonthly: 689.9,
         partDSurchargeMonthly: 91.0,

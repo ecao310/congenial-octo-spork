@@ -1880,3 +1880,90 @@ about whether the section on screen says true things.
 
 npx tsc -b, npm run lint, npx vitest run (342 passed), npm run build — all
 clean; only the pre-existing >500kB chunk warning.
+
+## 2026-08-20 — Task: Head of Household filing status
+
+Clean tree this time, so the whole iteration was the task. Added `'hoh'` to
+`FilingStatus` and filled in everything the exhaustive `Record<FilingStatus, …>`
+types demanded, which is the reason those types are there — tsc named all six
+sites before I touched the UI.
+
+### The blocker in Discovered Work was based on a wrong premise
+
+The plan said to rework `.tier-table` before adding HOH, because "the IRMAA
+table has grown a column per status — a fourth will not fit". It does not need
+a fourth. 42 U.S.C. 1395r(i)(3)(C) has exactly three clauses: (ii) a joint
+return, (iii) a married individual filing separately, and (i) "an individual …
+who is not described in clause (ii) or (iii)". A head of household is not
+described in either, so it lands in (i) with single filers, and SSA's POMS HI
+01101.020 heads that table "Single, head-of-household, or qualifying surviving
+spouse with dependent child tax filing status". So `magiOver.hoh` is the single
+column repeated, the table stayed at six columns, and the only change was
+relabelling "MAGI (single)" to "MAGI (individual)" with a caption sentence
+saying why there are three tables and not four. Worth checking the statute
+before doing the rework a plan bullet asks for.
+
+### Figures, and where each came from
+
+Verified against Rev. Proc. 2024-40 / 2025-32 (via Tax Foundation's tables and
+currentfederaltaxdevelopments' Rev. Proc. walkthrough, since the IRS PDF does
+not extract) rather than recalled:
+
+| | 2025 | 2026 |
+|---|---|---|
+| standard deduction | $23,625 (OBBBA, not the $22,500 the Rev. Proc. printed) | $24,150 |
+| age-65 addition | $2,000 | $2,050 |
+| 10% / 12% tops | $17,000 / $64,850 | $17,700 / $67,450 |
+| 22%–37% tops | 103,350 / 197,300 / 250,500 / 626,350 | 105,700 / 201,775 / 256,200 / 640,600 |
+| 0% / 15% gain tops | $64,750 / $566,700 | $66,200 / $579,600 |
+
+Two traps: the standard deduction is 1.5x the single one *after* the OBBBA
+rewrote 63(c)(2) for 2025, and the 65+ addition is the unmarried $2,000/$2,050
+under 63(f)(3), not the married $1,600/$1,650 — one source quoted "$1,650" for
+HOH because it read only the first sentence of the Rev. Proc. paragraph, which
+gives the base amount before the unmarried uplift.
+
+Everything else fell out of statute that already keys on "joint or not":
+`maxSeniors` 1, the QCD limit undoubled, `SENIOR_DEDUCTION_PHASEOUT_START`
+$75,000 (151(d)(5)(C)(i) says $150,000 for a joint return and $75,000
+otherwise; clause (v) only bars separate filers), and SS bases $25,000/$34,000
+under 86(c)(1)'s "any other case".
+
+### The one genuinely interesting number
+
+Head of household keeps a single filer's thresholds exactly and changes
+everything downstream — so the torpedo *starts* at the same provisional income
+and the whole curve still shifts right, because the bigger deduction takes
+longer to fill. The shift is not the deduction gap. Inside the 50% tier each
+extra dollar of other income raises AGI by $1.50 (the dollar plus fifty cents
+of dragged-in benefit), so $7,875 of extra deduction buys $5,250 of income:
+first taxed dollar at $14,882 single, $20,132 head of household. That ratio is
+now an assertion rather than a coincidence.
+
+### One prose defect found by probing, and it was a stale constant
+
+Rendering the *separate*-return note (not the new one) turned up "The brackets
+and standard deduction are identical up to $375,800 of taxable income" written
+as a literal. That figure is the top of the separate 35% band — where 1(j)(2)(D)
+halving stops matching the single schedule — and it is indexed: $384,350 in
+2026. It has been silently wrong for the 2026 selector since the year task
+landed. Now derived from `filingParams(year, 'mfs').brackets`, pinned in both
+years, and logged under Discovered work.
+
+### Tests
+
+12 engine tests in `tax.test.ts` (Pub 915 agreement at the default base amounts,
+threshold identity with single across a sweep, the 1.5x deduction relation over
+both years, the unmarried 65+ addition, both bracket schedules, both gain
+schedules, the $1.50 first-taxed-dollar relation, the senior deduction at the
+unmarried threshold, per-person figures, the shared Medicare column, the
+conversion ceilings). 11 App tests covering the new status note, its re-dating
+to 2026, its absence under the other three statuses, and the divergence-figure
+fix. The Pub 915 reference worksheet got `hoh` keys of its own rather than
+reading `SS_BASES`, so it stays an independent implementation. 365 total, up
+from 342.
+
+### Verification
+
+npx tsc -b, npm run lint, npx vitest run (365 passed), npm run build — all
+clean; only the pre-existing >500kB chunk warning.

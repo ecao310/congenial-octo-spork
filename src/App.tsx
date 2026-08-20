@@ -121,6 +121,7 @@ const SEQUENCING_COLORS: Record<SequencingStrategy['chartKey'], string> = {
 
 const FILING_STATUS_OPTIONS: { value: FilingStatus; label: string }[] = [
   { value: 'single', label: 'Single' },
+  { value: 'hoh', label: 'Head of Household' },
   { value: 'mfj', label: 'Married Filing Jointly' },
   { value: 'mfs', label: 'Married Filing Separately' },
 ];
@@ -130,6 +131,7 @@ const FILING_STATUS_PROSE: Record<FilingStatus, string> = {
   single: 'a single filer',
   mfj: 'a married couple filing jointly',
   mfs: 'a married filer filing separately who lived with their spouse',
+  hoh: 'a head of household',
 };
 
 const formatCurrency = (value: number): string =>
@@ -445,6 +447,24 @@ const App: React.FC = () => {
   const statesTaxing = statesTaxingSocialSecurity(year);
   const yearParams = taxYearParams(year);
   const yearFiling = filingParams(year, filingStatus);
+  /**
+   * The single filer's figures, kept alongside the selected status's so the
+   * two notes that compare against them — head of household's wider bands, a
+   * separate return's identical ones — can name real numbers for the year on
+   * screen rather than a figure written down when the note was.
+   */
+  const singleFiling = filingParams(year, 'single');
+  /**
+   * Where a separate return's rate schedule stops matching a single filer's.
+   *
+   * IRC 1(j)(2)(D) halves the joint brackets to make the separate ones, which
+   * leaves them identical to the single schedule right up until the separate
+   * 35% band ends and jumps to 37% while a single filer still has room. That
+   * is the second-to-last threshold, and it moves every year: $375,800 in
+   * 2025, $384,350 in 2026.
+   */
+  const mfsBrackets = filingParams(year, 'mfs').brackets;
+  const mfsSingleDivergence = mfsBrackets[mfsBrackets.length - 2].upTo;
 
   /**
    * Switching years re-prices the benefit as well as the brackets. Someone who
@@ -704,7 +724,7 @@ const App: React.FC = () => {
    * are told apart by where the flat line sits, because flat is the only
    * symptom either one shows. The first tier's cap binds whenever the benefit
    * is small enough that half of it fits under the tier's own width: $9,000 on
-   * a single return, $12,000 on a joint one.
+   * a single or head-of-household return, $12,000 on a joint one.
    */
   const ssCapPercent =
     qcdSwing.taxableSSWith >= Math.round(0.85 * ssBenefit) ? 85 : 50;
@@ -915,8 +935,41 @@ const App: React.FC = () => {
             band a single filer sees.{' '}
             <em>
               If you lived apart from your spouse for the entire year, 86(c)
-              treats you as unmarried — use Single instead. The brackets and
-              standard deduction are identical up to $375,800 of taxable income.
+              treats you as unmarried — use Single instead, or Head of
+              Household if a qualifying person lives with you. The separate and
+              single brackets and standard deduction are identical up to{' '}
+              {formatCurrency(mfsSingleDivergence)} of taxable income; head of
+              household is better than either from the first dollar.
+            </em>
+          </p>
+        )}
+        {filingStatus === 'hoh' && (
+          <p className="field-note" role="note">
+            <strong>
+              Head of household keeps a single filer&apos;s thresholds and
+              improves everything else.
+            </strong>{' '}
+            IRC 86(c) names only two special base amounts —{' '}
+            {formatCurrency(SS_BASES.mfj.ssBase50)} on a joint return and{' '}
+            {formatCurrency(SS_BASES.mfs.ssBase50)} on a separate one that lived
+            together — so a head of household takes the default,{' '}
+            {formatCurrency(ssBase50)} and {formatCurrency(ssBase85)}, which is
+            exactly what Single uses. What changes is downstream: a{' '}
+            {formatCurrency(yearFiling.standardDeduction)} standard deduction
+            against {formatCurrency(singleFiling.standardDeduction)}, and a 12%
+            band running to {formatCurrency(yearFiling.brackets[1].upTo)} instead
+            of {formatCurrency(singleFiling.brackets[1].upTo)}. The torpedo
+            starts at the same provisional income and costs less the whole way
+            through.{' '}
+            <em>
+              Qualifying is the hard part in retirement: unmarried at year end,
+              paying more than half the cost of keeping up your home, and a
+              qualifying person living with you more than half the year — a
+              dependent parent being the one exception, who need not live with
+              you. A recent widow or widower is not here automatically. The year
+              of death is still a joint return, and the two years after it are
+              Qualifying Surviving Spouse, which pairs joint brackets with these
+              same {formatCurrency(ssBase50)} thresholds and is not on this menu.
             </em>
           </p>
         )}
@@ -1336,11 +1389,14 @@ const App: React.FC = () => {
           <caption>
             {year} premiums, set by {irmaaMagiYear(year)} MAGI. Per person
             enrolled; the annual column is for{' '}
-            {beneficiaries > 1 ? 'both of you' : 'one enrollee'}.
+            {beneficiaries > 1 ? 'both of you' : 'one enrollee'}. Medicare
+            publishes three tables, not four: 42 U.S.C. 1395r(i)(3)(C) carves
+            out joint and separate returns and puts everyone else — single and
+            head of household alike — in the first column.
           </caption>
           <thead>
             <tr>
-              <th scope="col">MAGI (single)</th>
+              <th scope="col">MAGI (individual)</th>
               <th scope="col">MAGI (joint)</th>
               <th scope="col">MAGI (separate)</th>
               <th scope="col">Part B/mo</th>
@@ -1834,8 +1890,8 @@ const App: React.FC = () => {
             {formatCurrency(SENIOR_DEDUCTION)} shrinks by{' '}
             {formatCents(SENIOR_DEDUCTION_PHASEOUT_RATE)} for every dollar of
             MAGI above {formatCurrency(phaseoutStart)}, so it is gone at{' '}
-            {formatCurrency(phaseoutEnd)} — exactly $100,000 later, for both
-            filing statuses, because a couple where both spouses qualify has
+            {formatCurrency(phaseoutEnd)} — exactly $100,000 later, for every
+            status that has one, because a couple where both spouses qualify has
             twice as much deduction to lose and loses it twice as fast.
           </p>
           <p>
@@ -2095,7 +2151,7 @@ const App: React.FC = () => {
               at {formatCurrency(0)} — put there by IRC 86(c) in{' '}
               {SS_BASE50_ENACTED} and never revisited — so 85% of the benefit is
               taxable from the first dollar and there is no ratchet left to
-              project. The other two statuses have somewhere to climb from.
+              project. The other three statuses have somewhere to climb from.
             </>
           ) : (
             <>

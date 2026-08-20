@@ -24,9 +24,9 @@ benefits exactly as fast as a pension check would.
 | 6 | Combine lines 2, 3, 4, and 5 |
 | 7 | Schedule 1 adjustments: lines 11–20, 23, and 25 |
 | 8 | Line 6 − line 7 (provisional income) |
-| 9 | Base amount: **$25,000** single / **$32,000** MFJ |
+| 9 | Base amount: **$25,000** single or HOH / **$32,000** MFJ / **$0** MFS lived together |
 | 10 | Line 8 − line 9; if zero or less, none of the benefits are taxable |
-| 11 | **$9,000** single / **$12,000** MFJ (second threshold minus base) |
+| 11 | **$9,000** single or HOH / **$12,000** MFJ / **$0** MFS lived together (second threshold minus base) |
 | 12 | Line 10 − line 11 (enter 0 if zero or less) |
 | 13 | Smaller of line 10 or line 11 |
 | 14 | Line 13 × 50% |

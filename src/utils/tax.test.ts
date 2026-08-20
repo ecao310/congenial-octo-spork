@@ -98,12 +98,14 @@ function pub915Worksheet1(
   // Base amount, worksheet line 9. IRC 86(c)(1)(C)(ii) makes it $0 for a
   // married taxpayer who files separately and does not live apart from their
   // spouse for the whole year; Pub 915 prints the same instruction.
-  const line9 = { single: 25_000, mfj: 32_000, mfs: 0 }[filingStatus];
+  // Head of household falls under 86(c)(1)(B)'s "any other case", so Pub 915
+  // has it tick the same $25,000 box a single filer does.
+  const line9 = { single: 25_000, mfj: 32_000, mfs: 0, hoh: 25_000 }[filingStatus];
   const line10 = Math.max(0, line8 - line9);
   if (line10 === 0) return 0; // none of the benefits are taxable
   // Adjusted base amount less base amount. single: $34,000 - $25,000;
   // MFJ: $44,000 - $32,000; separate: $0 - $0, per 86(c)(2)(C).
-  const line11 = { single: 9_000, mfj: 12_000, mfs: 0 }[filingStatus];
+  const line11 = { single: 9_000, mfj: 12_000, mfs: 0, hoh: 9_000 }[filingStatus];
   const line12 = Math.max(0, line10 - line11);
   const line13 = Math.min(line10, line11);
   const line14 = 0.5 * line13;
@@ -1044,6 +1046,7 @@ describe('OBBBA senior deduction (2025-2028)', () => {
     expect(SENIOR_DEDUCTION_PHASEOUT_RATE).toBe(0.06);
     expect(SENIOR_DEDUCTION_PHASEOUT_START).toEqual({
       single: 75_000,
+      hoh: 75_000,
       mfj: 150_000,
       // Section 151(d)(5)(C)(v) requires a joint return from married filers.
       mfs: null,
@@ -1674,6 +1677,174 @@ describe('married filing separately (lived with spouse)', () => {
     // $20,155.20 of benefits in the base instead of $11,177.60.
     expect(totalTax({ ordinaryIncome: 30_000, ssBenefit: SS, filingStatus: 'mfs' })).toBeCloseTo(3_890.12, 2);
     expect(totalTax({ ordinaryIncome: 30_000, ssBenefit: SS, filingStatus: 'single' })).toBeCloseTo(2_812.81, 2);
+  });
+});
+
+describe('head of household', () => {
+  const SS = AVG_ANNUAL_SS_BENEFIT; // $23,712
+
+  it('agrees with the Pub 915 worksheet run at the default base amounts', () => {
+    for (const otherIncome of [0, 5_000, 13_144, 22_144, 40_000, 150_000]) {
+      expect(
+        taxableSocialSecurity({ ssBenefit: SS, ordinaryIncome: otherIncome, filingStatus: 'hoh' }),
+      ).toBeCloseTo(pub915Worksheet1(SS, otherIncome, 'hoh'), 6);
+    }
+    // And with tax-exempt interest in provisional income too.
+    expect(
+      taxableSocialSecurity({
+        ssBenefit: SS,
+        ordinaryIncome: 5_000,
+        filingStatus: 'hoh',
+        muniInterest: 3_000,
+      }),
+    ).toBeCloseTo(pub915Worksheet1(SS, 5_000, 'hoh', 3_000), 6);
+  });
+
+  it("shares the single filer's thresholds exactly", () => {
+    // IRC 86(c)(1) and (c)(2) name a joint return and a separate return that
+    // lived together, and put everything else under "any other case".
+    expect(SS_BASES.hoh).toEqual({ ssBase50: 25_000, ssBase85: 34_000 });
+    expect(SS_BASES.hoh).toEqual(SS_BASES.single);
+    for (const ordinaryIncome of [0, 5_000, 20_000, 40_000, 100_000]) {
+      expect(
+        taxableSocialSecurity({ ordinaryIncome, ssBenefit: SS, filingStatus: 'hoh' }),
+      ).toBe(taxableSocialSecurity({ ordinaryIncome, ssBenefit: SS, filingStatus: 'single' }));
+    }
+  });
+
+  it('carries its own standard deduction, 150% of the single one', () => {
+    for (const year of TAX_YEARS) {
+      const hoh = filingParams(year, 'hoh').standardDeduction;
+      expect(hoh).toBe(1.5 * filingParams(year, 'single').standardDeduction);
+    }
+    expect(standardDeductionFor({ filingStatus: 'hoh', year: 2025 })).toBe(23_625);
+    expect(standardDeductionFor({ filingStatus: 'hoh', year: 2026 })).toBe(24_150);
+  });
+
+  it('takes the unmarried age-65 addition, not the married one', () => {
+    // 63(f)(3) raises the addition for someone "not married and not a
+    // surviving spouse". A head of household is unmarried by definition.
+    for (const year of TAX_YEARS) {
+      const { additionalStdDeduction65 } = filingParams(year, 'hoh');
+      expect(additionalStdDeduction65).toBe(
+        filingParams(year, 'single').additionalStdDeduction65,
+      );
+      expect(additionalStdDeduction65).toBeGreaterThan(
+        filingParams(year, 'mfj').additionalStdDeduction65,
+      );
+    }
+    expect(standardDeductionFor({ filingStatus: 'hoh', seniors: 1, year: 2025 })).toBe(25_625);
+    expect(standardDeductionFor({ filingStatus: 'hoh', seniors: 2, year: 2025 })).toBe(25_625);
+    expect(standardDeductionFor({ filingStatus: 'hoh', seniors: 1, year: 2026 })).toBe(26_200);
+  });
+
+  it('has its own rate schedule, materially wider in the 10% and 12% bands', () => {
+    expect(filingParams(2025, 'hoh').brackets.map((b) => b.upTo)).toEqual([
+      17_000, 64_850, 103_350, 197_300, 250_500, 626_350, Infinity,
+    ]);
+    expect(filingParams(2026, 'hoh').brackets.map((b) => b.upTo)).toEqual([
+      17_700, 67_450, 105_700, 201_775, 256_200, 640_600, Infinity,
+    ]);
+    // $50,000 of taxable income is still in the 12% band for a head of
+    // household and already in the 22% one for a single filer.
+    expect(federalIncomeTax(50_000, { filingStatus: 'hoh' })).toBeCloseTo(5_660, 6);
+    expect(federalIncomeTax(50_000, { filingStatus: 'single' })).toBeCloseTo(5_914, 6);
+  });
+
+  it('carries its own capital-gain bands', () => {
+    expect(filingParams(2025, 'hoh').ltcgBrackets.map((b) => b.upTo)).toEqual([
+      64_750, 566_700, Infinity,
+    ]);
+    expect(filingParams(2026, 'hoh').ltcgBrackets.map((b) => b.upTo)).toEqual([
+      66_200, 579_600, Infinity,
+    ]);
+    // $80,000 of gains and nothing else: the deduction plus the wider 0% band
+    // covers all of it, where a single filer already owes 15% on $15,900.
+    expect(totalTax({ ltcg: 80_000, filingStatus: 'hoh' })).toBe(0);
+    expect(totalTax({ ltcg: 80_000, filingStatus: 'single' })).toBeCloseTo(2_385, 6);
+  });
+
+  it('starts taxing at the same provisional income but the same benefit costs less', () => {
+    // Identical taxable benefit at $50,000 of other income - the thresholds
+    // are the same - but the wider deduction and 12% band price it lower.
+    expect(totalTax({ ordinaryIncome: 50_000, ssBenefit: SS, filingStatus: 'hoh' })).toBeCloseTo(
+      5_243.624,
+      6,
+    );
+    expect(totalTax({ ordinaryIncome: 50_000, ssBenefit: SS, filingStatus: 'single' })).toBeCloseTo(
+      6_883.144,
+      6,
+    );
+  });
+
+  it('pushes the first taxed dollar right by the deduction gap over 1.5', () => {
+    // Inside the 50% tier each extra dollar of other income raises AGI by
+    // $1.50 - the dollar itself plus fifty cents of benefit - so the extra
+    // $7,875 of deduction buys $5,250 of income, not $7,875 of it.
+    const firstTaxed = (filingStatus: FilingStatus): number => {
+      let income = 0;
+      while (totalTax({ ordinaryIncome: income, ssBenefit: SS, filingStatus }) === 0) income += 1;
+      return income;
+    };
+    expect(firstTaxed('hoh')).toBe(20_132);
+    expect(firstTaxed('single')).toBe(14_882);
+    expect(firstTaxed('hoh') - firstTaxed('single')).toBe(
+      (filingParams(PINNED_YEAR, 'hoh').standardDeduction -
+        filingParams(PINNED_YEAR, 'single').standardDeduction) /
+        1.5,
+    );
+  });
+
+  it('gets the senior deduction at the unmarried threshold', () => {
+    // 151(d)(5)(C)(i) reads "$150,000 in the case of a joint return" and
+    // $75,000 otherwise; clause (v) only excludes married separate filers.
+    expect(seniorDeductionAllowed('hoh')).toBe(true);
+    expect(SENIOR_DEDUCTION_PHASEOUT_START.hoh).toBe(75_000);
+    expect(seniorDeductionPhaseoutEnd('hoh')).toBe(175_000);
+    expect(seniorDeductionFor({ filingStatus: 'hoh', seniors: 1 }, 100_000)).toBeCloseTo(4_500, 6);
+    expect(deductionFor({ filingStatus: 'hoh', seniors: 1 }, 100_000)).toBeCloseTo(30_125, 6);
+  });
+
+  it('is one person for every per-person figure', () => {
+    expect(maxSeniors('hoh')).toBe(1);
+    // 408(d)(8)(A) caps a QCD per individual, and doubling needs two people.
+    expect(qcdLimitFor({ filingStatus: 'hoh' })).toBe(qcdAnnualLimit(PINNED_YEAR));
+    expect(qcdLimitFor({ filingStatus: 'hoh' })).toBe(qcdLimitFor({ filingStatus: 'single' }));
+  });
+
+  it("uses Medicare's individual-return column, not a fourth one", () => {
+    // 42 U.S.C. 1395r(i)(3)(C) has three clauses: joint, married separate, and
+    // everyone else. SSA POMS HI 01101.020 heads that third table "Single,
+    // head-of-household, or qualifying surviving spouse".
+    for (const year of TAX_YEARS) {
+      for (const tier of allIrmaaTiers(year)) {
+        expect(tier.magiOver.hoh).toBe(tier.magiOver.single);
+      }
+    }
+    expect(irmaaTiersFor({ filingStatus: 'hoh' })).toEqual(
+      irmaaTiersFor({ filingStatus: 'single' }),
+    );
+    expect(irmaaTiersFor({ filingStatus: 'hoh' })).toHaveLength(6);
+    expect(firstIrmaaTier({ filingStatus: 'hoh' }).tier).toBe(1);
+    expect(irmaaFirstCliffMagi({ filingStatus: 'hoh', year: 2025 })).toBe(106_000);
+    expect(irmaaFirstCliffMagi({ filingStatus: 'hoh', year: 2026 })).toBe(109_000);
+    // The top rung is inclusive for every status, this one included.
+    expect(irmaaTierFor(500_000, { filingStatus: 'hoh' }).tier).toBe(5);
+    expect(irmaaTierFor(499_999, { filingStatus: 'hoh' }).tier).toBe(4);
+  });
+
+  it('prices the conversion ceilings off its own figures', () => {
+    const amounts = Object.fromEntries(
+      conversionCeilings({ filingStatus: 'hoh', year: 2025 }).map((c) => [c.id, c.amount]),
+    );
+    expect(amounts).toEqual({
+      bracket12: 64_850,
+      bracket22: 103_350,
+      ss50: 25_000,
+      ss85: 34_000,
+      ltcg0: 64_750,
+      irmaa1: 106_000,
+    });
   });
 });
 

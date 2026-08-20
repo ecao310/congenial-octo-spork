@@ -52,6 +52,9 @@ describe('App', () => {
     expect(
       screen.getByRole('radio', { name: 'Married Filing Jointly' }),
     ).not.toBeChecked();
+    expect(
+      screen.getByRole('radio', { name: 'Married Filing Separately' }),
+    ).not.toBeChecked();
     expect(screen.getByText(/a single filer/i)).toBeInTheDocument();
   });
 
@@ -103,6 +106,122 @@ describe('App', () => {
     expect(
       screen.getByText(/a married couple filing jointly/i),
     ).toBeInTheDocument();
+  });
+
+  /* ───── Married filing separately (lived with spouse) ───── */
+
+  /** Selects the separate-return status and returns its warning banner. */
+  const selectMfs = (): HTMLElement => {
+    fireEvent.click(
+      screen.getByRole('radio', { name: 'Married Filing Separately' }),
+    );
+    return screen.getByRole('note');
+  };
+
+  it('warns loudly when Married Filing Separately is selected', () => {
+    render(<App />);
+    // Nothing shouts until the status is picked.
+    expect(screen.queryByRole('note')).not.toBeInTheDocument();
+
+    const warning = selectMfs();
+    expect(
+      screen.getByRole('radio', { name: 'Married Filing Separately' }),
+    ).toBeChecked();
+    expect(warning).toHaveTextContent('Filing separately zeroes out both thresholds');
+    // 42.5% of the $23,712 average benefit, taxable at $0 of other income,
+    // and the 85% cap reached at half the benefit.
+    expect(warning).toHaveTextContent('$10,078');
+    expect(warning).toHaveTextContent('$11,856');
+    // And the escape hatch for the other kind of separate filer.
+    expect(warning).toHaveTextContent(/lived apart from your spouse for the entire year/i);
+    expect(warning).toHaveTextContent('$375,800');
+    expect(
+      screen.getByText(/filing separately who lived with their spouse/i),
+    ).toBeInTheDocument();
+  });
+
+  it('moves the warning figures with the benefit and the muni slider', () => {
+    render(<App />);
+    selectMfs();
+    fireEvent.change(screen.getByRole('slider', { name: /social security benefit/i }), {
+      target: { value: '40000' },
+    });
+    // 42.5% of $40,000, capped at half of it.
+    expect(screen.getByRole('note')).toHaveTextContent('$17,000');
+    expect(screen.getByRole('note')).toHaveTextContent('$20,000');
+
+    // Tax-exempt interest is in provisional income, so it brings the cap
+    // forward dollar for dollar and pulls more benefits in at zero income.
+    fireEvent.change(screen.getByRole('slider', { name: /tax-exempt/i }), {
+      target: { value: '5000' },
+    });
+    expect(screen.getByRole('note')).toHaveTextContent('$15,000');
+    expect(screen.getByRole('note')).toHaveTextContent('$21,250');
+  });
+
+  it('tells the torpedo explainer there are no thresholds to pass', () => {
+    render(<App />);
+    selectMfs();
+    const details = screen
+      .getByRole('heading', { name: /what is the tax torpedo/i })
+      .closest('details');
+    expect(details).toHaveTextContent('both thresholds are $0');
+    expect(details).not.toHaveTextContent(/provisional income passes/);
+  });
+
+  it('reports the senior deduction as unavailable rather than phased out', () => {
+    render(<App />);
+    selectMfs();
+    expect(screen.getByText(/^No senior deduction on a separate return/)).toHaveTextContent(
+      '151(d)(5)(C)(v)',
+    );
+    // The spouse toggle stays hidden: only a joint return claims it twice.
+    expect(
+      screen.queryByRole('checkbox', { name: 'Both spouses are 65 or older' }),
+    ).not.toBeInTheDocument();
+
+    const explainer = screen
+      .getByRole('heading', { name: /the senior deduction phaseout/i })
+      .closest('details');
+    expect(explainer).toHaveTextContent('Not on this return');
+    expect(explainer).not.toHaveTextContent('gone at $175,000');
+  });
+
+  it('adds a filing-jointly line to the mitigation strategies', () => {
+    render(<App />);
+    expect(screen.queryByText('Price out filing jointly.')).not.toBeInTheDocument();
+    selectMfs();
+    expect(screen.getByText('Price out filing jointly.')).toBeInTheDocument();
+  });
+
+  it('shows the separate-return IRMAA column and its single four-tier cliff', () => {
+    render(<App />);
+    const section = screen
+      .getByRole('heading', { name: /medicare's irmaa cliffs/i })
+      .closest('section') as HTMLElement;
+    expect(section).toHaveTextContent('MAGI (separate)');
+    // A single filer climbs the tiers $1,052.40 at a time.
+    expect(section).toHaveTextContent('$1,052 a year');
+
+    selectMfs();
+    // A separate return has no tiers 1-3, so its first cliff is the fourth and
+    // costs the whole surcharge in one step.
+    expect(section).toHaveTextContent('$5,826 a year');
+    expect(section).toHaveTextContent('no access to tiers 1 through 3');
+    // Its top threshold is the one the statute writes as "equal to or greater
+    // than", so the table says From rather than Over.
+    expect(section).toHaveTextContent('From $394,000');
+  });
+
+  it('sizes conversions against IRMAA tier 4 rather than tier 1', () => {
+    render(<App />);
+    selectMfs();
+    expect(
+      screen.getByRole('option', { name: /IRMAA tier 4 \(Medicare surcharge\)/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('option', { name: /IRMAA tier 1/ }),
+    ).not.toBeInTheDocument();
   });
 
   it('renders the tax advice disclaimer footer', () => {

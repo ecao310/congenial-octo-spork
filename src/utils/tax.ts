@@ -5,7 +5,7 @@ export interface MarginalRatePoint {
   totalTax: number;
 }
 
-export type FilingStatus = 'single' | 'mfj';
+export type FilingStatus = 'single' | 'mfj' | 'mfs';
 
 interface FilingParams {
   standardDeduction: number;
@@ -45,6 +45,42 @@ export const FILING_PARAMS: Record<FilingStatus, FilingParams> = {
     ssBase50: 32_000,
     ssBase85: 44_000,
   },
+  /**
+   * Married filing separately, having lived with the spouse at some point in
+   * the year.
+   *
+   * The brackets are section 1(j)(2)(D)'s — identical to a single filer's until
+   * $375,800, where a separate return tops out at 37% while a single one still
+   * has room in the 35% band — and the standard deduction is the same $15,750,
+   * because section 63(c)(2) files both statuses under "any other case".
+   *
+   * The Social Security bases are the whole story. IRC 86(c)(1)(C) and
+   * 86(c)(2)(C) set both of them to zero for a married taxpayer who does not
+   * file jointly and does not live apart from their spouse for the *entire*
+   * year. A $0 base and a $0 adjusted base leave the 50% tier zero dollars
+   * wide, so the formula collapses to 85% of provisional income capped at 85%
+   * of benefits: 42.5% of the benefit is already taxable before a single dollar
+   * of other income arrives, and the cap binds as soon as other income reaches
+   * half the benefit. There is no valley and no hump — just the ceiling,
+   * immediately.
+   *
+   * A separate filer who lived apart from their spouse for all twelve months is
+   * treated as unmarried by 86(c) instead, and should use `single`.
+   */
+  mfs: {
+    standardDeduction: 15_750,
+    brackets: [
+      { upTo: 11_925, rate: 0.1 },
+      { upTo: 48_475, rate: 0.12 },
+      { upTo: 103_350, rate: 0.22 },
+      { upTo: 197_300, rate: 0.24 },
+      { upTo: 250_525, rate: 0.32 },
+      { upTo: 375_800, rate: 0.35 },
+      { upTo: Infinity, rate: 0.37 },
+    ],
+    ssBase50: 0,
+    ssBase85: 0,
+  },
 };
 
 /**
@@ -57,9 +93,21 @@ export const FILING_PARAMS: Record<FilingStatus, FilingParams> = {
 export const ADDITIONAL_STD_DEDUCTION_65: Record<FilingStatus, number> = {
   single: 2_000,
   mfj: 1_600,
+  // A separate filer is still married, so they get the married $1,600 rather
+  // than the $2,000 an unmarried person gets.
+  mfs: 1_600,
 };
 
-/** How many people on the return can claim the age-65 addition. */
+/**
+ * How many people on the return can claim the age-65 addition.
+ *
+ * One, unless the return is joint. Section 63(f)(1)(B) does let a separate
+ * filer claim the addition for a spouse aged 65 or older, but only when that
+ * spouse has no gross income at all and is not another taxpayer's dependent —
+ * an edge case this app does not model, and one that cannot arise for the
+ * couples it is aimed at, since a spouse drawing Social Security has gross
+ * income.
+ */
 export function maxSeniors(filingStatus: FilingStatus): number {
   return filingStatus === 'mfj' ? 2 : 1;
 }
@@ -115,24 +163,38 @@ export const SENIOR_DEDUCTION_LAST_YEAR = 2028;
  */
 export const SENIOR_DEDUCTION_PHASEOUT_RATE = 0.06;
 
-/** MAGI at which each qualifying individual's $6,000 starts shrinking. */
-export const SENIOR_DEDUCTION_PHASEOUT_START: Record<FilingStatus, number> = {
+/**
+ * MAGI at which each qualifying individual's $6,000 starts shrinking, or `null`
+ * for a filing status the deduction is not available to at all.
+ *
+ * Section 151(d)(5)(C)(v): "If the taxpayer is a married individual (within the
+ * meaning of section 7703), this subparagraph shall apply only if the taxpayer
+ * and the taxpayer's spouse file a joint return for the taxable year." A
+ * separate return therefore gets nothing — not a halved amount, not a halved
+ * threshold — which is why `mfs` is null rather than $75,000.
+ */
+export const SENIOR_DEDUCTION_PHASEOUT_START: Record<FilingStatus, number | null> = {
   single: 75_000,
   mfj: 150_000,
+  mfs: null,
 };
+
+/** Whether a filing status can claim the senior deduction at all. */
+export function seniorDeductionAllowed(filingStatus: FilingStatus): boolean {
+  return SENIOR_DEDUCTION_PHASEOUT_START[filingStatus] !== null;
+}
 
 /**
  * MAGI at which the senior deduction is gone: $175,000 single, $250,000 MFJ.
  * Independent of how many spouses qualify, because the phaseout applies to each
- * one's $6,000 separately.
+ * one's $6,000 separately. `null` for a separate return, which never had one.
  */
 export function seniorDeductionPhaseoutEnd(
   filingStatus: FilingStatus = 'single',
-): number {
-  return (
-    SENIOR_DEDUCTION_PHASEOUT_START[filingStatus] +
-    SENIOR_DEDUCTION / SENIOR_DEDUCTION_PHASEOUT_RATE
-  );
+): number | null {
+  const start = SENIOR_DEDUCTION_PHASEOUT_START[filingStatus];
+  if (start === null) return null;
+  return start + SENIOR_DEDUCTION / SENIOR_DEDUCTION_PHASEOUT_RATE;
 }
 
 /**
@@ -158,7 +220,10 @@ export function seniorDeductionFor(
 ): number {
   const count = seniorCount(filingStatus, seniors);
   if (count === 0) return 0;
-  const excess = Math.max(0, magi - SENIOR_DEDUCTION_PHASEOUT_START[filingStatus]);
+  const start = SENIOR_DEDUCTION_PHASEOUT_START[filingStatus];
+  // A separate return is barred outright, so there is nothing to phase out.
+  if (start === null) return 0;
+  const excess = Math.max(0, magi - start);
   const perPerson = Math.max(
     0,
     SENIOR_DEDUCTION - SENIOR_DEDUCTION_PHASEOUT_RATE * excess,
@@ -301,6 +366,15 @@ export const LTCG_BRACKETS: Record<FilingStatus, { upTo: number; rate: number }[
   mfj: [
     { upTo: 96_700, rate: 0 },
     { upTo: 600_050, rate: 0.15 },
+    { upTo: Infinity, rate: 0.20 },
+  ],
+  // The 0% band is exactly half the joint one, and so happens to match a single
+  // filer's. The 15% band is not: half of $600,050 would be $300,025, but each
+  // status is adjusted for inflation from its own base amount and rounded
+  // separately, so Rev. Proc. 2024-40 prints $300,000.
+  mfs: [
+    { upTo: 48_350, rate: 0 },
+    { upTo: 300_000, rate: 0.15 },
     { upTo: Infinity, rate: 0.20 },
   ],
 };
@@ -605,6 +679,14 @@ export interface IrmaaTier {
    * the standard tier, which has no floor.
    */
   magiOver: Record<FilingStatus, number>;
+  /**
+   * Filing statuses whose threshold is inclusive - MAGI *at* `magiOver` already
+   * lands in the tier. Only the separate-return top tier works this way, and it
+   * does because 42 U.S.C. 1395r(i)(3)(C)(ii)(II) says "equal to or greater
+   * than" where every other threshold in the statute says "greater than". CMS
+   * reproduces the difference verbatim in its own premium table.
+   */
+  inclusiveFor?: FilingStatus[];
   /** Total monthly Part B premium, standard premium included. */
   partBMonthly: number;
   /**
@@ -621,53 +703,92 @@ export interface IrmaaTier {
  * the $500,000 / $750,000 tier added by the Bipartisan Budget Act of 2018 is
  * fixed in statute rather than indexed, so it never doubled and does not move
  * with inflation.
+ *
+ * A separate return that lived with the spouse gets its own two-step schedule
+ * under 42 U.S.C. 1395r(i)(3)(C) rather than a halved version of the joint one.
+ * It reuses tiers 4 and 5's premiums but reaches them at $106,000 and $394,000,
+ * so tiers 1 through 3 simply do not exist for it — marked `Infinity` here and
+ * filtered out by `irmaaTiersFor`. The practical effect is brutal: a separate
+ * filer's first cliff is the *fourth* tier, and it costs the whole $5,826 a
+ * year in one step instead of arriving in four.
  */
 export const IRMAA_TIERS: IrmaaTier[] = [
   {
     tier: 0,
-    magiOver: { single: -Infinity, mfj: -Infinity },
+    magiOver: { single: -Infinity, mfj: -Infinity, mfs: -Infinity },
     partBMonthly: PART_B_STANDARD_PREMIUM,
     partDSurchargeMonthly: 0,
   },
   {
     tier: 1,
-    magiOver: { single: 106_000, mfj: 212_000 },
+    magiOver: { single: 106_000, mfj: 212_000, mfs: Infinity },
     partBMonthly: 259.0,
     partDSurchargeMonthly: 13.7,
   },
   {
     tier: 2,
-    magiOver: { single: 133_000, mfj: 266_000 },
+    magiOver: { single: 133_000, mfj: 266_000, mfs: Infinity },
     partBMonthly: 370.0,
     partDSurchargeMonthly: 35.3,
   },
   {
     tier: 3,
-    magiOver: { single: 167_000, mfj: 334_000 },
+    magiOver: { single: 167_000, mfj: 334_000, mfs: Infinity },
     partBMonthly: 480.9,
     partDSurchargeMonthly: 57.0,
   },
   {
     tier: 4,
-    magiOver: { single: 200_000, mfj: 400_000 },
+    magiOver: { single: 200_000, mfj: 400_000, mfs: 106_000 },
     partBMonthly: 591.9,
     partDSurchargeMonthly: 78.6,
   },
   {
     tier: 5,
-    magiOver: { single: 500_000, mfj: 750_000 },
+    magiOver: { single: 500_000, mfj: 750_000, mfs: 394_000 },
+    inclusiveFor: ['mfs'],
     partBMonthly: 628.9,
     partDSurchargeMonthly: 85.8,
   },
 ];
 
 /**
- * 2025 IRMAA tier-1 MAGI threshold. This is a true cliff: one dollar over it
- * triggers a full year of first-tier Part B and Part D surcharges.
+ * The tiers a filing status can actually land in, standard-premium tier first
+ * and ascending. Everything downstream — which tier a MAGI falls in, what the
+ * next cliff is, where the reference lines go — walks this rather than
+ * `IRMAA_TIERS`, so a separate return never sees the three tiers it has no
+ * access to.
  */
-export const IRMAA_TIER1_MAGI: Record<FilingStatus, number> = {
-  ...IRMAA_TIERS[1].magiOver,
+export function irmaaTiersFor(filingStatus: FilingStatus = 'single'): IrmaaTier[] {
+  return IRMAA_TIERS.filter(
+    (t) => t.tier === 0 || Number.isFinite(t.magiOver[filingStatus]),
+  );
+}
+
+/** The first surcharge tier a filing status can reach. Tier 1, except for MFS. */
+export function firstIrmaaTier(filingStatus: FilingStatus = 'single'): IrmaaTier {
+  return irmaaTiersFor(filingStatus)[1];
+}
+
+/**
+ * 2025 MAGI at which a filing status meets its first IRMAA cliff. A true cliff:
+ * one dollar over triggers a full year of Part B and Part D surcharges.
+ */
+export const IRMAA_FIRST_CLIFF_MAGI: Record<FilingStatus, number> = {
+  single: firstIrmaaTier('single').magiOver.single,
+  mfj: firstIrmaaTier('mfj').magiOver.mfj,
+  mfs: firstIrmaaTier('mfs').magiOver.mfs,
 };
+
+/** Whether a MAGI has reached a tier, honouring the one inclusive threshold. */
+function irmaaTierReached(
+  tier: IrmaaTier,
+  magi: number,
+  filingStatus: FilingStatus,
+): boolean {
+  const floor = tier.magiOver[filingStatus];
+  return tier.inclusiveFor?.includes(filingStatus) ? magi >= floor : magi > floor;
+}
 
 /** Rounds to whole cents, so premium arithmetic does not leak float dust. */
 function toCents(value: number): number {
@@ -708,8 +829,8 @@ export function irmaaTierFor(
   filingStatus: FilingStatus = 'single',
 ): IrmaaTier {
   let found = IRMAA_TIERS[0];
-  for (const tier of IRMAA_TIERS) {
-    if (magi > tier.magiOver[filingStatus]) found = tier;
+  for (const tier of irmaaTiersFor(filingStatus)) {
+    if (irmaaTierReached(tier, magi, filingStatus)) found = tier;
   }
   return found;
 }
@@ -760,8 +881,9 @@ export function irmaaFor(
   filingStatus: FilingStatus = 'single',
   beneficiaries = 1,
 ): IrmaaAssessment {
+  const tiers = irmaaTiersFor(filingStatus);
   const tier = irmaaTierFor(magi, filingStatus);
-  const next = IRMAA_TIERS[tier.tier + 1] ?? null;
+  const next = tiers[tiers.indexOf(tier) + 1] ?? null;
   const partBSurcharge = partBSurchargeMonthly(tier);
   const annualSurcharge = annualSurchargeFor(tier, beneficiaries);
   return {
@@ -813,7 +935,7 @@ export function otherIncomeAtIrmaaMagi(
 }
 
 export interface IrmaaCliff {
-  /** 1 through 5. */
+  /** 1 through 5 — but only 4 and 5 exist on a separate return. */
   tier: number;
   /** The MAGI threshold this cliff sits at. */
   magi: number;
@@ -837,9 +959,12 @@ export function irmaaCliffs(
   muniInterest = 0,
   beneficiaries = 1,
 ): IrmaaCliff[] {
-  return IRMAA_TIERS.filter((t) => t.tier > 0).map((tier) => {
+  const tiers = irmaaTiersFor(filingStatus);
+  return tiers.slice(1).map((tier, index) => {
     const magi = tier.magiOver[filingStatus];
-    const previous = IRMAA_TIERS[tier.tier - 1];
+    // The tier below on *this* status's ladder, which is not tier - 1 for a
+    // separate return: its first cliff steps straight off the standard premium.
+    const previous = tiers[index];
     const annualSurcharge = annualSurchargeFor(tier, beneficiaries);
     return {
       tier: tier.tier,
@@ -903,6 +1028,11 @@ export function conversionCeilings(
   filingStatus: FilingStatus = 'single',
 ): ConversionCeiling[] {
   const { ssBase50, ssBase85 } = FILING_PARAMS[filingStatus];
+  // Both bases are $0 on a separate return that lived with the spouse, so the
+  // two Social Security ceilings collapse onto each other. Say so rather than
+  // offering the same $0 twice with different explanations.
+  const basesCollapse = ssBase50 === ssBase85;
+  const firstCliff = firstIrmaaTier(filingStatus);
   return [
     {
       id: 'bracket12',
@@ -923,14 +1053,18 @@ export function conversionCeilings(
       label: 'Social Security 50% base',
       measure: 'provisionalIncome',
       amount: ssBase50,
-      note: 'Below this, no benefits are taxable at all. Past it, each extra dollar drags up to 50¢ of benefits into taxable income.',
+      note: basesCollapse
+        ? 'There is no 50% tier on a separate return: both bases are $0, so this ceiling sits at the same place as the one below and nothing fits under either.'
+        : 'Below this, no benefits are taxable at all. Past it, each extra dollar drags up to 50¢ of benefits into taxable income.',
     },
     {
       id: 'ss85',
       label: 'Social Security 85% base',
       measure: 'provisionalIncome',
       amount: ssBase85,
-      note: 'Past this, each extra dollar drags up to 85¢ of benefits into taxable income — the steepest part of the torpedo.',
+      note: basesCollapse
+        ? 'A separate return that lived with the spouse has a $0 base, so it starts past this ceiling: 85¢ of every provisional dollar is already in the tax base, up to 85% of benefits.'
+        : 'Past this, each extra dollar drags up to 85¢ of benefits into taxable income — the steepest part of the torpedo.',
     },
     {
       id: 'ltcg0',
@@ -941,10 +1075,14 @@ export function conversionCeilings(
     },
     {
       id: 'irmaa1',
-      label: 'IRMAA tier 1 (Medicare surcharge)',
+      label: `IRMAA tier ${firstCliff.tier} (Medicare surcharge)`,
       measure: 'magi',
-      amount: IRMAA_TIER1_MAGI[filingStatus],
-      note: 'A true cliff, not a phase-in: one dollar over adds a full year of Part B and Part D surcharges. Medicare reads the MAGI from two years earlier, so this year’s conversion sets the premium two years out. The surcharge itself is not included in the tax figures below.',
+      amount: IRMAA_FIRST_CLIFF_MAGI[filingStatus],
+      note:
+        'A true cliff, not a phase-in: one dollar over adds a full year of Part B and Part D surcharges. Medicare reads the MAGI from two years earlier, so this year’s conversion sets the premium two years out. The surcharge itself is not included in the tax figures below.' +
+        (firstCliff.tier > 1
+          ? ' A separate return skips the lower tiers entirely, so its first cliff is the fourth one and arrives in a single step.'
+          : ''),
     },
   ];
 }

@@ -59,6 +59,28 @@ describe('IRMAA cliffs on the ordinary-income chart', () => {
     expect(after[2] - before[2]).toBeCloseTo(after[0] - before[0], 6);
   });
 
+  it('draws a separate return a single line, at its fourth-tier cliff', () => {
+    const { container } = render(<App />);
+    fireEvent.click(
+      screen.getByRole('radio', { name: 'Married Filing Separately' }),
+    );
+    // Tiers 1 through 3 do not exist for a separate return, and tier 5 needs
+    // $394,000 of MAGI, so exactly one line survives — the fourth.
+    expect(screen.getByText('IRMAA 4')).toBeInTheDocument();
+    expect(screen.queryByText(/^IRMAA [1235]$/)).not.toBeInTheDocument();
+    const positions = cliffPositions(container);
+    expect(positions).toHaveLength(1);
+
+    // It sits at $85,845 of other income: $106,000 of MAGI less the $20,155.20
+    // of benefits already in AGI. A single filer's *first* cliff shares that
+    // $106,000 threshold and — both being far past the 85% cap by then — lands
+    // in exactly the same place. What differs is the price of crossing it:
+    // $1,052.40 a year for the single filer, $5,826 for the separate one.
+    fireEvent.click(screen.getByRole('radio', { name: 'Single' }));
+    expect(cliffPositions(container)[0]).toBeCloseTo(positions[0], 6);
+    expect(screen.getByText('IRMAA 1')).toBeInTheDocument();
+  });
+
   it('drops the lines entirely when no cliff fits on the axis', () => {
     const { container } = render(<App />);
     fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Jointly' }));

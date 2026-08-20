@@ -1142,3 +1142,79 @@ joint ones), so IRMAA_TIERS[].magiOver will need a third key and the
 Record<FilingStatus, number> shape will do that automatically. Also note the
 positional-argument backlog item is getting worse: irmaaCliffs already takes
 four positional args and irmaaMagi takes five.
+
+================================================================================
+## Married Filing Separately (lived with spouse)
+## 2026-08-19 — recovered and committed by a later iteration
+
+The iteration that wrote this finished the work, flipped the PLAN checkbox, and
+then died before committing. This iteration found 8 modified files in the tree,
+re-verified them from scratch (tsc -b, eslint, 170 vitest tests, vite build —
+all clean) and committed them unchanged. The write-up below is reconstructed
+from the diff, not from that iteration's own notes, so it records what the code
+does rather than what it was thinking.
+
+### The rule
+
+IRC 86(c)(1)(C) and 86(c)(2)(C) set BOTH provisional-income base amounts to
+zero for a married taxpayer who does not file jointly and does not live apart
+from their spouse for the entire year. A $0 base and a $0 adjusted base leave
+the 50% tier zero dollars wide, so the whole formula collapses to
+min(0.85 * PI, 0.85 * benefit).
+
+Consequences the tests pin down:
+- 42.5% of the benefit is taxable at $0 of other income (PI = half the benefit,
+  times 0.85).
+- The 85% cap binds once other income reaches HALF the benefit.
+- The inclusion slope is never 1.5x — it goes straight to 1.85x and then flat.
+  There is no valley and no hump, just the ceiling, immediately.
+
+A separate filer who lived apart for all twelve months is treated as unmarried
+by 86(c) and should pick `single` instead. The UI says so.
+
+### Everything else MFS touches
+
+- Brackets: section 1(j)(2)(D)'s, identical to single until $375,800, where a
+  separate return tops out at 37% while a single one still has 35% room.
+- Standard deduction: the same $15,750 — section 63(c)(2) files both statuses
+  under "any other case".
+- Age-65 addition: $1,600, the married amount, not single's $2,000. (63(f)(1)(B)
+  does let a separate filer claim a spouse's addition, but only if that spouse
+  has zero gross income — impossible for a spouse drawing Social Security, so
+  it is not modelled.)
+- OBBBA senior deduction: NONE. 151(d)(5)(C)(v) requires a joint return from any
+  married individual. Not halved — zero. SENIOR_DEDUCTION_PHASEOUT_START[mfs] is
+  `null` rather than a number, and seniorDeductionPhaseoutEnd() now returns
+  `number | null`, which forced every caller to handle the absent case.
+- LTCG: 0% band is $48,350 (exactly half the joint band, which coincidentally
+  equals single's). The 15% band is NOT half — half of $600,050 is $300,025 but
+  Rev. Proc. 2024-40 prints $300,000, because each status inflates from its own
+  base and rounds separately.
+
+### The IRMAA wrinkle, which is the part worth remembering
+
+A separate return that lived with the spouse does NOT get a halved joint
+schedule. 42 U.S.C. 1395r(i)(3)(C) gives it a two-step schedule of its own:
+nothing until $106,000, then straight to what everyone else calls tier 4, then
+tier 5 at $394,000. Tiers 1-3 do not exist for it. So its first cliff costs the
+whole $5,826/yr in one step instead of arriving in four.
+
+Modelled by setting mfs to `Infinity` on tiers 1-3 and filtering with a new
+`irmaaTiersFor(status)`. Everything downstream — irmaaTierFor, irmaaFor's
+"next tier", irmaaCliffs' "previous tier" — now walks that filtered ladder
+instead of indexing IRMAA_TIERS by `tier.tier`. That indexing was the real
+bug risk: `IRMAA_TIERS[tier.tier - 1]` is tier 3 for a separate filer standing
+on tier 4, when the tier actually below them is tier 0.
+
+Second wrinkle: the separate-return top threshold is INCLUSIVE. The statute
+says "equal to or greater than" at 1395r(i)(3)(C)(ii)(II) where every other
+threshold says "greater than", and CMS reproduces the difference verbatim.
+Hence `inclusiveFor?: FilingStatus[]` on the tier and a dedicated test.
+
+IRMAA_TIER1_MAGI was renamed IRMAA_FIRST_CLIFF_MAGI, since "tier 1" is not the
+first cliff for every status.
+
+### Verification
+
+npx tsc -b, npm run lint, npx vitest run (170 passed, was 146), npm run build —
+all clean; only the pre-existing >500kB chunk warning.

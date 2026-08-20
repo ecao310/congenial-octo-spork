@@ -112,6 +112,7 @@ fieldset.filing-status legend {
 
 .segmented {
   display: inline-flex;
+  flex-wrap: wrap;
   background: rgba(15, 23, 42, 0.6);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 0.75rem;
@@ -195,6 +196,26 @@ fieldset.filing-status legend {
 .checkbox-option:has(input:disabled) {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.warning-note {
+  margin: 0.75rem 0 0;
+  padding: 0.75rem 0.875rem;
+  border: 1px solid rgba(244, 63, 94, 0.35);
+  border-left: 3px solid #f43f5e;
+  border-radius: 0.5rem;
+  background: rgba(244, 63, 94, 0.08);
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  color: #cbd5e1;
+}
+
+.warning-note strong {
+  color: #fb7185;
+}
+
+.warning-note em {
+  color: #94a3b8;
 }
 
 .field-note {

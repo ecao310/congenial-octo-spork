@@ -30,11 +30,13 @@ import {
   SENIOR_DEDUCTION_PHASEOUT_RATE,
   SENIOR_DEDUCTION_PHASEOUT_START,
   seniorDeductionPhaseoutEnd,
+  seniorDeductionAllowed,
   irmaaMagi,
   irmaaFor,
   irmaaCliffs,
   partBSurchargeMonthly,
   IRMAA_TIERS,
+  IRMAA_FIRST_CLIFF_MAGI,
   IRMAA_MAGI_YEAR,
   IRMAA_PREMIUM_YEAR,
   IRMAA_LOOKBACK_YEARS,
@@ -58,7 +60,15 @@ const MAX_MUNI_INTEREST = 50_000;
 const FILING_STATUS_OPTIONS: { value: FilingStatus; label: string }[] = [
   { value: 'single', label: 'Single' },
   { value: 'mfj', label: 'Married Filing Jointly' },
+  { value: 'mfs', label: 'Married Filing Separately' },
 ];
+
+/** How each status reads inside a sentence. */
+const FILING_STATUS_PROSE: Record<FilingStatus, string> = {
+  single: 'a single filer',
+  mfj: 'a married couple filing jointly',
+  mfs: 'a married filer filing separately who lived with their spouse',
+};
 
 const formatCurrency = (value: number): string =>
   new Intl.NumberFormat('en-US', {
@@ -236,8 +246,10 @@ const App: React.FC = () => {
   const standardDeduction = standardDeductionFor(filingStatus, seniors);
   const seniorAddition = standardDeduction - baseDeduction;
 
-  // The OBBBA senior deduction, before its phaseout eats into it.
-  const seniorDeductionMax = seniors * SENIOR_DEDUCTION;
+  // The OBBBA senior deduction, before its phaseout eats into it. A separate
+  // return cannot claim it at all, so every figure derived from it is null.
+  const seniorDeductionOk = seniorDeductionAllowed(filingStatus);
+  const seniorDeductionMax = seniorDeductionOk ? seniors * SENIOR_DEDUCTION : 0;
   const phaseoutStart = SENIOR_DEDUCTION_PHASEOUT_START[filingStatus];
   const phaseoutEnd = seniorDeductionPhaseoutEnd(filingStatus);
   // With the age toggle off there is nothing to phase out, but the explainer
@@ -247,9 +259,10 @@ const App: React.FC = () => {
   // Whether the far side of the phaseout is inside the chart's x-axis depends on
   // how much of the benefit is taxable, so work it out rather than guess.
   const phaseoutEndsOnChart =
+    phaseoutEnd !== null &&
     MAX_INCOME +
       taxableSocialSecurity(ssBenefit, MAX_INCOME, filingStatus, muniInterest) >
-    phaseoutEnd;
+      phaseoutEnd;
 
   const curve = useMemo(
     () =>
@@ -263,6 +276,18 @@ const App: React.FC = () => {
   );
 
   const { ssBase50, ssBase85 } = FILING_PARAMS[filingStatus];
+
+  // With both bases at $0 the 85% cap binds as soon as provisional income
+  // reaches the benefit itself — other income + muni + half the benefit >=
+  // the benefit — so the whole torpedo is over by half the benefit, less
+  // whatever tax-exempt interest has already been counted.
+  const capBindsAt = Math.max(0, 0.5 * ssBenefit - muniInterest);
+  const taxableSSAtZeroIncome = taxableSocialSecurity(
+    ssBenefit,
+    0,
+    filingStatus,
+    muniInterest,
+  );
 
   const ltcgCurve = useMemo(
     () =>
@@ -353,11 +378,8 @@ const App: React.FC = () => {
       <h1>Marginal Tax Rate</h1>
       <p className="subtitle">
         Federal marginal rate on the next dollar of other income for{' '}
-        {filingStatus === 'single'
-          ? 'a single filer'
-          : 'a married couple filing jointly'}{' '}
-        (2025 brackets, standard deduction), with Social Security taxed under
-        the 50%/85% provisional-income rules.
+        {FILING_STATUS_PROSE[filingStatus]} (2025 brackets, standard deduction),
+        with Social Security taxed under the 50%/85% provisional-income rules.
       </p>
 
       <fieldset className="input-group filing-status">
@@ -376,6 +398,27 @@ const App: React.FC = () => {
             </label>
           ))}
         </div>
+        {filingStatus === 'mfs' && (
+          <p className="warning-note" role="note">
+            <strong>Filing separately zeroes out both thresholds.</strong> IRC
+            86(c) sets the base <em>and</em> the adjusted base amount to{' '}
+            <strong>$0</strong> for a married taxpayer who files separately and
+            lived with their spouse at any point in the year. There is no 50%
+            tier at all:{' '}
+            <strong>{formatCurrency(taxableSSAtZeroIncome)}</strong> of the{' '}
+            {formatCurrency(ssBenefit)} benefit is taxable before any other
+            income arrives, and the 85% cap binds at{' '}
+            <strong>{formatCurrency(capBindsAt)}</strong> of other income. The
+            torpedo is not removed, it is compressed — the whole of it is
+            crammed into the left edge of the chart instead of spread across the
+            band a single filer sees.{' '}
+            <em>
+              If you lived apart from your spouse for the entire year, 86(c)
+              treats you as unmarried — use Single instead. The brackets and
+              standard deduction are identical up to $375,800 of taxable income.
+            </em>
+          </p>
+        )}
       </fieldset>
 
       <fieldset className="input-group filing-status">
@@ -413,7 +456,14 @@ const App: React.FC = () => {
           shifts right.
         </p>
         <p className="field-note">
-          {seniors > 0 ? (
+          {phaseoutStart === null || phaseoutEnd === null ? (
+            <>
+              No senior deduction on a separate return: section 151(d)(5)(C)(v)
+              allows the temporary {formatCurrency(SENIOR_DEDUCTION)} only if a
+              married taxpayer files jointly. There is no halved amount and no
+              halved threshold — separate filers get nothing.
+            </>
+          ) : seniors > 0 ? (
             <>
               Senior deduction{' '}
               <strong>{formatCurrency(seniorDeductionMax)}</strong>
@@ -653,6 +703,9 @@ const App: React.FC = () => {
           <strong>{formatCurrency(cliffs[0].step)}</strong> a year
           {beneficiaries > 1 ? ' for the two of you' : ''} — on a single dollar
           of income.
+          {cliffs[0].tier > 1
+            ? ` A separate return has no access to tiers 1 through 3: 42 U.S.C. 1395r(i)(3)(C) gives it a two-step schedule of its own, so its first cliff is tier ${cliffs[0].tier} and the whole surcharge lands at once.`
+            : ''}
         </p>
 
         <p>
@@ -751,6 +804,7 @@ const App: React.FC = () => {
             <tr>
               <th scope="col">MAGI (single)</th>
               <th scope="col">MAGI (joint)</th>
+              <th scope="col">MAGI (separate)</th>
               <th scope="col">Part B/mo</th>
               <th scope="col">Part D/mo</th>
               <th scope="col">Surcharge/yr</th>
@@ -762,10 +816,21 @@ const App: React.FC = () => {
                 (partBSurchargeMonthly(tier) + tier.partDSurchargeMonthly) *
                 12 *
                 beneficiaries;
-              const range = (status: FilingStatus): string =>
-                tier.tier === 0
-                  ? `Up to ${formatCurrency(IRMAA_TIERS[1].magiOver[status])}`
-                  : `Over ${formatCurrency(tier.magiOver[status])}`;
+              const range = (status: FilingStatus): string => {
+                // Tier 0 runs up to whichever tier the status actually reaches
+                // first, which is the fourth one on a separate return.
+                if (tier.tier === 0)
+                  return `Up to ${formatCurrency(IRMAA_FIRST_CLIFF_MAGI[status])}`;
+                const floor = tier.magiOver[status];
+                // Infinity marks a tier this status has no access to at all.
+                if (!Number.isFinite(floor)) return '\u2014';
+                // The separate-return top tier is the one inclusive threshold
+                // in the statute: "equal to or greater than", not "over".
+                const preposition = tier.inclusiveFor?.includes(status)
+                  ? 'From'
+                  : 'Over';
+                return `${preposition} ${formatCurrency(floor)}`;
+              };
               return (
                 <tr
                   key={tier.tier}
@@ -773,6 +838,7 @@ const App: React.FC = () => {
                 >
                   <th scope="row">{range('single')}</th>
                   <td>{range('mfj')}</td>
+                  <td>{range('mfs')}</td>
                   <td>{formatCurrencyCents(tier.partBMonthly)}</td>
                   <td>
                     {tier.partDSurchargeMonthly === 0
@@ -818,11 +884,23 @@ const App: React.FC = () => {
           <p>
             Social Security benefits are not taxed dollar-for-dollar. The taxable
             share depends on <strong>provisional income</strong> — other income
-            plus half of your benefits. Once provisional income passes{' '}
-            {formatCurrency(ssBase50)}, each extra dollar of other income also
-            drags up to 50&cent; of benefits into taxable income; past{' '}
-            {formatCurrency(ssBase85)}, it drags in up to 85&cent;. (The
-            thresholds shown are for the filing status selected above.)
+            plus half of your benefits.{' '}
+            {ssBase85 > 0 ? (
+              <>
+                Once provisional income passes {formatCurrency(ssBase50)}, each
+                extra dollar of other income also drags up to 50&cent; of
+                benefits into taxable income; past {formatCurrency(ssBase85)}, it
+                drags in up to 85&cent;. (The thresholds shown are for the filing
+                status selected above.)
+              </>
+            ) : (
+              <>
+                On the separate return selected above both thresholds are $0, so
+                there is nothing to pass: every dollar of provisional income
+                brings 85&cent; of benefits with it from the very first one,
+                until the 85% cap stops it.
+              </>
+            )}
           </p>
           <p>
             So one more dollar earned can raise taxable income by as much as
@@ -868,6 +946,19 @@ const App: React.FC = () => {
               into a single year can cost less than sitting in the middle of the
               spike year after year.
             </li>
+            {filingStatus === 'mfs' && (
+              <li>
+                <strong>Price out filing jointly.</strong> A separate return
+                that lived with the spouse gives up the{' '}
+                {formatCurrency(FILING_PARAMS.mfj.ssBase50)} and{' '}
+                {formatCurrency(FILING_PARAMS.mfj.ssBase85)} thresholds, the{' '}
+                {formatCurrency(SENIOR_DEDUCTION)} senior deduction, and the
+                lower IRMAA tiers all at once. Separate filing is usually driven
+                by something else — income-driven student-loan repayment, a
+                spouse&apos;s liability, an ongoing separation — so compare the
+                two returns before assuming it still pays.
+              </li>
+            )}
           </ul>
           <p>
             The right mix depends on account balances, state taxes, Medicare
@@ -885,6 +976,19 @@ const App: React.FC = () => {
           </h2>
         </summary>
         <div className="explainer-content">
+          {phaseoutStart === null || phaseoutEnd === null ? (
+          <p>
+            Not on this return. Section 151(d)(5)(C)(v) makes the temporary{' '}
+            {formatCurrency(SENIOR_DEDUCTION)} deduction conditional on a married
+            taxpayer filing jointly, so a separate filer gets none of it — no
+            halved amount, no halved {formatCurrency(75_000)} threshold, nothing.
+            Between that and the $0 Social Security bases, filing separately
+            while living together costs a retired couple the deduction and the
+            thresholds at once. Switch to Married Filing Jointly above to see
+            what the phaseout looks like when it applies.
+          </p>
+          ) : (
+          <>
           <p>
             For tax years {SENIOR_DEDUCTION_FIRST_YEAR} through{' '}
             {SENIOR_DEDUCTION_LAST_YEAR} only, anyone who reaches age 65 gets an
@@ -936,6 +1040,8 @@ const App: React.FC = () => {
             . Note that tax-exempt interest is <em>not</em> added back for this
             phaseout, unlike the MAGI Medicare uses for IRMAA.
           </p>
+          </>
+          )}
         </div>
       </details>
 

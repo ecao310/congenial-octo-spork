@@ -12,7 +12,7 @@ import {
   conversionMeasureValue,
   maxConversionUnder,
   sizeConversion,
-  IRMAA_TIER1_MAGI,
+  IRMAA_FIRST_CLIFF_MAGI,
   IRMAA_TIERS,
   IRMAA_MAGI_YEAR,
   IRMAA_PREMIUM_YEAR,
@@ -23,6 +23,9 @@ import {
   irmaaFor,
   otherIncomeAtIrmaaMagi,
   irmaaCliffs,
+  irmaaTiersFor,
+  firstIrmaaTier,
+  seniorDeductionAllowed,
   FILING_PARAMS,
   LTCG_BRACKETS,
   AVG_ANNUAL_SS_BENEFIT,
@@ -56,11 +59,15 @@ function pub915Worksheet1(
   const line4 = muniInterest; // tax-exempt interest, Form 1040 line 2a
   const line6 = line2 + line3 + line4;
   const line8 = line6; // provisional income
-  const line9 = filingStatus === 'single' ? 25_000 : 32_000; // base amount
+  // Base amount, worksheet line 9. IRC 86(c)(1)(C)(ii) makes it $0 for a
+  // married taxpayer who files separately and does not live apart from their
+  // spouse for the whole year; Pub 915 prints the same instruction.
+  const line9 = { single: 25_000, mfj: 32_000, mfs: 0 }[filingStatus];
   const line10 = Math.max(0, line8 - line9);
   if (line10 === 0) return 0; // none of the benefits are taxable
-  // single: $34,000 - $25,000; MFJ: $44,000 - $32,000
-  const line11 = filingStatus === 'single' ? 9_000 : 12_000;
+  // Adjusted base amount less base amount. single: $34,000 - $25,000;
+  // MFJ: $44,000 - $32,000; separate: $0 - $0, per 86(c)(2)(C).
+  const line11 = { single: 9_000, mfj: 12_000, mfs: 0 }[filingStatus];
   const line12 = Math.max(0, line10 - line11);
   const line13 = Math.min(line10, line11);
   const line14 = 0.5 * line13;
@@ -534,7 +541,7 @@ describe('Roth conversion sizing', () => {
     expect(ceiling('ss50').amount).toBe(FILING_PARAMS.single.ssBase50);
     expect(ceiling('ss85').amount).toBe(FILING_PARAMS.single.ssBase85);
     expect(ceiling('ltcg0').amount).toBe(LTCG_BRACKETS.single[0].upTo);
-    expect(ceiling('irmaa1').amount).toBe(IRMAA_TIER1_MAGI.single);
+    expect(ceiling('irmaa1').amount).toBe(IRMAA_FIRST_CLIFF_MAGI.single);
 
     expect(ceiling('bracket12', 'mfj').amount).toBe(96_950);
     expect(ceiling('ss85', 'mfj').amount).toBe(44_000);
@@ -659,7 +666,12 @@ describe('age 65+ additional standard deduction (2025)', () => {
   const SS = AVG_ANNUAL_SS_BENEFIT;
 
   it('adds $2,000 for a single filer and $1,600 per qualifying spouse for MFJ', () => {
-    expect(ADDITIONAL_STD_DEDUCTION_65).toEqual({ single: 2_000, mfj: 1_600 });
+    expect(ADDITIONAL_STD_DEDUCTION_65).toEqual({
+      single: 2_000,
+      mfj: 1_600,
+      // Still married, so the married rate rather than the unmarried $2,000.
+      mfs: 1_600,
+    });
     expect(standardDeductionFor('single', 0)).toBe(15_750);
     expect(standardDeductionFor('single', 1)).toBe(17_750);
     expect(standardDeductionFor('mfj', 0)).toBe(31_500);
@@ -803,6 +815,8 @@ describe('OBBBA senior deduction (2025-2028)', () => {
     expect(SENIOR_DEDUCTION_PHASEOUT_START).toEqual({
       single: 75_000,
       mfj: 150_000,
+      // Section 151(d)(5)(C)(v) requires a joint return from married filers.
+      mfs: null,
     });
     expect(seniorDeductionFor('single', 1, 76_000)).toBeCloseTo(5_940, 6);
     expect(seniorDeductionFor('single', 1, 125_000)).toBeCloseTo(3_000, 6);
@@ -822,6 +836,7 @@ describe('OBBBA senior deduction (2025-2028)', () => {
     ];
     for (const [fs, seniors] of cases) {
       const end = seniorDeductionPhaseoutEnd(fs);
+      if (end === null) throw new Error(`${fs} should have a phaseout end`);
       expect(seniorDeductionFor(fs, seniors, end - 1)).toBeGreaterThan(0);
       expect(seniorDeductionFor(fs, seniors, end)).toBe(0);
       expect(seniorDeductionFor(fs, seniors, end + 1_000_000)).toBe(0);
@@ -1070,6 +1085,225 @@ describe('muniInterestEffect', () => {
   });
 });
 
+/* ------------------------------------------------------------------ */
+/*  Married filing separately, having lived with the spouse           */
+/* ------------------------------------------------------------------ */
+
+describe('married filing separately (lived with spouse)', () => {
+  const SS = AVG_ANNUAL_SS_BENEFIT; // $23,712
+  /** 85% of the benefit — the ceiling the separate return hits almost at once. */
+  const SS_CAP = 0.85 * SS; // $20,155.20
+
+  it('agrees with the Pub 915 worksheet run at $0 base amounts', () => {
+    for (const otherIncome of [0, 1, 2_500, 11_855, 11_856, 40_000, 150_000]) {
+      expect(taxableSocialSecurity(SS, otherIncome, 'mfs')).toBeCloseTo(
+        pub915Worksheet1(SS, otherIncome, 'mfs'),
+        6,
+      );
+    }
+    // And with tax-exempt interest in provisional income too.
+    expect(taxableSocialSecurity(SS, 5_000, 'mfs', 3_000)).toBeCloseTo(
+      pub915Worksheet1(SS, 5_000, 'mfs', 3_000),
+      6,
+    );
+  });
+
+  it('has both provisional-income thresholds at $0', () => {
+    expect(FILING_PARAMS.mfs.ssBase50).toBe(0);
+    expect(FILING_PARAMS.mfs.ssBase85).toBe(0);
+  });
+
+  it('taxes 42.5% of the benefit before any other income arrives', () => {
+    // Provisional income is half the benefit, and 85% of that is taxable.
+    expect(taxableSocialSecurity(SS, 0, 'mfs')).toBeCloseTo(0.425 * SS, 6);
+    expect(taxableSocialSecurity(SS, 0, 'mfs')).toBeCloseTo(10_077.6, 6);
+    // A single filer with the same benefit owes nothing on it at all.
+    expect(taxableSocialSecurity(SS, 0, 'single')).toBe(0);
+  });
+
+  it('hits the 85% cap once other income reaches half the benefit', () => {
+    expect(taxableSocialSecurity(SS, SS / 2 - 1, 'mfs')).toBeCloseTo(
+      SS_CAP - 0.85,
+      6,
+    );
+    expect(taxableSocialSecurity(SS, SS / 2, 'mfs')).toBeCloseTo(SS_CAP, 6);
+    expect(taxableSocialSecurity(SS, 150_000, 'mfs')).toBeCloseTo(SS_CAP, 6);
+    // Tax-exempt interest is in provisional income, so it brings the cap
+    // forward dollar for dollar.
+    expect(taxableSocialSecurity(SS, SS / 2 - 3_000, 'mfs', 3_000)).toBeCloseTo(
+      SS_CAP,
+      6,
+    );
+  });
+
+  it('never draws the 50% band, so the curve skips straight to 1.85x', () => {
+    const bands = (fs: FilingStatus): number[] => [
+      ...new Set(
+        marginalRateCurve(SS, 40_000, 250, fs)
+          .map((p) => p.marginalRate)
+          .filter((r) => r > 0),
+      ),
+    ];
+    // A single filer passes through 10% x 1.5 on the way up. A separate
+    // filer has no 50% tier to pass through.
+    expect(bands('single')).toContain(15);
+    expect(bands('mfs')).not.toContain(15);
+    expect(bands('mfs')).toEqual([18.5, 22.2, 12]);
+  });
+
+  it('is done with the torpedo by half the benefit', () => {
+    const curve = marginalRateCurve(SS, 40_000, 250, 'mfs');
+    const amplified = curve.filter((p) => p.marginalRate > 12);
+    expect(amplified[0].income).toBe(3_250);
+    // The last amplified sample sits below half the benefit ($11,856); every
+    // sample past it is back on the plain bracket rate.
+    expect(amplified[amplified.length - 1].income).toBeLessThan(SS / 2);
+    expect(
+      curve
+        .filter((p) => p.income >= SS / 2)
+        .every((p) => p.marginalRate === 12),
+    ).toBe(true);
+  });
+
+  it('borrows the single filer brackets until $375,800 and then diverges', () => {
+    // Section 1(j)(2)(D). The tax at each break matches Rev. Proc. 2024-40's
+    // own "the tax is" column.
+    expect(federalIncomeTax(250_525, 'mfs')).toBeCloseTo(57_231, 6);
+    expect(federalIncomeTax(375_800, 'mfs')).toBeCloseTo(101_077.25, 6);
+    for (const taxable of [0, 11_925, 48_475, 103_350, 197_300, 375_800]) {
+      expect(federalIncomeTax(taxable, 'mfs')).toBeCloseTo(
+        federalIncomeTax(taxable, 'single'),
+        6,
+      );
+    }
+    // Past $375,800 a separate return is already at 37% while a single one
+    // still has $250,550 of 35% bracket left.
+    expect(federalIncomeTax(400_000, 'mfs')).toBeCloseTo(110_031.25, 6);
+    expect(federalIncomeTax(400_000, 'single')).toBeCloseTo(109_547.25, 6);
+  });
+
+  it('shares the single standard deduction but takes the married age-65 amount', () => {
+    expect(FILING_PARAMS.mfs.standardDeduction).toBe(
+      FILING_PARAMS.single.standardDeduction,
+    );
+    expect(ADDITIONAL_STD_DEDUCTION_65.mfs).toBe(1_600);
+    expect(standardDeductionFor('mfs', 0)).toBe(15_750);
+    expect(standardDeductionFor('mfs', 1)).toBe(17_350);
+    // Only one person can claim it on a separate return.
+    expect(maxSeniors('mfs')).toBe(1);
+    expect(standardDeductionFor('mfs', 2)).toBe(17_350);
+  });
+
+  it('gets no senior deduction at all, at any income', () => {
+    // Section 151(d)(5)(C)(v) conditions it on filing jointly.
+    expect(seniorDeductionAllowed('mfs')).toBe(false);
+    expect(seniorDeductionPhaseoutEnd('mfs')).toBeNull();
+    for (const magi of [0, 40_000, 75_000, 100_000, 175_000]) {
+      expect(seniorDeductionFor('mfs', 1, magi)).toBe(0);
+      expect(deductionFor('mfs', 1, magi)).toBe(standardDeductionFor('mfs', 1));
+    }
+    // So there is no second hump: the rate curve for a 65-year-old separate
+    // filer is the same one a 64-year-old sees, shifted only by the $1,600.
+    const rates = (seniors: number): number[] =>
+      marginalRateCurve(SS, 150_000, 250, 'mfs', seniors).map(
+        (p) => p.marginalRate,
+      );
+    expect(new Set(rates(1))).toEqual(new Set(rates(0)));
+  });
+
+  it('halves the 0% capital-gains band but not the 15% one', () => {
+    expect(LTCG_BRACKETS.mfs[0].upTo).toBe(48_350);
+    expect(LTCG_BRACKETS.mfs[0].upTo).toBe(LTCG_BRACKETS.mfj[0].upTo / 2);
+    // $600,050 / 2 is $300,025; Rev. Proc. 2024-40 prints $300,000, because
+    // each status is inflation-adjusted and rounded from its own base amount.
+    expect(LTCG_BRACKETS.mfs[1].upTo).toBe(300_000);
+    expect(LTCG_BRACKETS.mfj[1].upTo / 2).toBe(300_025);
+    // $400,000 of pure gains: 0% to $48,350, 15% to $300,000, 20% after.
+    expect(totalTaxWithLTCG(0, 0, 400_000, 'mfs')).toBeCloseTo(54_597.5, 6);
+    expect(totalTaxWithLTCG(0, 0, 400_000, 'single')).toBeCloseTo(50_385, 6);
+  });
+
+  it('skips IRMAA tiers 1 through 3 entirely', () => {
+    // 42 U.S.C. 1395r(i)(3)(C) gives a separate return its own two-step
+    // schedule, which reuses tiers 4 and 5's premiums at its own thresholds.
+    expect(irmaaTiersFor('mfs').map((t) => t.tier)).toEqual([0, 4, 5]);
+    expect(irmaaTiersFor('single').map((t) => t.tier)).toEqual([0, 1, 2, 3, 4, 5]);
+    expect(firstIrmaaTier('mfs').tier).toBe(4);
+    expect(IRMAA_FIRST_CLIFF_MAGI.mfs).toBe(106_000);
+    // Same first threshold as a single filer, four times the surcharge.
+    expect(IRMAA_FIRST_CLIFF_MAGI.single).toBe(106_000);
+    expect(irmaaFor(106_001, 'mfs').annualSurcharge).toBeCloseTo(5_826, 6);
+    expect(irmaaFor(106_001, 'single').annualSurcharge).toBeCloseTo(1_052.4, 6);
+  });
+
+  it('walks its own tier ladder for the next cliff and its cost', () => {
+    const under = irmaaFor(106_000, 'mfs');
+    expect(under.tier).toBe(0);
+    expect(under.nextThreshold).toBe(106_000);
+    expect(under.headroom).toBe(0);
+    expect(under.nextStep).toBeCloseTo(5_826, 6);
+
+    const over = irmaaFor(106_001, 'mfs');
+    expect(over.tier).toBe(4);
+    // Not tier 5's $500,000/$750,000, and not tier 1's — the mfs ladder's.
+    expect(over.nextThreshold).toBe(394_000);
+    expect(over.headroom).toBe(287_999);
+    expect(over.nextStep).toBeCloseTo(530.4, 6);
+  });
+
+  it('treats its top threshold as inclusive, unlike every other one', () => {
+    // 1395r(i)(3)(C)(ii)(II) says "equal to or greater than" for a separate
+    // return; every other threshold in the statute says "greater than".
+    expect(irmaaTierFor(393_999, 'mfs').tier).toBe(4);
+    expect(irmaaTierFor(394_000, 'mfs').tier).toBe(5);
+    expect(irmaaTierFor(500_000, 'single').tier).toBe(4);
+    expect(irmaaTierFor(500_001, 'single').tier).toBe(5);
+    expect(irmaaTierFor(750_000, 'mfj').tier).toBe(4);
+  });
+
+  it('places its two cliffs on the other-income axis', () => {
+    const cliffs = irmaaCliffs(SS, 'mfs');
+    expect(cliffs.map((c) => c.tier)).toEqual([4, 5]);
+    // Past the cap the benefit contributes a fixed $20,155.20 to AGI, so each
+    // cliff sits exactly that far below its MAGI figure.
+    expect(cliffs[0].otherIncome).toBeCloseTo(106_000 - SS_CAP, 6);
+    expect(cliffs[1].otherIncome).toBeCloseTo(394_000 - SS_CAP, 6);
+    // The first step is the whole four-tier climb taken at once.
+    expect(cliffs[0].step).toBeCloseTo(5_826, 6);
+    expect(cliffs[1].step).toBeCloseTo(530.4, 6);
+    // A single filer reaches the same $5,826 only at their fourth cliff.
+    expect(irmaaCliffs(SS, 'single')[3].annualSurcharge).toBeCloseTo(5_826, 6);
+  });
+
+  it('names the right IRMAA ceiling and collapses the two SS ceilings', () => {
+    const ceilings = conversionCeilings('mfs');
+    const irmaa = ceilings.find((c) => c.id === 'irmaa1')!;
+    expect(irmaa.label).toBe('IRMAA tier 4 (Medicare surcharge)');
+    expect(irmaa.amount).toBe(106_000);
+    expect(conversionCeilings('single').find((c) => c.id === 'irmaa1')!.label).toBe(
+      'IRMAA tier 1 (Medicare surcharge)',
+    );
+    // Both Social Security ceilings are $0, so neither can be sized against.
+    for (const id of ['ss50', 'ss85'] as ConversionCeilingId[]) {
+      const ceiling = ceilings.find((c) => c.id === id)!;
+      expect(ceiling.amount).toBe(0);
+      expect(ceiling.note).toContain('separate return');
+      const sized = sizeConversion(ceiling, 30_000, SS, 0, 'mfs');
+      expect(sized.alreadyOver).toBe(true);
+      expect(sized.conversion).toBe(0);
+      // Provisional income is already other income plus half the benefit.
+      expect(sized.headroom).toBeCloseTo(-(30_000 + SS / 2), 6);
+    }
+  });
+
+  it('costs more federal tax than a single filer on identical income', () => {
+    // $30,000 of other income: identical brackets and standard deduction, but
+    // $20,155.20 of benefits in the base instead of $11,177.60.
+    expect(totalTax(30_000, SS, 'mfs')).toBeCloseTo(3_890.12, 2);
+    expect(totalTax(30_000, SS, 'single')).toBeCloseTo(2_812.81, 2);
+  });
+});
+
 describe('IRMAA (Medicare income-related monthly adjustment amount)', () => {
   const SS = AVG_ANNUAL_SS_BENEFIT; // $23,712
   /** 85% of the average benefit — the cap the torpedo tops out at. */
@@ -1107,8 +1341,10 @@ describe('IRMAA (Medicare income-related monthly adjustment amount)', () => {
   });
 
   it('keeps the conversion ceiling and the tier table in sync', () => {
-    expect(IRMAA_TIER1_MAGI.single).toBe(IRMAA_TIERS[1].magiOver.single);
-    expect(IRMAA_TIER1_MAGI.mfj).toBe(IRMAA_TIERS[1].magiOver.mfj);
+    expect(IRMAA_FIRST_CLIFF_MAGI.single).toBe(IRMAA_TIERS[1].magiOver.single);
+    expect(IRMAA_FIRST_CLIFF_MAGI.mfj).toBe(IRMAA_TIERS[1].magiOver.mfj);
+    // A separate return's first cliff is tier 4, not tier 1.
+    expect(IRMAA_FIRST_CLIFF_MAGI.mfs).toBe(IRMAA_TIERS[4].magiOver.mfs);
   });
 
   it('adds tax-exempt interest back into MAGI but never into the tax base', () => {

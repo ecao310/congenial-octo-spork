@@ -193,17 +193,24 @@ export const AVG_ANNUAL_SS_BENEFIT = 23_712;
 
 /**
  * Taxable portion of Social Security benefits under the 50%/85% rules.
- * Provisional income = other income + half of benefits. Up to 50% of the
- * excess over the first threshold is taxable, then up to 85% of the excess
- * over the second, capped at 85% of total benefits.
+ * Provisional income = other income + tax-exempt interest + half of benefits.
+ * Up to 50% of the excess over the first threshold is taxable, then up to 85%
+ * of the excess over the second, capped at 85% of total benefits.
+ *
+ * `muniInterest` is interest exempt from tax under IRC 103 — municipal bond
+ * income. IRC 86(b)(2)(B) adds it back when figuring provisional income even
+ * though it never enters gross income, so it moves the taxable share of
+ * benefits without moving the ordinary tax base at all. See
+ * `muniInterestEffect` for what that costs.
  */
 export function taxableSocialSecurity(
   ssBenefit: number,
   otherIncome: number,
   filingStatus: FilingStatus = 'single',
+  muniInterest = 0,
 ): number {
   const { ssBase50, ssBase85 } = FILING_PARAMS[filingStatus];
-  const provisional = otherIncome + 0.5 * ssBenefit;
+  const provisional = otherIncome + muniInterest + 0.5 * ssBenefit;
   if (provisional <= ssBase50) return 0;
   if (provisional <= ssBase85) {
     return Math.min(0.5 * (provisional - ssBase50), 0.5 * ssBenefit);
@@ -235,10 +242,19 @@ export function totalTax(
   ssBenefit: number,
   filingStatus: FilingStatus = 'single',
   seniors = 0,
+  muniInterest = 0,
 ): number {
-  // AGI, which is also the MAGI the senior deduction phases out against.
-  const magi =
-    otherIncome + taxableSocialSecurity(ssBenefit, otherIncome, filingStatus);
+  // Tax-exempt interest raises provisional income, so it can pull benefits in…
+  const taxableSS = taxableSocialSecurity(
+    ssBenefit,
+    otherIncome,
+    filingStatus,
+    muniInterest,
+  );
+  // …but it is not part of AGI, and it is not added back for the senior
+  // deduction's MAGI either (unlike the MAGI Medicare uses for IRMAA), so the
+  // only trace it leaves in the tax base is the benefits it dragged in.
+  const magi = otherIncome + taxableSS;
   const taxable = Math.max(0, magi - deductionFor(filingStatus, seniors, magi));
   return federalIncomeTax(taxable, filingStatus);
 }
@@ -254,11 +270,13 @@ export function marginalRateCurve(
   step = 250,
   filingStatus: FilingStatus = 'single',
   seniors = 0,
+  muniInterest = 0,
 ): MarginalRatePoint[] {
   const data: MarginalRatePoint[] = [];
   for (let income = 0; income <= maxIncome; income += step) {
-    const taxHere = totalTax(income, ssBenefit, filingStatus, seniors);
-    const rate = totalTax(income + 1, ssBenefit, filingStatus, seniors) - taxHere;
+    const taxHere = totalTax(income, ssBenefit, filingStatus, seniors, muniInterest);
+    const rate =
+      totalTax(income + 1, ssBenefit, filingStatus, seniors, muniInterest) - taxHere;
     data.push({
       income,
       marginalRate: Math.round(rate * 10_000) / 100,
@@ -304,13 +322,20 @@ export function totalTaxWithLTCG(
   ltcg: number,
   filingStatus: FilingStatus = 'single',
   seniors = 0,
+  muniInterest = 0,
 ): number {
   const { brackets } = FILING_PARAMS[filingStatus];
   const ltcgBrackets = LTCG_BRACKETS[filingStatus];
 
-  // LTCG counts toward provisional income (IRS uses full AGI + half SS).
+  // LTCG counts toward provisional income (IRS uses full AGI + half SS), and so
+  // does tax-exempt interest — but only LTCG makes it into AGI below.
   const totalOtherIncome = ordinaryIncome + ltcg;
-  const taxableSS = taxableSocialSecurity(ssBenefit, totalOtherIncome, filingStatus);
+  const taxableSS = taxableSocialSecurity(
+    ssBenefit,
+    totalOtherIncome,
+    filingStatus,
+    muniInterest,
+  );
 
   // Gains are part of AGI, so they phase out the senior deduction too.
   const deduction = deductionFor(filingStatus, seniors, totalOtherIncome + taxableSS);
@@ -374,12 +399,27 @@ export function ltcgMarginalRateCurve(
   step = 250,
   filingStatus: FilingStatus = 'single',
   seniors = 0,
+  muniInterest = 0,
 ): LTCGMarginalRatePoint[] {
   const data: LTCGMarginalRatePoint[] = [];
   for (let ltcg = 0; ltcg <= maxLTCG; ltcg += step) {
-    const taxHere = totalTaxWithLTCG(ordinaryIncome, ssBenefit, ltcg, filingStatus, seniors);
+    const taxHere = totalTaxWithLTCG(
+      ordinaryIncome,
+      ssBenefit,
+      ltcg,
+      filingStatus,
+      seniors,
+      muniInterest,
+    );
     const rate =
-      totalTaxWithLTCG(ordinaryIncome, ssBenefit, ltcg + 1, filingStatus, seniors) - taxHere;
+      totalTaxWithLTCG(
+        ordinaryIncome,
+        ssBenefit,
+        ltcg + 1,
+        filingStatus,
+        seniors,
+        muniInterest,
+      ) - taxHere;
     data.push({
       ltcg,
       marginalRate: Math.round(rate * 10_000) / 100,
@@ -387,6 +427,91 @@ export function ltcgMarginalRateCurve(
     });
   }
   return data;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Tax-exempt (municipal bond) interest                              */
+/* ------------------------------------------------------------------ */
+
+export interface MuniInterestEffect {
+  /** The tax-exempt interest the scenario holds. */
+  muniInterest: number;
+  /** Taxable Social Security if the same portfolio threw off no muni interest. */
+  taxableSSWithout: number;
+  /** Taxable Social Security once the tax-exempt interest is counted. */
+  taxableSSWith: number;
+  /** Benefits dragged into taxable income by the tax-exempt interest alone. */
+  taxableSSDelta: number;
+  /** Federal tax without the tax-exempt interest. */
+  taxWithout: number;
+  /** Federal tax with it. */
+  taxWith: number;
+  /** taxWith - taxWithout: what the "tax-free" interest still costs. */
+  taxCost: number;
+  /** Average federal tax cost per dollar of tax-exempt interest, in percent. */
+  costPerDollar: number;
+  /** Federal tax on the *next* dollar of tax-exempt interest, in percent. */
+  ratePerNextDollar: number;
+}
+
+/**
+ * What tax-exempt interest actually costs a Social Security recipient.
+ *
+ * Municipal bond interest is excluded from gross income by IRC 103, so it never
+ * reaches taxable income — but IRC 86(b)(2)(B) adds it straight back into
+ * provisional income. The only thing it can move, therefore, is the taxable
+ * share of benefits, and it moves that dollar for dollar with ordinary income:
+ * inside the torpedo a dollar of "tax-free" interest can pull 85 cents of
+ * benefits into the tax base and cost 10 to 40 cents in federal tax.
+ *
+ * Because the interest itself is invisible on the return, this is the effect
+ * retirees are least likely to notice: the tax shows up on line 6b, attached to
+ * benefits they cannot control, rather than anywhere near the bonds that caused
+ * it.
+ */
+export function muniInterestEffect(
+  muniInterest: number,
+  ordinaryIncome: number,
+  ssBenefit: number,
+  ltcg = 0,
+  filingStatus: FilingStatus = 'single',
+  seniors = 0,
+): MuniInterestEffect {
+  const otherIncome = ordinaryIncome + ltcg;
+  const taxableSSWithout = taxableSocialSecurity(
+    ssBenefit,
+    otherIncome,
+    filingStatus,
+    0,
+  );
+  const taxableSSWith = taxableSocialSecurity(
+    ssBenefit,
+    otherIncome,
+    filingStatus,
+    muniInterest,
+  );
+
+  const taxAt = (muni: number): number =>
+    totalTaxWithLTCG(ordinaryIncome, ssBenefit, ltcg, filingStatus, seniors, muni);
+
+  const taxWithRaw = taxAt(muniInterest);
+  const taxWithout = Math.round(taxAt(0));
+  const taxWith = Math.round(taxWithRaw);
+  const taxCost = taxWith - taxWithout;
+
+  return {
+    muniInterest,
+    taxableSSWithout: Math.round(taxableSSWithout),
+    taxableSSWith: Math.round(taxableSSWith),
+    taxableSSDelta: Math.round(taxableSSWith - taxableSSWithout),
+    taxWithout,
+    taxWith,
+    taxCost,
+    costPerDollar:
+      muniInterest > 0 ? Math.round((taxCost / muniInterest) * 10_000) / 100 : 0,
+    ratePerNextDollar:
+      Math.round((taxAt(muniInterest + 1) - taxWithRaw) * 10_000) / 100,
+  };
 }
 
 export interface CurveSegment<T> {
@@ -572,24 +697,33 @@ export function conversionMeasureValue(
   conversion: number,
   filingStatus: FilingStatus = 'single',
   seniors = 0,
+  muniInterest = 0,
 ): number {
   const otherIncome = ordinaryIncome + conversion + ltcg;
-  const taxableSS = taxableSocialSecurity(ssBenefit, otherIncome, filingStatus);
-  // AGI (which already includes taxable SS) plus tax-exempt interest, which the
-  // app does not model yet. Also the base for the senior deduction's phaseout,
-  // where tax-exempt interest would *not* be added back.
-  const magi = otherIncome + taxableSS;
-  const deduction = deductionFor(filingStatus, seniors, magi);
+  const taxableSS = taxableSocialSecurity(
+    ssBenefit,
+    otherIncome,
+    filingStatus,
+    muniInterest,
+  );
+  // AGI, which already includes taxable SS but never includes tax-exempt
+  // interest. This is also the base for the senior deduction's phaseout, where
+  // tax-exempt interest is *not* added back.
+  const agi = otherIncome + taxableSS;
+  const deduction = deductionFor(filingStatus, seniors, agi);
   switch (measure) {
     case 'provisionalIncome':
-      return otherIncome + 0.5 * ssBenefit;
+      return otherIncome + muniInterest + 0.5 * ssBenefit;
     case 'magi':
-      return magi;
+      // The only ceiling measured this way is IRMAA, and Medicare's MAGI is
+      // AGI plus tax-exempt interest — a wider definition than the one the
+      // senior deduction phases out against.
+      return agi + muniInterest;
     case 'ordinaryTaxableIncome':
       // What the ordinary brackets are measured against: LTCG stacks on top.
       return Math.max(0, ordinaryIncome + conversion + taxableSS - deduction);
     case 'totalTaxableIncome':
-      return Math.max(0, magi - deduction);
+      return Math.max(0, agi - deduction);
   }
 }
 
@@ -612,6 +746,7 @@ export function maxConversionUnder(
   filingStatus: FilingStatus = 'single',
   seniors = 0,
   maxConversion = 1_000_000,
+  muniInterest = 0,
 ): number {
   const measureAt = (conversion: number): number =>
     conversionMeasureValue(
@@ -622,6 +757,7 @@ export function maxConversionUnder(
       conversion,
       filingStatus,
       seniors,
+      muniInterest,
     );
   const fits = (conversion: number): boolean =>
     measureAt(conversion) <= ceiling.amount + CEILING_EPSILON;
@@ -679,6 +815,7 @@ export function sizeConversion(
   filingStatus: FilingStatus = 'single',
   seniors = 0,
   maxConversion = 1_000_000,
+  muniInterest = 0,
 ): ConversionSizing {
   const conversion = maxConversionUnder(
     ceiling,
@@ -688,6 +825,7 @@ export function sizeConversion(
     filingStatus,
     seniors,
     maxConversion,
+    muniInterest,
   );
   const headroom =
     ceiling.amount -
@@ -699,35 +837,17 @@ export function sizeConversion(
       0,
       filingStatus,
       seniors,
+      muniInterest,
     );
 
-  const taxBefore = Math.round(
-    totalTaxWithLTCG(ordinaryIncome, ssBenefit, ltcg, filingStatus, seniors),
-  );
-  const taxAfterRaw = totalTaxWithLTCG(
-    ordinaryIncome + conversion,
-    ssBenefit,
-    ltcg,
-    filingStatus,
-    seniors,
-  );
-  const taxAfter = Math.round(taxAfterRaw);
+  const taxAt = (ordinary: number): number =>
+    totalTaxWithLTCG(ordinary, ssBenefit, ltcg, filingStatus, seniors, muniInterest);
+
+  const taxBefore = Math.round(taxAt(ordinaryIncome));
+  const taxAfter = Math.round(taxAt(ordinaryIncome + conversion));
   const taxCost = taxAfter - taxBefore;
   const rateAboveCeiling =
-    totalTaxWithLTCG(
-      ordinaryIncome + conversion + 2,
-      ssBenefit,
-      ltcg,
-      filingStatus,
-      seniors,
-    ) -
-    totalTaxWithLTCG(
-      ordinaryIncome + conversion + 1,
-      ssBenefit,
-      ltcg,
-      filingStatus,
-      seniors,
-    );
+    taxAt(ordinaryIncome + conversion + 2) - taxAt(ordinaryIncome + conversion + 1);
 
   return {
     ceiling,

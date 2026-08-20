@@ -2,10 +2,15 @@
 
 Source: https://www.irs.gov/publications/p915 (tax year 2025).
 This is the worksheet behind Form 1040 line 6b. `src/utils/tax.ts`
-(`taxableSocialSecurity`) implements the closed-form equivalent for a single
-filer with no tax-exempt interest, exclusions, or Schedule 1 adjustments;
-`src/utils/tax.test.ts` checks it against a line-by-line reference
-implementation of this worksheet.
+(`taxableSocialSecurity`) implements the closed-form equivalent, taking line 4
+(tax-exempt interest) as its `muniInterest` argument and assuming no exclusions
+or Schedule 1 adjustments (lines 5 and 7 = 0); `src/utils/tax.test.ts` checks it
+against a line-by-line reference implementation of this worksheet.
+
+Note that line 4 is what makes municipal bond interest taxable in effect: it is
+excluded from gross income by IRC 103 and never reaches Form 1040 line 15, yet
+IRC 86(b)(2)(B) adds it straight back here, so it raises the taxable share of
+benefits exactly as fast as a pension check would.
 
 ## Worksheet lines
 

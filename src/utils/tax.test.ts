@@ -1,5 +1,6 @@
 import {
   federalIncomeTax,
+  muniInterestEffect,
   FilingStatus,
   ltcgMarginalRateCurve,
   marginalRateCurve,
@@ -30,19 +31,20 @@ import type { ConversionCeiling, ConversionCeilingId } from './tax';
 
 /**
  * Line-by-line reference implementation of IRS Pub 915 (2025), Worksheet 1
- * "Figuring Your Taxable Benefits", assuming no tax-exempt interest,
- * exclusions, or Schedule 1 adjustments (lines 4, 5, and 7 = 0).
- * See docs/irs-pub915-worksheet1-2025.md.
+ * "Figuring Your Taxable Benefits", assuming no exclusions or Schedule 1
+ * adjustments (lines 5 and 7 = 0). See docs/irs-pub915-worksheet1-2025.md.
  */
 function pub915Worksheet1(
   ssBenefit: number,
   otherIncome: number,
   filingStatus: FilingStatus = 'single',
+  muniInterest = 0,
 ): number {
   const line1 = ssBenefit; // box 5 of Forms SSA-1099/RRB-1099
   const line2 = 0.5 * line1;
   const line3 = otherIncome; // Form 1040 lines 1z, 2b, 3b, 4b, 5b, 7, 8
-  const line6 = line2 + line3;
+  const line4 = muniInterest; // tax-exempt interest, Form 1040 line 2a
+  const line6 = line2 + line3 + line4;
   const line8 = line6; // provisional income
   const line9 = filingStatus === 'single' ? 25_000 : 32_000; // base amount
   const line10 = Math.max(0, line8 - line9);
@@ -892,5 +894,168 @@ describe('OBBBA senior deduction (2025-2028)', () => {
     // ceiling arrives $2,949 early - and the next dollar costs 25.44%.
     expect(senior.conversion).toBe(73_995);
     expect(senior.rateAboveCeiling).toBe(25.44);
+  });
+});
+
+describe('tax-exempt (municipal) interest', () => {
+  const SS = AVG_ANNUAL_SS_BENEFIT; // $23,712
+  const ceiling = (id: ConversionCeilingId): ConversionCeiling => {
+    const found = conversionCeilings('single').find((c) => c.id === id);
+    if (!found) throw new Error(`no ceiling ${id}`);
+    return found;
+  };
+
+  it('agrees with Worksheet 1 line 4 across a grid', () => {
+    for (const ss of [0, 12_000, SS, MAX_ANNUAL_SS_BENEFIT]) {
+      for (const income of [0, 10_000, 25_000, 60_000]) {
+        for (const muni of [0, 2_500, 10_000, 40_000]) {
+          for (const status of ['single', 'mfj'] as FilingStatus[]) {
+            expect(taxableSocialSecurity(ss, income, status, muni)).toBeCloseTo(
+              pub915Worksheet1(ss, income, status, muni),
+              8,
+            );
+          }
+        }
+      }
+    }
+  });
+
+  it('counts toward provisional income exactly like other income', () => {
+    // Worksheet 1 adds line 3 and line 4 together on line 6, so a dollar of
+    // muni interest and a dollar of pension income are interchangeable here.
+    expect(taxableSocialSecurity(SS, 20_000, 'single', 5_000)).toBeCloseTo(
+      taxableSocialSecurity(SS, 25_000, 'single'),
+      8,
+    );
+    expect(taxableSocialSecurity(SS, 20_000, 'mfj', 5_000)).toBeCloseTo(
+      taxableSocialSecurity(SS, 25_000, 'mfj'),
+      8,
+    );
+  });
+
+  it('never enters taxable income itself', () => {
+    // $20,000 of other income + the average benefit. Provisional income is
+    // 20,000 + 11,856 = 31,856, so 50% of the excess over $25,000 is taxable:
+    // $3,428 of benefits, AGI $23,428, taxable $7,678, all at 10% = $767.80.
+    expect(totalTax(20_000, SS, 'single')).toBeCloseTo(767.8, 6);
+    // Add $5,000 of muni interest: provisional income clears $34,000, so the
+    // benefits dragged in rise to $6,927.60 - but AGI is only $26,927.60,
+    // because the interest itself is excluded by IRC 103.
+    expect(totalTax(20_000, SS, 'single', 0, 5_000)).toBeCloseTo(1_117.76, 6);
+    // The same $5,000 as ordinary income costs far more: it is taxed itself
+    // *and* it drags in the identical amount of benefits.
+    expect(totalTax(25_000, SS, 'single')).toBeCloseTo(1_702.812, 6);
+  });
+
+  it('moves the torpedo left on the marginal-rate curve', () => {
+    const rateOnsetAt = (muni: number): number | undefined =>
+      marginalRateCurve(SS, 150_000, 250, 'single', 0, muni).find(
+        (p) => p.marginalRate > 0,
+      )?.income;
+    // Without muni interest the first taxed dollar arrives at $15,000 of other
+    // income; $10,000 of muni interest pulls that in to $11,750. The shift is
+    // $3,250 rather than the full $10,000 because the interest raises taxable
+    // income only through the benefits it drags in, and only 50 cents of
+    // benefit come in per dollar in this band.
+    expect(rateOnsetAt(0)).toBe(15_000);
+    expect(rateOnsetAt(10_000)).toBe(11_750);
+  });
+
+  it('costs nothing once benefits are capped at 85%', () => {
+    // $100,000 of other income already puts 85% of the benefits in the tax
+    // base, so there is nothing left for the interest to drag in.
+    expect(totalTax(100_000, SS, 'single', 0, 10_000)).toBe(
+      totalTax(100_000, SS, 'single'),
+    );
+    // Same with the senior deduction in play: muni interest is not added back
+    // for its MAGI, so it cannot touch the phaseout either.
+    expect(totalTax(100_000, SS, 'single', 1, 10_000)).toBe(
+      totalTax(100_000, SS, 'single', 1),
+    );
+  });
+
+  it('is added back for the IRMAA MAGI ceiling but not for AGI', () => {
+    // $50,000 ordinary + $22,000 converted + $40,000 of benefits: the 85% cap
+    // binds, so AGI is $106,000. Medicare adds tax-exempt interest back.
+    expect(conversionMeasureValue('magi', 50_000, 40_000, 0, 22_000)).toBe(106_000);
+    expect(
+      conversionMeasureValue('magi', 50_000, 40_000, 0, 22_000, 'single', 0, 10_000),
+    ).toBe(116_000);
+    // So $10,000 of muni interest costs exactly $10,000 of conversion room.
+    expect(maxConversionUnder(ceiling('irmaa1'), 50_000, 40_000)).toBe(22_000);
+    expect(
+      maxConversionUnder(ceiling('irmaa1'), 50_000, 40_000, 0, 'single', 0, 1_000_000, 10_000),
+    ).toBe(12_000);
+  });
+
+  it('eats provisional-income headroom dollar for dollar', () => {
+    // Provisional income is 5,000 + conversion + 11,856, so $8,144 fits under
+    // the $25,000 base amount - $2,000 less with $2,000 of muni interest.
+    expect(maxConversionUnder(ceiling('ss50'), 5_000, SS)).toBe(8_144);
+    expect(
+      maxConversionUnder(ceiling('ss50'), 5_000, SS, 0, 'single', 0, 1_000_000, 2_000),
+    ).toBe(6_144);
+  });
+});
+
+describe('muniInterestEffect', () => {
+  const SS = AVG_ANNUAL_SS_BENEFIT;
+
+  it('prices the benefits the interest drags into taxable income', () => {
+    const effect = muniInterestEffect(5_000, 20_000, SS);
+    expect(effect.taxableSSWithout).toBe(3_428);
+    expect(effect.taxableSSWith).toBe(6_928); // 6,927.60 rounded
+    expect(effect.taxableSSDelta).toBe(3_500);
+    expect(effect.taxWithout).toBe(768);
+    expect(effect.taxWith).toBe(1_118);
+    expect(effect.taxCost).toBe(350);
+    // $3,499.60 of extra taxable benefits, all inside the 10% bracket, on
+    // $5,000 of interest: 7 cents of tax per "tax-free" dollar.
+    expect(effect.costPerDollar).toBeCloseTo(7, 2);
+    // The next dollar lands above $34,000 of provisional income, so it drags
+    // in 85 cents of benefits at 10%.
+    expect(effect.ratePerNextDollar).toBeCloseTo(8.5, 2);
+  });
+
+  it('is all zeros when provisional income stays under the first threshold', () => {
+    const effect = muniInterestEffect(5_000, 5_000, SS);
+    expect(effect.taxableSSDelta).toBe(0);
+    expect(effect.taxCost).toBe(0);
+    expect(effect.costPerDollar).toBe(0);
+    expect(effect.ratePerNextDollar).toBe(0);
+  });
+
+  it('is all zeros once the 85% cap already binds', () => {
+    const effect = muniInterestEffect(10_000, 100_000, SS);
+    expect(effect.taxableSSWithout).toBe(20_155);
+    expect(effect.taxableSSDelta).toBe(0);
+    expect(effect.taxCost).toBe(0);
+    expect(effect.ratePerNextDollar).toBe(0);
+  });
+
+  it('reports zero cost per dollar rather than dividing by zero', () => {
+    expect(muniInterestEffect(0, 30_000, SS).costPerDollar).toBe(0);
+  });
+
+  it('counts planned capital gains in the provisional income it prices against', () => {
+    // $20,000 of gains on top of $20,000 of ordinary income already puts
+    // provisional income at $51,856, which leaves only $477.60 of benefits
+    // below the 85% cap. The gains have spent the torpedo before the interest
+    // gets to it, so the same $5,000 that cost $350 without them now drags in
+    // $478 and the dollar after that is free.
+    expect(muniInterestEffect(5_000, 20_000, SS, 0).taxableSSDelta).toBe(3_500);
+    const withGains = muniInterestEffect(5_000, 20_000, SS, 20_000);
+    expect(withGains.taxableSSDelta).toBe(478);
+    expect(withGains.ratePerNextDollar).toBe(0);
+  });
+
+  it('matches the marginal rate the tax chain reports at the same point', () => {
+    const effect = muniInterestEffect(5_000, 20_000, SS, 0, 'mfj', 1);
+    const direct =
+      totalTax(20_000, SS, 'mfj', 1, 5_001) - totalTax(20_000, SS, 'mfj', 1, 5_000);
+    expect(effect.ratePerNextDollar).toBeCloseTo(
+      Math.round(direct * 10_000) / 100,
+      6,
+    );
   });
 });

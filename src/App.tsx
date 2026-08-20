@@ -22,6 +22,7 @@ import {
   ADDITIONAL_STD_DEDUCTION_65,
   standardDeductionFor,
   taxableSocialSecurity,
+  muniInterestEffect,
   SENIOR_DEDUCTION,
   SENIOR_DEDUCTION_FIRST_YEAR,
   SENIOR_DEDUCTION_LAST_YEAR,
@@ -40,6 +41,8 @@ const MAX_INCOME = 150_000;
 const MAX_LTCG = 200_000;
 const DEFAULT_ORDINARY_INCOME = 30_000;
 const MAX_CONVERSION = 1_000_000;
+/** Roughly a $1.4M muni ladder at 2025 yields — well past any realistic retiree. */
+const MAX_MUNI_INTEREST = 50_000;
 
 const FILING_STATUS_OPTIONS: { value: FilingStatus; label: string }[] = [
   { value: 'single', label: 'Single' },
@@ -177,6 +180,7 @@ const App: React.FC = () => {
   const [ceilingId, setCeilingId] = useState<ConversionCeilingId>('bracket12');
   const [isSenior, setIsSenior] = useState<boolean>(false);
   const [spouseIsSenior, setSpouseIsSenior] = useState<boolean>(false);
+  const [muniInterest, setMuniInterest] = useState<number>(0);
 
   // Only a joint return can claim the addition twice, and the spouse's
   // checkbox is meaningless until the filer's is on.
@@ -196,12 +200,14 @@ const App: React.FC = () => {
   // Whether the far side of the phaseout is inside the chart's x-axis depends on
   // how much of the benefit is taxable, so work it out rather than guess.
   const phaseoutEndsOnChart =
-    MAX_INCOME + taxableSocialSecurity(ssBenefit, MAX_INCOME, filingStatus) >
+    MAX_INCOME +
+      taxableSocialSecurity(ssBenefit, MAX_INCOME, filingStatus, muniInterest) >
     phaseoutEnd;
 
   const curve = useMemo(
-    () => marginalRateCurve(ssBenefit, MAX_INCOME, 250, filingStatus, seniors),
-    [ssBenefit, filingStatus, seniors],
+    () =>
+      marginalRateCurve(ssBenefit, MAX_INCOME, 250, filingStatus, seniors, muniInterest),
+    [ssBenefit, filingStatus, seniors, muniInterest],
   );
 
   const segments = useMemo(
@@ -213,8 +219,16 @@ const App: React.FC = () => {
 
   const ltcgCurve = useMemo(
     () =>
-      ltcgMarginalRateCurve(ssBenefit, ordinaryIncome, MAX_LTCG, 250, filingStatus, seniors),
-    [ssBenefit, ordinaryIncome, filingStatus, seniors],
+      ltcgMarginalRateCurve(
+        ssBenefit,
+        ordinaryIncome,
+        MAX_LTCG,
+        250,
+        filingStatus,
+        seniors,
+        muniInterest,
+      ),
+    [ssBenefit, ordinaryIncome, filingStatus, seniors, muniInterest],
   );
 
   const ltcgSegments = useMemo(
@@ -234,8 +248,31 @@ const App: React.FC = () => {
       filingStatus,
       seniors,
       MAX_CONVERSION,
+      muniInterest,
     );
-  }, [ceilings, ceilingId, ordinaryIncome, ssBenefit, plannedLtcg, filingStatus, seniors]);
+  }, [
+    ceilings,
+    ceilingId,
+    ordinaryIncome,
+    ssBenefit,
+    plannedLtcg,
+    filingStatus,
+    seniors,
+    muniInterest,
+  ]);
+
+  const muniEffect = useMemo(
+    () =>
+      muniInterestEffect(
+        muniInterest,
+        ordinaryIncome,
+        ssBenefit,
+        plannedLtcg,
+        filingStatus,
+        seniors,
+      ),
+    [muniInterest, ordinaryIncome, ssBenefit, plannedLtcg, filingStatus, seniors],
+  );
 
   const measureLabel = CONVERSION_MEASURE_LABELS[sizing.ceiling.measure];
 
@@ -351,6 +388,33 @@ const App: React.FC = () => {
         </div>
       </div>
 
+      <div className="input-group">
+        <div className="slider-header">
+          <label htmlFor="muni-interest">Tax-Exempt (Municipal) Interest</label>
+          <span className="slider-value violet">{formatCurrency(muniInterest)}</span>
+        </div>
+        <input
+          id="muni-interest"
+          type="range"
+          min={0}
+          max={MAX_MUNI_INTEREST}
+          step={250}
+          value={muniInterest}
+          onChange={(e) => setMuniInterest(Number(e.target.value))}
+          className="slider-violet"
+        />
+        <div className="slider-range-labels">
+          <span>$0</span>
+          <span>{formatCurrency(MAX_MUNI_INTEREST)}</span>
+        </div>
+        <p className="field-note">
+          Municipal bond interest never enters taxable income, but it counts
+          toward provisional income dollar for dollar — so it drags benefits
+          into the tax base exactly as fast as a paycheck would, and shifts the
+          whole curve to the left.
+        </p>
+      </div>
+
       <div className="chart-container">
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart
@@ -392,7 +456,94 @@ const App: React.FC = () => {
       </div>
       <p className="chart-axis-label">
         Other Income ($) &middot; Total income = Other income + {formatCurrency(ssBenefit)} SS
+        {muniInterest > 0
+          ? ` + ${formatCurrency(muniInterest)} tax-exempt interest`
+          : ''}
       </p>
+
+      {/* ───── Tax-exempt interest ───── */}
+      <section className="explainer" aria-labelledby="muni-interest-heading">
+        <h2 id="muni-interest-heading" className="section-heading-violet">
+          What the tax-exempt interest costs
+        </h2>
+        <p>
+          Priced at {formatCurrency(ordinaryIncome)} of other ordinary income
+          {plannedLtcg > 0
+            ? ` and ${formatCurrency(plannedLtcg)} of long-term gains`
+            : ''}{' '}
+          (the sliders further down) plus the{' '}
+          {formatCurrency(ssBenefit)} benefit above.
+        </p>
+
+        <dl className="stat-grid">
+          <div className="stat">
+            <dt>Benefits it pulls into taxable income</dt>
+            <dd className="stat-value violet">
+              {formatCurrency(muniEffect.taxableSSDelta)}
+            </dd>
+            <dd className="stat-note">
+              {formatCurrency(muniEffect.taxableSSWith)} taxable, up from{' '}
+              {formatCurrency(muniEffect.taxableSSWithout)}
+            </dd>
+          </div>
+          <div className="stat">
+            <dt>Extra federal tax</dt>
+            <dd className="stat-value">{formatCurrency(muniEffect.taxCost)}</dd>
+            <dd className="stat-note">
+              {formatCurrency(muniEffect.taxWith)} total, up from{' '}
+              {formatCurrency(muniEffect.taxWithout)}
+            </dd>
+          </div>
+          <div className="stat">
+            <dt>Cost per muni dollar</dt>
+            <dd className="stat-value">{muniEffect.costPerDollar}%</dd>
+          </div>
+          <div className="stat">
+            <dt>Tax on the next muni dollar</dt>
+            <dd className="stat-value">{muniEffect.ratePerNextDollar}%</dd>
+          </div>
+        </dl>
+
+        {muniInterest === 0 ? (
+          <p>
+            Move the slider above to price it. Tax-exempt interest cannot land in
+            taxable income itself, so the only line it can move is Social
+            Security — which is exactly why the cost is so easy to miss.
+          </p>
+        ) : muniEffect.taxCost === 0 ? (
+          <p>
+            Here the {formatCurrency(muniInterest)} really is free.{' '}
+            {muniEffect.taxableSSDelta === 0
+              ? 'Provisional income stays clear of the thresholds — either below the first one, or far enough past the 85% cap that there are no benefits left to drag in.'
+              : 'It does pull benefits into taxable income, but deductions still absorb them before any bracket applies.'}
+          </p>
+        ) : (
+          <p>
+            That {formatCurrency(muniInterest)} of &ldquo;tax-free&rdquo;
+            interest drags{' '}
+            <strong>{formatCurrency(muniEffect.taxableSSDelta)}</strong> of
+            Social Security benefits into taxable income and costs{' '}
+            <strong>{formatCurrency(muniEffect.taxCost)}</strong> in federal tax
+            — <strong>{muniEffect.costPerDollar}&cent;</strong> per dollar of
+            interest, with the next dollar taxed at{' '}
+            <strong>{muniEffect.ratePerNextDollar}%</strong>. None of that
+            appears next to the bonds on the return; it shows up on line 6b,
+            attached to benefits.
+          </p>
+        )}
+
+        <p>
+          Flipping this slider on and off is the cleanest way to see the torpedo
+          in isolation: nothing about the ordinary tax base changes, so every
+          dollar of tax it adds is the Social Security inclusion rules and
+          nothing else. It also cuts the other way — a retiree sitting inside the
+          torpedo can be better off in taxable bonds at a higher stated yield,
+          and swapping munis for Roth withdrawals or return-of-basis removes the
+          provisional income entirely. Note that tax-exempt interest is also
+          added back for Medicare&apos;s IRMAA MAGI, but <em>not</em> for the
+          senior deduction&apos;s.
+        </p>
+      </section>
 
       <details className="explainer">
         <summary>

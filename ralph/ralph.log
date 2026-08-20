@@ -927,3 +927,112 @@ deduction's MAGI (see above), and it is not in AGI at all, so it needs its own
 input threaded through taxableSocialSecurity's caller rather than being folded
 into otherIncome. That will finally force the options-object refactor that is
 still sitting in the backlog.
+
+================================================================================
+## Iteration: Muni-interest toggle (tax-exempt interest)
+
+Task: "Muni-interest toggle: add a tax-exempt interest slider... Show the
+taxable-SS delta and the implied tax cost of each muni dollar beside the chart."
+
+### The rule being modelled
+
+IRC 103 excludes municipal bond interest from gross income, so it never reaches
+Form 1040 line 15 and is never itself taxed. But IRC 86(b)(2)(B) adds it
+straight back on Pub 915 Worksheet 1 line 4, so provisional income treats it
+exactly like a pension check. The only thing it can move is the taxable share of
+benefits — which is why the cost is invisible: the tax lands on line 6b, next to
+benefits the retiree cannot control, nowhere near the bonds that caused it.
+
+Three different income definitions had to stay straight, and they are NOT the
+same MAGI:
+- provisional income (SS taxability): muni IS added.
+- IRMAA MAGI: muni IS added (AGI + tax-exempt interest).
+- senior deduction MAGI (IRC 151(d)(5)): muni is NOT added back — it is AGI plus
+  the 911/931/933 exclusions only. So muni can never touch the OBBBA phaseout
+  except indirectly, through the benefits it drags into AGI.
+AGI itself, of course, never contains muni.
+
+### The positional-argument trap, dodged rather than fixed
+
+The previous iteration's note warned that inserting `seniors` positionally had
+silently reassigned App.tsx's `MAX_CONVERSION`. This task needed a new parameter
+on eight functions, so the same trap was waiting. Dodge: `muniInterest` was
+appended as the LAST parameter everywhere, including *after* `maxConversion` on
+`maxConversionUnder`/`sizeConversion`, where it reads badly but cannot reassign
+an existing argument. All 103 pre-existing tests passed unchanged on the first
+run, which is the evidence the dodge worked. The options-object refactor is
+still backlogged and is now more urgent, not less — `sizeConversion` is at eight
+positional args (bullet updated to say eight).
+
+`sizeConversion` also picked up a local `taxAt(ordinary)` closure, because the
+same six arguments were being repeated four times; `taxAfterRaw` went away with
+it (it was only ever rounded once).
+
+### New API
+
+`muniInterestEffect(muniInterest, ordinaryIncome, ssBenefit, ltcg, filingStatus,
+seniors)` -> taxableSSWithout/With/Delta, taxWithout/With, taxCost,
+costPerDollar (average, %), ratePerNextDollar (marginal, %). Rounding follows
+`sizeConversion`: costPerDollar is derived from the ROUNDED taxCost so the
+displayed cents and the displayed dollars agree.
+
+### Numbers worth keeping (single, average benefit $23,712)
+
+- $20,000 other income, $5,000 muni: provisional 31,856 -> 36,856, so the muni
+  straddles the $34,000 threshold. Taxable benefits 3,428 -> 6,927.60
+  (2,144 at 50% + 2,856 at 85%). All inside the 10% bracket: $350 of tax on
+  "tax-free" interest = 7.0c per dollar, next dollar 8.5c.
+- Same $5,000 as ordinary income instead: $1,702.81 vs $1,117.76 — the gap is
+  the interest being taxed itself, which the muni escapes.
+- $30,000 other income (the app default), $5,000 muni: fully in the 85% band, so
+  delta is exactly 0.85 x 5,000 = $4,250, tax $510, and costPerDollar ==
+  ratePerNextDollar == 10.2% (= 0.85 x 12%). Nice coincidence for a UI test.
+- $100,000 other income: 85% cap already binds, muni is genuinely free (tax
+  identical to the dollar, with or without seniors).
+- Curve shift: first taxed dollar moves 15,000 -> 11,750 with $10,000 of muni.
+  NOT a 1:1 shift — muni raises taxable income only through the benefits it
+  drags in, at 50c on the dollar in that band, and the standard deduction still
+  has to be cleared.
+- $20,000 ordinary + $20,000 LTCG: provisional is already 51,856, leaving only
+  $477.60 under the 85% cap, so $5,000 of muni drags in $478 and the next dollar
+  is free. My first draft of that test asserted the delta would be *larger* with
+  gains; it is smaller, because the gains spent the torpedo first. Corrected.
+- Conversion sizing at the default scenario is unchanged at $14,069 with or
+  without muni (the 85% cap binds at that conversion either way), but taxBefore
+  moves 2,813 -> 3,323 and costPerDollar 19.65% -> 16.03%. The conversion looks
+  cheaper only because the muni was charged first.
+
+### UI
+
+- Violet accent (#8b5cf6 / #a78bfa) added to index.css: .section-heading-violet,
+  .slider-value.violet, .slider-violet, .stat-value.violet.
+- Slider $0-$50,000, step $250, placed with the SS slider above the main chart
+  (it is a chart input — the whole curve moves with it), with a field-note.
+- New section "What the tax-exempt interest costs" directly under the chart:
+  4-tile stat grid + a paragraph with three states (nothing set / genuinely free
+  / the aha). Axis label gains "+ $X tax-exempt interest" when set.
+- The section prices against the *ordinary income* slider, which lives two
+  sections below it. Called out in the copy ("the sliders further down") and
+  logged as discovered work — the slider ordering should be fixed separately
+  rather than smuggled into this task.
+
+### Testing-library gotchas
+
+- '10.2%' matches THREE elements: both stat tiles and the <strong> in the
+  sentence. The narrative's cost-per-dollar renders as '10.2¢', not '%'.
+- Figures are asserted through a `muniSection()` helper
+  (heading -> closest('section') -> toHaveTextContent) rather than getByText,
+  because every dollar figure appears in both a tile and the sentence.
+
+### Verification
+
+npx tsc -b, npm run lint, npx vitest run (120 passed, was 103), npm run build —
+all clean; only the pre-existing >500kB chunk warning. docs/irs-pub915-*.md
+updated: the reference implementation now takes line 4, and the header no longer
+claims the closed form assumes no tax-exempt interest.
+
+Next up: IRMAA cliffs on the ordinary-income chart. Note the x-axis caveat is
+now doubled — IRMAA reads MAGI from two years earlier AND that MAGI includes the
+tax-exempt interest slider added here, which the SS thresholds and the senior
+deduction treat differently. `conversionMeasureValue`'s 'magi' case is already
+the IRMAA definition (agi + muni); do not reuse it for the senior deduction.

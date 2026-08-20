@@ -391,6 +391,22 @@ details.explainer summary:focus-visible {
   accent-color: #10b981 !important;
 }
 
+/* Violet accent for the tax-exempt interest section */
+.section-heading-violet {
+  background: linear-gradient(to right, #8b5cf6, #a78bfa);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.slider-value.violet {
+  color: #a78bfa;
+}
+
+.slider-violet {
+  accent-color: #8b5cf6 !important;
+}
+
 .ceiling-select {
   width: 100%;
   padding: 0.6rem 0.75rem;
@@ -444,6 +460,10 @@ details.explainer summary:focus-visible {
 
 .stat-value.emerald {
   color: #34d399;
+}
+
+.stat-value.violet {
+  color: #a78bfa;
 }
 
 .stat-note {

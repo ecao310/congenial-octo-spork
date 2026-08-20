@@ -3,6 +3,12 @@ import App, { CustomTooltip, LTCGTooltip } from './App';
 import { MAX_ANNUAL_SS_BENEFIT, AVG_ANNUAL_SS_BENEFIT } from './utils/tax';
 
 describe('App', () => {
+  /** The tax-exempt interest section, so figures can be asserted in context. */
+  const muniSection = (): HTMLElement | null =>
+    screen
+      .getByRole('heading', { name: /what the tax-exempt interest costs/i })
+      .closest('section');
+
   it('renders the heading', () => {
     render(<App />);
     expect(screen.getByRole('heading', { name: /marginal tax rate/i })).toBeInTheDocument();
@@ -279,6 +285,75 @@ describe('App', () => {
     expect(explainer()).toHaveTextContent('24.64%');
     expect(explainer()).toHaveTextContent('45.58%');
     expect(explainer()).toHaveTextContent('gone at $250,000');
+  });
+
+  it('renders a tax-exempt interest slider defaulting to zero', () => {
+    render(<App />);
+    const slider = screen.getByRole('slider', {
+      name: /tax-exempt \(municipal\) interest/i,
+    });
+    expect(slider).toHaveValue('0');
+    expect(slider).toHaveAttribute('min', '0');
+    expect(slider).toHaveAttribute('max', '50000');
+    expect(
+      screen.getByText(/^Municipal bond interest never enters taxable income/),
+    ).toBeInTheDocument();
+    // Nothing to price yet, so the section prompts rather than reporting zeros.
+    expect(muniSection()).toHaveTextContent('Move the slider above to price it');
+  });
+
+  it('prices the muni interest against the taxable share of benefits', () => {
+    render(<App />);
+    fireEvent.change(
+      screen.getByRole('slider', { name: /tax-exempt \(municipal\) interest/i }),
+      { target: { value: '5000' } },
+    );
+
+    // At the default $30,000 of other income the 85% band already applies, so
+    // $5,000 of "tax-free" interest drags in $4,250 of benefits, taxed at 12%
+    // for $510 - 10.2 cents per dollar of interest, now and on the next dollar.
+    expect(muniSection()).toHaveTextContent('$4,250');
+    expect(muniSection()).toHaveTextContent('$510');
+    expect(muniSection()).toHaveTextContent('$15,428 taxable, up from $11,178');
+    expect(muniSection()).toHaveTextContent('$3,323 total, up from $2,813');
+    // Both stat tiles plus the sentence beneath them.
+    expect(screen.getAllByText('10.2%')).toHaveLength(3);
+    expect(muniSection()).toHaveTextContent('10.2¢ per dollar of interest');
+
+    expect(
+      screen.getByText(
+        /total income = other income \+ \$23,712 SS \+ \$5,000 tax-exempt interest/i,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('reports muni interest as free once the 85% cap already binds', () => {
+    render(<App />);
+    fireEvent.change(screen.getByRole('slider', { name: /other ordinary income/i }), {
+      target: { value: '100000' },
+    });
+    fireEvent.change(
+      screen.getByRole('slider', { name: /tax-exempt \(municipal\) interest/i }),
+      { target: { value: '10000' } },
+    );
+    expect(muniSection()).toHaveTextContent('really is free');
+    expect(muniSection()).toHaveTextContent('no benefits left to drag in');
+  });
+
+  it('feeds the muni interest into the conversion sizing', () => {
+    render(<App />);
+    expect(screen.getByText('was $2,813')).toBeInTheDocument();
+    expect(screen.getByText('19.65%')).toBeInTheDocument();
+
+    fireEvent.change(
+      screen.getByRole('slider', { name: /tax-exempt \(municipal\) interest/i }),
+      { target: { value: '5000' } },
+    );
+    // The interest has already dragged the benefits in, so the conversion
+    // itself has less left to drag and looks cheaper per dollar - the tax it
+    // saved was simply charged before the conversion started.
+    expect(screen.getByText('was $3,323')).toBeInTheDocument();
+    expect(screen.getByText('16.03%')).toBeInTheDocument();
   });
 
   it('updates the ordinary income slider readout when moved', () => {

@@ -7,7 +7,16 @@ import {
   totalTax,
   totalTaxWithLTCG,
   segmentCurve,
+  conversionCeilings,
+  conversionMeasureValue,
+  maxConversionUnder,
+  sizeConversion,
+  IRMAA_TIER1_MAGI,
+  FILING_PARAMS,
+  LTCG_BRACKETS,
+  AVG_ANNUAL_SS_BENEFIT,
 } from './tax';
+import type { ConversionCeiling, ConversionCeilingId } from './tax';
 
 /**
  * Line-by-line reference implementation of IRS Pub 915 (2025), Worksheet 1
@@ -479,3 +488,147 @@ describe('segmentCurve', () => {
   });
 });
 
+
+describe('Roth conversion sizing', () => {
+  const SS = AVG_ANNUAL_SS_BENEFIT; // $23,712
+  const ceiling = (id: ConversionCeilingId, filingStatus: FilingStatus = 'single'): ConversionCeiling => {
+    const found = conversionCeilings(filingStatus).find((c) => c.id === id);
+    if (!found) throw new Error(`no ceiling ${id}`);
+    return found;
+  };
+
+  it('takes its ceiling amounts from the same tables the charts use', () => {
+    const single = conversionCeilings('single');
+    expect(single.map((c) => c.id)).toEqual([
+      'bracket12',
+      'bracket22',
+      'ss50',
+      'ss85',
+      'ltcg0',
+      'irmaa1',
+    ]);
+    expect(ceiling('bracket12').amount).toBe(48_475);
+    expect(ceiling('bracket22').amount).toBe(103_350);
+    expect(ceiling('ss50').amount).toBe(FILING_PARAMS.single.ssBase50);
+    expect(ceiling('ss85').amount).toBe(FILING_PARAMS.single.ssBase85);
+    expect(ceiling('ltcg0').amount).toBe(LTCG_BRACKETS.single[0].upTo);
+    expect(ceiling('irmaa1').amount).toBe(IRMAA_TIER1_MAGI.single);
+
+    expect(ceiling('bracket12', 'mfj').amount).toBe(96_950);
+    expect(ceiling('ss85', 'mfj').amount).toBe(44_000);
+    expect(ceiling('irmaa1', 'mfj').amount).toBe(212_000);
+  });
+
+  it('sizes a conversion to the top of the 12% bracket, net of the SS drag', () => {
+    // Single, $30,000 ordinary income, average benefit. Taxable SS starts at
+    // $11,177.60, so taxable income starts at 30,000 + 11,177.60 - 15,750 =
+    // $25,427.60 and the raw headroom under $48,475 is $23,047.40. Only
+    // $14,069 of it is usable: the first $10,561 of conversion also drags in
+    // 85 cents of benefits per dollar, until the 85% cap ($20,155.20) binds.
+    expect(maxConversionUnder(ceiling('bracket12'), 30_000, SS)).toBe(14_069);
+    expect(
+      conversionMeasureValue('ordinaryTaxableIncome', 30_000, SS, 0, 14_069),
+    ).toBeCloseTo(48_474.2, 2);
+    expect(
+      conversionMeasureValue('ordinaryTaxableIncome', 30_000, SS, 0, 14_070),
+    ).toBeGreaterThan(48_475);
+  });
+
+  it('sizes a conversion straight up to a provisional-income ceiling', () => {
+    // No other income, so provisional income is half the benefit ($11,856) and
+    // every converted dollar adds exactly one dollar of provisional income.
+    expect(maxConversionUnder(ceiling('ss50'), 0, SS)).toBe(25_000 - 11_856);
+    expect(maxConversionUnder(ceiling('ss85'), 0, SS)).toBe(34_000 - 11_856);
+    expect(maxConversionUnder(ceiling('ss50', 'mfj'), 0, SS, 0, 'mfj')).toBe(32_000 - 11_856);
+  });
+
+  it('counts planned capital gains against the 0% capital-gains ceiling', () => {
+    // $20,000 ordinary + $30,000 of gains, no benefits: total taxable income is
+    // 50,000 - 15,750 = $34,250, leaving $14,100 under the $48,350 top of the
+    // 0% bracket.
+    expect(maxConversionUnder(ceiling('ltcg0'), 20_000, 0, 30_000)).toBe(14_100);
+    // Without the gains the same ceiling leaves far more room.
+    expect(maxConversionUnder(ceiling('ltcg0'), 20_000, 0, 0)).toBe(44_100);
+  });
+
+  it('measures the IRMAA ceiling against MAGI, which includes taxable benefits', () => {
+    // $50,000 ordinary + $40,000 of benefits: the 85% cap ($34,000) already
+    // binds, so MAGI is 84,000 + conversion and $22,000 fits under $106,000.
+    expect(maxConversionUnder(ceiling('irmaa1'), 50_000, 40_000)).toBe(22_000);
+    expect(conversionMeasureValue('magi', 50_000, 40_000, 0, 22_000)).toBe(106_000);
+  });
+
+  it('returns zero when the scenario is already over the ceiling', () => {
+    const sizing = sizeConversion(ceiling('ss50'), 30_000, SS);
+    expect(sizing.conversion).toBe(0);
+    expect(sizing.alreadyOver).toBe(true);
+    expect(sizing.headroom).toBeCloseTo(-16_856, 6);
+    expect(sizing.taxCost).toBe(0);
+    expect(sizing.costPerDollar).toBe(0);
+  });
+
+  it('flags a ceiling the search bound never reaches', () => {
+    const sizing = sizeConversion(ceiling('bracket22'), 0, 0, 0, 'single', 1_000);
+    expect(sizing.conversion).toBe(1_000);
+    expect(sizing.unbounded).toBe(true);
+    expect(sizeConversion(ceiling('bracket22'), 0, 0).unbounded).toBe(false);
+  });
+
+  it('prices the conversion and the rate on the far side of the ceiling', () => {
+    const sizing = sizeConversion(ceiling('bracket12'), 30_000, SS);
+    expect(sizing.conversion).toBe(14_069);
+    expect(sizing.taxBefore).toBe(2_813);
+    expect(sizing.taxAfter).toBe(5_578);
+    expect(sizing.taxCost).toBe(2_765);
+    expect(sizing.taxAfter - sizing.taxBefore).toBe(sizing.taxCost);
+    // 19.65 cents per dollar converted while nominally "in the 12% bracket" —
+    // the torpedo is dragging benefits in alongside the conversion.
+    expect(sizing.costPerDollar).toBeCloseTo(19.65, 2);
+    // Past the top of the 12% bracket the benefits are capped, so the rate is
+    // the plain 22% statutory bracket rather than 1.85x it.
+    expect(sizing.rateAboveCeiling).toBe(22);
+  });
+
+  it('lands exactly on every ceiling, for both filing statuses', () => {
+    const scenarios = [
+      { ordinary: 0, ss: 0, ltcg: 0 },
+      { ordinary: 30_000, ss: SS, ltcg: 0 },
+      { ordinary: 12_000, ss: 61_296, ltcg: 40_000 },
+      { ordinary: 60_000, ss: 30_000, ltcg: 10_000 },
+    ];
+    const failures: string[] = [];
+    for (const filingStatus of ['single', 'mfj'] as FilingStatus[]) {
+      for (const c of conversionCeilings(filingStatus)) {
+        for (const { ordinary, ss, ltcg } of scenarios) {
+          const sizing = sizeConversion(c, ordinary, ss, ltcg, filingStatus);
+          const at = (conversion: number) =>
+            conversionMeasureValue(c.measure, ordinary, ss, ltcg, conversion, filingStatus);
+          const where = `${filingStatus}/${c.id}/ordinary=${ordinary}`;
+
+          if (sizing.alreadyOver) {
+            if (sizing.conversion !== 0 || at(0) <= c.amount) {
+              failures.push(`${where}: flagged already-over but ${at(0)} <= ${c.amount}`);
+            }
+            continue;
+          }
+          if (sizing.unbounded) {
+            failures.push(`${where}: unexpectedly unbounded`);
+            continue;
+          }
+          // The answer fits, and one more dollar does not.
+          if (at(sizing.conversion) > c.amount + 1e-6) {
+            failures.push(`${where}: ${sizing.conversion} overshoots (${at(sizing.conversion)} > ${c.amount})`);
+          }
+          if (at(sizing.conversion + 1) <= c.amount) {
+            failures.push(`${where}: ${sizing.conversion} undershoots (one more dollar still fits)`);
+          }
+          // Converting can never reduce the tax bill.
+          if (sizing.taxCost < 0) {
+            failures.push(`${where}: negative tax cost ${sizing.taxCost}`);
+          }
+        }
+      }
+    }
+    expect(failures).toEqual([]);
+  });
+});

@@ -126,6 +126,60 @@ describe('App', () => {
     expect(slider).toHaveAttribute('max', '150000');
   });
 
+  it('renders the Roth conversion sizing section and sizes the default scenario', () => {
+    render(<App />);
+    expect(
+      screen.getByRole('heading', { name: /roth conversion sizing/i }),
+    ).toBeInTheDocument();
+
+    const select = screen.getByRole('combobox', { name: /convert up to/i });
+    expect(select).toHaveValue('bracket12');
+
+    // Single, $30,000 ordinary income, average benefit, no gains: $14,069 fits
+    // under the $48,475 top of the 12% bracket and costs $2,765.
+    expect(screen.getByText('Largest conversion')).toBeInTheDocument();
+    expect(screen.getAllByText('$14,069').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('$2,765').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText('was $2,813')).toBeInTheDocument();
+    expect(screen.getByText('19.65%')).toBeInTheDocument();
+    expect(screen.getByText('22%')).toBeInTheDocument();
+  });
+
+  it('resizes the conversion when a different ceiling is picked', () => {
+    render(<App />);
+    const select = screen.getByRole('combobox', { name: /convert up to/i });
+
+    fireEvent.change(select, { target: { value: 'irmaa1' } });
+    expect(select).toHaveValue('irmaa1');
+    expect(screen.getAllByText('$55,844').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText(/two years earlier/i)).toBeInTheDocument();
+
+    // The $25,000 provisional-income base is already behind this filer.
+    fireEvent.change(select, { target: { value: 'ss50' } });
+    expect(
+      screen.getByText(/already \$16,856 above this ceiling/i),
+    ).toBeInTheDocument();
+  });
+
+  it('counts planned capital gains against the conversion ceiling', () => {
+    render(<App />);
+    const gains = screen.getByRole('slider', { name: /capital gains you plan to realize/i });
+    expect(gains).toHaveValue('0');
+
+    fireEvent.change(
+      screen.getByRole('combobox', { name: /convert up to/i }),
+      { target: { value: 'ltcg0' } },
+    );
+    expect(screen.getAllByText('$13,944').length).toBeGreaterThanOrEqual(1);
+
+    // Gains sit inside the same taxable-income ceiling, so they crowd out the
+    // conversion dollar for dollar once the 85% SS cap has bound.
+    fireEvent.change(gains, { target: { value: '5000' } });
+    expect(gains).toHaveValue('5000');
+    expect(screen.queryByText('$13,944')).not.toBeInTheDocument();
+    expect(screen.getAllByText('$8,944').length).toBeGreaterThanOrEqual(1);
+  });
+
   it('updates the ordinary income slider readout when moved', () => {
     render(<App />);
     const slider = screen.getByRole('slider', {

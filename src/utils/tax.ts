@@ -308,3 +308,273 @@ export function segmentCurve<T extends { marginalRate: number }>(
     };
   });
 }
+
+/* ------------------------------------------------------------------ */
+/*  Roth conversion sizing                                            */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 2025 IRMAA tier-1 MAGI threshold. Medicare sets premiums from the MAGI on
+ * the return filed two years earlier, so the 2025 surcharge is driven by 2023
+ * income. This is a true cliff: one dollar over the threshold triggers the
+ * full first-tier Part B and Part D surcharge for the whole year.
+ */
+export const IRMAA_TIER1_MAGI: Record<FilingStatus, number> = {
+  single: 106_000,
+  mfj: 212_000,
+};
+
+/** The income definition a conversion ceiling is measured against. */
+export type ConversionMeasure =
+  | 'ordinaryTaxableIncome'
+  | 'totalTaxableIncome'
+  | 'provisionalIncome'
+  | 'magi';
+
+export type ConversionCeilingId =
+  | 'bracket12'
+  | 'bracket22'
+  | 'ss50'
+  | 'ss85'
+  | 'ltcg0'
+  | 'irmaa1';
+
+export interface ConversionCeiling {
+  id: ConversionCeilingId;
+  label: string;
+  /** Which income definition `amount` caps. */
+  measure: ConversionMeasure;
+  /** The cap, in dollars, for the selected filing status. */
+  amount: number;
+  /** What happens on the far side of the ceiling. */
+  note: string;
+}
+
+export const CONVERSION_MEASURE_LABELS: Record<ConversionMeasure, string> = {
+  ordinaryTaxableIncome: 'taxable income',
+  totalTaxableIncome: 'total taxable income (ordinary + gains)',
+  provisionalIncome: 'provisional income',
+  magi: 'MAGI',
+};
+
+function bracketTop(filingStatus: FilingStatus, rate: number): number {
+  const bracket = FILING_PARAMS[filingStatus].brackets.find((b) => b.rate === rate);
+  return bracket ? bracket.upTo : Infinity;
+}
+
+/** The ceilings a retiree might size a Roth conversion against, for one filing status. */
+export function conversionCeilings(
+  filingStatus: FilingStatus = 'single',
+): ConversionCeiling[] {
+  const { ssBase50, ssBase85 } = FILING_PARAMS[filingStatus];
+  return [
+    {
+      id: 'bracket12',
+      label: 'Top of the 12% bracket',
+      measure: 'ordinaryTaxableIncome',
+      amount: bracketTop(filingStatus, 0.12),
+      note: 'The next dollar of ordinary income is taxed at 22% instead of 12%.',
+    },
+    {
+      id: 'bracket22',
+      label: 'Top of the 22% bracket',
+      measure: 'ordinaryTaxableIncome',
+      amount: bracketTop(filingStatus, 0.22),
+      note: 'The next dollar of ordinary income is taxed at 24% instead of 22%.',
+    },
+    {
+      id: 'ss50',
+      label: 'Social Security 50% base',
+      measure: 'provisionalIncome',
+      amount: ssBase50,
+      note: 'Below this, no benefits are taxable at all. Past it, each extra dollar drags up to 50¢ of benefits into taxable income.',
+    },
+    {
+      id: 'ss85',
+      label: 'Social Security 85% base',
+      measure: 'provisionalIncome',
+      amount: ssBase85,
+      note: 'Past this, each extra dollar drags up to 85¢ of benefits into taxable income — the steepest part of the torpedo.',
+    },
+    {
+      id: 'ltcg0',
+      label: 'Top of the 0% capital-gains bracket',
+      measure: 'totalTaxableIncome',
+      amount: LTCG_BRACKETS[filingStatus][0].upTo,
+      note: 'Past this, long-term gains stacked on top of ordinary income are taxed at 15% rather than 0%.',
+    },
+    {
+      id: 'irmaa1',
+      label: 'IRMAA tier 1 (Medicare surcharge)',
+      measure: 'magi',
+      amount: IRMAA_TIER1_MAGI[filingStatus],
+      note: 'A true cliff, not a phase-in: one dollar over adds a full year of Part B and Part D surcharges. Medicare reads the MAGI from two years earlier, so this year’s conversion sets the premium two years out. The surcharge itself is not included in the tax figures below.',
+    },
+  ];
+}
+
+/**
+ * The value of one conversion ceiling's income definition, for a base scenario
+ * plus `conversion` dollars of Roth conversion (ordinary income).
+ *
+ * Every measure here is non-decreasing in `conversion`, which is what makes the
+ * binary search in `maxConversionUnder` valid.
+ */
+export function conversionMeasureValue(
+  measure: ConversionMeasure,
+  ordinaryIncome: number,
+  ssBenefit: number,
+  ltcg: number,
+  conversion: number,
+  filingStatus: FilingStatus = 'single',
+): number {
+  const { standardDeduction } = FILING_PARAMS[filingStatus];
+  const otherIncome = ordinaryIncome + conversion + ltcg;
+  const taxableSS = taxableSocialSecurity(ssBenefit, otherIncome, filingStatus);
+  switch (measure) {
+    case 'provisionalIncome':
+      return otherIncome + 0.5 * ssBenefit;
+    case 'magi':
+      // AGI (which already includes taxable SS) plus tax-exempt interest, which
+      // the app does not model yet.
+      return otherIncome + taxableSS;
+    case 'ordinaryTaxableIncome':
+      // What the ordinary brackets are measured against: LTCG stacks on top.
+      return Math.max(0, ordinaryIncome + conversion + taxableSS - standardDeduction);
+    case 'totalTaxableIncome':
+      return Math.max(0, ordinaryIncome + conversion + taxableSS + ltcg - standardDeduction);
+  }
+}
+
+/** Slack for float error in the 0.5/0.85 inclusion factors; far below a dollar. */
+const CEILING_EPSILON = 1e-6;
+
+/**
+ * The largest whole-dollar Roth conversion that keeps the ceiling's income
+ * measure at or below its cap. Binary search, valid because every measure is
+ * monotonically non-decreasing in the conversion amount.
+ *
+ * Returns 0 when the base scenario is already over the ceiling, and
+ * `maxConversion` when the ceiling is still not reached at the search bound.
+ */
+export function maxConversionUnder(
+  ceiling: ConversionCeiling,
+  ordinaryIncome: number,
+  ssBenefit: number,
+  ltcg = 0,
+  filingStatus: FilingStatus = 'single',
+  maxConversion = 1_000_000,
+): number {
+  const measureAt = (conversion: number): number =>
+    conversionMeasureValue(
+      ceiling.measure,
+      ordinaryIncome,
+      ssBenefit,
+      ltcg,
+      conversion,
+      filingStatus,
+    );
+  const fits = (conversion: number): boolean =>
+    measureAt(conversion) <= ceiling.amount + CEILING_EPSILON;
+
+  if (!fits(0)) return 0;
+  if (fits(maxConversion)) return maxConversion;
+
+  let low = 0;
+  let high = maxConversion;
+  while (low < high) {
+    const mid = Math.ceil((low + high) / 2);
+    if (fits(mid)) low = mid;
+    else high = mid - 1;
+  }
+  return low;
+}
+
+export interface ConversionSizing {
+  ceiling: ConversionCeiling;
+  /** Largest conversion, in whole dollars, that stays under the ceiling. */
+  conversion: number;
+  /** Room under the ceiling before converting anything; negative when over. */
+  headroom: number;
+  /** Federal tax with no conversion. */
+  taxBefore: number;
+  /** Federal tax after converting `conversion`. */
+  taxAfter: number;
+  /** taxAfter - taxBefore. */
+  taxCost: number;
+  /** Average federal tax cost per dollar converted, in percent. */
+  costPerDollar: number;
+  /**
+   * Marginal rate, in percent, on income just past the ceiling. Sampled one
+   * dollar clear of the boundary, because the dollar that straddles the ceiling
+   * is split across two rates and reads low (the ceilings are whole dollars but
+   * taxable income lands on fractions of one, thanks to the 0.85 SS factor).
+   */
+  rateAboveCeiling: number;
+  /** The scenario already breaches the ceiling, so nothing fits under it. */
+  alreadyOver: boolean;
+  /** The ceiling was never reached within `maxConversion`. */
+  unbounded: boolean;
+}
+
+/**
+ * Sizes a Roth conversion against one ceiling and prices it: the largest
+ * conversion that fits, what it costs in federal tax, the average cost per
+ * dollar converted, and the marginal rate that applies past the ceiling.
+ */
+export function sizeConversion(
+  ceiling: ConversionCeiling,
+  ordinaryIncome: number,
+  ssBenefit: number,
+  ltcg = 0,
+  filingStatus: FilingStatus = 'single',
+  maxConversion = 1_000_000,
+): ConversionSizing {
+  const conversion = maxConversionUnder(
+    ceiling,
+    ordinaryIncome,
+    ssBenefit,
+    ltcg,
+    filingStatus,
+    maxConversion,
+  );
+  const headroom =
+    ceiling.amount -
+    conversionMeasureValue(
+      ceiling.measure,
+      ordinaryIncome,
+      ssBenefit,
+      ltcg,
+      0,
+      filingStatus,
+    );
+
+  const taxBefore = Math.round(
+    totalTaxWithLTCG(ordinaryIncome, ssBenefit, ltcg, filingStatus),
+  );
+  const taxAfterRaw = totalTaxWithLTCG(
+    ordinaryIncome + conversion,
+    ssBenefit,
+    ltcg,
+    filingStatus,
+  );
+  const taxAfter = Math.round(taxAfterRaw);
+  const taxCost = taxAfter - taxBefore;
+  const rateAboveCeiling =
+    totalTaxWithLTCG(ordinaryIncome + conversion + 2, ssBenefit, ltcg, filingStatus) -
+    totalTaxWithLTCG(ordinaryIncome + conversion + 1, ssBenefit, ltcg, filingStatus);
+
+  return {
+    ceiling,
+    conversion,
+    headroom,
+    taxBefore,
+    taxAfter,
+    taxCost,
+    costPerDollar:
+      conversion > 0 ? Math.round((taxCost / conversion) * 10_000) / 100 : 0,
+    rateAboveCeiling: Math.round(rateAboveCeiling * 10_000) / 100,
+    alreadyOver: headroom < 0,
+    unbounded: conversion === maxConversion,
+  };
+}

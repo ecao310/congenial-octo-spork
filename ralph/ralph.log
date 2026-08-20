@@ -534,3 +534,115 @@ Note for the next run: the Roth conversion sizing item is still the topmost
 unchecked backlog bullet and is now safe to build on, since `maxConversionUnder`
 was going to binary-search over this exact chain and would have inherited the
 error.
+
+================================================================================
+## Roth conversion sizing (2026-08-19)
+
+Task: add `maxConversionUnder(ceiling, ...)` to tax.ts plus a UI section that
+picks a ceiling and reports the largest conversion that fits under it, the
+resulting tax, and the marginal cost per dollar converted.
+
+### tax.ts
+
+Six ceilings, each with the income definition it actually caps — this is the
+part that is easy to get wrong, because the six do NOT all constrain the same
+number:
+
+| ceiling                | measure                | single    | mfj       |
+|------------------------|------------------------|-----------|-----------|
+| top of 12% bracket     | ordinary taxable income| $48,475   | $96,950   |
+| top of 22% bracket     | ordinary taxable income| $103,350  | $206,700  |
+| SS 50% base            | provisional income     | $25,000   | $32,000   |
+| SS 85% base            | provisional income     | $34,000   | $44,000   |
+| top of 0% LTCG bracket | total taxable income   | $48,350   | $96,700   |
+| IRMAA tier 1           | MAGI                   | $106,000  | $212,000  |
+
+Only IRMAA needed a new constant (`IRMAA_TIER1_MAGI`); the other five are read
+out of `FILING_PARAMS` / `LTCG_BRACKETS` (via a `bracketTop(fs, rate)` helper)
+so they cannot drift from the charts. The full IRMAA tier table is still a
+separate backlog item — tier 1 is all this feature needs.
+
+`conversionMeasureValue(measure, ordinary, ss, ltcg, conversion, fs)` computes
+each definition. The distinctions that matter:
+- ordinary taxable income EXCLUDES ltcg (gains stack on top of the ordinary
+  brackets), total taxable income includes it.
+- MAGI = AGI + tax-exempt interest, and AGI already contains taxable SS. There
+  is no muni input yet, so that term is zero for now.
+- provisional income is the only measure that moves 1:1 with the conversion;
+  the other three move faster, because a converted dollar also drags up to 85c
+  of benefits in behind it.
+
+Every measure is monotonically non-decreasing in the conversion, which is what
+licenses the binary search in `maxConversionUnder`. It searches whole dollars
+over [0, maxConversion=$1M], returns 0 with `alreadyOver` when the base
+scenario already breaches the ceiling, and returns the bound with `unbounded`
+when the ceiling is never reached. Float slack of 1e-6 on the comparison, since
+the 0.5/0.85 inclusion factors put taxable income on fractions of a dollar.
+
+`sizeConversion(...)` wraps it and prices the result via `totalTaxWithLTCG`
+(which reduces to `totalTax` when ltcg is 0): taxBefore/taxAfter/taxCost,
+`costPerDollar` (the average, i.e. "the marginal cost per dollar converted" the
+backlog asked for), and `rateAboveCeiling`.
+
+Gotcha worth remembering: `rateAboveCeiling` is sampled from conversion+1 to
+conversion+2, NOT conversion to conversion+1. The dollar that straddles the
+ceiling is split across two brackets and reads low — at the top of the 12%
+bracket it came out as 14% (0.8 x 12% + 0.2 x 22%) rather than the 22% that
+actually applies to the next several thousand dollars. The straddle exists
+because ceilings are whole dollars while taxable income lands on fractions.
+
+### The headline number
+
+Default scenario (single, $30,000 ordinary, average $23,712 benefit, no gains),
+ceiling = top of the 12% bracket:
+
+  headroom $23,047 -> only $14,069 of conversion fits
+  tax $2,813 -> $5,578, cost $2,765 = 19.65c per dollar converted
+  rate past the ceiling: 22%
+
+That 19.65% while nominally "in the 12% bracket" is the whole point of the
+feature, and the headroom/conversion gap ($23,047 vs $14,069) is the torpedo
+made concrete: each converted dollar drags 85c of benefits in behind it until
+the 85% cap binds at $10,562 of conversion.
+
+### UI
+
+New emerald-accented section placed AFTER the Capital Gains Stacking section,
+deliberately — it reuses that section's "Other Ordinary Income" slider, so the
+input has to appear before the readout that depends on it. Inputs: a `<select>`
+of the six ceilings (six is too many for the existing segmented control) and a
+new "Long-Term Capital Gains You Plan to Realize" slider defaulting to $0.
+The gains slider is what makes the 0%-LTCG and IRMAA ceilings mean anything.
+Output: a five-tile `<dl className="stat-grid">` (largest conversion, tax after
+with the before as a sub-note, extra tax, cost per dollar, rate past the
+ceiling), then one of three prose paragraphs (normal / already-over /
+unbounded), then the ceiling's own note.
+
+CSS: `.section-heading-emerald`, `.slider-value.emerald`, `.slider-emerald`,
+`.ceiling-select`, `.stat-grid`/`.stat`/`.stat-value`/`.stat-note`, following
+the existing amber-accent pattern.
+
+### Tests
+
++12, 65 -> 77 passing. tax.test.ts gets 8: the ceiling table wired to
+FILING_PARAMS/LTCG_BRACKETS/IRMAA_TIER1_MAGI, the $14,069 headline with its
+one-dollar boundary check, provisional ceilings landing exactly (25,000-11,856
+= 13,144), gains crowding out the 0% LTCG ceiling, MAGI including capped
+taxable SS, already-over, unbounded, the priced readout, and a property test
+sweeping 6 ceilings x 2 filing statuses x 4 scenarios asserting the answer fits
+and one more dollar does not. App.test.tsx gets 3 covering the default readout,
+switching ceilings (incl. the already-over copy), and the gains slider.
+
+Note for whoever writes the property test next: this project's vitest is typed
+through @types/jest, so the `expect(value, message)` two-arg form does NOT
+typecheck. Collect failures into a string[] and `expect(failures).toEqual([])`
+instead — better diffs anyway.
+
+Verified: `npx tsc -b`, `npm run lint`, `npm test` (77 passed), `npm run build`
+all clean; only the pre-existing >500kB chunk warning.
+
+Next up: the age-65+ additional standard deduction is the topmost unchecked
+bullet. It widens the 0%-rate valley and feeds straight into the OBBBA senior
+deduction item after it. Both will change the numbers this iteration pinned
+($14,069 etc.), so expect to update these tests when the deduction stops being
+a flat `standardDeduction` lookup.

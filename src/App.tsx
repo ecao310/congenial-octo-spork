@@ -16,12 +16,21 @@ import {
   FILING_PARAMS,
   FilingStatus,
   segmentCurve,
+  conversionCeilings,
+  sizeConversion,
+  CONVERSION_MEASURE_LABELS,
 } from './utils/tax';
-import type { LTCGMarginalRatePoint, MarginalRatePoint, CurveSegment } from './utils/tax';
+import type {
+  LTCGMarginalRatePoint,
+  MarginalRatePoint,
+  CurveSegment,
+  ConversionCeilingId,
+} from './utils/tax';
 
 const MAX_INCOME = 150_000;
 const MAX_LTCG = 200_000;
 const DEFAULT_ORDINARY_INCOME = 30_000;
+const MAX_CONVERSION = 1_000_000;
 
 const FILING_STATUS_OPTIONS: { value: FilingStatus; label: string }[] = [
   { value: 'single', label: 'Single' },
@@ -147,6 +156,8 @@ const App: React.FC = () => {
   const [ssBenefit, setSsBenefit] = useState<number>(AVG_ANNUAL_SS_BENEFIT);
   const [filingStatus, setFilingStatus] = useState<FilingStatus>('single');
   const [ordinaryIncome, setOrdinaryIncome] = useState<number>(DEFAULT_ORDINARY_INCOME);
+  const [plannedLtcg, setPlannedLtcg] = useState<number>(0);
+  const [ceilingId, setCeilingId] = useState<ConversionCeilingId>('bracket12');
 
   const curve = useMemo(
     () => marginalRateCurve(ssBenefit, MAX_INCOME, 250, filingStatus),
@@ -169,6 +180,22 @@ const App: React.FC = () => {
     () => segmentCurve(ltcgCurve, (p) => p.ltcg),
     [ltcgCurve],
   );
+
+  const ceilings = useMemo(() => conversionCeilings(filingStatus), [filingStatus]);
+
+  const sizing = useMemo(() => {
+    const ceiling = ceilings.find((c) => c.id === ceilingId) ?? ceilings[0];
+    return sizeConversion(
+      ceiling,
+      ordinaryIncome,
+      ssBenefit,
+      plannedLtcg,
+      filingStatus,
+      MAX_CONVERSION,
+    );
+  }, [ceilings, ceilingId, ordinaryIncome, ssBenefit, plannedLtcg, filingStatus]);
+
+  const measureLabel = CONVERSION_MEASURE_LABELS[sizing.ceiling.measure];
 
   return (
     <div className="card">
@@ -426,6 +453,115 @@ const App: React.FC = () => {
           both effects, producing combined marginal rates that far exceed
           the statutory 15% capital-gains rate.
         </p>
+      </section>
+
+
+      {/* ───── Roth Conversion Sizing ───── */}
+      <section className="explainer" aria-labelledby="roth-sizing-heading">
+        <h2 id="roth-sizing-heading" className="section-heading-emerald">
+          Roth conversion sizing
+        </h2>
+        <p>
+          A Roth conversion is ordinary income in the year you make it, so it
+          moves every line the torpedo depends on at once. Pick the ceiling you
+          want to stay under and this sizes the largest conversion that still
+          fits beneath it, using the ordinary income and Social Security benefit
+          set above.
+        </p>
+
+        <div className="input-group">
+          <label htmlFor="conversion-ceiling">Convert up to</label>
+          <select
+            id="conversion-ceiling"
+            className="ceiling-select"
+            value={ceilingId}
+            onChange={(e) => setCeilingId(e.target.value as ConversionCeilingId)}
+          >
+            {ceilings.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.label} — {formatCurrency(c.amount)} of{' '}
+                {CONVERSION_MEASURE_LABELS[c.measure]}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="input-group">
+          <div className="slider-header">
+            <label htmlFor="planned-ltcg">
+              Long-Term Capital Gains You Plan to Realize
+            </label>
+            <span className="slider-value emerald">{formatCurrency(plannedLtcg)}</span>
+          </div>
+          <input
+            id="planned-ltcg"
+            type="range"
+            min={0}
+            max={MAX_LTCG}
+            step={500}
+            value={plannedLtcg}
+            onChange={(e) => setPlannedLtcg(Number(e.target.value))}
+            className="slider-emerald"
+          />
+          <div className="slider-range-labels">
+            <span>$0</span>
+            <span>{formatCurrency(MAX_LTCG)}</span>
+          </div>
+        </div>
+
+        <dl className="stat-grid">
+          <div className="stat">
+            <dt>Largest conversion</dt>
+            <dd className="stat-value emerald">{formatCurrency(sizing.conversion)}</dd>
+          </div>
+          <div className="stat">
+            <dt>Federal tax after</dt>
+            <dd className="stat-value">{formatCurrency(sizing.taxAfter)}</dd>
+            <dd className="stat-note">was {formatCurrency(sizing.taxBefore)}</dd>
+          </div>
+          <div className="stat">
+            <dt>Extra tax</dt>
+            <dd className="stat-value">{formatCurrency(sizing.taxCost)}</dd>
+          </div>
+          <div className="stat">
+            <dt>Cost per dollar converted</dt>
+            <dd className="stat-value">{sizing.costPerDollar}%</dd>
+          </div>
+          <div className="stat">
+            <dt>Rate past the ceiling</dt>
+            <dd className="stat-value">{sizing.rateAboveCeiling}%</dd>
+          </div>
+        </dl>
+
+        {sizing.alreadyOver ? (
+          <p>
+            Your {measureLabel} is already{' '}
+            {formatCurrency(Math.abs(sizing.headroom))} above this ceiling, so no
+            conversion fits under it. Either pick a higher ceiling, or note that
+            the next dollar you convert is taxed at{' '}
+            <strong>{sizing.rateAboveCeiling}%</strong>.
+          </p>
+        ) : sizing.unbounded ? (
+          <p>
+            Nothing up to {formatCurrency(MAX_CONVERSION)} reaches this ceiling
+            from where you are, so it is not the binding constraint — pick a
+            lower one.
+          </p>
+        ) : (
+          <p>
+            You start with <strong>{formatCurrency(sizing.headroom)}</strong> of
+            room under this ceiling, but only{' '}
+            <strong>{formatCurrency(sizing.conversion)}</strong> of conversion
+            fits{sizing.headroom - sizing.conversion > 1
+              ? ' — each converted dollar also drags Social Security benefits into taxable income, so the ceiling arrives before the headroom is spent'
+              : ''}
+            . Converting that much costs{' '}
+            <strong>{formatCurrency(sizing.taxCost)}</strong> in federal tax, or{' '}
+            <strong>{sizing.costPerDollar}&cent;</strong> per dollar converted.
+          </p>
+        )}
+
+        <p>{sizing.ceiling.note}</p>
       </section>
 
       <footer>

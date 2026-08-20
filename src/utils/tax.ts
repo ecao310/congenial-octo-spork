@@ -178,8 +178,13 @@ export function totalTaxWithLTCG(
   // Ordinary taxable income (before LTCG): ordinary + taxable SS − deduction.
   const ordinaryTaxable = Math.max(0, ordinaryIncome + taxableSS - standardDeduction);
 
-  // Total taxable income (ordinary + LTCG).
-  const totalTaxable = ordinaryTaxable + ltcg;
+  // Total taxable income. The deduction offsets ordinary income first; whatever
+  // is left over offsets the LTCG stacked on top of it. Form 1040 subtracts the
+  // deduction from AGI once, and the Qualified Dividends and Capital Gain Tax
+  // Worksheet caps the preferentially-taxed amount at total taxable income
+  // (line 1), so the LTCG band is [ordinaryTaxable, totalTaxable] — which is
+  // narrower than `ltcg` exactly when ordinary income underruns the deduction.
+  const totalTaxable = Math.max(0, ordinaryIncome + taxableSS + ltcg - standardDeduction);
 
   // --- Ordinary income tax (uses ordinary brackets up to ordinaryTaxable) ---
   let ordinaryTax = 0;

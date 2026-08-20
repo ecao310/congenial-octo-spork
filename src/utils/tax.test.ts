@@ -288,8 +288,54 @@ describe('totalTaxWithLTCG', () => {
   it('taxes LTCG at 0% when total taxable income stays below the threshold', () => {
     // Single: standard deduction $15,750, 0% LTCG threshold $48,350.
     // ordinaryIncome = 0, ssBenefit = 0, ltcg = 10,000.
-    // ordinaryTaxable = 0, totalTaxable = 10,000 < 48,350 → 0% on all LTCG.
+    // ordinaryTaxable = 0, totalTaxable = max(0, 10,000 - 15,750) = 0 → no tax.
     expect(totalTaxWithLTCG(0, 0, 10000)).toBe(0);
+  });
+
+  it('lets the unused standard deduction offset LTCG', () => {
+    // Regression: the deduction reduces AGI once, so any part of it not
+    // absorbed by ordinary income must reduce the LTCG stacked on top.
+    // Single, no ordinary income and no SS, $100,000 of LTCG:
+    //   taxable income = 100,000 - 15,750 = 84,250
+    //   48,350 @ 0% + 35,900 @ 15% = $5,385
+    // Ignoring the spillover would tax the full $100,000 band and yield
+    // $7,747.50 — overstated by 15% of the whole standard deduction.
+    expect(totalTaxWithLTCG(0, 0, 100_000)).toBeCloseTo(5_385, 2);
+
+    // MFJ: taxable income = 100,000 - 31,500 = 68,500, entirely inside the
+    // $96,700 0% bracket, so the tax is zero rather than $495.
+    expect(totalTaxWithLTCG(0, 0, 100_000, 'mfj')).toBe(0);
+  });
+
+  it('starts taxing LTCG only after the deduction and the 0% bracket are used up', () => {
+    // With no other income the 0% zone runs to 15,750 + 48,350 = $64,100 of
+    // gains, not $48,350.
+    const single = ltcgMarginalRateCurve(0, 0, 100_000, 50);
+    expect(single.find((d) => d.marginalRate > 0)!.ltcg).toBe(64_100);
+
+    const mfj = ltcgMarginalRateCurve(0, 0, 200_000, 50, 'mfj');
+    expect(mfj.find((d) => d.marginalRate > 0)!.ltcg).toBe(31_500 + 96_700);
+  });
+
+  it('never taxes more than total taxable income across the LTCG sweep', () => {
+    // Cross-check against a direct AGI − deduction computation: the amount
+    // subject to any rate at all is capped at taxable income.
+    for (const ordinary of [0, 5_000, 12_000, 40_000]) {
+      for (const ss of [0, 24_000]) {
+        for (const ltcg of [0, 10_000, 30_000, 90_000]) {
+          const taxableSS = taxableSocialSecurity(ss, ordinary + ltcg);
+          const taxableIncome = Math.max(
+            0,
+            ordinary + ltcg + taxableSS - 15_750,
+          );
+          const tax = totalTaxWithLTCG(ordinary, ss, ltcg);
+          // Nothing is taxed above 37%, and nothing at all when taxable
+          // income is zero.
+          expect(tax).toBeLessThanOrEqual(taxableIncome * 0.37 + 1e-9);
+          if (taxableIncome === 0) expect(tax).toBe(0);
+        }
+      }
+    }
   });
 
   it('taxes LTCG at 15% when ordinary income pushes past the 0% threshold', () => {

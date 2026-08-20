@@ -1000,3 +1000,187 @@ describe('state treatment', () => {
     );
   });
 });
+
+describe('multi-year projection', () => {
+  const projectionSection = (): HTMLElement =>
+    screen
+      .getByRole('heading', { name: /the thresholds never move/i })
+      .closest('section')!;
+
+  const slider = (name: RegExp): HTMLElement =>
+    screen.getByRole('slider', { name });
+
+  const setSlider = (name: RegExp, value: string): void => {
+    fireEvent.change(slider(name), { target: { value } });
+  };
+
+  it('opens on a 20-year horizon at a 2.5% COLA', () => {
+    render(<App />);
+    expect(slider(/years to project/i)).toHaveValue('20');
+    expect(slider(/years to project/i)).toHaveAttribute('min', '10');
+    expect(slider(/years to project/i)).toHaveAttribute('max', '30');
+    expect(slider(/annual cola and inflation/i)).toHaveValue('2.5');
+    expect(slider(/year you were born/i)).toHaveValue('1955');
+    expect(slider(/traditional ira and 401\(k\) balance/i)).toHaveValue('100000');
+    expect(slider(/annual growth on that balance/i)).toHaveValue('5');
+    // 2025 + 20 years, less the first, is 2044.
+    expect(projectionSection()).toHaveTextContent('in 2044');
+  });
+
+  it('names both frozen thresholds and the years they were frozen in', () => {
+    render(<App />);
+    expect(projectionSection()).toHaveTextContent(
+      'first provisional-income threshold at $25,000 in 1983 and your second at $34,000 in 1993',
+    );
+  });
+
+  it('climbs the taxable share to the 85% ceiling and names the year', () => {
+    render(<App />);
+    const section = projectionSection();
+    // $30,000 of other income and the 2025 average benefit: just under half the
+    // benefit is taxable in 2025, all 85% of it by 2035, on unchanged real
+    // income. Nothing but IRC 86(c) moved.
+    expect(section).toHaveTextContent('47.14% → 85%');
+    expect(section).toHaveTextContent('$11,178 of $23,712 in 2025');
+    expect(section).toHaveTextContent('to the 85% ceiling in 2035, and stops there');
+  });
+
+  it('quotes the last year’s tax in first-year dollars, not nominal ones', () => {
+    render(<App />);
+    expect(projectionSection()).toHaveTextContent('Federal tax in 2025 dollars');
+    expect(projectionSection()).toHaveTextContent('$1,853 → $4,277');
+    expect(projectionSection()).toHaveTextContent("2.31x the first year's");
+  });
+
+  it('starts required distributions at 73 and shows the divisor it used', () => {
+    render(<App />);
+    const section = projectionSection();
+    // Born 1955, so 73 in 2028; $100,000 grown at 5% for three years, over the
+    // Uniform Lifetime Table divisor for 73.
+    expect(section).toHaveTextContent('Distributions become required at 73');
+    expect(section).toHaveTextContent('2028 · $4,368');
+    expect(section).toHaveTextContent('At 73, off a $115,763 balance divided by 26.5');
+    expect(section).toHaveTextContent('The step at 2028 is the first required');
+    expect(section).toHaveTextContent('SECURE 2.0 pushed that age from 72 to 73');
+  });
+
+  it('pushes the first distribution to 75 for a 1965 birth year', () => {
+    render(<App />);
+    setSlider(/year you were born/i, '1965');
+    const section = projectionSection();
+    expect(section).toHaveTextContent('Age 60 in 2025. Distributions become required at 75');
+    expect(section).toHaveTextContent('The step at 2040 is the first required');
+    expect(section).toHaveTextContent('SECURE 2.0 pushed that age from 72 to 75');
+    expect(section).toHaveTextContent('3 more years of compounding');
+  });
+
+  it('flags 1959 as the birth year the regulations left reserved', () => {
+    render(<App />);
+    setSlider(/year you were born/i, '1959');
+    expect(projectionSection()).toHaveTextContent(
+      'the one birth year the regulations have not settled',
+    );
+    expect(projectionSection()).toHaveTextContent('both 73 and 75');
+  });
+
+  it('says there is no step when the filer is already past the applicable age', () => {
+    render(<App />);
+    setSlider(/year you were born/i, '1945');
+    const section = projectionSection();
+    // Age 80 in 2025, applicable age 72 — the distribution is already running,
+    // so the divisor quoted is 80's, not 72's, and there is no step to point at.
+    expect(section).toHaveTextContent('2025 · $4,950');
+    expect(section).toHaveTextContent('At 80, off a $100,000 balance divided by 20.2');
+    expect(section).toHaveTextContent('the applicable age of 72 passed before 2025');
+    expect(section).toHaveTextContent('This filer is already past the applicable age');
+    expect(section).not.toHaveTextContent('SECURE 2.0 pushed that age');
+  });
+
+  it('drops the distribution entirely when there is no balance', () => {
+    render(<App />);
+    setSlider(/traditional ira and 401\(k\) balance/i, '0');
+    const section = projectionSection();
+    expect(section).toHaveTextContent('No balance');
+    expect(section).not.toHaveTextContent('required minimum distribution');
+  });
+
+  it('calls the senior-deduction expiry a step without claiming it is the second', () => {
+    render(<App />);
+    // The two steps are independent: the deduction expires in 2029 whatever
+    // the birth year, and the first distribution can land either side of it.
+    expect(projectionSection()).toHaveTextContent(
+      'The other step, at 2029, is the OBBBA senior deduction expiring',
+    );
+    setSlider(/traditional ira and 401\(k\) balance/i, '0');
+    expect(projectionSection()).toHaveTextContent(
+      'The step at 2029 is the OBBBA senior deduction expiring',
+    );
+  });
+
+  it('does not claim a climb when the COLA is zero and nothing else moves', () => {
+    render(<App />);
+    setSlider(/traditional ira and 401\(k\) balance/i, '0');
+    setSlider(/annual cola and inflation/i, '0');
+    const section = projectionSection();
+    expect(section).toHaveTextContent('47.14% → 47.14%');
+    expect(section).toHaveTextContent('At a 0% COLA nothing moves');
+    expect(section).toHaveTextContent('It is everything else moving past them');
+    expect(section).not.toHaveTextContent('The taxable share climbs from');
+  });
+
+  it('blames the distribution, not inflation, for a climb at a zero COLA', () => {
+    render(<App />);
+    setSlider(/annual cola and inflation/i, '0');
+    const section = projectionSection();
+    // The $100,000 balance still grows at 5% while the income it is measured
+    // against stands still, so the distribution rises in real terms. That is
+    // the one thing left that can move the share with the COLA switched off,
+    // and the prose has to say so rather than crediting inflation.
+    expect(section).toHaveTextContent('47.14% → 76.8%');
+    expect(section).toHaveTextContent('to 76.8% by 2044 without reaching the 85% ceiling');
+    expect(section).toHaveTextContent('none of that climb is them');
+    expect(section).toHaveTextContent('growing at 5% a year against an income standing still');
+    expect(section).not.toHaveTextContent('Every year of that is inflation');
+  });
+
+  it('credits both inflation and the distribution when both are running', () => {
+    render(<App />);
+    // $10,000 of other income keeps the share short of the ceiling for the
+    // whole horizon, so the branch that attributes the climb is the one on
+    // screen. It starts at zero: this filer owes nothing on the benefit in
+    // 2025 and a third of it is taxable by 2044, on unchanged real income.
+    setSlider(/other ordinary income/i, '10000');
+    const withRmd = projectionSection();
+    expect(withRmd).toHaveTextContent('0% → 32.53%');
+    expect(withRmd).toHaveTextContent('climbs from 0% in 2025 to 32.53% by 2044');
+    expect(withRmd).toHaveTextContent('threshold last touched in 1993');
+    expect(withRmd).toHaveTextContent(
+      'with the required distribution pushing in the same direction',
+    );
+
+    // Take the balance away and inflation is the whole story again.
+    setSlider(/traditional ira and 401\(k\) balance/i, '0');
+    const section = projectionSection();
+    expect(section).toHaveTextContent('0% → 13.98%');
+    expect(section).toHaveTextContent('threshold last touched in 1993.');
+    expect(section).not.toHaveTextContent('pushing in the same direction');
+  });
+
+  it('has nothing to project for a separate return that lived with its spouse', () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Separately' }));
+    const section = projectionSection();
+    expect(section).toHaveTextContent('85% of the benefit is taxable from the first dollar');
+    expect(section).toHaveTextContent('there is no ratchet left to project');
+    expect(section).toHaveTextContent('already at the 85% ceiling in 2025');
+  });
+
+  it('re-dates the whole projection when the tax year changes', () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole('radio', { name: '2026' }));
+    const section = projectionSection();
+    expect(section).toHaveTextContent('Age 71 in 2026');
+    expect(section).toHaveTextContent('Federal tax in 2026 dollars');
+    expect(section).toHaveTextContent('in 2045');
+  });
+});

@@ -43,6 +43,27 @@ export interface Scenario {
    * Security thresholds ignore this, because they are not indexed at all.
    */
   year?: TaxYear;
+  /**
+   * A year past the last one Congress and the IRS have published figures for,
+   * with those figures indexed forward — see `projectFilingParams`.
+   *
+   * `year` can only name a year in `TAX_YEAR_PARAMS`, which is the right
+   * constraint everywhere except the multi-year projection, where the whole
+   * point is to run past it. When this is set it wins: `filingParamsFor` uses
+   * its brackets and deductions, and `scenarioYear` reports its calendar year,
+   * so the OBBBA senior deduction can expire on schedule. Nothing else about
+   * the scenario changes — in particular `SS_BASES` is frozen either way,
+   * which is exactly what the projection exists to show.
+   */
+  projected?: ProjectedYear | null;
+}
+
+/** One tax year's figures, for a year `TAX_YEAR_PARAMS` does not cover. */
+export interface ProjectedYear {
+  /** The calendar year these figures are for. May be any year, past 2026. */
+  year: number;
+  /** Brackets, standard deduction and capital-gain bands, indexed forward. */
+  filing: FilingYearParams;
 }
 
 /**
@@ -61,7 +82,21 @@ export function resolveScenario(scenario: Scenario = {}): Required<Scenario> {
     seniors: scenario.seniors ?? 0,
     beneficiaries: scenario.beneficiaries ?? 1,
     year: scenario.year ?? defaultTaxYear(),
+    projected: scenario.projected ?? null,
   };
+}
+
+/**
+ * The calendar year a scenario is being taxed in.
+ *
+ * The same as `year` for every scenario the charts build, and the projected
+ * year for one the multi-year projection builds. Use this — not `year` — for
+ * anything that turns on the calendar, such as whether a temporary provision
+ * has expired.
+ */
+export function scenarioYear(scenario: Scenario = {}): number {
+  const { year, projected } = resolveScenario(scenario);
+  return projected ? projected.year : year;
 }
 
 /** One rate band. `upTo` is the top of the band; the last band is Infinity. */
@@ -334,8 +369,8 @@ export function filingParams(
 
 /** The same, read straight off a scenario. */
 export function filingParamsFor(scenario: Scenario = {}): FilingYearParams {
-  const { year, filingStatus } = resolveScenario(scenario);
-  return filingParams(year, filingStatus);
+  const { year, filingStatus, projected } = resolveScenario(scenario);
+  return projected ? projected.filing : filingParams(year, filingStatus);
 }
 
 /**
@@ -455,6 +490,15 @@ export function seniorDeductionFor(scenario: Scenario = {}, magi = 0): number {
   const { filingStatus, seniors } = resolveScenario(scenario);
   const count = seniorCount(filingStatus, seniors);
   if (count === 0) return 0;
+  // 151(d)(5)(D): "shall not apply to taxable years beginning after December
+  // 31, 2028." Unreachable while `year` is the only dating on a scenario, since
+  // every published year is inside the window — but the projection runs past
+  // 2028, and the deduction vanishing there is a step in the curve, not a
+  // rounding error.
+  const taxYear = scenarioYear(scenario);
+  if (taxYear < SENIOR_DEDUCTION_FIRST_YEAR || taxYear > SENIOR_DEDUCTION_LAST_YEAR) {
+    return 0;
+  }
   const start = SENIOR_DEDUCTION_PHASEOUT_START[filingStatus];
   // A separate return is barred outright, so there is nothing to phase out.
   if (start === null) return 0;

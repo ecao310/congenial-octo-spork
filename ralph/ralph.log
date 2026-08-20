@@ -1584,3 +1584,127 @@ Vermont alone and surfacing Rhode Island's gap.
 
 npx tsc -b, npm run lint, npx vitest run (205 passed), npm run build — all
 clean; only the pre-existing >500kB chunk warning.
+
+## Multi-year projection — the frozen thresholds over 10–30 years
+## 2026-08-20 — inherited a crashed iteration's working tree and finished it
+
+`src/utils/projection.ts` + a "The thresholds never move" section at the
+bottom of the page. 251 tests pass, was 233.
+
+### What the section actually shows
+
+One slider drives both the COLA and the indexing of brackets, deductions,
+other income and tax-exempt interest, so the filer's *real* income never
+changes. Everything moves together except IRC 86(c)'s $25,000/$32,000 (1983)
+and $34,000/$44,000 (1993). At the defaults — single, $30,000 of other income,
+the 2025 average benefit — the taxable share climbs 47.14% → 85% by 2035 and
+real federal tax goes $1,853 → $4,277, which is 2.31x, with nothing about the
+filer changing at all. Set other income to $10,000 and it starts at 0% taxable
+and reaches 32.53% by 2044. That contrast is the whole section.
+
+Two things break the smooth climb and both get a reference line: the first
+required distribution, and the OBBBA senior deduction expiring after 2028.
+
+### Design decisions worth remembering
+
+- **`Scenario.projected`** is the new escape hatch in tax.ts. `year` can only
+  name a year in `TAX_YEAR_PARAMS`, which is right everywhere except a
+  projection whose point is to run past it. When `projected` is set it wins for
+  brackets/deductions, and the new `scenarioYear()` reports its calendar year —
+  which is what finally makes `seniorDeductionFor` able to enforce
+  151(d)(5)(D)'s "taxable years beginning after December 31, 2028". Use
+  `scenarioYear()`, not `year`, for anything that turns on the calendar.
+- **Indexing rounds the increase, not the result.** IRC 1(f) rounds the
+  increase down to the next lowest multiple of $50 ($25 for a separate return's
+  rate tables, but *not* its standard deduction — 63(c)(4) is excluded from the
+  substitution). So `indexAmount` adds a rounded increase to an unrounded base
+  rather than rounding the product; those differ whenever the base is not
+  itself a multiple of the step, and the 2025 single 12% top ($48,475) is not.
+- **1959 is the one birth year with no settled answer.** SECURE 2.0 § 107
+  assigns it *both* 73 and 75 — someone born in 1959 attains 72 after 2022 and
+  73 before 2033 (so 73), and attains 74 after 2032 (so 75). The final regs
+  left 1.401(a)(9)-2(b)(2)(v) [Reserved] and the proposed regs (REG-103529-23,
+  89 FR 58886) would fill it with 73. Following the proposal, and the UI says
+  so on that slider position. This is the one figure in the file that could
+  still change.
+- **Projections index forward from the start year's published figures**, even
+  for 2026 where Rev. Proc. 2025-32 is already out. Deliberate: the chart
+  answers "what if inflation runs at X%", and splicing one published year into
+  the middle would put a kink in the curve the assumption cannot explain. Now
+  documented on `projectYearParams`. Logged as a backlog item.
+- **LTCG is excluded outright.** A one-off realisation repeated for thirty
+  years is not a projection of anything; a test pins `ltcg` making no
+  difference to any row. IRMAA is excluded too — its thresholds *are* indexed,
+  so including it blurs the point instead of sharpening it.
+
+### Four defects in the inherited working tree, all fixed here
+
+The tree held an unfinished version from a crashed iteration (plus a leftover
+`src/__probe.test.tsx` that wrote snapshots to /tmp — deleted). It typechecked,
+linted and passed 233 tests. The bugs were all in prose the tests did not
+reach, which is a useful reminder that a section this conditional needs its
+branches walked, not just its arithmetic checked.
+
+1. **`seniorDeductionEndsYear` conflated the phaseout with the expiry.** It was
+   "first row with zero after a row with some", which also fires when income
+   growth walks the filer off the end of the unindexed $75k–$175k phaseout
+   range. Single filer, $147,000 of other income, $30,000 benefit: it returned
+   **2026** and the UI drew a "Senior deduction ends" line there with prose
+   blaming a statute that does not expire until 2029. Now pinned to
+   `SENIOR_DEDUCTION_LAST_YEAR + 1`. The phaseout deliberately draws nothing:
+   it lands on zero 6 cents at a time, continuously, so there is no step there
+   to point at.
+2. **The first-RMD stat quoted the applicable age with someone else's
+   divisor.** "At {applicableAge}, off a … balance divided by
+   {divisors[firstRmdRow.age]}" — fine while the filer reaches the age during
+   the projection, wrong for anyone already past it. Born 1945: "At 72 …
+   divided by 20.2", which is 80's divisor. Now quotes the actual age and adds
+   "the applicable age of 72 passed before 2025".
+3. **"The step at {year} is the first required minimum distribution"** when
+   there is no step — same already-past-the-age case, where the distribution
+   runs from the first row. And "SECURE 2.0 pushed that age to 72", which
+   SECURE 2.0 did not do (SECURE 1.0 did). Both branched; the SECURE 2.0
+   sentence is now gated on `applicableAge > RMD_AGE_BEFORE_SECURE_2` and
+   pluralises its year count.
+4. **"The second step, at 2029, is the OBBBA senior deduction expiring"** — the
+   two steps are independent and 2029 comes *first* whenever the filer reaches
+   65 before the applicable age (born 1959: RMD at 2032). Now "The other step"
+   when there is an RMD and "The step at" when there is not.
+
+Two more found while writing the tests, same class:
+
+5. **A climb claimed at a 0% COLA.** "The taxable share climbs from 47.14% to
+   47.14%" — the flat control case had no branch. It has one now, and it is
+   worth having: at zero COLA the frozen thresholds cost the filer nothing,
+   which is the cleanest possible statement of what the ratchet actually is.
+6. **The climb was credited to inflation even when the RMD was the only thing
+   moving.** At a 0% COLA with a balance the share still climbs, because the
+   balance grows at 5% against a standing-still income. Now attributed
+   correctly in all three combinations, and tested in all three.
+
+### Also cleaned up
+
+- `projectYears` recomputed MAGI as `ordinaryIncome + taxableSS` by hand
+  alongside `totalTax`'s `agiFor(scenario)`. Same number today because the
+  projection zeroes LTCG, but it was a drift waiting to happen. Uses `agiFor`
+  now. Note this is 151(d)(5)'s MAGI, where tax-exempt interest is *not* added
+  back — unlike IRMAA's.
+- `App.chart.test.tsx`'s `cliffPositions` queried
+  `.recharts-reference-line-line` across the whole document; the projection
+  chart draws four reference lines of its own. Scoped to the first
+  `.recharts-wrapper`. (This was already in the inherited tree.)
+
+### Tests
+
+18 in `projection.test.ts` (RMD ages incl. the 1959 case, the Uniform Lifetime
+Table's 49 rows and its "120+" last row, $50/$25 indexing rounding, the ratchet
+being monotonic, the flat control case at zero inflation, RMD timing for 1955
+vs 1959 vs 1960 vs 1975, the senior deduction expiring, the 85% cap binding and
+then flattening to within 0.02 points over 27 years, MFS having no ratchet
+left, and LTCG changing nothing) plus 3 for the phaseout-vs-expiry fix. 13 in
+`App.test.tsx` walking every conditional branch of the section.
+
+### Verification
+
+npx tsc -b, npm run lint, npx vitest run (251 passed), npm run build — all
+clean; only the pre-existing >500kB chunk warning.

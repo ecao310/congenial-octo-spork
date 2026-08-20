@@ -22,11 +22,20 @@ vi.mock('recharts', async () => {
 
 import App from './App';
 
-/** The x-coordinates of the reference lines drawn on the first chart. */
-const cliffPositions = (container: HTMLElement): number[] =>
-  Array.from(container.querySelectorAll('.recharts-reference-line-line')).map(
-    (line) => Number(line.getAttribute('x1')),
-  );
+/**
+ * The x-coordinates of the reference lines drawn on the first chart.
+ *
+ * Scoped to that chart rather than the whole page: the multi-year projection
+ * further down draws reference lines of its own, and an unscoped query picks
+ * up both charts' worth.
+ */
+const cliffPositions = (container: HTMLElement): number[] => {
+  const ordinaryIncomeChart = container.querySelector('.recharts-wrapper');
+  if (!ordinaryIncomeChart) throw new Error('no chart rendered');
+  return Array.from(
+    ordinaryIncomeChart.querySelectorAll('.recharts-reference-line-line'),
+  ).map((line) => Number(line.getAttribute('x1')));
+};
 
 describe('IRMAA cliffs on the ordinary-income chart', () => {
   it('draws one labelled reference line per cliff inside the x-axis', () => {

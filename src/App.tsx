@@ -7,6 +7,9 @@ import {
   ResponsiveContainer,
   AreaChart,
   Area,
+  LineChart,
+  Line,
+  Legend,
   ReferenceLine,
 } from 'recharts';
 import {
@@ -45,6 +48,14 @@ import {
   IRMAA_LOOKBACK_YEARS,
   partBStandardPremium,
 } from './utils/tax';
+import {
+  projectYears,
+  rmdApplicableAge,
+  RMD_AGE_BEFORE_SECURE_2,
+  RMD_RESERVED_BIRTH_YEAR,
+  UNIFORM_LIFETIME_DIVISORS,
+} from './utils/projection';
+import type { ProjectionYearRow } from './utils/projection';
 import { statesTaxingSocialSecurity } from './utils/stateTax';
 import type {
   TaxYear,
@@ -61,6 +72,20 @@ const DEFAULT_ORDINARY_INCOME = 30_000;
 const MAX_CONVERSION = 1_000_000;
 /** Roughly a $1.4M muni ladder at 2025 yields — well past any realistic retiree. */
 const MAX_MUNI_INTEREST = 50_000;
+
+/** The projection's horizon, in years. Ten is a plan; thirty is a lifetime. */
+const MIN_HORIZON = 10;
+const MAX_HORIZON = 30;
+/**
+ * Birth years the projection offers. The top of the range is deliberately past
+ * the app's audience: someone born in 1975 has not claimed yet, and watching
+ * their first required distribution land at 75 rather than 73 is the point.
+ */
+const MIN_BIRTH_YEAR = 1940;
+const MAX_BIRTH_YEAR = 1975;
+const MAX_TRADITIONAL_BALANCE = 3_000_000;
+const MAX_COLA = 5;
+const MAX_BALANCE_GROWTH = 10;
 
 const FILING_STATUS_OPTIONS: { value: FilingStatus; label: string }[] = [
   { value: 'single', label: 'Single' },
@@ -236,6 +261,58 @@ export const LTCGTooltip: React.FC<LTCGTooltipProps> = ({
   );
 };
 
+interface ProjectionTooltipProps {
+  active?: boolean;
+  payload?: Array<{ payload: ProjectionYearRow }>;
+  /** The first year, so every figure can also be quoted in its dollars. */
+  startYear: number;
+}
+
+export const ProjectionTooltip: React.FC<ProjectionTooltipProps> = ({
+  active,
+  payload,
+  startYear,
+}) => {
+  if (!active || !payload || !payload.length) return null;
+  const row = payload[0].payload;
+  return (
+    <div style={TOOLTIP_STYLE}>
+      <div style={{ fontWeight: 600, marginBottom: '0.25rem' }}>
+        {row.year} &middot; age {row.age}
+      </div>
+      <div>
+        Taxable share of benefit:{' '}
+        <strong style={{ color: '#2dd4bf' }}>{row.taxableSharePercent}%</strong>{' '}
+        ({formatCurrency(row.taxableSS)} of {formatCurrency(row.ssBenefit)})
+      </div>
+      <div>
+        Effective rate:{' '}
+        <strong style={{ color: '#818cf8' }}>{row.effectiveRatePercent}%</strong> on{' '}
+        {formatCurrency(row.grossIncome)}
+      </div>
+      <div>
+        Federal tax:{' '}
+        <strong style={{ color: '#ea580c' }}>{formatCurrency(row.totalTax)}</strong>
+        {row.year > startYear
+          ? ` — ${formatCurrency(row.realTotalTax)} in ${startYear} dollars`
+          : ''}
+      </div>
+      {row.rmd > 0 && (
+        <div style={{ fontSize: '0.8125rem', color: '#94a3b8' }}>
+          Includes a {formatCurrency(row.rmd)} required distribution, on top of{' '}
+          {formatCurrency(row.otherIncome)} of other income
+        </div>
+      )}
+      {row.muniInterest > 0 && (
+        <div style={{ fontSize: '0.8125rem', color: '#94a3b8' }}>
+          Plus {formatCurrency(row.muniInterest)} of tax-exempt interest, counted
+          in the {formatCurrency(row.provisionalIncome)} of provisional income
+        </div>
+      )}
+    </div>
+  );
+};
+
 const App: React.FC = () => {
   const [year, setYear] = useState<TaxYear>(() => defaultTaxYear());
   const [ssBenefit, setSsBenefit] = useState<number>(() =>
@@ -248,6 +325,11 @@ const App: React.FC = () => {
   const [isSenior, setIsSenior] = useState<boolean>(false);
   const [spouseIsSenior, setSpouseIsSenior] = useState<boolean>(false);
   const [muniInterest, setMuniInterest] = useState<number>(0);
+  const [horizonYears, setHorizonYears] = useState<number>(20);
+  const [colaAssumption, setColaAssumption] = useState<number>(2.5);
+  const [birthYear, setBirthYear] = useState<number>(1955);
+  const [traditionalBalance, setTraditionalBalance] = useState<number>(100_000);
+  const [balanceGrowth, setBalanceGrowth] = useState<number>(5);
 
   const statesTaxing = statesTaxingSocialSecurity(year);
   const yearParams = taxYearParams(year);
@@ -431,6 +513,43 @@ const App: React.FC = () => {
     muniInterest,
   });
   const irmaa = irmaaFor(scenarioMagi, { filingStatus, beneficiaries, year });
+
+  /**
+   * Everything the projection needs, and nothing it does not: the planned
+   * capital gains are left out, because a one-off realisation repeated for
+   * thirty years is not a projection of anything.
+   */
+  const projection = useMemo(
+    () =>
+      projectYears(
+        { ordinaryIncome, ssBenefit, muniInterest, filingStatus, seniors, year },
+        {
+          startYear: year,
+          years: horizonYears,
+          colaPercent: colaAssumption,
+          birthYear,
+          traditionalBalance,
+          balanceGrowthPercent: balanceGrowth,
+        },
+      ),
+    [
+      ordinaryIncome,
+      ssBenefit,
+      muniInterest,
+      filingStatus,
+      seniors,
+      year,
+      horizonYears,
+      colaAssumption,
+      birthYear,
+      traditionalBalance,
+      balanceGrowth,
+    ],
+  );
+
+  const applicableAge = rmdApplicableAge(birthYear);
+  const firstRmdRow = projection.rows.find((r) => r.rmd > 0) ?? null;
+  const ageAtStart = year - birthYear;
 
   const measureLabel = CONVERSION_MEASURE_LABELS[sizing.ceiling.measure];
 
@@ -1446,6 +1565,425 @@ const App: React.FC = () => {
         )}
 
         <p>{sizing.ceiling.note}</p>
+      </section>
+
+      {/* ───── Multi-year projection ───── */}
+      <section className="explainer" aria-labelledby="projection-heading">
+        <h2 id="projection-heading" className="section-heading-teal">
+          The thresholds never move
+        </h2>
+        <p>
+          {filingStatus === 'mfs' ? (
+            <>
+              A separate return that lived with its spouse has both thresholds
+              at {formatCurrency(0)} — put there by IRC 86(c) in{' '}
+              {SS_BASE50_ENACTED} and never revisited — so 85% of the benefit is
+              taxable from the first dollar and there is no ratchet left to
+              project. The other two statuses have somewhere to climb from.
+            </>
+          ) : (
+            <>
+              Congress set your first provisional-income threshold at{' '}
+              {formatCurrency(ssBase50)} in {SS_BASE50_ENACTED} and your second
+              at {formatCurrency(ssBase85)} in {SS_BASE85_ENACTED}, and never
+              indexed either one.
+            </>
+          )}{' '}
+          Everything around them is indexed: the brackets, the standard
+          deduction, the capital-gain bands, and the benefit itself. Hold your
+          income flat in real terms — this projection grows it at the same rate
+          it grows the brackets — and the taxable share of your benefit still
+          climbs every year, with nothing about your circumstances changing at
+          all.
+        </p>
+
+        <div className="input-group">
+          <div className="slider-header">
+            <label htmlFor="projection-horizon">Years to project</label>
+            <span className="slider-value teal">{horizonYears} years</span>
+          </div>
+          <input
+            id="projection-horizon"
+            type="range"
+            min={MIN_HORIZON}
+            max={MAX_HORIZON}
+            step={1}
+            value={horizonYears}
+            onChange={(e) => setHorizonYears(Number(e.target.value))}
+            className="slider-teal"
+          />
+          <div className="slider-range-labels">
+            <span>{MIN_HORIZON} years</span>
+            <span>{MAX_HORIZON} years</span>
+          </div>
+        </div>
+
+        <div className="input-group">
+          <div className="slider-header">
+            <label htmlFor="projection-cola">Annual COLA and inflation</label>
+            <span className="slider-value teal">{colaAssumption}%</span>
+          </div>
+          <input
+            id="projection-cola"
+            type="range"
+            min={0}
+            max={MAX_COLA}
+            step={0.1}
+            value={colaAssumption}
+            onChange={(e) => setColaAssumption(Number(e.target.value))}
+            className="slider-teal"
+          />
+          <div className="slider-range-labels">
+            <span>0%</span>
+            <span>{MAX_COLA}%</span>
+          </div>
+          <p className="field-note">
+            One slider drives both, so real income never changes and the frozen
+            thresholds are the only thing left moving. In practice the two
+            differ: benefits follow CPI-W and the brackets follow chained CPI-U,
+            which runs a little lower — so the real ratchet is slightly steeper
+            than this shows, not shallower.
+          </p>
+        </div>
+
+        <div className="input-group">
+          <div className="slider-header">
+            <label htmlFor="projection-birth-year">Year you were born</label>
+            <span className="slider-value teal">{birthYear}</span>
+          </div>
+          <input
+            id="projection-birth-year"
+            type="range"
+            min={MIN_BIRTH_YEAR}
+            max={MAX_BIRTH_YEAR}
+            step={1}
+            value={birthYear}
+            onChange={(e) => setBirthYear(Number(e.target.value))}
+            className="slider-teal"
+          />
+          <div className="slider-range-labels">
+            <span>{MIN_BIRTH_YEAR}</span>
+            <span>{MAX_BIRTH_YEAR}</span>
+          </div>
+          <p className="field-note">
+            Age {ageAtStart} in {year}. Distributions become required at{' '}
+            <strong>{applicableAge}</strong>
+            {birthYear === RMD_RESERVED_BIRTH_YEAR
+              ? ' — the one birth year the regulations have not settled. SECURE 2.0 gives someone born in 1959 both 73 and 75; the final rules left that paragraph reserved and the proposed ones say 73, which is what this uses.'
+              : birthYear < 1951
+                ? ', which for anyone born this early began years ago.'
+                : '.'}
+          </p>
+        </div>
+
+        <div className="input-group">
+          <div className="slider-header">
+            <label htmlFor="projection-balance">
+              Traditional IRA and 401(k) balance
+            </label>
+            <span className="slider-value teal">
+              {formatCurrency(traditionalBalance)}
+            </span>
+          </div>
+          <input
+            id="projection-balance"
+            type="range"
+            min={0}
+            max={MAX_TRADITIONAL_BALANCE}
+            step={25_000}
+            value={traditionalBalance}
+            onChange={(e) => setTraditionalBalance(Number(e.target.value))}
+            className="slider-teal"
+          />
+          <div className="slider-range-labels">
+            <span>$0</span>
+            <span>{formatCurrency(MAX_TRADITIONAL_BALANCE)}</span>
+          </div>
+        </div>
+
+        <div className="input-group">
+          <div className="slider-header">
+            <label htmlFor="projection-growth">Annual growth on that balance</label>
+            <span className="slider-value teal">{balanceGrowth}%</span>
+          </div>
+          <input
+            id="projection-growth"
+            type="range"
+            min={0}
+            max={MAX_BALANCE_GROWTH}
+            step={0.5}
+            value={balanceGrowth}
+            onChange={(e) => setBalanceGrowth(Number(e.target.value))}
+            className="slider-teal"
+          />
+          <div className="slider-range-labels">
+            <span>0%</span>
+            <span>{MAX_BALANCE_GROWTH}%</span>
+          </div>
+        </div>
+
+        <dl className="stat-grid">
+          <div className="stat">
+            <dt>Taxable share of benefit</dt>
+            <dd className="stat-value teal">
+              {projection.first.taxableSharePercent}% &rarr;{' '}
+              {projection.last.taxableSharePercent}%
+            </dd>
+            <dd className="stat-note">
+              {formatCurrency(projection.first.taxableSS)} of{' '}
+              {formatCurrency(projection.first.ssBenefit)} in{' '}
+              {projection.startYear};{' '}
+              {formatCurrency(projection.last.taxableSS)} of{' '}
+              {formatCurrency(projection.last.ssBenefit)} in {projection.endYear}
+            </dd>
+          </div>
+          <div className="stat">
+            <dt>Effective rate on everything received</dt>
+            <dd className="stat-value">
+              {projection.first.effectiveRatePercent}% &rarr;{' '}
+              {projection.last.effectiveRatePercent}%
+            </dd>
+          </div>
+          <div className="stat">
+            <dt>Federal tax in {projection.startYear} dollars</dt>
+            <dd className="stat-value">
+              {formatCurrency(projection.first.totalTax)} &rarr;{' '}
+              {formatCurrency(projection.last.realTotalTax)}
+            </dd>
+            <dd className="stat-note">
+              {projection.realTaxMultiple !== null
+                ? `${projection.realTaxMultiple}x the first year's, after inflation`
+                : 'The first year owed nothing, so there is no multiple to quote'}
+            </dd>
+          </div>
+          <div className="stat">
+            <dt>First required distribution</dt>
+            <dd className="stat-value">
+              {firstRmdRow
+                ? `${firstRmdRow.year} · ${formatCurrency(firstRmdRow.rmd)}`
+                : traditionalBalance === 0
+                  ? 'No balance'
+                  : `Age ${applicableAge}, past ${projection.endYear}`}
+            </dd>
+            {firstRmdRow && (
+              <dd className="stat-note">
+                At {firstRmdRow.age}, off a{' '}
+                {formatCurrency(firstRmdRow.openingBalance)} balance divided by{' '}
+                {UNIFORM_LIFETIME_DIVISORS[firstRmdRow.age]}
+                {firstRmdRow.age > applicableAge &&
+                  ` — the applicable age of ${applicableAge} passed before ${projection.startYear}`}
+              </dd>
+            )}
+          </div>
+        </dl>
+
+        <div className="chart-container">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart
+              data={projection.rows}
+              margin={{ top: 10, right: 10, left: 10, bottom: 0 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255, 255, 255, 0.1)" />
+              <XAxis
+                dataKey="year"
+                type="number"
+                domain={['dataMin', 'dataMax']}
+                allowDecimals={false}
+                stroke="#94a3b8"
+              />
+              <YAxis
+                stroke="#94a3b8"
+                tickFormatter={(value) => `${value}%`}
+                width={70}
+                domain={[0, 'auto']}
+              />
+              <Tooltip
+                content={<ProjectionTooltip startYear={projection.startYear} />}
+              />
+              <Legend />
+              <ReferenceLine
+                y={85}
+                stroke="#2dd4bf"
+                strokeDasharray="4 4"
+                strokeOpacity={0.5}
+                label={{
+                  value: '85% cap',
+                  position: 'insideTopRight',
+                  fill: '#2dd4bf',
+                  fontSize: 11,
+                }}
+              />
+              {projection.firstRmdYear !== null && (
+                <ReferenceLine
+                  x={projection.firstRmdYear}
+                  stroke="#fbbf24"
+                  strokeDasharray="4 4"
+                  label={{
+                    value: 'RMDs begin',
+                    position: 'top',
+                    fill: '#fbbf24',
+                    fontSize: 11,
+                  }}
+                />
+              )}
+              {projection.seniorDeductionEndsYear !== null && (
+                <ReferenceLine
+                  x={projection.seniorDeductionEndsYear}
+                  stroke="#fb7185"
+                  strokeDasharray="4 4"
+                  label={{
+                    value: 'Senior deduction ends',
+                    position: 'top',
+                    fill: '#fb7185',
+                    fontSize: 11,
+                  }}
+                />
+              )}
+              <Line
+                type="monotone"
+                dataKey="taxableSharePercent"
+                name="Taxable share of benefit"
+                stroke="#2dd4bf"
+                strokeWidth={2}
+                dot={false}
+              />
+              <Line
+                type="monotone"
+                dataKey="effectiveRatePercent"
+                name="Effective rate on total income"
+                stroke="#818cf8"
+                strokeWidth={2}
+                dot={false}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+        <p className="chart-axis-label">
+          Tax year &middot; {formatCurrency(ordinaryIncome)} of other income and a{' '}
+          {formatCurrency(ssBenefit)} benefit in {projection.startYear}, both
+          growing at {colaAssumption}% a year
+        </p>
+
+        <p>
+          {projection.first.taxableSharePercent >= 85 ? (
+            <>
+              This filer is already at the 85% ceiling in {projection.startYear},
+              so there is no ratchet left to watch — the teal line is flat because
+              the thresholds have already done everything they can do. Lower the
+              other income, or the benefit, to see the climb.
+            </>
+          ) : projection.last.taxableSharePercent <=
+            projection.first.taxableSharePercent ? (
+            <>
+              At a {colaAssumption}% COLA nothing moves: the taxable share sits
+              at <strong>{projection.first.taxableSharePercent}%</strong> for all{' '}
+              {horizonYears} years. That is the control case, and it is worth a
+              moment — the thresholds are just as frozen here as anywhere else,
+              and they cost this filer nothing. The ratchet is not the
+              thresholds standing still. It is everything else moving past them.
+              Raise the slider to watch it bite.
+            </>
+          ) : projection.fullyTaxedYear !== null ? (
+            <>
+              The taxable share climbs from{' '}
+              <strong>{projection.first.taxableSharePercent}%</strong> to the{' '}
+              <strong>85% ceiling in {projection.fullyTaxedYear}</strong>, and
+              stops there — 85% is all IRC 86 can ever reach. After that the
+              ratchet is spent:{' '}
+              {firstRmdRow
+                ? 'anything still climbing is the required distributions growing, not the thresholds.'
+                : 'the effective rate flattens out with it.'}
+            </>
+          ) : (
+            <>
+              The taxable share climbs from{' '}
+              <strong>{projection.first.taxableSharePercent}%</strong> in{' '}
+              {projection.startYear} to{' '}
+              <strong>{projection.last.taxableSharePercent}%</strong> by{' '}
+              {projection.endYear} without reaching the 85% ceiling.{' '}
+              {colaAssumption > 0 ? (
+                <>
+                  Every year of that is inflation walking the same real income
+                  further past a threshold last touched in {SS_BASE85_ENACTED}
+                  {firstRmdRow
+                    ? ', with the required distribution pushing in the same direction'
+                    : ''}
+                  .
+                </>
+              ) : (
+                <>
+                  With the COLA at zero the thresholds cost nothing on their own,
+                  so none of that climb is them: it is the required distribution,
+                  growing at {balanceGrowth}% a year against an income standing
+                  still.
+                </>
+              )}
+            </>
+          )}
+        </p>
+
+        {firstRmdRow && (
+          <p>
+            {firstRmdRow.year > projection.startYear ? (
+              <>
+                The step at <strong>{firstRmdRow.year}</strong> is the first
+                required minimum distribution.
+              </>
+            ) : (
+              <>
+                This filer is already past the applicable age, so a required
+                distribution lands in <strong>{projection.startYear}</strong> and
+                in every year after it — there is no step to look for here, only
+                a floor under the whole projection.
+              </>
+            )}{' '}
+            From the applicable age on, the prior year&apos;s closing balance
+            divided by the Uniform Lifetime Table divisor comes out whether it is
+            wanted or not, lands in ordinary income, and raises provisional
+            income dollar for dollar — so it moves the benefit line as well as
+            the bracket.{' '}
+            {applicableAge > RMD_AGE_BEFORE_SECURE_2 && (
+              <>
+                SECURE 2.0 pushed that age from {RMD_AGE_BEFORE_SECURE_2} to{' '}
+                {applicableAge}, which sounds like relief and is closer to the
+                opposite:{' '}
+                {applicableAge - RMD_AGE_BEFORE_SECURE_2 === 1
+                  ? 'another year'
+                  : `${applicableAge - RMD_AGE_BEFORE_SECURE_2} more years`}{' '}
+                of compounding met by a smaller divisor.{' '}
+              </>
+            )}
+            The first distribution may be deferred to 1 April of the following
+            year, but only once, and doing so stacks two distributions into one
+            tax year.
+          </p>
+        )}
+
+        {projection.seniorDeductionEndsYear !== null && (
+          <p>
+            {/* Not "the second step": the senior deduction can expire either
+                side of the first distribution, and does whenever the filer
+                reaches 65 before the applicable age. */}
+            {firstRmdRow ? 'The other step, at ' : 'The step at '}
+            <strong>{projection.seniorDeductionEndsYear}</strong>
+            {firstRmdRow ? ', is' : ' is'} the OBBBA senior deduction expiring.
+            It is written as{' '}
+            {formatCurrency(SENIOR_DEDUCTION)} per qualifying person for{' '}
+            {SENIOR_DEDUCTION_FIRST_YEAR} through {SENIOR_DEDUCTION_LAST_YEAR}{' '}
+            and nothing after, so unless Congress extends it, taxable income
+            jumps by that much in one year with no change in income at all.
+          </p>
+        )}
+
+        <p>
+          What this deliberately leaves out: capital gains, which are realised
+          once rather than every year for thirty; Medicare&apos;s IRMAA, whose
+          thresholds <em>are</em> indexed, so including it would blur the point
+          rather than sharpen it; and state tax. It also treats the amount you
+          set as &ldquo;other income&rdquo; as separate from the balance below
+          it — if what you withdraw from the IRA already is your other income,
+          the required distribution replaces part of it rather than adding to it.
+        </p>
       </section>
 
       <footer>

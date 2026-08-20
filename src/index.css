@@ -428,6 +428,26 @@ details.explainer summary:focus-visible {
   accent-color: #8b5cf6 !important;
 }
 
+/* Teal accent for the multi-year projection section */
+.section-heading-teal {
+  background: linear-gradient(to right, #14b8a6, #2dd4bf);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.slider-value.teal {
+  color: #2dd4bf;
+}
+
+.slider-teal {
+  accent-color: #14b8a6 !important;
+}
+
+.stat-value.teal {
+  color: #2dd4bf;
+}
+
 /* Rose accent for the IRMAA cliffs section */
 .section-heading-rose {
   background: linear-gradient(to right, #f43f5e, #fb7185);

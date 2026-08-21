@@ -5410,3 +5410,130 @@ only because the diff happened to be legible. Noted both above.
 
 The visual overhaul's step 4 ("Re-shape the shell") is still the topmost unchecked
 bullet and is untouched by this run.
+
+## 2026-08-21 — Task: Re-shape the shell (visual overhaul, step 4 of 6)
+
+### The decision the bullet asked for
+
+Both halves of it, yes.
+
+*Step 1's inputs become the column.* Everything that describes the **return** —
+the year, the filing status, the ages, the benefit, the home state, and the two
+advanced amounts — is now a persistent 18rem column that stays on screen for the
+whole walk. The reading column beside it caps at 44rem and holds the charts,
+their sliders, the explainers and the close.
+
+Step 1 keeps its number, its heading, its `#step-benefit` id, its scenario recap
+and its next-step box. It is still step 1 of 4 and the nav still points at it;
+what changed is where it stands, not what it is. That was the cheap decision:
+renumbering to three steps would have rewritten every kicker, every next-step
+box and about a dozen tests, in exchange for nothing a reader would notice.
+
+*The step nav becomes a header.* It sits at the head of the reading column and
+sticks there, opaque in `--surface`, at `z-index: 20`. So the configuration is
+always in reach on the left and where-you-are is always legible on the right.
+
+*What did not move, and why.* The sliders in steps 2, 3 and 4 stay in the flow.
+They are not only inputs — each is the cursor on the chart directly above it,
+and the shape every step has kept since the flow replaced the tab strip is
+chart, then the one control that moves you along it. Pulling them into the
+column would take each cursor away from the plot it marks.
+
+### What was actually wrong
+
+`#root { max-width: 900px }` was one number doing two jobs: it was the reading
+measure *and* the whole width of the page. So there was nowhere to put a second
+column, and every input ended up stacked at the top of step 1 — which is why a
+reader looking at step 3's chart could not see the benefit being priced under
+it without scrolling a screen and a half back and losing their place.
+
+Now `--measure: 44rem`, `--column: 18rem` and `--gutter: 2.5rem` are `:root`
+tokens and `#root` is `calc()`'d from them, so the page's width is a consequence
+of its columns rather than a third number kept in step by hand.
+
+### The three things the reshape broke, found by rendering it
+
+- **The nav wrapped to two rows.** It was sized for 900px and the reading column
+  runs 640px on a large window, so four items no longer fitted. Measured at 97px
+  tall — taller than the 68px `scroll-margin-top` meant to clear it, so a step
+  arrived at from the nav landed with its heading under the header. Tightened to
+  .875rem in .6875rem of padding with a 1.25rem number: 49px, one row, clears
+  with 19px to spare. A header whose height changes with the window is a header
+  nothing below it can be positioned against.
+- **The hint bubble was wider than the column it lives in.** `.hint-bubble` caps
+  at `min(26rem, calc(100vw - 3rem))`, and 26rem is wider than 18rem — inside a
+  scroll container that is cut-off words and a horizontal scrollbar. `100%` is
+  now a third term in the `min()`, which reads as "and never wider than what it
+  is anchored in" and needs no new selector.
+- **The close stopped being the footer's sibling.** `nextElementSibling` was how
+  one test read "ends the page, before the disclaimer", and the footer now spans
+  both columns. Re-read in two hops instead: the close is last in the reading
+  column, the reading column is last in the shell, the disclaimer follows the
+  shell.
+
+### The invariants
+
+`the shell` in `styles.test.tsx`, three of them, in the shape the other passes
+use — a closed list that fails when a number is typed into whichever rule is
+being edited:
+
+- **sets every column width from the measures it names, never from a number** —
+  no `width`/`max-width` in px anywhere in the screen half. `min-width` is
+  excluded (a 320px floor is a statement about the smallest window, not a
+  column) and so is any rule containing `clip-path` (`.live-reading` is a box
+  shrunk to a pixel to keep a live region in the a11y tree; its 1px is a way of
+  hiding, not a width).
+- **spends every measure it declares** — a token declared and never referenced
+  fails, the way `--orange` would have.
+- **unpins both columns where the grid collapses to one** — every
+  `position: sticky` in the screen half must be taken back to `static` inside
+  `@media (max-width: 992px)`. On a phone a pinned configuration panel *is* the
+  screen and a two-row pinned nav takes a third of what is left, and forgetting
+  one is a bug nobody sees on the machine they wrote it on.
+
+The collapse block is last in the screen half deliberately: a media query adds
+no specificity, so a rule it overrides has to be above it in the file.
+
+### Verified
+
+- `npx tsc -b`, `npx eslint src --max-warnings 0`, `npx vitest run`
+  (11 files, 678 tests — +3, all three new), `npm run build`, and the tokens
+  read back out of the minified `dist` CSS (`900px`: 0 occurrences).
+- All three new invariants falsified once each: `max-width: 900px` on `.flow`
+  fails the first; inlining `2.5rem` for both uses of `--gutter` fails the
+  second; deleting `.step-nav { position: static }` from the collapse block
+  fails the third with `expected [ '.step-nav' ] to deeply equal []`.
+- Rendered rather than reasoned about. Built, `vite preview`, drove Chromium
+  through `playwright-core` at 1440x900, 1100x900, 900x900 and 420x800.
+  Two columns of 288px + 640px above 992px, one column below it; document
+  `scrollWidth === clientWidth` at every one of the four, so nothing overflows
+  sideways. Scrolled to step 3 on a wide window: the column is still at y=0 and
+  the benefit slider is still inside the viewport, which is the bullet's own
+  complaint, answered. Clicked all three nav items and compared the nav's bottom
+  edge against the landed step's kicker: 49 vs 68/109/109, clear every time.
+  Hovered the hint: 276px inside a 276px content box. Under
+  `emulateMedia({ media: 'print' })` the shell is `block`, the column is
+  `static`/`visible`/`max-height: none` and the nav is `display: none`. Zero
+  page errors at any size. Screenshotted the hero, step 3 mid-walk, and the
+  phone collapse.
+- Note for a future iteration: the Chromium/`playwright-core` version skew from
+  the last run is unchanged — cached build 1228, `playwright-core` 1.62.1 wants
+  1234 — so `chromium.launch()` still needs `executablePath` at
+  `~/Library/Caches/ms-playwright/chromium_headless_shell-1228/chrome-headless-shell-mac-arm64/chrome-headless-shell`,
+  and the driving script still has to live in the project root for the bare
+  `playwright-core` import to resolve.
+
+### Left standing, and why
+
+The `.step-config .next-step` box — "Next · Step 2 of 4" — is now a footer to a
+column rather than the end of a section, so it is rendered smaller there and
+back at full size in the collapse. Keeping it was the call: on a narrow window
+it is still the only way forward for a reader who never looks at the nav, and on
+a wide one it is a harmless hand-off from the column to the flow.
+
+The filing-status strip wraps to three rows in 18rem, and the state footnote is
+a long paragraph in a narrow measure. Both are legible and both are about to be
+overtaken — two later backlog bullets remove the year selector and every
+reference to states outright — so neither was worth a rule here.
+
+The tree opened clean this run, which is the first time in three.

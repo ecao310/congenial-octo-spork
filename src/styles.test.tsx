@@ -316,6 +316,120 @@ describe('the controls', () => {
   });
 });
 
+/**
+ * The body of the one `@media` block that collapses the two columns into one.
+ *
+ * Found by name and read by balancing braces rather than by regex, because a
+ * media block is the one thing in this file that nests — `leafRules` walks
+ * straight past the prelude and into the rules inside, which is exactly what
+ * is wanted everywhere else and not here.
+ */
+const collapseBlock = (css: string): string => {
+  const stripped = css.replace(/\/\*[\s\S]*?\*\//g, '');
+  const at = stripped.indexOf('@media (max-width: 992px)');
+  if (at === -1) return '';
+  const open = stripped.indexOf('{', at);
+  let depth = 0;
+  for (let i = open; i < stripped.length; i += 1) {
+    if (stripped[i] === '{') depth += 1;
+    else if (stripped[i] === '}') {
+      depth -= 1;
+      if (depth === 0) return stripped.slice(open + 1, i);
+    }
+  }
+  return '';
+};
+
+/**
+ * Every `width` and `max-width` the screen half sets, with what set it.
+ *
+ * Two things are left out deliberately rather than overlooked. `min-width` is
+ * one: `body` sets a 320px floor, which is a statement about the smallest
+ * window this page will try to draw in and not a measure of a column. The
+ * other is anything in a rule that clips — `.live-reading` is a box shrunk to
+ * a pixel and clipped to nothing so that a live region stays in the
+ * accessibility tree while being off the screen, and its 1px is a way of
+ * hiding rather than a width.
+ */
+const widths = (
+  css: string,
+): { selectors: string[]; property: string; value: string }[] =>
+  leafRules(css)
+    .filter((rule) => !rule.body.includes('clip-path'))
+    .flatMap((rule) =>
+      Array.from(
+        rule.body.matchAll(/(?:^|[;\s])(max-width|width):\s*([^;}]+)/g),
+      ).map(([, property, value]) => ({
+        selectors: rule.selectors,
+        property,
+        value: value.trim(),
+      })),
+    );
+
+/**
+ * Two columns, three measures, and one place they are written down.
+ *
+ * The shape this page had was a single 900px `#root`, and that one number was
+ * doing two jobs at once: it was the reading measure *and* the whole width of
+ * the page. So there was nowhere to put a configuration column, and every
+ * input ended up stacked at the top of step 1 — which is why a reader looking
+ * at step 3's chart could not see the benefit being priced under it.
+ *
+ * FI Calc's answer is two numbers instead of one: 44rem of reading column and
+ * 18rem of configuration beside it. Both are now `:root` tokens and `#root`
+ * is derived from them, so the page's width is a consequence of its columns
+ * rather than a third number that has to be kept in step with them by hand.
+ *
+ * The first `it` is what keeps that true. It fails in the direction that
+ * actually happens — not by someone rewriting the shell, but by a `900px`
+ * typed into whichever rule is being edited, which from inside that rule
+ * looks like nothing at all.
+ *
+ * The second is about the other thing this shape brought with it. Two columns
+ * only work while there are two, and both of them pin: the configuration
+ * sticks to the top of the window and the nav sticks to the head of the
+ * reading column. On a phone there is one column and nothing may pin — a
+ * pinned configuration panel there is the whole screen, and a nav that wraps
+ * to two rows takes a third of what is left. So every `position: sticky` on
+ * this page has to be taken back off in the collapse, and a new one that
+ * forgets to is a bug nobody sees on the machine they wrote it on.
+ */
+describe('the shell', () => {
+  const MEASURES = ['--measure', '--column', '--gutter'];
+
+  it('sets every column width from the measures it names, never from a number', () => {
+    const drawn = widths(screenBlock(stylesheet));
+    // Guards the extractor itself: an empty list would pass vacuously.
+    expect(drawn.length).toBeGreaterThan(5);
+
+    const hardCoded = drawn
+      .filter((width) => /\d\s*px/.test(width.value))
+      .map((width) => `${width.selectors.join(', ')} { ${width.property}: ${width.value} }`);
+
+    expect(hardCoded).toEqual([]);
+  });
+
+  it('spends every measure it declares', () => {
+    const screen = screenBlock(stylesheet);
+    const spent = screen.slice(screen.lastIndexOf(':root'));
+    expect(MEASURES.filter((name) => !spent.includes(`var(${name})`))).toEqual([]);
+  });
+
+  it('unpins both columns where the grid collapses to one', () => {
+    const pinned = leafRules(screenBlock(stylesheet))
+      .filter((rule) => /position:\s*sticky/.test(rule.body))
+      .flatMap((rule) => rule.selectors);
+    // Guards the extractor: no sticky found would make the check vacuous.
+    expect(pinned.length).toBeGreaterThan(1);
+
+    const released = leafRules(collapseBlock(stylesheet))
+      .filter((rule) => /position:\s*static/.test(rule.body))
+      .flatMap((rule) => rule.selectors);
+
+    expect(pinned.filter((selector) => !released.includes(selector))).toEqual([]);
+  });
+});
+
 /** Every corner the screen half draws, one value per `border-radius`. */
 const corners = (css: string): string[] =>
   Array.from(css.matchAll(/border-radius:\s*([^;}]+)/g)).flatMap(([, value]) =>

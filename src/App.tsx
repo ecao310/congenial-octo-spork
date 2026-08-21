@@ -1816,1988 +1816,1992 @@ const App: React.FC = () => {
         {announcement}
       </p>
 
-      <div
-        className="step-nav"
-        role="toolbar"
-        aria-label="Steps"
-        ref={stepNavRef}
-        onKeyDown={onStepKeyDown}
-      >
-        {STEPS.map(({ id, navLabel }, i) => (
-          <button
-            key={id}
-            type="button"
-            id={`step-nav-${id}`}
-            className={
-              step === id ? 'step-nav-item step-nav-current' : 'step-nav-item'
-            }
-            aria-current={step === id ? 'step' : undefined}
-            aria-controls={`step-${id}`}
-            tabIndex={step === id ? 0 : -1}
-            onClick={() => goToStep(id)}
-          >
-            <span className="step-nav-number" aria-hidden="true">
-              {i + 1}
-            </span>
-            {navLabel}
-          </button>
-        ))}
-      </div>
+      <div className="shell">
+        {/* ───── Step 1: the return every later step prices ───── */}
+        <section
+          className="step step-config"
+          id="step-benefit"
+          tabIndex={-1}
+          aria-labelledby="step-benefit-heading"
+        >
+          <p className="step-kicker">Step 1 of {STEPS.length}</p>
+          <h2 className="step-heading" id="step-benefit-heading">
+            Your Social Security benefit
+          </h2>
+          <p className="step-intro">
+            Everything below is priced off one return. Set it here and it stays
+            set for the rest of the page.
+          </p>
 
-      {/* ───── Step 1: the return every later step prices ───── */}
-      <section
-        className="step"
-        id="step-benefit"
-        tabIndex={-1}
-        aria-labelledby="step-benefit-heading"
-      >
-        <p className="step-kicker">Step 1 of {STEPS.length}</p>
-        <h2 className="step-heading" id="step-benefit-heading">
-          Your Social Security benefit
-        </h2>
-        <p className="step-intro">
-          Everything below is priced off one return. Set it here and it stays
-          set for the rest of the page.
-        </p>
+          <fieldset className="input-group filing-status">
+            <legend>Tax Year</legend>
+            <div className="segmented">
+              {TAX_YEARS.map((value) => (
+                <label key={value} className="segmented-option">
+                  <input
+                    type="radio"
+                    name="tax-year"
+                    value={value}
+                    checked={year === value}
+                    onChange={() => changeYear(value)}
+                  />
+                  <span>{value}</span>
+                </label>
+              ))}
+            </div>
+          </fieldset>
 
-        <fieldset className="input-group filing-status">
-          <legend>Tax Year</legend>
-          <div className="segmented">
-            {TAX_YEARS.map((value) => (
-              <label key={value} className="segmented-option">
-                <input
-                  type="radio"
-                  name="tax-year"
-                  value={value}
-                  checked={year === value}
-                  onChange={() => changeYear(value)}
-                />
-                <span>{value}</span>
-              </label>
-            ))}
-          </div>
-        </fieldset>
+          <fieldset className="input-group filing-status">
+            <legend>Filing Status</legend>
+            <div className="segmented">
+              {FILING_STATUS_OPTIONS.map(({ value, label }) => (
+                <label key={value} className="segmented-option">
+                  <input
+                    type="radio"
+                    name="filing-status"
+                    value={value}
+                    checked={filingStatus === value}
+                    onChange={() => changeFilingStatus(value)}
+                  />
+                  <span>{label}</span>
+                </label>
+              ))}
+            </div>
+            {filingStatus === 'mfs' && (
+              <p className="warning-note" role="note">
+                <strong>Filing separately zeroes out both thresholds.</strong> IRC
+                86(c) sets the base <em>and</em> the adjusted base amount to{' '}
+                <strong>$0</strong> for a married taxpayer who files separately and
+                lived with their spouse at any point in the year. There is no 50%
+                tier at all:{' '}
+                <strong>{formatCurrency(taxableSSAtZeroIncome)}</strong> of the{' '}
+                {formatCurrency(ssBenefit)} benefit is taxable before any other
+                income arrives, and the 85% cap binds at{' '}
+                <strong>{formatCurrency(capBindsAt)}</strong> of other income. The
+                torpedo is not removed, it is compressed — the whole of it is
+                crammed into the left edge of the chart instead of spread across the
+                band a single filer sees.{' '}
+                <em>
+                  If you lived apart from your spouse for the entire year, 86(c)
+                  treats you as unmarried — use Single instead, or Head of
+                  Household if a qualifying person lives with you. The separate and
+                  single brackets and standard deduction are identical up to{' '}
+                  {formatCurrency(mfsSingleDivergence)} of taxable income; head of
+                  household is better than either from the first dollar.
+                </em>
+              </p>
+            )}
+            {filingStatus === 'hoh' && (
+              <p className="field-note" role="note">
+                <strong>
+                  Head of household keeps a single filer&apos;s thresholds and
+                  improves everything else.
+                </strong>{' '}
+                IRC 86(c) names only two special base amounts —{' '}
+                {formatCurrency(SS_BASES.mfj.ssBase50)} on a joint return and{' '}
+                {formatCurrency(SS_BASES.mfs.ssBase50)} on a separate one that lived
+                together — so a head of household takes the default,{' '}
+                {formatCurrency(ssBase50)} and {formatCurrency(ssBase85)}, which is
+                exactly what Single uses. What changes is downstream: a{' '}
+                {formatCurrency(yearFiling.standardDeduction)} standard deduction
+                against {formatCurrency(singleFiling.standardDeduction)}, and a 12%
+                band running to {formatCurrency(yearFiling.brackets[1].upTo)} instead
+                of {formatCurrency(singleFiling.brackets[1].upTo)}. The torpedo
+                starts at the same provisional income and costs less the whole way
+                through.{' '}
+                <em>
+                  Qualifying is the hard part in retirement: unmarried at year end,
+                  paying more than half the cost of keeping up your home, and a
+                  qualifying person living with you more than half the year — a
+                  dependent parent being the one exception, who need not live with
+                  you. A recent widow or widower is not here automatically. The year
+                  of death is still a joint return, and the two years after it are
+                  Qualifying Surviving Spouse, which pairs joint brackets with these
+                  same {formatCurrency(ssBase50)} thresholds and is not on this menu.
+                </em>
+              </p>
+            )}
+          </fieldset>
 
-        <fieldset className="input-group filing-status">
-          <legend>Filing Status</legend>
-          <div className="segmented">
-            {FILING_STATUS_OPTIONS.map(({ value, label }) => (
-              <label key={value} className="segmented-option">
-                <input
-                  type="radio"
-                  name="filing-status"
-                  value={value}
-                  checked={filingStatus === value}
-                  onChange={() => changeFilingStatus(value)}
-                />
-                <span>{label}</span>
-              </label>
-            ))}
-          </div>
-          {filingStatus === 'mfs' && (
-            <p className="warning-note" role="note">
-              <strong>Filing separately zeroes out both thresholds.</strong> IRC
-              86(c) sets the base <em>and</em> the adjusted base amount to{' '}
-              <strong>$0</strong> for a married taxpayer who files separately and
-              lived with their spouse at any point in the year. There is no 50%
-              tier at all:{' '}
-              <strong>{formatCurrency(taxableSSAtZeroIncome)}</strong> of the{' '}
-              {formatCurrency(ssBenefit)} benefit is taxable before any other
-              income arrives, and the 85% cap binds at{' '}
-              <strong>{formatCurrency(capBindsAt)}</strong> of other income. The
-              torpedo is not removed, it is compressed — the whole of it is
-              crammed into the left edge of the chart instead of spread across the
-              band a single filer sees.{' '}
-              <em>
-                If you lived apart from your spouse for the entire year, 86(c)
-                treats you as unmarried — use Single instead, or Head of
-                Household if a qualifying person lives with you. The separate and
-                single brackets and standard deduction are identical up to{' '}
-                {formatCurrency(mfsSingleDivergence)} of taxable income; head of
-                household is better than either from the first dollar.
-              </em>
-            </p>
-          )}
-          {filingStatus === 'hoh' && (
-            <p className="field-note" role="note">
-              <strong>
-                Head of household keeps a single filer&apos;s thresholds and
-                improves everything else.
-              </strong>{' '}
-              IRC 86(c) names only two special base amounts —{' '}
-              {formatCurrency(SS_BASES.mfj.ssBase50)} on a joint return and{' '}
-              {formatCurrency(SS_BASES.mfs.ssBase50)} on a separate one that lived
-              together — so a head of household takes the default,{' '}
-              {formatCurrency(ssBase50)} and {formatCurrency(ssBase85)}, which is
-              exactly what Single uses. What changes is downstream: a{' '}
-              {formatCurrency(yearFiling.standardDeduction)} standard deduction
-              against {formatCurrency(singleFiling.standardDeduction)}, and a 12%
-              band running to {formatCurrency(yearFiling.brackets[1].upTo)} instead
-              of {formatCurrency(singleFiling.brackets[1].upTo)}. The torpedo
-              starts at the same provisional income and costs less the whole way
-              through.{' '}
-              <em>
-                Qualifying is the hard part in retirement: unmarried at year end,
-                paying more than half the cost of keeping up your home, and a
-                qualifying person living with you more than half the year — a
-                dependent parent being the one exception, who need not live with
-                you. A recent widow or widower is not here automatically. The year
-                of death is still a joint return, and the two years after it are
-                Qualifying Surviving Spouse, which pairs joint brackets with these
-                same {formatCurrency(ssBase50)} thresholds and is not on this menu.
-              </em>
-            </p>
-          )}
-        </fieldset>
-
-        <fieldset className="input-group filing-status">
-          <legend>Age</legend>
-          <div className="checkbox-group hint-anchor">
-            <label className="checkbox-option">
-              <input
-                type="checkbox"
-                checked={isSenior}
-                aria-describedby="senior-deduction-hint"
-                onChange={(e) => {
-                  setIsSenior(e.target.checked);
-                  announce('benefit');
-                }}
-              />
-              <span>Age 65 or older</span>
-            </label>
-            {filingStatus === 'mfj' && (
+          <fieldset className="input-group filing-status">
+            <legend>Age</legend>
+            <div className="checkbox-group hint-anchor">
               <label className="checkbox-option">
                 <input
                   type="checkbox"
-                  checked={spouseIsSenior}
-                  disabled={!isSenior}
+                  checked={isSenior}
                   aria-describedby="senior-deduction-hint"
                   onChange={(e) => {
-                    setSpouseIsSenior(e.target.checked);
+                    setIsSenior(e.target.checked);
                     announce('benefit');
                   }}
                 />
-                <span>Both spouses are 65 or older</span>
+                <span>Age 65 or older</span>
               </label>
-            )}
-            {/* One bubble for the whole group: both checkboxes describe the same
-                two deductions, and a copy per checkbox would just duplicate it. */}
-            <div className="hint-bubble" id="senior-deduction-hint" role="tooltip">
-              <p className="field-note">
-                Standard deduction{' '}
-                <strong>{formatCurrency(standardDeduction)}</strong>
-                {seniorAddition > 0
-                  ? ` — ${formatCurrency(baseDeduction)} base plus ${formatCurrency(seniorAddition)} for age 65 or older.`
-                  : `. Turning 65 adds ${formatCurrency(yearFiling.additionalStdDeduction65)}${
-                      filingStatus === 'mfj' ? ' per qualifying spouse' : ''
-                    }.`}{' '}
-                The addition widens the 0%-rate valley to the left of the
-                torpedo: taxable income stays at zero for that much longer, so
-                the whole curve shifts right.
-              </p>
-              <p className="field-note">
-                {phaseoutStart === null || phaseoutEnd === null ? (
-                  <>
-                    No senior deduction on a separate return: section
-                    151(d)(5)(C)(v) allows the temporary{' '}
-                    {formatCurrency(SENIOR_DEDUCTION)} only if a married
-                    taxpayer files jointly. There is no halved amount and no
-                    halved threshold — separate filers get nothing.
-                  </>
-                ) : seniors > 0 ? (
-                  <>
-                    Senior deduction{' '}
-                    <strong>{formatCurrency(seniorDeductionMax)}</strong>
-                    {seniors > 1
-                      ? ` (${formatCurrency(SENIOR_DEDUCTION)} per spouse)`
-                      : ''}{' '}
-                    on top of that, shrinking by {formatCents(phaseoutRate)} per
-                    dollar of MAGI above {formatCurrency(phaseoutStart)}
-                    {seniors > 1
-                      ? ` (${formatCents(SENIOR_DEDUCTION_PHASEOUT_RATE)} for each spouse)`
-                      : ''}{' '}
-                    and gone at {formatCurrency(phaseoutEnd)}. It expires after
-                    tax year {SENIOR_DEDUCTION_LAST_YEAR}.
-                  </>
-                ) : (
-                  <>
-                    Filers 65 or older also get the temporary senior deduction
-                    — {formatCurrency(SENIOR_DEDUCTION)} each, for tax years{' '}
-                    {SENIOR_DEDUCTION_FIRST_YEAR}&ndash;
-                    {SENIOR_DEDUCTION_LAST_YEAR} only.
-                  </>
-                )}
-              </p>
-            </div>
-          </div>
-        </fieldset>
-
-        <div className="input-group">
-          <div className="slider-header">
-            <label htmlFor="ss-benefit">Annual Social Security Benefit</label>
-            <span className="slider-value">{formatCurrency(ssBenefit)}</span>
-          </div>
-          <input
-            id="ss-benefit"
-            type="range"
-            min={0}
-            max={maxAnnualSSBenefit(year)}
-            step={12}
-            value={ssBenefit}
-            onChange={(e) => {
-              setSsBenefit(Number(e.target.value));
-              announce('benefit');
-            }}
-          />
-          <div className="slider-range-labels">
-            <span>$0</span>
-            <span>{formatCurrency(avgAnnualSSBenefit(year))} ({year} avg)</span>
-            <span>{formatCurrency(maxAnnualSSBenefit(year))} ({year} max)</span>
-          </div>
-        </div>
-
-        {/* The one control on this page that moves no figure. It belongs in
-            step 1 because it is a fact about the reader rather than about the
-            chart, and it is answered under step 2's chart because that is the
-            curve it qualifies. */}
-        <div className="input-group">
-          <div className="slider-header">
-            <label htmlFor="home-state">State</label>
-            <span className="slider-value">
-              {homeStateRule ? homeStateRule.abbr : 'Not said'}
-            </span>
-          </div>
-          <select
-            id="home-state"
-            className="state-select"
-            value={homeState}
-            /* The one control here that does not feed the live region. It
-               moves no figure — it selects the footnote under step 2's chart —
-               and a select announces its own new option, so the only thing
-               left to read out would be the whole footnote. See
-               `announceFrom`. */
-            onChange={(e) => setHomeState(e.target.value)}
-          >
-            <option value="">Somewhere else — or rather not say</option>
-            {STATE_SS_RULES.map((rule) => (
-              <option key={rule.abbr} value={rule.abbr}>
-                {rule.state}
-              </option>
-            ))}
-          </select>
-          <div className="slider-range-labels">
-            <span>
-              {statesTaxing.length} of these {STATE_SS_RULES.length} still tax a
-              benefit in {year}
-            </span>
-          </div>
-          <p className="field-note">
-            The menu is the {STATE_SS_RULES.length} states that taxed a Social
-            Security benefit in either year this page prices, and{' '}
-            {statesTaxing.length} of them still do in {year}. Everywhere else
-            leaves the benefit alone — with or without an income tax of its
-            own — so &ldquo;somewhere else&rdquo; is the right answer for
-            most readers. Nothing below is priced from this: no two of these{' '}
-            {STATE_SS_RULES.length} rules share a shape, so the page quotes them
-            and cites them rather than modelling them wrong. What it changes is
-            one footnote under step 2&rsquo;s chart.
-          </p>
-        </div>
-
-        <details className="advanced-inputs">
-          <summary>
-            <span className="advanced-label">Advanced inputs</span>
-            {advancedSet.length > 0 ? (
-              <span className="advanced-state advanced-state-set">
-                {advancedSet
-                  .map(({ label, value }) => `${label} ${formatCurrency(value)}`)
-                  .join(' \u00B7 ')}
-              </span>
-            ) : (
-              <span className="advanced-state">Both at $0</span>
-            )}
-          </summary>
-          <p className="field-note">
-            Tax-exempt interest, and money given to charity straight out of an
-            IRA. Both sit at $0 until you move them, and at $0 neither one
-            changes a single figure on either chart below — so the page opens on
-            the plain picture, benefit plus other income, and you add the rest
-            only if it is yours. Whatever you set here stays set for both of the
-            steps that follow and is named on the line above even when this
-            section is shut.
-          </p>
-          <div className="input-group">
-            <div className="slider-header">
-              <label htmlFor="muni-interest">Tax-Exempt (Municipal) Interest</label>
-              <span className="slider-value violet">{formatCurrency(muniInterest)}</span>
-            </div>
-            <input
-              id="muni-interest"
-              type="range"
-              min={0}
-              max={MAX_MUNI_INTEREST}
-              step={250}
-              value={muniInterest}
-              onChange={(e) => {
-                setMuniInterest(Number(e.target.value));
-                announce('benefit');
-              }}
-              className="slider-violet"
-            />
-            <div className="slider-range-labels">
-              <span>$0</span>
-              <span>{formatCurrency(MAX_MUNI_INTEREST)}</span>
-            </div>
-            <p className="field-note">
-              Municipal bond interest never enters taxable income, but it counts
-              toward provisional income dollar for dollar — so it drags benefits
-              into the tax base exactly as fast as a paycheck would, and shifts the
-              whole curve to the left.
-            </p>
-          </div>
-
-          <div className="input-group">
-            <div className="slider-header">
-              <label htmlFor="qcd">Qualified Charitable Distribution</label>
-              <span className="slider-value lime">{formatCurrency(qcd)}</span>
-            </div>
-            <input
-              id="qcd"
-              type="range"
-              min={0}
-              max={qcdLimit}
-              step={250}
-              value={qcd}
-              onChange={(e) => {
-                setQcd(Number(e.target.value));
-                announce('benefit');
-              }}
-              className="slider-lime"
-            />
-            <div className="slider-range-labels">
-              <span>$0</span>
-              <span>{formatCurrency(qcdLimit)}</span>
-            </div>
-            <p className="field-note">
-              IRA money paid straight to the charity. It comes <em>out of</em> the
-              other income set in step 2 rather than on top of it, because the
-              gift is a distribution that would otherwise have been reported — so it
-              moves the whole curve to the right, exactly as far as tax-exempt
-              interest moves it to the left. Out of the ordinary half of that
-              income, at that: a long-term gain is a sale rather than a
-              distribution, so whatever step 3 marks as gain is income this gift
-              cannot be excluded from. Capped at{' '}
-              <strong>{formatCurrency(qcdLimit)}</strong> for {year}
-              {filingStatus === 'mfj'
-                ? ' \u2014 408(d)(8)(A) caps it per individual, so a joint return where both spouses have reached 70\u00BD and each gives from their own IRA gets it twice.'
-                : ' by 408(d)(8)(A), which the IRS indexes every year. Anything past it is an ordinary distribution, deductible only on an itemized return and only within the AGI limits of section 170(b).'}{' '}
-              A gift anywhere near that figure is more income than step 2’s
-              chart used to draw, so the slider runs to the statutory limit and
-              that chart’s right edge moves out to hold it.
-            </p>
-          </div>
-        </details>
-
-        {/* What this step settled, in one line. The hero used to name the
-            filing status and the year; it now says what the page is for, so
-            the return being priced is named here instead — at the foot of the
-            step that sets it, on the way into the step that spends it. */}
-        <p className="scenario-recap">
-          Everything from here on prices one return: <strong>{year}</strong>{' '}
-          brackets and standard deduction,{' '}
-          <strong>{FILING_STATUS_PROSE[filingStatus]}</strong>, {ageProse},
-          collecting{' '}
-          {ssBenefit > 0 ? (
-            <>
-              <strong>{formatCurrency(ssBenefit)}</strong> of Social Security a
-              year.
-            </>
-          ) : (
-            <>
-              <strong>no Social Security</strong> at all.
-            </>
-          )}
-          {advancedSet.length > 0
-            ? ' Plus whatever is set under Advanced inputs above.'
-            : ''}
-        </p>
-
-        {nextStepBox(0)}
-      </section>
-
-      {/* ───── Step 2: what other income does to that benefit ───── */}
-      <section
-        className="step"
-        id="step-torpedo"
-        tabIndex={-1}
-        aria-labelledby="step-torpedo-heading"
-      >
-        <p className="step-kicker">Step 2 of {STEPS.length}</p>
-        <h2 className="step-heading" id="step-torpedo-heading">
-          The tax torpedo
-        </h2>
-        <p className="step-intro">
-          The chart prices every income from $0 to{' '}
-          {formatCurrency(axisMax)} &mdash; far enough right to reach the last
-          thing that happens to this return; the slider says which point along
-          it is yours.
-        </p>
-
-        <figure className="chart-figure">
-          <div
-            className="chart-container"
-            role="img"
-            aria-label={`Chart: the marginal tax rate on the next dollar of other income, plotted from $0 to ${formatCurrency(axisMax)}.`}
-            aria-describedby="torpedo-chart-caption"
-          >
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart
-                data={curve}
-                margin={{ top: 22, right: 28, left: 10, bottom: 0 }}
-              >
-                <defs>
-                  <linearGradient id="rateGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor={PALETTE.accent} stopOpacity={0.5} />
-                    <stop offset="95%" stopColor={PALETTE.accent} stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke={PALETTE.edge} />
-                <XAxis
-                  dataKey="income"
-                  type="number"
-                  domain={[0, axisMax]}
-                  tickFormatter={formatCompact}
-                  stroke={PALETTE.inkMuted}
-                />
-                <YAxis
-                  stroke={PALETTE.inkMuted}
-                  tickFormatter={(value) => `${value}%`}
-                  width={70}
-                  domain={[0, 'auto']}
-                />
-                <Tooltip
-                  content={
-                    <CustomTooltip
-                      ssBenefit={ssBenefit}
-                      segments={segments}
-                      filingStatus={filingStatus}
-                      muniInterest={muniInterest}
-                      qcd={qcd}
-                      ltcg={plannedLtcg}
-                      beneficiaries={beneficiaries}
-                      year={year}
-                    />
-                  }
-                />
-                {cliffsOnChart.map((cliff) => (
-                  <ReferenceLine
-                    className="irmaa-cliff"
-                    key={cliff.tier}
-                    x={cliff.otherIncome}
-                    stroke={PALETTE.rose}
-                    strokeDasharray="4 4"
-                    label={{
-                      value: `IRMAA ${cliff.tier}`,
-                      position: 'top',
-                      fill: PALETTE.roseBright,
-                      fontSize: 11,
+              {filingStatus === 'mfj' && (
+                <label className="checkbox-option">
+                  <input
+                    type="checkbox"
+                    checked={spouseIsSenior}
+                    disabled={!isSenior}
+                    aria-describedby="senior-deduction-hint"
+                    onChange={(e) => {
+                      setSpouseIsSenior(e.target.checked);
+                      announce('benefit');
                     }}
                   />
-                ))}
-                {/* Pink rather than a second red: it is a cliff like the IRMAA
-                    ones, but it belongs to a different reader — the one still
-                    buying their own coverage — and the key underneath tells
-                    them apart by colour before it tells them apart in words.
-                    Fuchsia is what was left: the sky curve, the rose cliffs,
-                    the amber marker and every slider on the page already own a
-                    colour, muni interest's violet included. */}
-                {subsidyCliffOnChart && (
-                  <ReferenceLine
-                    className="subsidy-cliff"
-                    x={subsidyCliffOnChart.otherIncome}
-                    stroke={PALETTE.fuchsia}
-                    strokeDasharray="4 4"
-                    label={{
-                      value: `${PTC_CLIFF_PERCENT * 100}% FPL`,
-                      position: 'top',
-                      fill: PALETTE.fuchsiaBright,
-                      fontSize: 11,
-                    }}
-                  />
-                )}
-                {hereLine(ordinaryIncome, axisMax, PALETTE.amber)}
-                <Area
-                  type="stepAfter"
-                  dataKey="marginalRate"
-                  stroke={PALETTE.accent}
-                  strokeWidth={2}
-                  fill="url(#rateGradient)"
-                />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-          <p className="chart-axis-label">
-            Other Income ($) &middot; Total income = Other income + {formatCurrency(ssBenefit)} SS
-            {plannedLtcg > 0
-              ? `, of which ${formatCurrency(plannedLtcg)} is long-term gain`
-              : ''}
-            {muniInterest > 0
-              ? ` + ${formatCurrency(muniInterest)} tax-exempt interest`
-              : ''}
-            {qcd > 0
-              ? ` \u2212 ${formatCurrency(qcd)} given straight to charity`
-              : ''}
-          </p>
-
-          {/* The lines have to carry their own key: what a cliff is gets
-              explained in a disclosure further down the step, and a bare red
-              dash on a tax chart explains nothing on its own. */}
-          {cliffsOnChart.length > 0 ? (
-            <p className="chart-key">
-              <span className="chart-key-swatch" aria-hidden="true" />
-              <span>
-                <strong>Medicare&apos;s IRMAA cliffs.</strong> Crossing one raises
-                the Part B and Part D premiums of everyone on this return who is
-                enrolled, for a full year &mdash; and it is a cliff, not a phase-in, so
-                a single dollar over the line buys the whole step.{' '}
-                {cliffPriceList}
-                {beneficiaries > 1 ? ', for the two of you' : ''}. None of that is
-                tax, so none of it is in the curve above.
-              </span>
-            </p>
-          ) : firstCliffPastAxis ? (
-            <p className="chart-key">
-              <span>
-                <strong>No Medicare IRMAA cliff falls on this chart.</strong> The
-                first one this return could reach needs{' '}
-                {formatCurrency(firstCliffPastAxis.magi)} of MAGI &mdash;{' '}
-                {formatCurrency(Math.round(firstCliffPastAxis.otherIncome))} of
-                other income, past the right edge of the axis &mdash; and would cost{' '}
-                {formatCurrency(firstCliffPastAxis.step)}/yr in Medicare premiums
-                {beneficiaries > 1 ? ' for the two of you' : ''}.
-              </span>
-            </p>
-          ) : null}
-
-          {/* The second key, for the second cliff. It renders whenever this
-              return is one the credit could reach — under 65, in a year that
-              has a cliff — and says where the line is even when the line is
-              not drawn, because "no line" and "off the right edge" are
-              different answers. */}
-          {preMedicare && subsidyCliff ? (
-            <p className="chart-key chart-key-subsidy">
-              <span
-                className="chart-key-swatch chart-key-swatch-subsidy"
-                aria-hidden="true"
-              />
-              <span>
-                {subsidyCliffOnChart ? (
-                  <>
-                    <strong>
-                      The {PTC_CLIFF_PERCENT * 100}% poverty-line cliff.
-                    </strong>{' '}
-                    Household income over{' '}
-                    {formatCurrency(subsidyCliff.magi)} &mdash;{' '}
-                    {PTC_CLIFF_PERCENT * 100}% of the{' '}
-                    {formatCurrency(subsidyCliff.povertyLine)} poverty line for a
-                    household of {subsidyCliff.householdSize}, reached at{' '}
-                    {formatCurrency(Math.round(subsidyCliff.otherIncome))} of
-                    other income &mdash; ends the Marketplace premium tax credit
-                    for the whole year. Under the line this household pays at most{' '}
-                    {formatCurrency(subsidyCliff.cappedContribution)} for the
-                    benchmark plan; over it, the whole premium.
-                  </>
-                ) : subsidyCliff.otherIncome <= 0 ? (
-                  <>
-                    <strong>
-                      Already past the {PTC_CLIFF_PERCENT * 100}% poverty-line
-                      cliff.
-                    </strong>{' '}
-                    The benefit and tax-exempt interest set above come to more
-                    than {formatCurrency(subsidyCliff.magi)} on their own, so
-                    there is no Marketplace premium tax credit to lose at any
-                    point on this chart.
-                  </>
-                ) : (
-                  <>
-                    <strong>
-                      The {PTC_CLIFF_PERCENT * 100}% poverty-line cliff is off
-                      the right edge.
-                    </strong>{' '}
-                    It needs {formatCurrency(subsidyCliff.magi)} of household
-                    income &mdash;{' '}
-                    {formatCurrency(Math.round(subsidyCliff.otherIncome))} of
-                    other income &mdash; and past it there is no Marketplace
-                    premium tax credit for the year.
-                  </>
-                )}{' '}
-                Only for coverage bought on the Marketplace, and only until
-                Medicare starts.
-              </span>
-            </p>
-          ) : null}
-
-          <CurveCaption
-            id="torpedo-chart-caption"
-            segments={segments}
-            lead="Left to right, the rate on the next dollar of other income is"
-          />
-        </figure>
-
-        <div className="input-group chart-slider">
-          <div className="slider-header">
-            <label htmlFor="ordinary-income">Other Income (not Social Security)</label>
-            <span className="slider-value amber">{formatCurrency(ordinaryIncome)}</span>
-          </div>
-          <input
-            id="ordinary-income"
-            type="range"
-            min={0}
-            max={axisMax}
-            step={incomeSliderStep}
-            value={ordinaryIncome}
-            onChange={(e) => changeOrdinaryIncome(Number(e.target.value))}
-            className="slider-amber"
-          />
-          <div className="slider-range-labels">
-            <span>$0</span>
-            <span>{formatCurrency(axisMax)}</span>
-          </div>
-
-          <p className="slider-readout">
-            <strong>You are here.</strong> At {formatCurrency(ordinaryIncome)} of
-            other income the next dollar is taxed at{' '}
-            <strong>{herePoint ? `${herePoint.marginalRate}%` : '\u2014'}</strong>,
-            where the dashed amber line crosses the curve above &mdash; that
-            point on the curve, not the curve itself, is what the slider moves.
-            {herePoint && totalIncome > 0 ? (
-              <>
-                {' '}
-                The return itself owes{' '}
-                <strong>{formatCurrency(herePoint.totalTax)}</strong> in federal
-                tax on {formatCurrency(totalIncome)} of total income &mdash; an
-                effective rate of{' '}
-                <strong>{formatPercent(effectiveRateOn(herePoint.totalTax))}</strong>
-                . That is the average across every dollar of it; the figure
-                before it is the price of the next one.
-              </>
-            ) : null}
-            {plannedLtcg > 0
-              ? ` Step 3 has ${formatCurrency(plannedLtcg)} of this coming from long-term gains, which is priced into the curve rather than added to it.`
-              : ''}
-          </p>
-
-          <StandingNote standing={standing} at={ordinaryIncome} />
-        </div>
-
-        {/* State tax as a footnote rather than a step of its own: the data is
-            text, so what it needs is a paragraph and a citation, not a chart.
-            The rule stays quotable even when the state has dropped off the
-            year's list — West Virginia does exactly that between 2025 and
-            2026 — which is the second branch here. */}
-        <p className="state-footnote" role="note">
-          {homeStateRule ? (
-            homeStateTaxes ? (
-              <>
-                <strong>
-                  {homeStateRule.state} taxes part of this benefit as well, and
-                  the curve above does not.
-                </strong>{' '}
-                {homeStateRule.mechanism}. {homeStateRule.rule} The {year} test
-                is <em>{homeStateRule.test[year]}</em>.
-                {homeStateDeltas.map((delta) => (
-                  <React.Fragment key={delta.year}>
-                    {' '}
-                    It reads differently in {delta.year}: <em>{delta.test}</em>.
-                  </React.Fragment>
-                ))}{' '}
-                <span className="state-source">
-                  {homeStateRule.source}.
-                </span>
-              </>
-            ) : (
-              <>
-                <strong>
-                  {homeStateRule.state} stopped taxing benefits in{' '}
-                  {homeStateRule.exemptFrom}.
-                </strong>{' '}
-                {homeStateRule.rule} So on a {year} return the curve above is
-                the whole of what this benefit costs: {homeStateRule.state}{' '}
-                still taxes other income, but no part of the benefit.{' '}
-                <span className="state-source">
-                  {homeStateRule.source}.
-                </span>
-              </>
-            )
-          ) : (
-            <>
-              <strong>Every figure on this page is a federal one.</strong>{' '}
-              {statesTaxing.length} states still reach a Social Security benefit
-              in {year} —{' '}
-              {sentenceList(statesTaxing.map((rule) => rule.state))} — and a
-              reader in one of them is looking at a curve that understates their
-              own bill.{' '}
-              {movingStates.length > 0 ? (
-                <>
-                  {sentenceList(movingStates.map((rule) => rule.state))}{' '}
-                  {movingStates.length > 1 ? 'read' : 'reads'} differently in
-                  the other year this page prices, so the tax year set in step 1
-                  moves {movingStates.length > 1 ? 'them' : 'it'} too.{' '}
-                </>
-              ) : null}
-              Name your state in step 1 and this footnote says what it does.
-            </>
-          )}
-        </p>
-
-        <details className="explainer">
-          <summary>
-            <h2 id="tax-torpedo-heading">What is the tax torpedo?</h2>
-          </summary>
-          <div className="explainer-content">
-            <p>
-              Social Security benefits are not taxed dollar-for-dollar. The taxable
-              share depends on <strong>provisional income</strong> — other income
-              plus half of your benefits.{' '}
-              {ssBase85 > 0 ? (
-                <>
-                  Once provisional income passes {formatCurrency(ssBase50)}, each
-                  extra dollar of other income also drags up to 50&cent; of
-                  benefits into taxable income; past {formatCurrency(ssBase85)}, it
-                  drags in up to 85&cent;. (The thresholds shown are for the filing
-                  status selected above.)
-                </>
-              ) : (
-                <>
-                  On the separate return selected above both thresholds are $0, so
-                  there is nothing to pass: every dollar of provisional income
-                  brings 85&cent; of benefits with it from the very first one,
-                  until the 85% cap stops it.
-                </>
+                  <span>Both spouses are 65 or older</span>
+                </label>
               )}
-            </p>
-            <p>
-              So one more dollar earned can raise taxable income by as much as
-              $1.85, and the marginal rate jumps to up to 1.85&times; the statutory
-              bracket: income in the 12% bracket is effectively taxed at{' '}
-              <strong>22.2%</strong>, and income in the 22% bracket at{' '}
-              <strong>40.7%</strong>. That spike above the ordinary bracket rates is
-              the <strong>tax torpedo</strong>.
-            </p>
-            <p>
-              The torpedo ends as abruptly as it begins. At most 85% of benefits
-              can ever be taxable, and once that cap is reached, additional income
-              stops pulling in benefits — the marginal rate falls straight back to
-              the ordinary bracket, creating the cliff on the right side of the
-              spike. Larger benefits stretch the torpedo across a wider income
-              range (try the slider above), and because the thresholds are fixed in
-              law rather than indexed for inflation, more retirees sail into it
-              every year.
-            </p>
-          </div>
-        </details>
-
-        <details className="explainer">
-          <summary>
-            <h2 id="torpedo-strategies-heading">How to mitigate the tax torpedo</h2>
-          </summary>
-          <div className="explainer-content">
-            <ul>
-              <li>
-                <strong>Spend from Roth accounts.</strong> Qualified withdrawals
-                from a Roth IRA or Roth 401(k) are excluded from provisional income
-                entirely.
-              </li>
-              <li>
-                <strong>Spend from taxable accounts.</strong> Selling from a
-                taxable brokerage account adds only the gain to provisional income;
-                the return of your own cost basis is tax-free.
-              </li>
-              <li>
-                <strong>If you can&apos;t go under it, go past it.</strong> Once
-                the 85% cap is reached, extra income is taxed at plain bracket
-                rates again. Bunching income — say, one large Roth conversion —
-                into a single year can cost less than sitting in the middle of the
-                spike year after year.
-              </li>
-              {filingStatus === 'mfs' && (
-                <li>
-                  <strong>Price out filing jointly.</strong> A separate return
-                  that lived with the spouse gives up the{' '}
-                  {formatCurrency(SS_BASES.mfj.ssBase50)} and{' '}
-                  {formatCurrency(SS_BASES.mfj.ssBase85)} thresholds, the{' '}
-                  {formatCurrency(SENIOR_DEDUCTION)} senior deduction, and the
-                  lower IRMAA tiers all at once. Separate filing is usually driven
-                  by something else — income-driven student-loan repayment, a
-                  spouse&apos;s liability, an ongoing separation — so compare the
-                  two returns before assuming it still pays.
-                </li>
-              )}
-            </ul>
-            <p>
-              The right mix depends on account balances, state taxes, Medicare
-              premium surcharges, and more. The chart above makes the goal concrete:
-              keep provisional income out of the spike, or jump clean over it.
-            </p>
-          </div>
-        </details>
-
-        <details className="explainer">
-          <summary>
-            <h2 id="irmaa-cliffs-heading">
-              Medicare&apos;s IRMAA cliffs &mdash; the red dashed lines
-            </h2>
-          </summary>
-          <div className="explainer-content">
-            <p>
-              Above a MAGI threshold, Medicare adds an{' '}
-              <strong>income-related monthly adjustment amount</strong> to the
-              Part B and Part D premiums of everyone on the return who is
-              enrolled. Unlike the torpedo, it is not a phase-in: one dollar over
-              a threshold triggers the whole surcharge for twelve months. The
-              first cliff this return can reach costs{' '}
-              <strong>{formatCurrency(cliffs[0].step)}</strong> a year
-              {beneficiaries > 1 ? ' for the two of you' : ''} &mdash; on a single
-              dollar of income.
-              {cliffs[0].tier > 1
-                ? ` A separate return has no access to tiers 1 through 3: 42 U.S.C. 1395r(i)(3)(C) gives it a two-step schedule of its own, so its first cliff is tier ${cliffs[0].tier} and the whole surcharge lands at once.`
-                : ''}
-            </p>
-            <p>
-              The lines sit at less other income than their MAGI figures suggest,
-              because the benefits the torpedo drags into AGI get there first
-              {muniInterest > 0
-                ? `, and because Medicare's MAGI is wider than the tax code's — the ${formatCurrency(muniInterest)} of tax-exempt interest set above is added straight back in, moving every line ${formatCurrency(muniInterest)} further left`
-                : '. Medicare\u2019s MAGI is also wider than the tax code\u2019s: tax-exempt interest is added straight back in, so muni bonds move these lines as well as the torpedo'}
-              . A charitable distribution moves them the other way, because it
-              never reaches AGI at all.
-            </p>
-            <p>
-              <strong>The x-axis caveat.</strong> Medicare bills on a{' '}
-              {IRMAA_LOOKBACK_YEARS}-year lag: the {year} premiums these lines are
-              priced from are set by {irmaaMagiYear(year)} MAGI, so the {year}{' '}
-              income on this chart is really setting the premium for{' '}
-              {year + IRMAA_LOOKBACK_YEARS}, under a schedule CMS has not
-              published yet. Treat the lines as where the cliffs would fall at{' '}
-              {year} thresholds, not as a bill. The lag cuts both ways: a Roth
-              conversion made now surfaces as a premium two years later, and a
-              one-off spike &mdash; a home sale, an inherited IRA &mdash; keeps
-              costing after the income is gone. Retiring or losing that income is
-              a life-changing event you can appeal on Form SSA-44 rather than
-              simply wait out.
-            </p>
-            <p>
-              The surcharge never appears on a tax return, which is exactly why it
-              is worth planning around: nothing about filing reveals that one
-              dollar of income cost {formatCurrency(cliffs[0].step)}. It is not
-              included in any of the tax figures on this page either &mdash; the
-              curve above is federal income tax only.
-            </p>
-          </div>
-        </details>
-
-        {preMedicare ? (
-          <details className="explainer">
-            <summary>
-              {/* The line is only drawn in a year that has one, so the
-                  heading only points at it in a year that has one. */}
-              <h2 id="subsidy-cliff-heading">
-                The {PTC_CLIFF_PERCENT * 100}% poverty-line cliff
-                {subsidyCliff ? <> &mdash; the pink dashed line</> : null}
-              </h2>
-            </summary>
-            <div className="explainer-content">
-              {subsidyCliff ? (
-                <>
-                  <p>
-                    Health coverage bought on the Marketplace comes with a{' '}
-                    <strong>premium tax credit</strong> that pays whatever the
-                    benchmark silver plan costs above a set share of household
-                    income. IRC 36B(c)(1)(A) allows it to a household whose
-                    income is &ldquo;at least 100 percent but not more than 400
-                    percent&rdquo; of the federal poverty line. There is no row
-                    in the table past 400%, so past 400% the credit is not
-                    smaller &mdash; it is nothing. For this household that line
-                    is {formatCurrency(subsidyCliff.magi)}:{' '}
-                    {PTC_CLIFF_PERCENT * 100}% of the{' '}
-                    {formatCurrency(subsidyCliff.povertyLine)} poverty line for{' '}
-                    {subsidyCliff.householdSize === 1
-                      ? 'one person'
-                      : `${subsidyCliff.householdSize} people`}
-                    .
-                  </p>
-                  <p>
-                    <strong>What it costs is not on this page.</strong> Just
-                    under the line the household pays at most{' '}
-                    {(subsidyCliff.topApplicablePercentage * 100).toFixed(2)}% of
-                    its income &mdash;{' '}
-                    {formatCurrency(subsidyCliff.cappedContribution)} &mdash; for
-                    the benchmark plan, and the credit covers the rest. One
-                    dollar over, it pays the full premium, which depends on ages
-                    and county and which this page has no way to know. So the
-                    line is drawn where it falls and the loss is left blank: for
-                    a couple in their early sixties it is routinely five figures.
-                  </p>
-                  <p>
-                    <strong>It is not Medicare&apos;s line, or the tax
-                    code&apos;s.</strong> 36B(d)(2)(B) counts AGI plus
-                    tax-exempt interest plus{' '}
-                    <em>the untaxed part of the Social Security benefit</em>.
-                    That last term undoes the torpedo: whatever share of the{' '}
-                    {formatCurrency(ssBenefit)} benefit stays out of the tax
-                    base, this adds straight back, so the whole benefit counts
-                    at every income level. The practical difference shows in
-                    where the lines sit: raise the benefit by a dollar and the
-                    pink line moves a full dollar left, while the red ones move
-                    at most 85 cents, because 85 cents is all of that dollar
-                    that can ever reach the tax base. Two cliffs, two MAGIs, and
-                    no reading one off the other.
-                  </p>
-                  <p>
-                    <strong>You are here.</strong> This return&apos;s household
-                    income is {formatCurrency(Math.round(hereSubsidy.magi))},{' '}
-                    {(hereSubsidy.fplMultiple * 100).toFixed(0)}% of the poverty
-                    line.{' '}
-                    {hereSubsidy.overCliff
-                      ? 'That is past the cliff: there is no premium tax credit for this year, and coming back under it takes ' +
-                        formatCurrency(
-                          Math.round(hereSubsidy.magi - (hereSubsidy.cliffMagi ?? 0)),
-                        ) +
-                        ' less income.'
-                      : `Another ${formatCurrency(
-                          Math.round(hereSubsidy.headroom ?? 0),
-                        )} of it reaches the line, and the dollar after that is the one that costs.`}
-                  </p>
-                  <p>
-                    <strong>The cliff is back, and it was gone.</strong> From
-                    2021 through 2025 there was no 400% ceiling at all: ARPA
-                    section 9661, extended by the Inflation Reduction Act,
-                    replaced the table with one that ran past 400% and capped
-                    the household&apos;s own share at 8.5% of income however
-                    high income went. That expired for tax years beginning after
-                    2025. The poverty line itself runs{' '}
-                    {FPL_GUIDELINE_LOOKBACK_YEARS} year behind, where
-                    Medicare&apos;s MAGI runs {IRMAA_LOOKBACK_YEARS}: 26 CFR
-                    1.36B-1(h) fixes it at the guidelines in effect when open
-                    enrolment began, which is the previous 1 November, so {year}{' '}
-                    coverage is priced off the {fplGuidelineYear(year)}{' '}
-                    guidelines &mdash; already a year old when the year starts.
-                  </p>
-                  <p>
-                    <strong>Who this is not for.</strong> Nobody enrolled in
-                    Medicare is eligible for the credit, which is why the line
-                    disappears from this chart once everyone on the return has
-                    turned 65 &mdash; and why a couple with one spouse on either
-                    side of 65 is standing in front of both cliffs at once.
-                    Coverage from an employer, a retiree plan or a spouse&apos;s
-                    plan takes the credit away too, so a reader with any of
-                    those can read this line as decoration. The poverty line
-                    used here is the one for the 48 contiguous states and DC;
-                    Alaska and Hawaii have their own, higher, so the line falls
-                    further right there than it is drawn.{' '}
-                    {subsidyCliff.householdSize === 1
-                      ? 'A dependent would move it right by about $5,500 of income, and this page has no field for one.'
-                      : 'A dependent past the two people this filing status implies would move it right by about $5,500 of income, and this page has no field for one.'}
-                  </p>
-                </>
-              ) : (
-                <p>
-                  On a {year} return there is no cliff to draw. ARPA section
-                  9661, extended through 2025 by the Inflation Reduction Act,
-                  took the 400% ceiling out of IRC 36B(c)(1)(A) and capped a
-                  household&apos;s own share of the benchmark premium at 8.5% of
-                  income at every income level, so the Marketplace credit tapers
-                  away instead of stopping. It returns for tax years beginning
-                  after 2025: switch the year above to see where it falls.
+              {/* One bubble for the whole group: both checkboxes describe the same
+                  two deductions, and a copy per checkbox would just duplicate it. */}
+              <div className="hint-bubble" id="senior-deduction-hint" role="tooltip">
+                <p className="field-note">
+                  Standard deduction{' '}
+                  <strong>{formatCurrency(standardDeduction)}</strong>
+                  {seniorAddition > 0
+                    ? ` — ${formatCurrency(baseDeduction)} base plus ${formatCurrency(seniorAddition)} for age 65 or older.`
+                    : `. Turning 65 adds ${formatCurrency(yearFiling.additionalStdDeduction65)}${
+                        filingStatus === 'mfj' ? ' per qualifying spouse' : ''
+                      }.`}{' '}
+                  The addition widens the 0%-rate valley to the left of the
+                  torpedo: taxable income stays at zero for that much longer, so
+                  the whole curve shifts right.
                 </p>
+                <p className="field-note">
+                  {phaseoutStart === null || phaseoutEnd === null ? (
+                    <>
+                      No senior deduction on a separate return: section
+                      151(d)(5)(C)(v) allows the temporary{' '}
+                      {formatCurrency(SENIOR_DEDUCTION)} only if a married
+                      taxpayer files jointly. There is no halved amount and no
+                      halved threshold — separate filers get nothing.
+                    </>
+                  ) : seniors > 0 ? (
+                    <>
+                      Senior deduction{' '}
+                      <strong>{formatCurrency(seniorDeductionMax)}</strong>
+                      {seniors > 1
+                        ? ` (${formatCurrency(SENIOR_DEDUCTION)} per spouse)`
+                        : ''}{' '}
+                      on top of that, shrinking by {formatCents(phaseoutRate)} per
+                      dollar of MAGI above {formatCurrency(phaseoutStart)}
+                      {seniors > 1
+                        ? ` (${formatCents(SENIOR_DEDUCTION_PHASEOUT_RATE)} for each spouse)`
+                        : ''}{' '}
+                      and gone at {formatCurrency(phaseoutEnd)}. It expires after
+                      tax year {SENIOR_DEDUCTION_LAST_YEAR}.
+                    </>
+                  ) : (
+                    <>
+                      Filers 65 or older also get the temporary senior deduction
+                      — {formatCurrency(SENIOR_DEDUCTION)} each, for tax years{' '}
+                      {SENIOR_DEDUCTION_FIRST_YEAR}&ndash;
+                      {SENIOR_DEDUCTION_LAST_YEAR} only.
+                    </>
+                  )}
+                </p>
+              </div>
+            </div>
+          </fieldset>
+
+          <div className="input-group">
+            <div className="slider-header">
+              <label htmlFor="ss-benefit">Annual Social Security Benefit</label>
+              <span className="slider-value">{formatCurrency(ssBenefit)}</span>
+            </div>
+            <input
+              id="ss-benefit"
+              type="range"
+              min={0}
+              max={maxAnnualSSBenefit(year)}
+              step={12}
+              value={ssBenefit}
+              onChange={(e) => {
+                setSsBenefit(Number(e.target.value));
+                announce('benefit');
+              }}
+            />
+            <div className="slider-range-labels">
+              <span>$0</span>
+              <span>{formatCurrency(avgAnnualSSBenefit(year))} ({year} avg)</span>
+              <span>{formatCurrency(maxAnnualSSBenefit(year))} ({year} max)</span>
+            </div>
+          </div>
+
+          {/* The one control on this page that moves no figure. It belongs in
+              step 1 because it is a fact about the reader rather than about the
+              chart, and it is answered under step 2's chart because that is the
+              curve it qualifies. */}
+          <div className="input-group">
+            <div className="slider-header">
+              <label htmlFor="home-state">State</label>
+              <span className="slider-value">
+                {homeStateRule ? homeStateRule.abbr : 'Not said'}
+              </span>
+            </div>
+            <select
+              id="home-state"
+              className="state-select"
+              value={homeState}
+              /* The one control here that does not feed the live region. It
+                 moves no figure — it selects the footnote under step 2's chart —
+                 and a select announces its own new option, so the only thing
+                 left to read out would be the whole footnote. See
+                 `announceFrom`. */
+              onChange={(e) => setHomeState(e.target.value)}
+            >
+              <option value="">Somewhere else — or rather not say</option>
+              {STATE_SS_RULES.map((rule) => (
+                <option key={rule.abbr} value={rule.abbr}>
+                  {rule.state}
+                </option>
+              ))}
+            </select>
+            <div className="slider-range-labels">
+              <span>
+                {statesTaxing.length} of these {STATE_SS_RULES.length} still tax a
+                benefit in {year}
+              </span>
+            </div>
+            <p className="field-note">
+              The menu is the {STATE_SS_RULES.length} states that taxed a Social
+              Security benefit in either year this page prices, and{' '}
+              {statesTaxing.length} of them still do in {year}. Everywhere else
+              leaves the benefit alone — with or without an income tax of its
+              own — so &ldquo;somewhere else&rdquo; is the right answer for
+              most readers. Nothing below is priced from this: no two of these{' '}
+              {STATE_SS_RULES.length} rules share a shape, so the page quotes them
+              and cites them rather than modelling them wrong. What it changes is
+              one footnote under step 2&rsquo;s chart.
+            </p>
+          </div>
+
+          <details className="advanced-inputs">
+            <summary>
+              <span className="advanced-label">Advanced inputs</span>
+              {advancedSet.length > 0 ? (
+                <span className="advanced-state advanced-state-set">
+                  {advancedSet
+                    .map(({ label, value }) => `${label} ${formatCurrency(value)}`)
+                    .join(' \u00B7 ')}
+                </span>
+              ) : (
+                <span className="advanced-state">Both at $0</span>
               )}
+            </summary>
+            <p className="field-note">
+              Tax-exempt interest, and money given to charity straight out of an
+              IRA. Both sit at $0 until you move them, and at $0 neither one
+              changes a single figure on either chart below — so the page opens on
+              the plain picture, benefit plus other income, and you add the rest
+              only if it is yours. Whatever you set here stays set for both of the
+              steps that follow and is named on the line above even when this
+              section is shut.
+            </p>
+            <div className="input-group">
+              <div className="slider-header">
+                <label htmlFor="muni-interest">Tax-Exempt (Municipal) Interest</label>
+                <span className="slider-value violet">{formatCurrency(muniInterest)}</span>
+              </div>
+              <input
+                id="muni-interest"
+                type="range"
+                min={0}
+                max={MAX_MUNI_INTEREST}
+                step={250}
+                value={muniInterest}
+                onChange={(e) => {
+                  setMuniInterest(Number(e.target.value));
+                  announce('benefit');
+                }}
+                className="slider-violet"
+              />
+              <div className="slider-range-labels">
+                <span>$0</span>
+                <span>{formatCurrency(MAX_MUNI_INTEREST)}</span>
+              </div>
+              <p className="field-note">
+                Municipal bond interest never enters taxable income, but it counts
+                toward provisional income dollar for dollar — so it drags benefits
+                into the tax base exactly as fast as a paycheck would, and shifts the
+                whole curve to the left.
+              </p>
+            </div>
+
+            <div className="input-group">
+              <div className="slider-header">
+                <label htmlFor="qcd">Qualified Charitable Distribution</label>
+                <span className="slider-value lime">{formatCurrency(qcd)}</span>
+              </div>
+              <input
+                id="qcd"
+                type="range"
+                min={0}
+                max={qcdLimit}
+                step={250}
+                value={qcd}
+                onChange={(e) => {
+                  setQcd(Number(e.target.value));
+                  announce('benefit');
+                }}
+                className="slider-lime"
+              />
+              <div className="slider-range-labels">
+                <span>$0</span>
+                <span>{formatCurrency(qcdLimit)}</span>
+              </div>
+              <p className="field-note">
+                IRA money paid straight to the charity. It comes <em>out of</em> the
+                other income set in step 2 rather than on top of it, because the
+                gift is a distribution that would otherwise have been reported — so it
+                moves the whole curve to the right, exactly as far as tax-exempt
+                interest moves it to the left. Out of the ordinary half of that
+                income, at that: a long-term gain is a sale rather than a
+                distribution, so whatever step 3 marks as gain is income this gift
+                cannot be excluded from. Capped at{' '}
+                <strong>{formatCurrency(qcdLimit)}</strong> for {year}
+                {filingStatus === 'mfj'
+                  ? ' \u2014 408(d)(8)(A) caps it per individual, so a joint return where both spouses have reached 70\u00BD and each gives from their own IRA gets it twice.'
+                  : ' by 408(d)(8)(A), which the IRS indexes every year. Anything past it is an ordinary distribution, deductible only on an itemized return and only within the AGI limits of section 170(b).'}{' '}
+                A gift anywhere near that figure is more income than step 2’s
+                chart used to draw, so the slider runs to the statutory limit and
+                that chart’s right edge moves out to hold it.
+              </p>
             </div>
           </details>
-        ) : null}
 
-        <details className="explainer">
-          <summary>
-            <h2 id="senior-deduction-heading">
-              The senior deduction phaseout ({SENIOR_DEDUCTION_FIRST_YEAR}&ndash;
-              {SENIOR_DEDUCTION_LAST_YEAR})
-            </h2>
-          </summary>
-          <div className="explainer-content">
-            {phaseoutStart === null || phaseoutEnd === null ? (
-            <p>
-              Not on this return. Section 151(d)(5)(C)(v) makes the temporary{' '}
-              {formatCurrency(SENIOR_DEDUCTION)} deduction conditional on a married
-              taxpayer filing jointly, so a separate filer gets none of it — no
-              halved amount, no halved {formatCurrency(75_000)} threshold, nothing.
-              Between that and the $0 Social Security bases, filing separately
-              while living together costs a retired couple the deduction and the
-              thresholds at once. Switch to Married Filing Jointly above to see
-              what the phaseout looks like when it applies.
-            </p>
+          {/* What this step settled, in one line. The hero used to name the
+              filing status and the year; it now says what the page is for, so
+              the return being priced is named here instead — at the foot of the
+              step that sets it, on the way into the step that spends it. */}
+          <p className="scenario-recap">
+            Everything from here on prices one return: <strong>{year}</strong>{' '}
+            brackets and standard deduction,{' '}
+            <strong>{FILING_STATUS_PROSE[filingStatus]}</strong>, {ageProse},
+            collecting{' '}
+            {ssBenefit > 0 ? (
+              <>
+                <strong>{formatCurrency(ssBenefit)}</strong> of Social Security a
+                year.
+              </>
             ) : (
-            <>
-            <p>
-              For tax years {SENIOR_DEDUCTION_FIRST_YEAR} through{' '}
-              {SENIOR_DEDUCTION_LAST_YEAR} only, anyone who reaches age 65 gets an
-              extra <strong>{formatCurrency(SENIOR_DEDUCTION)}</strong> deduction —
-              on top of the standard deduction, on top of the age-65 addition to
-              it, and whether or not they itemize. A couple filing jointly with
-              both spouses over 65 gets {formatCurrency(2 * SENIOR_DEDUCTION)}.
-            </p>
-            <p>
-              The catch is the phaseout. Each qualifying person&apos;s{' '}
-              {formatCurrency(SENIOR_DEDUCTION)} shrinks by{' '}
-              {formatCents(SENIOR_DEDUCTION_PHASEOUT_RATE)} for every dollar of
-              MAGI above {formatCurrency(phaseoutStart)}, so it is gone at{' '}
-              {formatCurrency(phaseoutEnd)} — exactly $100,000 later, for every
-              status that has one, because a couple where both spouses qualify has
-              twice as much deduction to lose and loses it twice as fast.
-            </p>
-            <p>
-              Inside that range every extra dollar of income does double duty: it
-              is taxed, and it destroys {formatCents(phaseoutRate)} of deduction.
-              Taxable income therefore rises by{' '}
-              <strong>${taxableIncomePerDollar.toFixed(2)}</strong> per dollar
-              earned, and the 22% bracket bites at{' '}
-              <strong>{formatPercent(0.22 * taxableIncomePerDollar)}</strong>. That
-              is a surtax that appears nowhere on the rate schedule.
-            </p>
-            <p>
-              Worse, the two humps multiply. MAGI is AGI, which already includes
-              whatever share of your benefits the torpedo has dragged into taxable
-              income — so where the torpedo and the phaseout overlap, one extra
-              dollar raises taxable income by 1.85 &times;{' '}
-              {taxableIncomePerDollar.toFixed(2)} ={' '}
-              <strong>${(1.85 * taxableIncomePerDollar).toFixed(2)}</strong>, and
-              22% becomes{' '}
-              <strong>
-                {formatPercent(0.22 * 1.85 * taxableIncomePerDollar)}
-              </strong>
-              .
-            </p>
-            <p>
-              On the chart above, the second hump starts where MAGI clears{' '}
-              {formatCurrency(phaseoutStart)} — at less of your own income than
-              that, since the taxable part of your benefits counts toward MAGI too.
-              The rate falls back once the deduction is fully gone at{' '}
-              {formatCurrency(phaseoutEnd)} of MAGI, which{' '}
-              {phaseoutEndsOnChart
-                ? 'is inside the chart at the benefit selected above'
-                : 'sits past the right edge of the chart at the benefit selected above'}
-              . Note that tax-exempt interest is <em>not</em> added back for this
-              phaseout, unlike the MAGI Medicare uses for IRMAA.
-            </p>
-            </>
+              <>
+                <strong>no Social Security</strong> at all.
+              </>
             )}
-          </div>
-        </details>
-
-        {nextStepBox(1)}
-      </section>
-
-      {/* ───── Step 3: what kind of income the step-2 figure is ───── */}
-      <section
-        className="step"
-        id="step-gains"
-        tabIndex={-1}
-        aria-labelledby="step-gains-heading"
-      >
-        <p className="step-kicker">Step 3 of {STEPS.length}</p>
-        <h2 className="step-heading" id="step-gains-heading">
-          Capital Gains Stacking
-        </h2>
-
-        <p className="step-intro">
-          Step 2 asked how much income you have. This step asks what kind it
-          is: how much of that {formatCurrency(ordinaryIncome)} is a long-term
-          capital gain? A gain is part of that figure, not another figure on
-          top of it &mdash; so the chart holds your total income still and moves
-          only the split.
-        </p>
-
-        {/* A gain is a share of the income entered in step 2, so with that
-            income at $0 there is nothing to take a share of: the axis has no
-            width, the slider has no travel and the curve has one point. Say so
-            rather than draw it. */}
-        {gainsAxisMax === 0 ? (
-          <p className="step-prose">
-            <strong>Nothing to split yet.</strong> Step 2 has your other income
-            at $0. A long-term gain is a share of the income you have rather
-            than an addition to it, so there is no axis to draw until something
-            is set there — move the other-income slider on step 2 and this
-            step comes back.
+            {advancedSet.length > 0
+              ? ' Plus whatever is set under Advanced inputs above.'
+              : ''}
           </p>
-        ) : (
-          <>
-          <figure className="chart-figure">
-            <div
-              className="chart-container"
-              role="img"
-              aria-label={`Chart: the marginal tax rate as more of ${formatCurrency(ordinaryIncome)} of other income is taken as long-term capital gain, plotted from $0 to ${formatCurrency(gainsAxisMax)}.`}
-              aria-describedby="gains-chart-caption"
-            >
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart
-                  data={ltcgCurve}
-                  margin={{ top: 10, right: 10, left: 10, bottom: 0 }}
-                >
-                  <defs>
-                    <linearGradient id="ltcgGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor={PALETTE.amber} stopOpacity={0.5} />
-                      <stop offset="95%" stopColor={PALETTE.amber} stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke={PALETTE.edge} />
-                  <XAxis
-                    dataKey="ltcg"
-                    type="number"
-                    domain={[0, gainsAxisMax]}
-                    tickFormatter={formatCompact}
-                    stroke={PALETTE.inkMuted}
-                  />
-                  <YAxis
-                    stroke={PALETTE.inkMuted}
-                    tickFormatter={(value) => `${value}%`}
-                    width={70}
-                    domain={[0, 'auto']}
-                  />
-                  <Tooltip
-                    content={
-                      <LTCGTooltip
-                        ordinaryIncome={ordinaryIncome}
-                        ssBenefit={ssBenefit}
-                        segments={ltcgSegments}
-                        muniInterest={muniInterest}
-                        qcd={qcd}
-                        filingStatus={filingStatus}
-                        year={year}
-                      />
-                    }
-                  />
-                  {hereLine(plannedLtcg, gainsAxisMax, PALETTE.emerald)}
-                  <Area
-                    type="stepAfter"
-                    dataKey="marginalRate"
-                    stroke={PALETTE.amber}
-                    strokeWidth={2}
-                    fill="url(#ltcgGradient)"
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-            {/* The same total the tooltip above quotes, from the same
-                definition — this line used to leave out tax-exempt interest
-                and the charitable gift, so it disagreed with the sentence
-                under step 2's chart about the very same return. And the sweep
-                holds it still only when nothing is being given away: a gift
-                comes out of the ordinary half alone, so past a point the gain
-                crowds it out. */}
-            <p className="chart-axis-label">
-              Long-Term Capital Gains, out of {formatCurrency(ordinaryIncome)} of
-              other income ($) &middot; Total income{' '}
-              {formatCurrency(totalIncome)}
-              {given > 0
-                ? ' where you stand \u2014 the further right you go, the less of the gift has ordinary income to come out of, so the more of this income reaches the return'
-                : ' at every point on this axis'}
-            </p>
 
-            <CurveCaption
-              id="gains-chart-caption"
-              segments={ltcgSegments}
-              lead="Left to right, the rate on the next dollar taken as gain rather than as ordinary income is"
-            />
-          </figure>
+          {nextStepBox(0)}
+        </section>
 
-          <div className="input-group chart-slider">
-            <div className="slider-header">
-              <label htmlFor="planned-ltcg">
-                Long-Term Capital Gains Inside That Income
-              </label>
-              <span className="slider-value emerald">{formatCurrency(plannedLtcg)}</span>
-            </div>
-            <input
-              id="planned-ltcg"
-              type="range"
-              min={0}
-              max={gainsAxisMax}
-              step={500}
-              value={plannedLtcg}
-              onChange={(e) => {
-                setPlannedLtcg(Number(e.target.value));
-                announce('gains');
-              }}
-              className="slider-emerald"
-            />
-            <div className="slider-range-labels">
-              <span>None of it</span>
-              <span>All {formatCurrency(gainsAxisMax)} of it</span>
-            </div>
-
-            <p className="slider-readout">
-              <strong>You are here.</strong> With {formatCurrency(plannedLtcg)} of
-              your {formatCurrency(ordinaryIncome)} coming from long-term gains,
-              the next dollar of gain is taxed at{' '}
-              <strong>
-                {hereGainPoint ? `${hereGainPoint.marginalRate}%` : '\u2014'}
-              </strong>
-              , where the dashed emerald line crosses the curve above
-              {hereGainPoint && hereGainPoint.marginalRate > 20
-                ? ' \u2014 past the 20% ceiling a gain can be charged on its own, so the rest of it is benefit being dragged into the tax base alongside the gain.'
-                : '.'}
-              {mixSaving === null ? null : mixSaving > 0 ? (
-                <>
-                  {' '}
-                  Splitting the same {formatCurrency(ordinaryIncome)} this way
-                  rather than taking all of it as ordinary income saves{' '}
-                  <strong>{formatCurrency(mixSaving)}</strong> in federal tax.
-                </>
-              ) : (
-                <>
-                  {' '}
-                  Splitting the same {formatCurrency(ordinaryIncome)} this way
-                  rather than taking all of it as ordinary income changes the
-                  federal tax by nothing at all &mdash; at this income the
-                  ordinary schedule and the capital-gain one charge the same.
-                </>
-              )}
-              {hereGainPoint && totalIncome > 0 ? (
-                <>
-                  {' '}
-                  All told the return owes{' '}
-                  <strong>{formatCurrency(hereGainPoint.totalTax)}</strong> in
-                  federal tax on the {formatCurrency(totalIncome)} of total
-                  income behind this chart
-                  {given > 0 ? '' : ', which this slider never moves'} &mdash;
-                  an effective rate of{' '}
-                  <strong>
-                    {formatPercent(effectiveRateOn(hereGainPoint.totalTax))}
-                  </strong>
-                  .{' '}
-                  {given > 0
-                    ? 'Mostly the same dollars, taxed differently: the slider moves the bill, and it moves the income only where the gain has crowded the gift out of the ordinary half.'
-                    : 'The same dollars, taxed differently: what the slider moves is the bill, not the income.'}
-                </>
-              ) : null}
-              {hereSurtax > 0 ? (
-                <>
-                  {' '}
-                  <strong>{formatCurrency(hereSurtax)}</strong> of that is the
-                  3.8% surtax of section 1411, charged on{' '}
-                  {formatCurrency(hereNiit.base)} of the gain because{' '}
-                  {formatCurrency(hereNiit.magi)} of MAGI clears the{' '}
-                  {formatCurrency(hereNiit.threshold)} threshold.
-                </>
-              ) : null}
-            </p>
-          </div>
-          </>
-        )}
-
-        <details className="explainer">
-          <summary>
-            <h2 id="ltcg-stacking-heading">Why the two effects stack</h2>
-          </summary>
-          <div className="explainer-content">
-            <p>
-              Long-term capital gains (LTCG) count fully toward{' '}
-              <strong>provisional income</strong> for Social Security taxability,
-              yet they are taxed in their own preferential bracket (0%/15%/20%).
-              When ordinary income pushes Social Security benefits into the
-              taxable base, LTCG can simultaneously shove gains out of the
-              0% bracket into 15%&nbsp;— stacking two effects at once.
-            </p>
-            <p>
-              The axis above is the <strong>split</strong>, not the size. Every
-              point on it prices the same{' '}
-              {formatCurrency(ordinaryIncome + ssBenefit)} of total income and
-              differs only in how much of it is gain. That holds provisional
-              income still — a dollar of gain and a dollar of ordinary income
-              raise it identically — so the taxable share of your benefit is the
-              same all the way across, and what moves is which rate schedule
-              each dollar is charged under and how much of the gain fits below
-              the 0% ceiling.
-            </p>
-            <p>
-              The <em>height</em> of the curve answers the other question: what
-              the next dollar of gain would cost on top of everything. That is
-              where the two effects compound — the dollar is charged its own
-              preferential rate <em>and</em> drags up to 85&cent; of benefit
-              into the tax base at ordinary rates, so the combined figure can
-              run well past the statutory 15%. The same compounding shows up on
-              step 2&apos;s chart from the other side: with a gain set, the next
-              dollar of ordinary income lifts the whole gain stack with it, and
-              can shove part of it out of the 0% band into 15%.
-            </p>
-          </div>
-        </details>
-
-        <details className="explainer">
-          <summary>
-            <h2 id="niit-heading">The third effect: the 3.8% surtax</h2>
-          </summary>
-          <div className="explainer-content">
-            <p>
-              Above {formatCurrency(niitThreshold(filingStatus))} of modified
-              AGI, section 1411 charges a further{' '}
-              {(NIIT_RATE * 100).toFixed(1)}% &mdash; the net investment income
-              tax, reported on Form 8960. It is not income tax and it is not
-              part of any bracket; it sits on top of whatever the ordinary and
-              capital-gain schedules have already charged.
-            </p>
-            <p>
-              What makes it a third effect rather than a fourth bracket is the
-              word <em>lesser</em>. The surtax applies to the lesser of your
-              net investment income and the amount by which MAGI clears the
-              threshold &mdash; so between those two figures, a dollar that
-              1411 does not tax at all still drags a dollar that it does into
-              the base. An IRA withdrawal is expressly excluded by
-              1411(c)(5). A pension is not investment income. Neither is a
-              Social Security benefit. Every one of them is in MAGI, and every
-              one of them can therefore cost you 3.8&cent; on a gain you
-              realized before you took it.
-            </p>
-            <p>
-              That is the same shape as the torpedo one step up: an income
-              definition wider than the income being taxed. And the thresholds
-              are the same story too &mdash;{' '}
-              {formatCurrency(NIIT_THRESHOLDS.single)} unmarried,{' '}
-              {formatCurrency(NIIT_THRESHOLDS.mfj)} joint,{' '}
-              {formatCurrency(NIIT_THRESHOLDS.mfs)} on a separate return,
-              fixed in {NIIT_ENACTED} and never indexed since. Tax-exempt
-              interest is the one input on this page that stays clear of it
-              entirely: section 103 keeps it out of gross income, so it is
-              neither investment income here nor part of this MAGI &mdash;
-              even while it is raising provisional income in step 2 and
-              Medicare&apos;s MAGI in the line below.
-            </p>
-          </div>
-        </details>
-
-        {nextStepBox(2)}
-      </section>
-
-      {/* ───── Step 4: how many of those dollars fit before the next one costs more ───── */}
-      <section
-        className="step"
-        id="step-conversion"
-        tabIndex={-1}
-        aria-labelledby="step-conversion-heading"
-      >
-        <p className="step-kicker">Step 4 of {STEPS.length}</p>
-        <h2 className="step-heading" id="step-conversion-heading">
-          Sizing the conversion
-        </h2>
-
-        <p className="step-intro">
-          Steps 2 and 3 price the next dollar. This one prices a block of them.
-          Pick the line you would rather not cross and the chart draws the
-          largest Roth conversion that stays under it, running from where you
-          are standing out to that line &mdash; on the same curve as step 2,
-          because a conversion is ordinary income and walks you rightwards
-          along exactly that axis.
-        </p>
-
-        <figure className="chart-figure">
+        <div className="flow">
           <div
-            className="chart-container"
-            role="img"
-            aria-label={
-              conversionFits
-                ? `Chart: step 2's marginal-rate curve redrawn from $0 to ${formatCurrency(conversionAxisMax)}, with the sized conversion shaded from ${formatCurrency(ordinaryIncome)} to ${formatCurrency(conversionTarget)}.`
-                : `Chart: step 2's marginal-rate curve redrawn from $0 to ${formatCurrency(conversionAxisMax)}. Nothing fits under the line picked, so no conversion is shaded.`
-            }
-            aria-describedby="conversion-chart-caption"
+            className="step-nav"
+            role="toolbar"
+            aria-label="Steps"
+            ref={stepNavRef}
+            onKeyDown={onStepKeyDown}
           >
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart
-                data={conversionCurve}
-                margin={{ top: 22, right: 28, left: 10, bottom: 0 }}
+            {STEPS.map(({ id, navLabel }, i) => (
+              <button
+                key={id}
+                type="button"
+                id={`step-nav-${id}`}
+                className={
+                  step === id ? 'step-nav-item step-nav-current' : 'step-nav-item'
+                }
+                aria-current={step === id ? 'step' : undefined}
+                aria-controls={`step-${id}`}
+                tabIndex={step === id ? 0 : -1}
+                onClick={() => goToStep(id)}
               >
-                <defs>
-                  <linearGradient id="conversionGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor={PALETTE.accent} stopOpacity={0.5} />
-                    <stop offset="95%" stopColor={PALETTE.accent} stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke={PALETTE.edge} />
-                <XAxis
-                  dataKey="income"
-                  type="number"
-                  domain={[0, conversionAxisMax]}
-                  tickFormatter={formatCompact}
-                  stroke={PALETTE.inkMuted}
-                />
-                <YAxis
-                  stroke={PALETTE.inkMuted}
-                  tickFormatter={(value) => `${value}%`}
-                  width={70}
-                  domain={[0, 'auto']}
-                />
-                <Tooltip
-                  content={
-                    <CustomTooltip
-                      ssBenefit={ssBenefit}
-                      segments={conversionSegments}
-                      filingStatus={filingStatus}
-                      muniInterest={muniInterest}
-                      qcd={qcd}
-                      ltcg={plannedLtcg}
-                      beneficiaries={beneficiaries}
-                      year={year}
-                    />
-                  }
-                />
-                {conversionFits && (
-                  <ReferenceArea
-                    className="conversion-band"
-                    x1={ordinaryIncome}
-                    x2={conversionTarget}
-                    fill={PALETTE.indigo}
-                    fillOpacity={0.2}
-                    stroke="none"
-                  />
-                )}
-                {conversionFits && (
-                  <ReferenceLine
-                    className="ceiling-line"
-                    x={conversionTarget}
-                    stroke={PALETTE.indigo}
-                    strokeDasharray="4 4"
-                    strokeWidth={2}
-                    /* The amount goes on the line rather than inside the
-                       band: "You are here" already runs rightwards from the
-                       band's near edge, and a narrow band would put the two
-                       on top of each other. Above the axis is free — this
-                       chart draws no IRMAA cliffs, which is what that strip
-                       carries on step 2. */
-                    label={{
-                      value: `${formatCurrency(sizing.conversion)} converted`,
-                      position: 'top',
-                      fill: PALETTE.indigoBright,
-                      fontSize: 11,
-                      fontWeight: 600,
-                    }}
-                  />
-                )}
-                {hereLine(ordinaryIncome, conversionAxisMax, PALETTE.amber)}
-                <Area
-                  type="stepAfter"
-                  dataKey="marginalRate"
-                  stroke={PALETTE.accent}
-                  strokeWidth={2}
-                  fill="url(#conversionGradient)"
-                />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-          {/* Deliberately not step 2's label. The two charts sweep the same
-              axis, so repeating its total-income formula here would say nothing
-              new; what is worth saying is which stretch of it this one draws. */}
-          <p className="chart-axis-label">
-            Other Income ($), the conversion included &mdash; step 2&apos;s own
-            axis, drawn out to {formatCurrency(conversionAxisMax)}
-          </p>
-
-          <p className="chart-key chart-key-conversion">
-            <span
-              className="chart-key-swatch chart-key-swatch-conversion"
-              aria-hidden="true"
-            />
-            {conversionFits ? (
-              <span>
-                <strong>The conversion, and the line it stops at.</strong> The
-                shaded band runs from your own {formatCurrency(ordinaryIncome)}{' '}
-                out to {formatCurrency(conversionTarget)} of other income &mdash;
-                the point at which the line you picked is reached, once the
-                benefit that the extra income drags into the tax base is counted.
-                That is why the band is shorter than the headroom the line
-                appears to offer. Every dollar inside it is charged at the rates
-                the curve draws above it.
-              </span>
-            ) : (
-              <span>
-                <strong>No band is drawn.</strong> Nothing fits under the line
-                you picked, so there is no conversion to shade. The amber marker
-                is still where you are standing.
-              </span>
-            )}
-          </p>
-
-          <CurveCaption
-            id="conversion-chart-caption"
-            segments={conversionSegments}
-            lead={`Step 2's own curve, redrawn out to ${formatCurrency(conversionAxisMax)}: left to right, the rate on the next dollar of other income is`}
-          />
-        </figure>
-
-        <fieldset className="input-group chart-slider ceiling-picker">
-          <legend>The line you would rather not cross</legend>
-          <div className="segmented segmented-stacked">
-            {ceilings.map(({ id, label, amount, measure }) => (
-              <label key={id} className="segmented-option">
-                <input
-                  type="radio"
-                  name="conversion-ceiling"
-                  value={id}
-                  checked={ceiling.id === id}
-                  onChange={() => {
-                    setCeilingId(id);
-                    announce('conversion');
-                  }}
-                />
-                <span>
-                  {label}
-                  <small className="segmented-caption">
-                    {formatCurrency(amount)} of {CONVERSION_MEASURE_LABELS[measure]}
-                  </small>
+                <span className="step-nav-number" aria-hidden="true">
+                  {i + 1}
                 </span>
-              </label>
+                {navLabel}
+              </button>
             ))}
           </div>
 
-          <p className="slider-readout">
-            {conversionFits ? (
-              <>
-                <strong>{formatCurrency(sizing.conversion)} fits.</strong> On
-                top of your {formatCurrency(ordinaryIncome)} of other income,
-                that conversion lands on the line you picked &mdash;{' '}
-                {ceiling.label}, {formatCurrency(ceiling.amount)} of{' '}
-                {ceilingMeasure}. It costs{' '}
-                <strong>{formatCurrency(sizing.taxCost)}</strong> in federal
-                tax, taking this year&apos;s bill from{' '}
-                {formatCurrency(sizing.taxBefore)} to{' '}
-                {formatCurrency(sizing.taxAfter)} &mdash; an average of{' '}
-                <strong>{sizing.costPerDollar}%</strong> on every dollar
-                converted, against <strong>{sizing.rateAboveCeiling}%</strong>{' '}
-                on the first dollar past the line.
-              </>
-            ) : sizing.alreadyOver ? (
-              <>
-                <strong>Nothing fits.</strong> This return is already{' '}
-                {formatCurrency(Math.round(-sizing.headroom))} past the line
-                you picked &mdash; {ceiling.label},{' '}
-                {formatCurrency(ceiling.amount)} of {ceilingMeasure} &mdash;
-                before a dollar is converted, so there is no room under it to
-                convert into. Take the other-income slider on step 2 down, or
-                pick a line further out.
-              </>
-            ) : (
-              <>
-                <strong>Nothing fits.</strong> This return sits within a dollar
-                of the line you picked &mdash; {ceiling.label},{' '}
-                {formatCurrency(ceiling.amount)} of {ceilingMeasure} &mdash; so
-                the largest conversion that stays under it rounds to nothing.
-                Pick a line further out to see what a conversion would cost.
-              </>
-            )}
-          </p>
-
-          <p className="slider-advice conversion-advice">
-            <strong>Past the line.</strong> {ceiling.note}
-          </p>
-        </fieldset>
-
-        <details className="explainer">
-          <summary>
-            <h2 id="conversion-what-heading">
-              What a Roth conversion is, and why it is sized rather than chosen
+          {/* ───── Step 2: what other income does to that benefit ───── */}
+          <section
+            className="step"
+            id="step-torpedo"
+            tabIndex={-1}
+            aria-labelledby="step-torpedo-heading"
+          >
+            <p className="step-kicker">Step 2 of {STEPS.length}</p>
+            <h2 className="step-heading" id="step-torpedo-heading">
+              The tax torpedo
             </h2>
-          </summary>
-          <div className="explainer-content">
-            <p>
-              A conversion moves money from a traditional IRA to a Roth IRA. The
-              whole amount is ordinary income in the year you do it &mdash; the
-              same as a withdrawal, and it lands on the same axis as everything
-              on step 2 &mdash; and after that it is never taxed again, is not a
-              required distribution at any age, and never counts toward
-              provisional income, so it never drags a benefit into the tax base
-              in a later year.
+            <p className="step-intro">
+              The chart prices every income from $0 to{' '}
+              {formatCurrency(axisMax)} &mdash; far enough right to reach the last
+              thing that happens to this return; the slider says which point along
+              it is yours.
             </p>
-            <p>
-              That is why the amount is worth solving for rather than picking. A
-              conversion is the one piece of income a retiree controls to the
-              dollar, and every line on this page has a cheap side and a dear
-              one. Converting up to a line is the cheap side taken in full;
-              converting a dollar past it buys the whole of the dear side, and
-              in the case of an IRMAA cliff, buys it for a whole year on the
-              strength of that single dollar.
-            </p>
-            <p>
-              Since 2018 a conversion cannot be undone: the Tax Cuts and Jobs
-              Act repealed recharacterisation for conversions, so the tax is
-              settled by 31 December of the year you convert. That is the other
-              half of the case for sizing it &mdash; there is no re-cutting it
-              in April when the return is prepared.
-            </p>
-          </div>
-        </details>
 
-        <details className="explainer">
-          <summary>
-            <h2 id="conversion-average-rate-heading">
-              Why the average rate is the number to compare
-            </h2>
-          </summary>
-          <div className="explainer-content">
-            <p>
-              The curve above prices the <em>next</em> dollar. A conversion is
-              not one dollar, it is a block of them that walks across the chart
-              from your own marker to the ceiling, picking up every rate in
-              between &mdash; so what it actually costs is the area under that
-              stretch, not the height of the curve at either end.
-            </p>
-            <p>
-              {conversionFits ? (
-                <>
-                  Here that is {formatCurrency(sizing.taxCost)} on{' '}
-                  {formatCurrency(sizing.conversion)}, or{' '}
-                  <strong>{sizing.costPerDollar}%</strong> averaged over the
-                  block. That is the figure to hold against the rate you expect
-                  in the years the money would otherwise come out: a conversion
-                  pays when it is cheaper than the future, and the future
-                  includes the years a surviving spouse files single on the same
-                  income, and the ten-year window an adult child has to empty an
-                  inherited IRA.
-                </>
+            <figure className="chart-figure">
+              <div
+                className="chart-container"
+                role="img"
+                aria-label={`Chart: the marginal tax rate on the next dollar of other income, plotted from $0 to ${formatCurrency(axisMax)}.`}
+                aria-describedby="torpedo-chart-caption"
+              >
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart
+                    data={curve}
+                    margin={{ top: 22, right: 28, left: 10, bottom: 0 }}
+                  >
+                    <defs>
+                      <linearGradient id="rateGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor={PALETTE.accent} stopOpacity={0.5} />
+                        <stop offset="95%" stopColor={PALETTE.accent} stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke={PALETTE.edge} />
+                    <XAxis
+                      dataKey="income"
+                      type="number"
+                      domain={[0, axisMax]}
+                      tickFormatter={formatCompact}
+                      stroke={PALETTE.inkMuted}
+                    />
+                    <YAxis
+                      stroke={PALETTE.inkMuted}
+                      tickFormatter={(value) => `${value}%`}
+                      width={70}
+                      domain={[0, 'auto']}
+                    />
+                    <Tooltip
+                      content={
+                        <CustomTooltip
+                          ssBenefit={ssBenefit}
+                          segments={segments}
+                          filingStatus={filingStatus}
+                          muniInterest={muniInterest}
+                          qcd={qcd}
+                          ltcg={plannedLtcg}
+                          beneficiaries={beneficiaries}
+                          year={year}
+                        />
+                      }
+                    />
+                    {cliffsOnChart.map((cliff) => (
+                      <ReferenceLine
+                        className="irmaa-cliff"
+                        key={cliff.tier}
+                        x={cliff.otherIncome}
+                        stroke={PALETTE.rose}
+                        strokeDasharray="4 4"
+                        label={{
+                          value: `IRMAA ${cliff.tier}`,
+                          position: 'top',
+                          fill: PALETTE.roseBright,
+                          fontSize: 11,
+                        }}
+                      />
+                    ))}
+                    {/* Pink rather than a second red: it is a cliff like the IRMAA
+                        ones, but it belongs to a different reader — the one still
+                        buying their own coverage — and the key underneath tells
+                        them apart by colour before it tells them apart in words.
+                        Fuchsia is what was left: the sky curve, the rose cliffs,
+                        the amber marker and every slider on the page already own a
+                        colour, muni interest's violet included. */}
+                    {subsidyCliffOnChart && (
+                      <ReferenceLine
+                        className="subsidy-cliff"
+                        x={subsidyCliffOnChart.otherIncome}
+                        stroke={PALETTE.fuchsia}
+                        strokeDasharray="4 4"
+                        label={{
+                          value: `${PTC_CLIFF_PERCENT * 100}% FPL`,
+                          position: 'top',
+                          fill: PALETTE.fuchsiaBright,
+                          fontSize: 11,
+                        }}
+                      />
+                    )}
+                    {hereLine(ordinaryIncome, axisMax, PALETTE.amber)}
+                    <Area
+                      type="stepAfter"
+                      dataKey="marginalRate"
+                      stroke={PALETTE.accent}
+                      strokeWidth={2}
+                      fill="url(#rateGradient)"
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+              <p className="chart-axis-label">
+                Other Income ($) &middot; Total income = Other income + {formatCurrency(ssBenefit)} SS
+                {plannedLtcg > 0
+                  ? `, of which ${formatCurrency(plannedLtcg)} is long-term gain`
+                  : ''}
+                {muniInterest > 0
+                  ? ` + ${formatCurrency(muniInterest)} tax-exempt interest`
+                  : ''}
+                {qcd > 0
+                  ? ` \u2212 ${formatCurrency(qcd)} given straight to charity`
+                  : ''}
+              </p>
+
+              {/* The lines have to carry their own key: what a cliff is gets
+                  explained in a disclosure further down the step, and a bare red
+                  dash on a tax chart explains nothing on its own. */}
+              {cliffsOnChart.length > 0 ? (
+                <p className="chart-key">
+                  <span className="chart-key-swatch" aria-hidden="true" />
+                  <span>
+                    <strong>Medicare&apos;s IRMAA cliffs.</strong> Crossing one raises
+                    the Part B and Part D premiums of everyone on this return who is
+                    enrolled, for a full year &mdash; and it is a cliff, not a phase-in, so
+                    a single dollar over the line buys the whole step.{' '}
+                    {cliffPriceList}
+                    {beneficiaries > 1 ? ', for the two of you' : ''}. None of that is
+                    tax, so none of it is in the curve above.
+                  </span>
+                </p>
+              ) : firstCliffPastAxis ? (
+                <p className="chart-key">
+                  <span>
+                    <strong>No Medicare IRMAA cliff falls on this chart.</strong> The
+                    first one this return could reach needs{' '}
+                    {formatCurrency(firstCliffPastAxis.magi)} of MAGI &mdash;{' '}
+                    {formatCurrency(Math.round(firstCliffPastAxis.otherIncome))} of
+                    other income, past the right edge of the axis &mdash; and would cost{' '}
+                    {formatCurrency(firstCliffPastAxis.step)}/yr in Medicare premiums
+                    {beneficiaries > 1 ? ' for the two of you' : ''}.
+                  </span>
+                </p>
+              ) : null}
+
+              {/* The second key, for the second cliff. It renders whenever this
+                  return is one the credit could reach — under 65, in a year that
+                  has a cliff — and says where the line is even when the line is
+                  not drawn, because "no line" and "off the right edge" are
+                  different answers. */}
+              {preMedicare && subsidyCliff ? (
+                <p className="chart-key chart-key-subsidy">
+                  <span
+                    className="chart-key-swatch chart-key-swatch-subsidy"
+                    aria-hidden="true"
+                  />
+                  <span>
+                    {subsidyCliffOnChart ? (
+                      <>
+                        <strong>
+                          The {PTC_CLIFF_PERCENT * 100}% poverty-line cliff.
+                        </strong>{' '}
+                        Household income over{' '}
+                        {formatCurrency(subsidyCliff.magi)} &mdash;{' '}
+                        {PTC_CLIFF_PERCENT * 100}% of the{' '}
+                        {formatCurrency(subsidyCliff.povertyLine)} poverty line for a
+                        household of {subsidyCliff.householdSize}, reached at{' '}
+                        {formatCurrency(Math.round(subsidyCliff.otherIncome))} of
+                        other income &mdash; ends the Marketplace premium tax credit
+                        for the whole year. Under the line this household pays at most{' '}
+                        {formatCurrency(subsidyCliff.cappedContribution)} for the
+                        benchmark plan; over it, the whole premium.
+                      </>
+                    ) : subsidyCliff.otherIncome <= 0 ? (
+                      <>
+                        <strong>
+                          Already past the {PTC_CLIFF_PERCENT * 100}% poverty-line
+                          cliff.
+                        </strong>{' '}
+                        The benefit and tax-exempt interest set above come to more
+                        than {formatCurrency(subsidyCliff.magi)} on their own, so
+                        there is no Marketplace premium tax credit to lose at any
+                        point on this chart.
+                      </>
+                    ) : (
+                      <>
+                        <strong>
+                          The {PTC_CLIFF_PERCENT * 100}% poverty-line cliff is off
+                          the right edge.
+                        </strong>{' '}
+                        It needs {formatCurrency(subsidyCliff.magi)} of household
+                        income &mdash;{' '}
+                        {formatCurrency(Math.round(subsidyCliff.otherIncome))} of
+                        other income &mdash; and past it there is no Marketplace
+                        premium tax credit for the year.
+                      </>
+                    )}{' '}
+                    Only for coverage bought on the Marketplace, and only until
+                    Medicare starts.
+                  </span>
+                </p>
+              ) : null}
+
+              <CurveCaption
+                id="torpedo-chart-caption"
+                segments={segments}
+                lead="Left to right, the rate on the next dollar of other income is"
+              />
+            </figure>
+
+            <div className="input-group chart-slider">
+              <div className="slider-header">
+                <label htmlFor="ordinary-income">Other Income (not Social Security)</label>
+                <span className="slider-value amber">{formatCurrency(ordinaryIncome)}</span>
+              </div>
+              <input
+                id="ordinary-income"
+                type="range"
+                min={0}
+                max={axisMax}
+                step={incomeSliderStep}
+                value={ordinaryIncome}
+                onChange={(e) => changeOrdinaryIncome(Number(e.target.value))}
+                className="slider-amber"
+              />
+              <div className="slider-range-labels">
+                <span>$0</span>
+                <span>{formatCurrency(axisMax)}</span>
+              </div>
+
+              <p className="slider-readout">
+                <strong>You are here.</strong> At {formatCurrency(ordinaryIncome)} of
+                other income the next dollar is taxed at{' '}
+                <strong>{herePoint ? `${herePoint.marginalRate}%` : '\u2014'}</strong>,
+                where the dashed amber line crosses the curve above &mdash; that
+                point on the curve, not the curve itself, is what the slider moves.
+                {herePoint && totalIncome > 0 ? (
+                  <>
+                    {' '}
+                    The return itself owes{' '}
+                    <strong>{formatCurrency(herePoint.totalTax)}</strong> in federal
+                    tax on {formatCurrency(totalIncome)} of total income &mdash; an
+                    effective rate of{' '}
+                    <strong>{formatPercent(effectiveRateOn(herePoint.totalTax))}</strong>
+                    . That is the average across every dollar of it; the figure
+                    before it is the price of the next one.
+                  </>
+                ) : null}
+                {plannedLtcg > 0
+                  ? ` Step 3 has ${formatCurrency(plannedLtcg)} of this coming from long-term gains, which is priced into the curve rather than added to it.`
+                  : ''}
+              </p>
+
+              <StandingNote standing={standing} at={ordinaryIncome} />
+            </div>
+
+            {/* State tax as a footnote rather than a step of its own: the data is
+                text, so what it needs is a paragraph and a citation, not a chart.
+                The rule stays quotable even when the state has dropped off the
+                year's list — West Virginia does exactly that between 2025 and
+                2026 — which is the second branch here. */}
+            <p className="state-footnote" role="note">
+              {homeStateRule ? (
+                homeStateTaxes ? (
+                  <>
+                    <strong>
+                      {homeStateRule.state} taxes part of this benefit as well, and
+                      the curve above does not.
+                    </strong>{' '}
+                    {homeStateRule.mechanism}. {homeStateRule.rule} The {year} test
+                    is <em>{homeStateRule.test[year]}</em>.
+                    {homeStateDeltas.map((delta) => (
+                      <React.Fragment key={delta.year}>
+                        {' '}
+                        It reads differently in {delta.year}: <em>{delta.test}</em>.
+                      </React.Fragment>
+                    ))}{' '}
+                    <span className="state-source">
+                      {homeStateRule.source}.
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <strong>
+                      {homeStateRule.state} stopped taxing benefits in{' '}
+                      {homeStateRule.exemptFrom}.
+                    </strong>{' '}
+                    {homeStateRule.rule} So on a {year} return the curve above is
+                    the whole of what this benefit costs: {homeStateRule.state}{' '}
+                    still taxes other income, but no part of the benefit.{' '}
+                    <span className="state-source">
+                      {homeStateRule.source}.
+                    </span>
+                  </>
+                )
               ) : (
                 <>
-                  With nothing fitting under the line you picked there is no
-                  block to average, but the comparison is unchanged: the average
-                  cost of a conversion is the figure to hold against the rate
-                  you expect in the years the money would otherwise come out
-                  &mdash; including the years a surviving spouse files single on
-                  the same income, and the ten-year window an adult child has to
-                  empty an inherited IRA.
+                  <strong>Every figure on this page is a federal one.</strong>{' '}
+                  {statesTaxing.length} states still reach a Social Security benefit
+                  in {year} —{' '}
+                  {sentenceList(statesTaxing.map((rule) => rule.state))} — and a
+                  reader in one of them is looking at a curve that understates their
+                  own bill.{' '}
+                  {movingStates.length > 0 ? (
+                    <>
+                      {sentenceList(movingStates.map((rule) => rule.state))}{' '}
+                      {movingStates.length > 1 ? 'read' : 'reads'} differently in
+                      the other year this page prices, so the tax year set in step 1
+                      moves {movingStates.length > 1 ? 'them' : 'it'} too.{' '}
+                    </>
+                  ) : null}
+                  Name your state in step 1 and this footnote says what it does.
                 </>
               )}
             </p>
-            <p>
-              The average is always lower than the rate at the far end and
-              always higher than the rate at the near one, which is the whole
-              reason a conversion sized to a line beats a conversion sized to a
-              bracket rate. It is also why a conversion that runs <em>through</em>{' '}
-              the torpedo can still pay: the hump is priced into the average
-              once, rather than paid year after year by a reader who sits inside
-              it.
-            </p>
-            <p>
-              Two costs are outside these figures. The Medicare surcharge is not
-              tax and appears in none of them &mdash; if the line you picked is
-              an IRMAA tier, crossing it costs the surcharge on top of whatever
-              the curve says. And state income tax is not here at all; this page
-              is federal only.
-            </p>
-          </div>
-        </details>
 
-        <details className="explainer">
-          <summary>
-            <h2 id="conversion-ceilings-heading">
-              The six lines, and what each one is
+            <details className="explainer">
+              <summary>
+                <h2 id="tax-torpedo-heading">What is the tax torpedo?</h2>
+              </summary>
+              <div className="explainer-content">
+                <p>
+                  Social Security benefits are not taxed dollar-for-dollar. The taxable
+                  share depends on <strong>provisional income</strong> — other income
+                  plus half of your benefits.{' '}
+                  {ssBase85 > 0 ? (
+                    <>
+                      Once provisional income passes {formatCurrency(ssBase50)}, each
+                      extra dollar of other income also drags up to 50&cent; of
+                      benefits into taxable income; past {formatCurrency(ssBase85)}, it
+                      drags in up to 85&cent;. (The thresholds shown are for the filing
+                      status selected above.)
+                    </>
+                  ) : (
+                    <>
+                      On the separate return selected above both thresholds are $0, so
+                      there is nothing to pass: every dollar of provisional income
+                      brings 85&cent; of benefits with it from the very first one,
+                      until the 85% cap stops it.
+                    </>
+                  )}
+                </p>
+                <p>
+                  So one more dollar earned can raise taxable income by as much as
+                  $1.85, and the marginal rate jumps to up to 1.85&times; the statutory
+                  bracket: income in the 12% bracket is effectively taxed at{' '}
+                  <strong>22.2%</strong>, and income in the 22% bracket at{' '}
+                  <strong>40.7%</strong>. That spike above the ordinary bracket rates is
+                  the <strong>tax torpedo</strong>.
+                </p>
+                <p>
+                  The torpedo ends as abruptly as it begins. At most 85% of benefits
+                  can ever be taxable, and once that cap is reached, additional income
+                  stops pulling in benefits — the marginal rate falls straight back to
+                  the ordinary bracket, creating the cliff on the right side of the
+                  spike. Larger benefits stretch the torpedo across a wider income
+                  range (try the slider above), and because the thresholds are fixed in
+                  law rather than indexed for inflation, more retirees sail into it
+                  every year.
+                </p>
+              </div>
+            </details>
+
+            <details className="explainer">
+              <summary>
+                <h2 id="torpedo-strategies-heading">How to mitigate the tax torpedo</h2>
+              </summary>
+              <div className="explainer-content">
+                <ul>
+                  <li>
+                    <strong>Spend from Roth accounts.</strong> Qualified withdrawals
+                    from a Roth IRA or Roth 401(k) are excluded from provisional income
+                    entirely.
+                  </li>
+                  <li>
+                    <strong>Spend from taxable accounts.</strong> Selling from a
+                    taxable brokerage account adds only the gain to provisional income;
+                    the return of your own cost basis is tax-free.
+                  </li>
+                  <li>
+                    <strong>If you can&apos;t go under it, go past it.</strong> Once
+                    the 85% cap is reached, extra income is taxed at plain bracket
+                    rates again. Bunching income — say, one large Roth conversion —
+                    into a single year can cost less than sitting in the middle of the
+                    spike year after year.
+                  </li>
+                  {filingStatus === 'mfs' && (
+                    <li>
+                      <strong>Price out filing jointly.</strong> A separate return
+                      that lived with the spouse gives up the{' '}
+                      {formatCurrency(SS_BASES.mfj.ssBase50)} and{' '}
+                      {formatCurrency(SS_BASES.mfj.ssBase85)} thresholds, the{' '}
+                      {formatCurrency(SENIOR_DEDUCTION)} senior deduction, and the
+                      lower IRMAA tiers all at once. Separate filing is usually driven
+                      by something else — income-driven student-loan repayment, a
+                      spouse&apos;s liability, an ongoing separation — so compare the
+                      two returns before assuming it still pays.
+                    </li>
+                  )}
+                </ul>
+                <p>
+                  The right mix depends on account balances, state taxes, Medicare
+                  premium surcharges, and more. The chart above makes the goal concrete:
+                  keep provisional income out of the spike, or jump clean over it.
+                </p>
+              </div>
+            </details>
+
+            <details className="explainer">
+              <summary>
+                <h2 id="irmaa-cliffs-heading">
+                  Medicare&apos;s IRMAA cliffs &mdash; the red dashed lines
+                </h2>
+              </summary>
+              <div className="explainer-content">
+                <p>
+                  Above a MAGI threshold, Medicare adds an{' '}
+                  <strong>income-related monthly adjustment amount</strong> to the
+                  Part B and Part D premiums of everyone on the return who is
+                  enrolled. Unlike the torpedo, it is not a phase-in: one dollar over
+                  a threshold triggers the whole surcharge for twelve months. The
+                  first cliff this return can reach costs{' '}
+                  <strong>{formatCurrency(cliffs[0].step)}</strong> a year
+                  {beneficiaries > 1 ? ' for the two of you' : ''} &mdash; on a single
+                  dollar of income.
+                  {cliffs[0].tier > 1
+                    ? ` A separate return has no access to tiers 1 through 3: 42 U.S.C. 1395r(i)(3)(C) gives it a two-step schedule of its own, so its first cliff is tier ${cliffs[0].tier} and the whole surcharge lands at once.`
+                    : ''}
+                </p>
+                <p>
+                  The lines sit at less other income than their MAGI figures suggest,
+                  because the benefits the torpedo drags into AGI get there first
+                  {muniInterest > 0
+                    ? `, and because Medicare's MAGI is wider than the tax code's — the ${formatCurrency(muniInterest)} of tax-exempt interest set above is added straight back in, moving every line ${formatCurrency(muniInterest)} further left`
+                    : '. Medicare\u2019s MAGI is also wider than the tax code\u2019s: tax-exempt interest is added straight back in, so muni bonds move these lines as well as the torpedo'}
+                  . A charitable distribution moves them the other way, because it
+                  never reaches AGI at all.
+                </p>
+                <p>
+                  <strong>The x-axis caveat.</strong> Medicare bills on a{' '}
+                  {IRMAA_LOOKBACK_YEARS}-year lag: the {year} premiums these lines are
+                  priced from are set by {irmaaMagiYear(year)} MAGI, so the {year}{' '}
+                  income on this chart is really setting the premium for{' '}
+                  {year + IRMAA_LOOKBACK_YEARS}, under a schedule CMS has not
+                  published yet. Treat the lines as where the cliffs would fall at{' '}
+                  {year} thresholds, not as a bill. The lag cuts both ways: a Roth
+                  conversion made now surfaces as a premium two years later, and a
+                  one-off spike &mdash; a home sale, an inherited IRA &mdash; keeps
+                  costing after the income is gone. Retiring or losing that income is
+                  a life-changing event you can appeal on Form SSA-44 rather than
+                  simply wait out.
+                </p>
+                <p>
+                  The surcharge never appears on a tax return, which is exactly why it
+                  is worth planning around: nothing about filing reveals that one
+                  dollar of income cost {formatCurrency(cliffs[0].step)}. It is not
+                  included in any of the tax figures on this page either &mdash; the
+                  curve above is federal income tax only.
+                </p>
+              </div>
+            </details>
+
+            {preMedicare ? (
+              <details className="explainer">
+                <summary>
+                  {/* The line is only drawn in a year that has one, so the
+                      heading only points at it in a year that has one. */}
+                  <h2 id="subsidy-cliff-heading">
+                    The {PTC_CLIFF_PERCENT * 100}% poverty-line cliff
+                    {subsidyCliff ? <> &mdash; the pink dashed line</> : null}
+                  </h2>
+                </summary>
+                <div className="explainer-content">
+                  {subsidyCliff ? (
+                    <>
+                      <p>
+                        Health coverage bought on the Marketplace comes with a{' '}
+                        <strong>premium tax credit</strong> that pays whatever the
+                        benchmark silver plan costs above a set share of household
+                        income. IRC 36B(c)(1)(A) allows it to a household whose
+                        income is &ldquo;at least 100 percent but not more than 400
+                        percent&rdquo; of the federal poverty line. There is no row
+                        in the table past 400%, so past 400% the credit is not
+                        smaller &mdash; it is nothing. For this household that line
+                        is {formatCurrency(subsidyCliff.magi)}:{' '}
+                        {PTC_CLIFF_PERCENT * 100}% of the{' '}
+                        {formatCurrency(subsidyCliff.povertyLine)} poverty line for{' '}
+                        {subsidyCliff.householdSize === 1
+                          ? 'one person'
+                          : `${subsidyCliff.householdSize} people`}
+                        .
+                      </p>
+                      <p>
+                        <strong>What it costs is not on this page.</strong> Just
+                        under the line the household pays at most{' '}
+                        {(subsidyCliff.topApplicablePercentage * 100).toFixed(2)}% of
+                        its income &mdash;{' '}
+                        {formatCurrency(subsidyCliff.cappedContribution)} &mdash; for
+                        the benchmark plan, and the credit covers the rest. One
+                        dollar over, it pays the full premium, which depends on ages
+                        and county and which this page has no way to know. So the
+                        line is drawn where it falls and the loss is left blank: for
+                        a couple in their early sixties it is routinely five figures.
+                      </p>
+                      <p>
+                        <strong>It is not Medicare&apos;s line, or the tax
+                        code&apos;s.</strong> 36B(d)(2)(B) counts AGI plus
+                        tax-exempt interest plus{' '}
+                        <em>the untaxed part of the Social Security benefit</em>.
+                        That last term undoes the torpedo: whatever share of the{' '}
+                        {formatCurrency(ssBenefit)} benefit stays out of the tax
+                        base, this adds straight back, so the whole benefit counts
+                        at every income level. The practical difference shows in
+                        where the lines sit: raise the benefit by a dollar and the
+                        pink line moves a full dollar left, while the red ones move
+                        at most 85 cents, because 85 cents is all of that dollar
+                        that can ever reach the tax base. Two cliffs, two MAGIs, and
+                        no reading one off the other.
+                      </p>
+                      <p>
+                        <strong>You are here.</strong> This return&apos;s household
+                        income is {formatCurrency(Math.round(hereSubsidy.magi))},{' '}
+                        {(hereSubsidy.fplMultiple * 100).toFixed(0)}% of the poverty
+                        line.{' '}
+                        {hereSubsidy.overCliff
+                          ? 'That is past the cliff: there is no premium tax credit for this year, and coming back under it takes ' +
+                            formatCurrency(
+                              Math.round(hereSubsidy.magi - (hereSubsidy.cliffMagi ?? 0)),
+                            ) +
+                            ' less income.'
+                          : `Another ${formatCurrency(
+                              Math.round(hereSubsidy.headroom ?? 0),
+                            )} of it reaches the line, and the dollar after that is the one that costs.`}
+                      </p>
+                      <p>
+                        <strong>The cliff is back, and it was gone.</strong> From
+                        2021 through 2025 there was no 400% ceiling at all: ARPA
+                        section 9661, extended by the Inflation Reduction Act,
+                        replaced the table with one that ran past 400% and capped
+                        the household&apos;s own share at 8.5% of income however
+                        high income went. That expired for tax years beginning after
+                        2025. The poverty line itself runs{' '}
+                        {FPL_GUIDELINE_LOOKBACK_YEARS} year behind, where
+                        Medicare&apos;s MAGI runs {IRMAA_LOOKBACK_YEARS}: 26 CFR
+                        1.36B-1(h) fixes it at the guidelines in effect when open
+                        enrolment began, which is the previous 1 November, so {year}{' '}
+                        coverage is priced off the {fplGuidelineYear(year)}{' '}
+                        guidelines &mdash; already a year old when the year starts.
+                      </p>
+                      <p>
+                        <strong>Who this is not for.</strong> Nobody enrolled in
+                        Medicare is eligible for the credit, which is why the line
+                        disappears from this chart once everyone on the return has
+                        turned 65 &mdash; and why a couple with one spouse on either
+                        side of 65 is standing in front of both cliffs at once.
+                        Coverage from an employer, a retiree plan or a spouse&apos;s
+                        plan takes the credit away too, so a reader with any of
+                        those can read this line as decoration. The poverty line
+                        used here is the one for the 48 contiguous states and DC;
+                        Alaska and Hawaii have their own, higher, so the line falls
+                        further right there than it is drawn.{' '}
+                        {subsidyCliff.householdSize === 1
+                          ? 'A dependent would move it right by about $5,500 of income, and this page has no field for one.'
+                          : 'A dependent past the two people this filing status implies would move it right by about $5,500 of income, and this page has no field for one.'}
+                      </p>
+                    </>
+                  ) : (
+                    <p>
+                      On a {year} return there is no cliff to draw. ARPA section
+                      9661, extended through 2025 by the Inflation Reduction Act,
+                      took the 400% ceiling out of IRC 36B(c)(1)(A) and capped a
+                      household&apos;s own share of the benchmark premium at 8.5% of
+                      income at every income level, so the Marketplace credit tapers
+                      away instead of stopping. It returns for tax years beginning
+                      after 2025: switch the year above to see where it falls.
+                    </p>
+                  )}
+                </div>
+              </details>
+            ) : null}
+
+            <details className="explainer">
+              <summary>
+                <h2 id="senior-deduction-heading">
+                  The senior deduction phaseout ({SENIOR_DEDUCTION_FIRST_YEAR}&ndash;
+                  {SENIOR_DEDUCTION_LAST_YEAR})
+                </h2>
+              </summary>
+              <div className="explainer-content">
+                {phaseoutStart === null || phaseoutEnd === null ? (
+                <p>
+                  Not on this return. Section 151(d)(5)(C)(v) makes the temporary{' '}
+                  {formatCurrency(SENIOR_DEDUCTION)} deduction conditional on a married
+                  taxpayer filing jointly, so a separate filer gets none of it — no
+                  halved amount, no halved {formatCurrency(75_000)} threshold, nothing.
+                  Between that and the $0 Social Security bases, filing separately
+                  while living together costs a retired couple the deduction and the
+                  thresholds at once. Switch to Married Filing Jointly above to see
+                  what the phaseout looks like when it applies.
+                </p>
+                ) : (
+                <>
+                <p>
+                  For tax years {SENIOR_DEDUCTION_FIRST_YEAR} through{' '}
+                  {SENIOR_DEDUCTION_LAST_YEAR} only, anyone who reaches age 65 gets an
+                  extra <strong>{formatCurrency(SENIOR_DEDUCTION)}</strong> deduction —
+                  on top of the standard deduction, on top of the age-65 addition to
+                  it, and whether or not they itemize. A couple filing jointly with
+                  both spouses over 65 gets {formatCurrency(2 * SENIOR_DEDUCTION)}.
+                </p>
+                <p>
+                  The catch is the phaseout. Each qualifying person&apos;s{' '}
+                  {formatCurrency(SENIOR_DEDUCTION)} shrinks by{' '}
+                  {formatCents(SENIOR_DEDUCTION_PHASEOUT_RATE)} for every dollar of
+                  MAGI above {formatCurrency(phaseoutStart)}, so it is gone at{' '}
+                  {formatCurrency(phaseoutEnd)} — exactly $100,000 later, for every
+                  status that has one, because a couple where both spouses qualify has
+                  twice as much deduction to lose and loses it twice as fast.
+                </p>
+                <p>
+                  Inside that range every extra dollar of income does double duty: it
+                  is taxed, and it destroys {formatCents(phaseoutRate)} of deduction.
+                  Taxable income therefore rises by{' '}
+                  <strong>${taxableIncomePerDollar.toFixed(2)}</strong> per dollar
+                  earned, and the 22% bracket bites at{' '}
+                  <strong>{formatPercent(0.22 * taxableIncomePerDollar)}</strong>. That
+                  is a surtax that appears nowhere on the rate schedule.
+                </p>
+                <p>
+                  Worse, the two humps multiply. MAGI is AGI, which already includes
+                  whatever share of your benefits the torpedo has dragged into taxable
+                  income — so where the torpedo and the phaseout overlap, one extra
+                  dollar raises taxable income by 1.85 &times;{' '}
+                  {taxableIncomePerDollar.toFixed(2)} ={' '}
+                  <strong>${(1.85 * taxableIncomePerDollar).toFixed(2)}</strong>, and
+                  22% becomes{' '}
+                  <strong>
+                    {formatPercent(0.22 * 1.85 * taxableIncomePerDollar)}
+                  </strong>
+                  .
+                </p>
+                <p>
+                  On the chart above, the second hump starts where MAGI clears{' '}
+                  {formatCurrency(phaseoutStart)} — at less of your own income than
+                  that, since the taxable part of your benefits counts toward MAGI too.
+                  The rate falls back once the deduction is fully gone at{' '}
+                  {formatCurrency(phaseoutEnd)} of MAGI, which{' '}
+                  {phaseoutEndsOnChart
+                    ? 'is inside the chart at the benefit selected above'
+                    : 'sits past the right edge of the chart at the benefit selected above'}
+                  . Note that tax-exempt interest is <em>not</em> added back for this
+                  phaseout, unlike the MAGI Medicare uses for IRMAA.
+                </p>
+                </>
+                )}
+              </div>
+            </details>
+
+            {nextStepBox(1)}
+          </section>
+
+          {/* ───── Step 3: what kind of income the step-2 figure is ───── */}
+          <section
+            className="step"
+            id="step-gains"
+            tabIndex={-1}
+            aria-labelledby="step-gains-heading"
+          >
+            <p className="step-kicker">Step 3 of {STEPS.length}</p>
+            <h2 className="step-heading" id="step-gains-heading">
+              Capital Gains Stacking
             </h2>
-          </summary>
-          <div className="explainer-content">
-            <p>
-              Each line is a different kind of edge, and they are not in the
-              same order on every return &mdash; a large benefit can put the
-              85% base to the left of the 12% bracket top, and a separate return
-              collapses both bases onto $0. The figures below are this
-              return&apos;s, for {year}.
+
+            <p className="step-intro">
+              Step 2 asked how much income you have. This step asks what kind it
+              is: how much of that {formatCurrency(ordinaryIncome)} is a long-term
+              capital gain? A gain is part of that figure, not another figure on
+              top of it &mdash; so the chart holds your total income still and moves
+              only the split.
             </p>
-            <ul>
-              {ceilings.map((c) => (
-                <li key={c.id}>
-                  <strong>{c.label}</strong> &mdash;{' '}
-                  {formatCurrency(c.amount)} of{' '}
-                  {CONVERSION_MEASURE_LABELS[c.measure]}. {c.note}
-                </li>
-              ))}
-            </ul>
-            <p>
-              Four different income definitions are in that list, which is the
-              trap it exists to spring. Taxable income is after the standard
-              deduction; provisional income is before it and counts tax-exempt
-              interest and half the benefit; Medicare&apos;s MAGI is adjusted
-              gross income with tax-exempt interest added back. A conversion
-              that clears one line by $5,000 can be $5,000 over another.
+
+            {/* A gain is a share of the income entered in step 2, so with that
+                income at $0 there is nothing to take a share of: the axis has no
+                width, the slider has no travel and the curve has one point. Say so
+                rather than draw it. */}
+            {gainsAxisMax === 0 ? (
+              <p className="step-prose">
+                <strong>Nothing to split yet.</strong> Step 2 has your other income
+                at $0. A long-term gain is a share of the income you have rather
+                than an addition to it, so there is no axis to draw until something
+                is set there — move the other-income slider on step 2 and this
+                step comes back.
+              </p>
+            ) : (
+              <>
+              <figure className="chart-figure">
+                <div
+                  className="chart-container"
+                  role="img"
+                  aria-label={`Chart: the marginal tax rate as more of ${formatCurrency(ordinaryIncome)} of other income is taken as long-term capital gain, plotted from $0 to ${formatCurrency(gainsAxisMax)}.`}
+                  aria-describedby="gains-chart-caption"
+                >
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart
+                      data={ltcgCurve}
+                      margin={{ top: 10, right: 10, left: 10, bottom: 0 }}
+                    >
+                      <defs>
+                        <linearGradient id="ltcgGradient" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor={PALETTE.amber} stopOpacity={0.5} />
+                          <stop offset="95%" stopColor={PALETTE.amber} stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke={PALETTE.edge} />
+                      <XAxis
+                        dataKey="ltcg"
+                        type="number"
+                        domain={[0, gainsAxisMax]}
+                        tickFormatter={formatCompact}
+                        stroke={PALETTE.inkMuted}
+                      />
+                      <YAxis
+                        stroke={PALETTE.inkMuted}
+                        tickFormatter={(value) => `${value}%`}
+                        width={70}
+                        domain={[0, 'auto']}
+                      />
+                      <Tooltip
+                        content={
+                          <LTCGTooltip
+                            ordinaryIncome={ordinaryIncome}
+                            ssBenefit={ssBenefit}
+                            segments={ltcgSegments}
+                            muniInterest={muniInterest}
+                            qcd={qcd}
+                            filingStatus={filingStatus}
+                            year={year}
+                          />
+                        }
+                      />
+                      {hereLine(plannedLtcg, gainsAxisMax, PALETTE.emerald)}
+                      <Area
+                        type="stepAfter"
+                        dataKey="marginalRate"
+                        stroke={PALETTE.amber}
+                        strokeWidth={2}
+                        fill="url(#ltcgGradient)"
+                      />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+                {/* The same total the tooltip above quotes, from the same
+                    definition — this line used to leave out tax-exempt interest
+                    and the charitable gift, so it disagreed with the sentence
+                    under step 2's chart about the very same return. And the sweep
+                    holds it still only when nothing is being given away: a gift
+                    comes out of the ordinary half alone, so past a point the gain
+                    crowds it out. */}
+                <p className="chart-axis-label">
+                  Long-Term Capital Gains, out of {formatCurrency(ordinaryIncome)} of
+                  other income ($) &middot; Total income{' '}
+                  {formatCurrency(totalIncome)}
+                  {given > 0
+                    ? ' where you stand \u2014 the further right you go, the less of the gift has ordinary income to come out of, so the more of this income reaches the return'
+                    : ' at every point on this axis'}
+                </p>
+
+                <CurveCaption
+                  id="gains-chart-caption"
+                  segments={ltcgSegments}
+                  lead="Left to right, the rate on the next dollar taken as gain rather than as ordinary income is"
+                />
+              </figure>
+
+              <div className="input-group chart-slider">
+                <div className="slider-header">
+                  <label htmlFor="planned-ltcg">
+                    Long-Term Capital Gains Inside That Income
+                  </label>
+                  <span className="slider-value emerald">{formatCurrency(plannedLtcg)}</span>
+                </div>
+                <input
+                  id="planned-ltcg"
+                  type="range"
+                  min={0}
+                  max={gainsAxisMax}
+                  step={500}
+                  value={plannedLtcg}
+                  onChange={(e) => {
+                    setPlannedLtcg(Number(e.target.value));
+                    announce('gains');
+                  }}
+                  className="slider-emerald"
+                />
+                <div className="slider-range-labels">
+                  <span>None of it</span>
+                  <span>All {formatCurrency(gainsAxisMax)} of it</span>
+                </div>
+
+                <p className="slider-readout">
+                  <strong>You are here.</strong> With {formatCurrency(plannedLtcg)} of
+                  your {formatCurrency(ordinaryIncome)} coming from long-term gains,
+                  the next dollar of gain is taxed at{' '}
+                  <strong>
+                    {hereGainPoint ? `${hereGainPoint.marginalRate}%` : '\u2014'}
+                  </strong>
+                  , where the dashed emerald line crosses the curve above
+                  {hereGainPoint && hereGainPoint.marginalRate > 20
+                    ? ' \u2014 past the 20% ceiling a gain can be charged on its own, so the rest of it is benefit being dragged into the tax base alongside the gain.'
+                    : '.'}
+                  {mixSaving === null ? null : mixSaving > 0 ? (
+                    <>
+                      {' '}
+                      Splitting the same {formatCurrency(ordinaryIncome)} this way
+                      rather than taking all of it as ordinary income saves{' '}
+                      <strong>{formatCurrency(mixSaving)}</strong> in federal tax.
+                    </>
+                  ) : (
+                    <>
+                      {' '}
+                      Splitting the same {formatCurrency(ordinaryIncome)} this way
+                      rather than taking all of it as ordinary income changes the
+                      federal tax by nothing at all &mdash; at this income the
+                      ordinary schedule and the capital-gain one charge the same.
+                    </>
+                  )}
+                  {hereGainPoint && totalIncome > 0 ? (
+                    <>
+                      {' '}
+                      All told the return owes{' '}
+                      <strong>{formatCurrency(hereGainPoint.totalTax)}</strong> in
+                      federal tax on the {formatCurrency(totalIncome)} of total
+                      income behind this chart
+                      {given > 0 ? '' : ', which this slider never moves'} &mdash;
+                      an effective rate of{' '}
+                      <strong>
+                        {formatPercent(effectiveRateOn(hereGainPoint.totalTax))}
+                      </strong>
+                      .{' '}
+                      {given > 0
+                        ? 'Mostly the same dollars, taxed differently: the slider moves the bill, and it moves the income only where the gain has crowded the gift out of the ordinary half.'
+                        : 'The same dollars, taxed differently: what the slider moves is the bill, not the income.'}
+                    </>
+                  ) : null}
+                  {hereSurtax > 0 ? (
+                    <>
+                      {' '}
+                      <strong>{formatCurrency(hereSurtax)}</strong> of that is the
+                      3.8% surtax of section 1411, charged on{' '}
+                      {formatCurrency(hereNiit.base)} of the gain because{' '}
+                      {formatCurrency(hereNiit.magi)} of MAGI clears the{' '}
+                      {formatCurrency(hereNiit.threshold)} threshold.
+                    </>
+                  ) : null}
+                </p>
+              </div>
+              </>
+            )}
+
+            <details className="explainer">
+              <summary>
+                <h2 id="ltcg-stacking-heading">Why the two effects stack</h2>
+              </summary>
+              <div className="explainer-content">
+                <p>
+                  Long-term capital gains (LTCG) count fully toward{' '}
+                  <strong>provisional income</strong> for Social Security taxability,
+                  yet they are taxed in their own preferential bracket (0%/15%/20%).
+                  When ordinary income pushes Social Security benefits into the
+                  taxable base, LTCG can simultaneously shove gains out of the
+                  0% bracket into 15%&nbsp;— stacking two effects at once.
+                </p>
+                <p>
+                  The axis above is the <strong>split</strong>, not the size. Every
+                  point on it prices the same{' '}
+                  {formatCurrency(ordinaryIncome + ssBenefit)} of total income and
+                  differs only in how much of it is gain. That holds provisional
+                  income still — a dollar of gain and a dollar of ordinary income
+                  raise it identically — so the taxable share of your benefit is the
+                  same all the way across, and what moves is which rate schedule
+                  each dollar is charged under and how much of the gain fits below
+                  the 0% ceiling.
+                </p>
+                <p>
+                  The <em>height</em> of the curve answers the other question: what
+                  the next dollar of gain would cost on top of everything. That is
+                  where the two effects compound — the dollar is charged its own
+                  preferential rate <em>and</em> drags up to 85&cent; of benefit
+                  into the tax base at ordinary rates, so the combined figure can
+                  run well past the statutory 15%. The same compounding shows up on
+                  step 2&apos;s chart from the other side: with a gain set, the next
+                  dollar of ordinary income lifts the whole gain stack with it, and
+                  can shove part of it out of the 0% band into 15%.
+                </p>
+              </div>
+            </details>
+
+            <details className="explainer">
+              <summary>
+                <h2 id="niit-heading">The third effect: the 3.8% surtax</h2>
+              </summary>
+              <div className="explainer-content">
+                <p>
+                  Above {formatCurrency(niitThreshold(filingStatus))} of modified
+                  AGI, section 1411 charges a further{' '}
+                  {(NIIT_RATE * 100).toFixed(1)}% &mdash; the net investment income
+                  tax, reported on Form 8960. It is not income tax and it is not
+                  part of any bracket; it sits on top of whatever the ordinary and
+                  capital-gain schedules have already charged.
+                </p>
+                <p>
+                  What makes it a third effect rather than a fourth bracket is the
+                  word <em>lesser</em>. The surtax applies to the lesser of your
+                  net investment income and the amount by which MAGI clears the
+                  threshold &mdash; so between those two figures, a dollar that
+                  1411 does not tax at all still drags a dollar that it does into
+                  the base. An IRA withdrawal is expressly excluded by
+                  1411(c)(5). A pension is not investment income. Neither is a
+                  Social Security benefit. Every one of them is in MAGI, and every
+                  one of them can therefore cost you 3.8&cent; on a gain you
+                  realized before you took it.
+                </p>
+                <p>
+                  That is the same shape as the torpedo one step up: an income
+                  definition wider than the income being taxed. And the thresholds
+                  are the same story too &mdash;{' '}
+                  {formatCurrency(NIIT_THRESHOLDS.single)} unmarried,{' '}
+                  {formatCurrency(NIIT_THRESHOLDS.mfj)} joint,{' '}
+                  {formatCurrency(NIIT_THRESHOLDS.mfs)} on a separate return,
+                  fixed in {NIIT_ENACTED} and never indexed since. Tax-exempt
+                  interest is the one input on this page that stays clear of it
+                  entirely: section 103 keeps it out of gross income, so it is
+                  neither investment income here nor part of this MAGI &mdash;
+                  even while it is raising provisional income in step 2 and
+                  Medicare&apos;s MAGI in the line below.
+                </p>
+              </div>
+            </details>
+
+            {nextStepBox(2)}
+          </section>
+
+          {/* ───── Step 4: how many of those dollars fit before the next one costs more ───── */}
+          <section
+            className="step"
+            id="step-conversion"
+            tabIndex={-1}
+            aria-labelledby="step-conversion-heading"
+          >
+            <p className="step-kicker">Step 4 of {STEPS.length}</p>
+            <h2 className="step-heading" id="step-conversion-heading">
+              Sizing the conversion
+            </h2>
+
+            <p className="step-intro">
+              Steps 2 and 3 price the next dollar. This one prices a block of them.
+              Pick the line you would rather not cross and the chart draws the
+              largest Roth conversion that stays under it, running from where you
+              are standing out to that line &mdash; on the same curve as step 2,
+              because a conversion is ordinary income and walks you rightwards
+              along exactly that axis.
             </p>
-          </div>
-        </details>
-      </section>
 
-      {/* ───── The close: the reader's own answer, in one place ─────
+            <figure className="chart-figure">
+              <div
+                className="chart-container"
+                role="img"
+                aria-label={
+                  conversionFits
+                    ? `Chart: step 2's marginal-rate curve redrawn from $0 to ${formatCurrency(conversionAxisMax)}, with the sized conversion shaded from ${formatCurrency(ordinaryIncome)} to ${formatCurrency(conversionTarget)}.`
+                    : `Chart: step 2's marginal-rate curve redrawn from $0 to ${formatCurrency(conversionAxisMax)}. Nothing fits under the line picked, so no conversion is shaded.`
+                }
+                aria-describedby="conversion-chart-caption"
+              >
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart
+                    data={conversionCurve}
+                    margin={{ top: 22, right: 28, left: 10, bottom: 0 }}
+                  >
+                    <defs>
+                      <linearGradient id="conversionGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor={PALETTE.accent} stopOpacity={0.5} />
+                        <stop offset="95%" stopColor={PALETTE.accent} stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke={PALETTE.edge} />
+                    <XAxis
+                      dataKey="income"
+                      type="number"
+                      domain={[0, conversionAxisMax]}
+                      tickFormatter={formatCompact}
+                      stroke={PALETTE.inkMuted}
+                    />
+                    <YAxis
+                      stroke={PALETTE.inkMuted}
+                      tickFormatter={(value) => `${value}%`}
+                      width={70}
+                      domain={[0, 'auto']}
+                    />
+                    <Tooltip
+                      content={
+                        <CustomTooltip
+                          ssBenefit={ssBenefit}
+                          segments={conversionSegments}
+                          filingStatus={filingStatus}
+                          muniInterest={muniInterest}
+                          qcd={qcd}
+                          ltcg={plannedLtcg}
+                          beneficiaries={beneficiaries}
+                          year={year}
+                        />
+                      }
+                    />
+                    {conversionFits && (
+                      <ReferenceArea
+                        className="conversion-band"
+                        x1={ordinaryIncome}
+                        x2={conversionTarget}
+                        fill={PALETTE.indigo}
+                        fillOpacity={0.2}
+                        stroke="none"
+                      />
+                    )}
+                    {conversionFits && (
+                      <ReferenceLine
+                        className="ceiling-line"
+                        x={conversionTarget}
+                        stroke={PALETTE.indigo}
+                        strokeDasharray="4 4"
+                        strokeWidth={2}
+                        /* The amount goes on the line rather than inside the
+                           band: "You are here" already runs rightwards from the
+                           band's near edge, and a narrow band would put the two
+                           on top of each other. Above the axis is free — this
+                           chart draws no IRMAA cliffs, which is what that strip
+                           carries on step 2. */
+                        label={{
+                          value: `${formatCurrency(sizing.conversion)} converted`,
+                          position: 'top',
+                          fill: PALETTE.indigoBright,
+                          fontSize: 11,
+                          fontWeight: 600,
+                        }}
+                      />
+                    )}
+                    {hereLine(ordinaryIncome, conversionAxisMax, PALETTE.amber)}
+                    <Area
+                      type="stepAfter"
+                      dataKey="marginalRate"
+                      stroke={PALETTE.accent}
+                      strokeWidth={2}
+                      fill="url(#conversionGradient)"
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+              {/* Deliberately not step 2's label. The two charts sweep the same
+                  axis, so repeating its total-income formula here would say nothing
+                  new; what is worth saying is which stretch of it this one draws. */}
+              <p className="chart-axis-label">
+                Other Income ($), the conversion included &mdash; step 2&apos;s own
+                axis, drawn out to {formatCurrency(conversionAxisMax)}
+              </p>
 
-          The mirror of the recap that closes step 1. That one names what was
-          set; this one says what came of it — and it is the first place on
-          the page where the six figures a reader actually leaves with sit
-          together rather than one per step.
-
-          Outside step 4 rather than at the foot of it, because it summarises
-          all four steps and belongs to none of them, and last before the
-          disclaimer because it is the thing a reader would screenshot. That
-          is also why it restates the return above the figures: a screenshot
-          of an answer with no question in it is worth nothing. */}
-      <section className="answer" id="answer" aria-labelledby="answer-heading">
-        <p className="answer-kicker">The answer</p>
-        <h2 className="answer-heading" id="answer-heading">
-          What this return costs
-        </h2>
-        <p className="answer-intro">
-          Priced for {year}: {FILING_STATUS_PROSE[filingStatus]}, {ageProse},
-          with{' '}
-          {ssBenefit > 0
-            ? `${formatCurrency(ssBenefit)} of Social Security`
-            : 'no Social Security'}{' '}
-          and {formatCurrency(ordinaryIncome)} of other income
-          {plannedLtcg > 0
-            ? `, ${formatCurrency(plannedLtcg)} of it a long-term gain`
-            : ''}
-          {muniInterest > 0
-            ? `, plus ${formatCurrency(muniInterest)} of tax-exempt interest`
-            : ''}
-          .
-        </p>
-
-        <dl className="answer-figures">
-          <div className="answer-figure">
-            <dt>Total income</dt>
-            <dd>
-              <strong>{formatCurrency(totalIncome)}</strong>
-              <span className="answer-gloss">
-                Other income plus the <em>whole</em> benefit
-                {muniInterest > 0
-                  ? `, plus ${formatCurrency(muniInterest)} of tax-exempt interest`
-                  : ''}
-                {given > 0
-                  ? `, less the ${formatCurrency(given)} that went straight to charity`
-                  : ''}
-                . The untaxed part of the benefit is counted here on purpose:
-                it is the part the whole page is about, and against taxable
-                income it would vanish.
-              </span>
-            </dd>
-          </div>
-
-          <div className="answer-figure">
-            <dt>Federal tax</dt>
-            <dd>
-              <strong>{formatCurrency(hereTax)}</strong>
-              <span className="answer-gloss">
-                What the {year} return owes
-                {hereSurtax > 0 ? (
-                  <>
-                    : {formatCurrency(hereIncomeTax)} of income tax and{' '}
-                    {formatCurrency(hereSurtax)} of the surtax on the next line,
-                    which is a different chapter of the code on a form of its
-                    own
-                  </>
+              <p className="chart-key chart-key-conversion">
+                <span
+                  className="chart-key-swatch chart-key-swatch-conversion"
+                  aria-hidden="true"
+                />
+                {conversionFits ? (
+                  <span>
+                    <strong>The conversion, and the line it stops at.</strong> The
+                    shaded band runs from your own {formatCurrency(ordinaryIncome)}{' '}
+                    out to {formatCurrency(conversionTarget)} of other income &mdash;
+                    the point at which the line you picked is reached, once the
+                    benefit that the extra income drags into the tax base is counted.
+                    That is why the band is shorter than the headroom the line
+                    appears to offer. Every dollar inside it is charged at the rates
+                    the curve draws above it.
+                  </span>
                 ) : (
-                  ''
+                  <span>
+                    <strong>No band is drawn.</strong> Nothing fits under the line
+                    you picked, so there is no conversion to shade. The amber marker
+                    is still where you are standing.
+                  </span>
                 )}
-                . Federal only &mdash; no state, and no Medicare premium,
-                which is charged rather than taxed and gets its own line below.
-              </span>
-            </dd>
-          </div>
+              </p>
 
-          {/* Chapter 2A, on Form 8960, carried to Schedule 2 rather than to
-              the tax line — so it gets a line of its own here even when it
-              is $0, because what a reader most needs to know about a surtax
-              they are not paying is how close they are to paying it. */}
-          <div className="answer-figure">
-            <dt>Net investment income tax</dt>
-            <dd>
-              <strong>
-                {hereSurtax > 0
-                  ? formatCurrency(hereSurtax)
-                  : 'None — under the threshold'}
-              </strong>
-              <span className="answer-gloss">
-                {hereNiit.nii <= 0 ? (
+              <CurveCaption
+                id="conversion-chart-caption"
+                segments={conversionSegments}
+                lead={`Step 2's own curve, redrawn out to ${formatCurrency(conversionAxisMax)}: left to right, the rate on the next dollar of other income is`}
+              />
+            </figure>
+
+            <fieldset className="input-group chart-slider ceiling-picker">
+              <legend>The line you would rather not cross</legend>
+              <div className="segmented segmented-stacked">
+                {ceilings.map(({ id, label, amount, measure }) => (
+                  <label key={id} className="segmented-option">
+                    <input
+                      type="radio"
+                      name="conversion-ceiling"
+                      value={id}
+                      checked={ceiling.id === id}
+                      onChange={() => {
+                        setCeilingId(id);
+                        announce('conversion');
+                      }}
+                    />
+                    <span>
+                      {label}
+                      <small className="segmented-caption">
+                        {formatCurrency(amount)} of {CONVERSION_MEASURE_LABELS[measure]}
+                      </small>
+                    </span>
+                  </label>
+                ))}
+              </div>
+
+              <p className="slider-readout">
+                {conversionFits ? (
                   <>
-                    3.8% of investment income, once MAGI passes{' '}
-                    {formatCurrency(hereNiit.threshold)}. This return has no
-                    investment income for it to reach: a pension, an IRA
-                    withdrawal and Social Security are all outside it, so
-                    however high the income goes, there is nothing here for
-                    1411 to charge.
+                    <strong>{formatCurrency(sizing.conversion)} fits.</strong> On
+                    top of your {formatCurrency(ordinaryIncome)} of other income,
+                    that conversion lands on the line you picked &mdash;{' '}
+                    {ceiling.label}, {formatCurrency(ceiling.amount)} of{' '}
+                    {ceilingMeasure}. It costs{' '}
+                    <strong>{formatCurrency(sizing.taxCost)}</strong> in federal
+                    tax, taking this year&apos;s bill from{' '}
+                    {formatCurrency(sizing.taxBefore)} to{' '}
+                    {formatCurrency(sizing.taxAfter)} &mdash; an average of{' '}
+                    <strong>{sizing.costPerDollar}%</strong> on every dollar
+                    converted, against <strong>{sizing.rateAboveCeiling}%</strong>{' '}
+                    on the first dollar past the line.
                   </>
-                ) : hereSurtax > 0 ? (
+                ) : sizing.alreadyOver ? (
                   <>
-                    3.8% of {formatCurrency(hereNiit.base)} &mdash; the lesser
-                    of the {formatCurrency(hereNiit.nii)} gain and the{' '}
-                    {formatCurrency(hereNiit.excess)} by which{' '}
-                    {formatCurrency(hereNiit.magi)} of MAGI clears the{' '}
-                    {formatCurrency(hereNiit.threshold)} threshold.{' '}
-                    {hereNiit.toFullyTaxed && hereNiit.toFullyTaxed > 0
-                      ? `Another ${formatCurrency(hereNiit.toFullyTaxed)} of income — of any kind, including an IRA withdrawal 1411 never taxes — pulls the rest of the gain in at 3.8% too.`
-                      : 'The whole gain is already in, so the next dollar of ordinary income no longer adds to it.'}
+                    <strong>Nothing fits.</strong> This return is already{' '}
+                    {formatCurrency(Math.round(-sizing.headroom))} past the line
+                    you picked &mdash; {ceiling.label},{' '}
+                    {formatCurrency(ceiling.amount)} of {ceilingMeasure} &mdash;
+                    before a dollar is converted, so there is no room under it to
+                    convert into. Take the other-income slider on step 2 down, or
+                    pick a line further out.
                   </>
                 ) : (
                   <>
-                    3.8% on the lesser of investment income and MAGI over{' '}
-                    {formatCurrency(hereNiit.threshold)}. This return holds{' '}
-                    {formatCurrency(hereNiit.nii)} of gain and{' '}
-                    {formatCurrency(hereNiit.magi)} of MAGI, so it is{' '}
-                    {formatCurrency(hereNiit.headroom ?? 0)} short &mdash; and
-                    the dollars that would close that gap need not be
-                    investment income at all.
+                    <strong>Nothing fits.</strong> This return sits within a dollar
+                    of the line you picked &mdash; {ceiling.label},{' '}
+                    {formatCurrency(ceiling.amount)} of {ceilingMeasure} &mdash; so
+                    the largest conversion that stays under it rounds to nothing.
+                    Pick a line further out to see what a conversion would cost.
                   </>
-                )}{' '}
-                That threshold was set in {NIIT_ENACTED} and has never been
-                indexed
-                {SS_BASES[filingStatus].ssBase50 > 0 ? (
-                  <>
-                    , exactly like the{' '}
-                    {formatCurrency(SS_BASES[filingStatus].ssBase50)} and{' '}
-                    {formatCurrency(SS_BASES[filingStatus].ssBase85)} bases step
-                    2 is built on
-                  </>
-                ) : (
-                  ' — the same frozen line step 2 is built on, drawn in a different decade'
                 )}
-                .
-              </span>
-            </dd>
-          </div>
+              </p>
 
-          <div className="answer-figure">
-            <dt>Effective rate</dt>
-            <dd>
-              <strong>
-                {totalIncome > 0
-                  ? formatPercent(effectiveRateOn(hereTax))
-                  : '\u2014'}
-              </strong>
-              <span className="answer-gloss">
-                {totalIncome > 0
-                  ? 'That tax over that income: the average across every dollar of it, and the figure to hold against the years the same money would otherwise come out in.'
-                  : 'Nothing comes in, so there is no income to average a bill over.'}
-              </span>
-            </dd>
-          </div>
+              <p className="slider-advice conversion-advice">
+                <strong>Past the line.</strong> {ceiling.note}
+              </p>
+            </fieldset>
 
-          <div className="answer-figure">
-            <dt>The next dollar</dt>
-            <dd>
-              <strong>
-                {herePoint ? `${herePoint.marginalRate}%` : '\u2014'}
-              </strong>
-              <span className="answer-gloss">
-                What one more dollar of ordinary income costs, where the amber
-                line crosses step 2&apos;s curve. The gap between this and the
-                average above it is the whole reason that curve is worth
-                drawing.
-              </span>
-            </dd>
-          </div>
+            <details className="explainer">
+              <summary>
+                <h2 id="conversion-what-heading">
+                  What a Roth conversion is, and why it is sized rather than chosen
+                </h2>
+              </summary>
+              <div className="explainer-content">
+                <p>
+                  A conversion moves money from a traditional IRA to a Roth IRA. The
+                  whole amount is ordinary income in the year you do it &mdash; the
+                  same as a withdrawal, and it lands on the same axis as everything
+                  on step 2 &mdash; and after that it is never taxed again, is not a
+                  required distribution at any age, and never counts toward
+                  provisional income, so it never drags a benefit into the tax base
+                  in a later year.
+                </p>
+                <p>
+                  That is why the amount is worth solving for rather than picking. A
+                  conversion is the one piece of income a retiree controls to the
+                  dollar, and every line on this page has a cheap side and a dear
+                  one. Converting up to a line is the cheap side taken in full;
+                  converting a dollar past it buys the whole of the dear side, and
+                  in the case of an IRMAA cliff, buys it for a whole year on the
+                  strength of that single dollar.
+                </p>
+                <p>
+                  Since 2018 a conversion cannot be undone: the Tax Cuts and Jobs
+                  Act repealed recharacterisation for conversions, so the tax is
+                  settled by 31 December of the year you convert. That is the other
+                  half of the case for sizing it &mdash; there is no re-cutting it
+                  in April when the return is prepared.
+                </p>
+              </div>
+            </details>
 
-          <div className="answer-figure">
-            <dt>Benefit in the tax base</dt>
-            <dd>
-              <strong>
-                {ssBenefit > 0
-                  ? `${formatCurrency(taxableSS)} of ${formatCurrency(ssBenefit)}`
-                  : 'None'}
-              </strong>
-              <span className="answer-gloss">
-                {ssBenefit > 0
-                  ? `${formatPercent(taxableSS / ssBenefit)} of it. 86(a) can never make more than 85% taxable, and whatever is left never reaches the return at all.`
-                  : 'Step 1 sets no benefit, so there is nothing for other income to drag in \u2014 every curve on this page is an ordinary one.'}
-              </span>
-            </dd>
-          </div>
+            <details className="explainer">
+              <summary>
+                <h2 id="conversion-average-rate-heading">
+                  Why the average rate is the number to compare
+                </h2>
+              </summary>
+              <div className="explainer-content">
+                <p>
+                  The curve above prices the <em>next</em> dollar. A conversion is
+                  not one dollar, it is a block of them that walks across the chart
+                  from your own marker to the ceiling, picking up every rate in
+                  between &mdash; so what it actually costs is the area under that
+                  stretch, not the height of the curve at either end.
+                </p>
+                <p>
+                  {conversionFits ? (
+                    <>
+                      Here that is {formatCurrency(sizing.taxCost)} on{' '}
+                      {formatCurrency(sizing.conversion)}, or{' '}
+                      <strong>{sizing.costPerDollar}%</strong> averaged over the
+                      block. That is the figure to hold against the rate you expect
+                      in the years the money would otherwise come out: a conversion
+                      pays when it is cheaper than the future, and the future
+                      includes the years a surviving spouse files single on the same
+                      income, and the ten-year window an adult child has to empty an
+                      inherited IRA.
+                    </>
+                  ) : (
+                    <>
+                      With nothing fitting under the line you picked there is no
+                      block to average, but the comparison is unchanged: the average
+                      cost of a conversion is the figure to hold against the rate
+                      you expect in the years the money would otherwise come out
+                      &mdash; including the years a surviving spouse files single on
+                      the same income, and the ten-year window an adult child has to
+                      empty an inherited IRA.
+                    </>
+                  )}
+                </p>
+                <p>
+                  The average is always lower than the rate at the far end and
+                  always higher than the rate at the near one, which is the whole
+                  reason a conversion sized to a line beats a conversion sized to a
+                  bracket rate. It is also why a conversion that runs <em>through</em>{' '}
+                  the torpedo can still pay: the hump is priced into the average
+                  once, rather than paid year after year by a reader who sits inside
+                  it.
+                </p>
+                <p>
+                  Two costs are outside these figures. The Medicare surcharge is not
+                  tax and appears in none of them &mdash; if the line you picked is
+                  an IRMAA tier, crossing it costs the surcharge on top of whatever
+                  the curve says. And state income tax is not here at all; this page
+                  is federal only.
+                </p>
+              </div>
+            </details>
 
-          <div className="answer-figure">
-            <dt>Medicare surcharge</dt>
-            <dd>
-              <strong>
-                {hereIrmaa.tier > 0
-                  ? `Tier ${hereIrmaa.tier} of 5 \u2014 ${formatCurrency(hereIrmaa.annualSurcharge)}/yr`
-                  : 'None \u2014 the standard premium'}
-              </strong>
-              <span className="answer-gloss">
-                On {formatCurrency(hereMagi)} of MAGI
-                {beneficiaries > 1 ? ', charged to each of you' : ''}.{' '}
-                {hereIrmaa.headroom !== null
-                  ? `Another ${formatCurrency(hereIrmaa.headroom)} of it crosses the next cliff, which costs ${formatCurrency(hereIrmaa.nextStep)} a year on the strength of one dollar.`
-                  : 'This is the top tier; there is no cliff above it.'}{' '}
-                Billed on a {IRMAA_LOOKBACK_YEARS}-year lag, so this is what{' '}
-                {year} income sets for {year + IRMAA_LOOKBACK_YEARS}.
-              </span>
-            </dd>
-          </div>
+            <details className="explainer">
+              <summary>
+                <h2 id="conversion-ceilings-heading">
+                  The six lines, and what each one is
+                </h2>
+              </summary>
+              <div className="explainer-content">
+                <p>
+                  Each line is a different kind of edge, and they are not in the
+                  same order on every return &mdash; a large benefit can put the
+                  85% base to the left of the 12% bracket top, and a separate return
+                  collapses both bases onto $0. The figures below are this
+                  return&apos;s, for {year}.
+                </p>
+                <ul>
+                  {ceilings.map((c) => (
+                    <li key={c.id}>
+                      <strong>{c.label}</strong> &mdash;{' '}
+                      {formatCurrency(c.amount)} of{' '}
+                      {CONVERSION_MEASURE_LABELS[c.measure]}. {c.note}
+                    </li>
+                  ))}
+                </ul>
+                <p>
+                  Four different income definitions are in that list, which is the
+                  trap it exists to spring. Taxable income is after the standard
+                  deduction; provisional income is before it and counts tax-exempt
+                  interest and half the benefit; Medicare&apos;s MAGI is adjusted
+                  gross income with tax-exempt interest added back. A conversion
+                  that clears one line by $5,000 can be $5,000 over another.
+                </p>
+              </div>
+            </details>
+          </section>
 
-          <div className="answer-figure">
-            <dt>Room to convert</dt>
-            <dd>
-              <strong>
-                {conversionFits
-                  ? `${formatCurrency(sizing.conversion)} fits`
-                  : 'Nothing fits'}
-              </strong>
-              <span className="answer-gloss">
-                {conversionFits
-                  ? `Sized against ${ceiling.label}, ${formatCurrency(ceiling.amount)} of ${ceilingMeasure}. It costs ${formatCurrency(sizing.taxCost)}, taking the bill to ${formatCurrency(sizing.taxAfter)} \u2014 an average of ${sizing.costPerDollar}% on every dollar converted.`
-                  : sizing.alreadyOver
-                    ? `This return is already ${formatCurrency(Math.round(-sizing.headroom))} past ${ceiling.label}, ${formatCurrency(ceiling.amount)} of ${ceilingMeasure}, so there is no room under it to convert into. Step 4 has five other lines to pick from.`
-                    : `This return sits within a dollar of ${ceiling.label}, ${formatCurrency(ceiling.amount)} of ${ceilingMeasure}, so the largest conversion that stays under it rounds to nothing. Step 4 has five other lines to pick from.`}
-              </span>
-            </dd>
-          </div>
-        </dl>
+          {/* ───── The close: the reader's own answer, in one place ─────
 
-        {/* ───── The link is the return ─────
+              The mirror of the recap that closes step 1. That one names what was
+              set; this one says what came of it — and it is the first place on
+              the page where the six figures a reader actually leaves with sit
+              together rather than one per step.
 
-            The address bar has carried the whole return since the query
-            string went in, and until now the only place the page mentioned it
-            was the failure case: the note that appears when a link asked for
-            something this page could not show. So a reader who wanted to send
-            this to a spouse or an advisor had to work out on their own that
-            the URL was the thing to send.
-
-            It belongs here rather than in the header, because what is worth
-            sending is the answer, and this is the one place the answer sits
-            together. The sentence is the feature and the button is the
-            convenience — see `canCopyLink`. */}
-        <div className="answer-share">
-          <p className="answer-share-line">
-            <strong>The address bar is this return.</strong> Every control on
-            this page rides in the link, so sending it sends the figures above
-            exactly as they stand &mdash; and whoever opens it can move the
-            sliders themselves without disturbing yours.
-          </p>
-          {canCopyLink && (
-            <button
-              type="button"
-              className="answer-share-button"
-              onClick={copyLink}
-            >
-              Copy link to this return
-            </button>
-          )}
-          {/* `aria-live` rather than `role="status"`: the same announcement,
-              without becoming the second status region on a page whose first
-              one is the link note. Rendered empty rather than conditionally,
-              because a live region has to be on the page before the message
-              lands in it to be read out reliably; CSS hides it while it is. */}
-          <p className="answer-share-status" aria-live="polite" aria-atomic="true">
-            {copyState === 'copied'
-              ? 'Copied. That link opens this page on this return.'
-              : copyState === 'failed'
-                ? 'This browser would not take the copy. Select the address bar and copy it — it is the same link.'
+              Outside step 4 rather than at the foot of it, because it summarises
+              all four steps and belongs to none of them, and last before the
+              disclaimer because it is the thing a reader would screenshot. That
+              is also why it restates the return above the figures: a screenshot
+              of an answer with no question in it is worth nothing. */}
+          <section className="answer" id="answer" aria-labelledby="answer-heading">
+            <p className="answer-kicker">The answer</p>
+            <h2 className="answer-heading" id="answer-heading">
+              What this return costs
+            </h2>
+            <p className="answer-intro">
+              Priced for {year}: {FILING_STATUS_PROSE[filingStatus]}, {ageProse},
+              with{' '}
+              {ssBenefit > 0
+                ? `${formatCurrency(ssBenefit)} of Social Security`
+                : 'no Social Security'}{' '}
+              and {formatCurrency(ordinaryIncome)} of other income
+              {plannedLtcg > 0
+                ? `, ${formatCurrency(plannedLtcg)} of it a long-term gain`
                 : ''}
-          </p>
-        </div>
+              {muniInterest > 0
+                ? `, plus ${formatCurrency(muniInterest)} of tax-exempt interest`
+                : ''}
+              .
+            </p>
 
-        <p className="answer-note">
-          Every figure here moves the moment any slider does, and none of them
-          is a filing: this is the standard deduction with nothing itemised,
-          no credits, no other household member&apos;s income, no state and no
-          withholding. What they are for is the comparison &mdash; this year
-          against the years the same money would otherwise come out in.
-        </p>
-      </section>
+            <dl className="answer-figures">
+              <div className="answer-figure">
+                <dt>Total income</dt>
+                <dd>
+                  <strong>{formatCurrency(totalIncome)}</strong>
+                  <span className="answer-gloss">
+                    Other income plus the <em>whole</em> benefit
+                    {muniInterest > 0
+                      ? `, plus ${formatCurrency(muniInterest)} of tax-exempt interest`
+                      : ''}
+                    {given > 0
+                      ? `, less the ${formatCurrency(given)} that went straight to charity`
+                      : ''}
+                    . The untaxed part of the benefit is counted here on purpose:
+                    it is the part the whole page is about, and against taxable
+                    income it would vanish.
+                  </span>
+                </dd>
+              </div>
+
+              <div className="answer-figure">
+                <dt>Federal tax</dt>
+                <dd>
+                  <strong>{formatCurrency(hereTax)}</strong>
+                  <span className="answer-gloss">
+                    What the {year} return owes
+                    {hereSurtax > 0 ? (
+                      <>
+                        : {formatCurrency(hereIncomeTax)} of income tax and{' '}
+                        {formatCurrency(hereSurtax)} of the surtax on the next line,
+                        which is a different chapter of the code on a form of its
+                        own
+                      </>
+                    ) : (
+                      ''
+                    )}
+                    . Federal only &mdash; no state, and no Medicare premium,
+                    which is charged rather than taxed and gets its own line below.
+                  </span>
+                </dd>
+              </div>
+
+              {/* Chapter 2A, on Form 8960, carried to Schedule 2 rather than to
+                  the tax line — so it gets a line of its own here even when it
+                  is $0, because what a reader most needs to know about a surtax
+                  they are not paying is how close they are to paying it. */}
+              <div className="answer-figure">
+                <dt>Net investment income tax</dt>
+                <dd>
+                  <strong>
+                    {hereSurtax > 0
+                      ? formatCurrency(hereSurtax)
+                      : 'None — under the threshold'}
+                  </strong>
+                  <span className="answer-gloss">
+                    {hereNiit.nii <= 0 ? (
+                      <>
+                        3.8% of investment income, once MAGI passes{' '}
+                        {formatCurrency(hereNiit.threshold)}. This return has no
+                        investment income for it to reach: a pension, an IRA
+                        withdrawal and Social Security are all outside it, so
+                        however high the income goes, there is nothing here for
+                        1411 to charge.
+                      </>
+                    ) : hereSurtax > 0 ? (
+                      <>
+                        3.8% of {formatCurrency(hereNiit.base)} &mdash; the lesser
+                        of the {formatCurrency(hereNiit.nii)} gain and the{' '}
+                        {formatCurrency(hereNiit.excess)} by which{' '}
+                        {formatCurrency(hereNiit.magi)} of MAGI clears the{' '}
+                        {formatCurrency(hereNiit.threshold)} threshold.{' '}
+                        {hereNiit.toFullyTaxed && hereNiit.toFullyTaxed > 0
+                          ? `Another ${formatCurrency(hereNiit.toFullyTaxed)} of income — of any kind, including an IRA withdrawal 1411 never taxes — pulls the rest of the gain in at 3.8% too.`
+                          : 'The whole gain is already in, so the next dollar of ordinary income no longer adds to it.'}
+                      </>
+                    ) : (
+                      <>
+                        3.8% on the lesser of investment income and MAGI over{' '}
+                        {formatCurrency(hereNiit.threshold)}. This return holds{' '}
+                        {formatCurrency(hereNiit.nii)} of gain and{' '}
+                        {formatCurrency(hereNiit.magi)} of MAGI, so it is{' '}
+                        {formatCurrency(hereNiit.headroom ?? 0)} short &mdash; and
+                        the dollars that would close that gap need not be
+                        investment income at all.
+                      </>
+                    )}{' '}
+                    That threshold was set in {NIIT_ENACTED} and has never been
+                    indexed
+                    {SS_BASES[filingStatus].ssBase50 > 0 ? (
+                      <>
+                        , exactly like the{' '}
+                        {formatCurrency(SS_BASES[filingStatus].ssBase50)} and{' '}
+                        {formatCurrency(SS_BASES[filingStatus].ssBase85)} bases step
+                        2 is built on
+                      </>
+                    ) : (
+                      ' — the same frozen line step 2 is built on, drawn in a different decade'
+                    )}
+                    .
+                  </span>
+                </dd>
+              </div>
+
+              <div className="answer-figure">
+                <dt>Effective rate</dt>
+                <dd>
+                  <strong>
+                    {totalIncome > 0
+                      ? formatPercent(effectiveRateOn(hereTax))
+                      : '\u2014'}
+                  </strong>
+                  <span className="answer-gloss">
+                    {totalIncome > 0
+                      ? 'That tax over that income: the average across every dollar of it, and the figure to hold against the years the same money would otherwise come out in.'
+                      : 'Nothing comes in, so there is no income to average a bill over.'}
+                  </span>
+                </dd>
+              </div>
+
+              <div className="answer-figure">
+                <dt>The next dollar</dt>
+                <dd>
+                  <strong>
+                    {herePoint ? `${herePoint.marginalRate}%` : '\u2014'}
+                  </strong>
+                  <span className="answer-gloss">
+                    What one more dollar of ordinary income costs, where the amber
+                    line crosses step 2&apos;s curve. The gap between this and the
+                    average above it is the whole reason that curve is worth
+                    drawing.
+                  </span>
+                </dd>
+              </div>
+
+              <div className="answer-figure">
+                <dt>Benefit in the tax base</dt>
+                <dd>
+                  <strong>
+                    {ssBenefit > 0
+                      ? `${formatCurrency(taxableSS)} of ${formatCurrency(ssBenefit)}`
+                      : 'None'}
+                  </strong>
+                  <span className="answer-gloss">
+                    {ssBenefit > 0
+                      ? `${formatPercent(taxableSS / ssBenefit)} of it. 86(a) can never make more than 85% taxable, and whatever is left never reaches the return at all.`
+                      : 'Step 1 sets no benefit, so there is nothing for other income to drag in \u2014 every curve on this page is an ordinary one.'}
+                  </span>
+                </dd>
+              </div>
+
+              <div className="answer-figure">
+                <dt>Medicare surcharge</dt>
+                <dd>
+                  <strong>
+                    {hereIrmaa.tier > 0
+                      ? `Tier ${hereIrmaa.tier} of 5 \u2014 ${formatCurrency(hereIrmaa.annualSurcharge)}/yr`
+                      : 'None \u2014 the standard premium'}
+                  </strong>
+                  <span className="answer-gloss">
+                    On {formatCurrency(hereMagi)} of MAGI
+                    {beneficiaries > 1 ? ', charged to each of you' : ''}.{' '}
+                    {hereIrmaa.headroom !== null
+                      ? `Another ${formatCurrency(hereIrmaa.headroom)} of it crosses the next cliff, which costs ${formatCurrency(hereIrmaa.nextStep)} a year on the strength of one dollar.`
+                      : 'This is the top tier; there is no cliff above it.'}{' '}
+                    Billed on a {IRMAA_LOOKBACK_YEARS}-year lag, so this is what{' '}
+                    {year} income sets for {year + IRMAA_LOOKBACK_YEARS}.
+                  </span>
+                </dd>
+              </div>
+
+              <div className="answer-figure">
+                <dt>Room to convert</dt>
+                <dd>
+                  <strong>
+                    {conversionFits
+                      ? `${formatCurrency(sizing.conversion)} fits`
+                      : 'Nothing fits'}
+                  </strong>
+                  <span className="answer-gloss">
+                    {conversionFits
+                      ? `Sized against ${ceiling.label}, ${formatCurrency(ceiling.amount)} of ${ceilingMeasure}. It costs ${formatCurrency(sizing.taxCost)}, taking the bill to ${formatCurrency(sizing.taxAfter)} \u2014 an average of ${sizing.costPerDollar}% on every dollar converted.`
+                      : sizing.alreadyOver
+                        ? `This return is already ${formatCurrency(Math.round(-sizing.headroom))} past ${ceiling.label}, ${formatCurrency(ceiling.amount)} of ${ceilingMeasure}, so there is no room under it to convert into. Step 4 has five other lines to pick from.`
+                        : `This return sits within a dollar of ${ceiling.label}, ${formatCurrency(ceiling.amount)} of ${ceilingMeasure}, so the largest conversion that stays under it rounds to nothing. Step 4 has five other lines to pick from.`}
+                  </span>
+                </dd>
+              </div>
+            </dl>
+
+            {/* ───── The link is the return ─────
+
+                The address bar has carried the whole return since the query
+                string went in, and until now the only place the page mentioned it
+                was the failure case: the note that appears when a link asked for
+                something this page could not show. So a reader who wanted to send
+                this to a spouse or an advisor had to work out on their own that
+                the URL was the thing to send.
+
+                It belongs here rather than in the header, because what is worth
+                sending is the answer, and this is the one place the answer sits
+                together. The sentence is the feature and the button is the
+                convenience — see `canCopyLink`. */}
+            <div className="answer-share">
+              <p className="answer-share-line">
+                <strong>The address bar is this return.</strong> Every control on
+                this page rides in the link, so sending it sends the figures above
+                exactly as they stand &mdash; and whoever opens it can move the
+                sliders themselves without disturbing yours.
+              </p>
+              {canCopyLink && (
+                <button
+                  type="button"
+                  className="answer-share-button"
+                  onClick={copyLink}
+                >
+                  Copy link to this return
+                </button>
+              )}
+              {/* `aria-live` rather than `role="status"`: the same announcement,
+                  without becoming the second status region on a page whose first
+                  one is the link note. Rendered empty rather than conditionally,
+                  because a live region has to be on the page before the message
+                  lands in it to be read out reliably; CSS hides it while it is. */}
+              <p className="answer-share-status" aria-live="polite" aria-atomic="true">
+                {copyState === 'copied'
+                  ? 'Copied. That link opens this page on this return.'
+                  : copyState === 'failed'
+                    ? 'This browser would not take the copy. Select the address bar and copy it — it is the same link.'
+                    : ''}
+              </p>
+            </div>
+
+            <p className="answer-note">
+              Every figure here moves the moment any slider does, and none of them
+              is a filing: this is the standard deduction with nothing itemised,
+              no credits, no other household member&apos;s income, no state and no
+              withholding. What they are for is the comparison &mdash; this year
+              against the years the same money would otherwise come out in.
+            </p>
+          </section>
+        </div>
+      </div>
 
       <footer>
         <p>

@@ -88,6 +88,16 @@
   --emerald: #34d399;
   --emerald-deep: #10b981;
 
+  /* ── The shell ──
+     FI Calc's two measures, read off its own layout rather than guessed at:
+     the reading column stops at 44rem and the configuration column holds
+     18rem beside it, whatever the window does. Named here because three
+     rules and a breakpoint all have to agree on them, and because the page
+     they replace had one number — a 900px `#root` — doing both jobs. */
+  --measure: 44rem;
+  --column: 18rem;
+  --gutter: 2.5rem;
+
   /* Corners: 8, 6, 4. */
   --radius-lg: 8px;
   --radius-md: 6px;
@@ -161,8 +171,12 @@ body {
   overflow-x: hidden;
 }
 
+/* Wide enough for the two columns, their gutter and the card's own padding,
+   and not a pixel wider — so the measure is set by the columns rather than by
+   this number. It was 900px, which is what the flow column alone now runs at
+   on a large window. */
 #root {
-  max-width: 900px;
+  max-width: calc(var(--measure) + var(--column) + var(--gutter) + 4rem);
   margin: 0 auto;
   padding: 2rem;
   width: 100%;
@@ -174,6 +188,70 @@ body {
    which is the only thing it was ever really doing for the reader. */
 .card {
   padding: 2rem;
+  min-width: 0;
+}
+
+/* ───── The shell ──────────────────────────────────────────────────────────
+ *
+ * FI Calc's shape: a configuration column that stays put and a reading column
+ * that scrolls past it. Every input this page has that describes the *return*
+ * — the year, the status, the ages, the benefit, the state, and the two
+ * advanced amounts — lives in the first; the charts, their sliders, the
+ * explainers and the close live in the second.
+ *
+ * That is the fix for the thing this page could not do: every input sat in
+ * step 1, at the top of a single 900px column, so a reader looking at step 3's
+ * chart had no way to see — let alone change — the benefit being priced
+ * without scrolling a screen and a half back and losing their place. The
+ * inputs are now beside the chart at every point in the walk.
+ *
+ * Step 1 keeps its number, its heading and its next-step box. It is still the
+ * first step of four and the nav still points at it; what changed is where it
+ * stands, not what it is. On a narrow window the grid collapses to one column
+ * and the page is exactly the walk it was, in the same order.
+ *
+ * The sliders in steps 2, 3 and 4 stay where they are on purpose. They are not
+ * only inputs — each one is the cursor on the chart directly above it, and the
+ * shape every step has kept since the flow replaced the tab strip is chart,
+ * then the one control that moves you along it. Moving them here would take
+ * the cursor away from the plot it marks.
+ */
+.shell {
+  display: grid;
+  grid-template-columns: var(--column) minmax(0, var(--measure));
+  column-gap: var(--gutter);
+  align-items: start;
+  margin-top: 2rem;
+}
+
+/* Sticky rather than fixed, so it participates in the grid and collapses with
+   it. Taller than the window is the normal case — six controls and a recap do
+   not fit in 100vh — so it carries its own scroll rather than pinning a top
+   the reader cannot scroll past. `overscroll-behavior` keeps a flick inside
+   the column from carrying on into the page behind it.
+   
+   An outline is painted outside the border box and is not clipped by the
+   element's own overflow, so the focus ring this section gets when the nav
+   lands on it survives the scroll container. */
+.step-config {
+  position: sticky;
+  top: 0;
+  max-height: 100vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 1rem 0.75rem 1.5rem 0;
+  margin-top: 0;
+}
+
+/* The box that hands the reader to step 2 is the end of a section when the
+   flow is one column and a footer to the configuration when it is two, so it
+   is sized as the smaller thing here. */
+.step-config .next-step {
+  margin-top: 1.5rem;
+  padding: 0.875rem 1rem;
+}
+
+.flow {
   min-width: 0;
 }
 
@@ -432,7 +510,10 @@ fieldset.ceiling-picker legend {
   left: 0;
   z-index: 30;
   width: max-content;
-  max-width: min(26rem, calc(100vw - 3rem));
+  /* 100% is the configuration column: 26rem is wider than the 18rem it
+     stands in, and a bubble wider than its own scroll container is a bubble
+     with its right-hand words cut off and a horizontal scrollbar under it. */
+  max-width: min(26rem, 100%, calc(100vw - 3rem));
   padding: 0.75rem 0.875rem;
   border: 1px solid var(--edge);
   border-radius: var(--radius-lg);
@@ -1036,28 +1117,45 @@ footer p {
  * with a rule under it that the panel hung from — which is why the rule now
  * belongs to each step instead.
  */
+/* A header rather than a strip at the top of a page: it sits at the head of
+   the reading column and stays there, which is the other half of what the two
+   columns are for — the configuration is always in reach on the left, and
+   where you are in the walk is always legible on the right. Opaque because
+   steps scroll underneath it, and it only sticks in the two-column layout:
+   four items wrap to two rows on a phone, and two rows of pinned nav is more
+   of a small window than they are worth. */
 .step-nav {
+  position: sticky;
+  top: 0;
+  z-index: 20;
   display: flex;
   flex-wrap: wrap;
   gap: 0.25rem;
-  margin-top: 2rem;
+  margin-top: 0;
+  padding-top: 0.75rem;
   padding-bottom: 0.25rem;
+  background: var(--surface);
   border-bottom: 1px solid var(--edge);
 }
 
+/* Tightened to fit the reading column in one row. It sat at .9375rem in 1rem
+   of padding, which fitted the 900px the whole page used to run at and wraps
+   to two rows in the 44rem the column runs at now — and a header that is two
+   rows on a wide window and one on a narrow one is a header whose height
+   nothing below it can be positioned against. */
 .step-nav-item {
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.4375rem;
   appearance: none;
   background: transparent;
   border: none;
   border-bottom: 2px solid transparent;
   border-radius: var(--radius-md) var(--radius-md) 0 0;
-  padding: 0.625rem 1rem;
+  padding: 0.5rem 0.6875rem;
   margin-bottom: -0.375rem;
-  font-size: 0.9375rem;
+  font-size: 0.875rem;
   font-weight: 600;
   color: var(--ink-muted);
   cursor: pointer;
@@ -1070,8 +1168,8 @@ footer p {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 1.375rem;
-  height: 1.375rem;
+  width: 1.25rem;
+  height: 1.25rem;
   border-radius: 50%;
   border: 1px solid currentColor;
   font-size: 0.75rem;
@@ -1097,7 +1195,8 @@ footer p {
 
 .step {
   margin-top: 2rem;
-  scroll-margin-top: 1rem;
+  /* Clears the sticky nav, or arriving at a step puts its heading behind it. */
+  scroll-margin-top: 4.25rem;
 }
 
 .step + .step {
@@ -1527,6 +1626,47 @@ footer p {
   margin-bottom: 1rem;
 }
 
+/* ───── The collapse ────────────────────────────────────────────────────────
+ *
+ * Below this the two columns become one and the page is the walk it was: step
+ * 1 first, then the nav, then the rest. Last in the screen half on purpose —
+ * a media query adds no specificity, so a rule it overrides has to be above
+ * it in the file or the override silently loses.
+ *
+ * 992px is where the grid stops paying for itself rather than where it breaks:
+ * the tracks themselves fit down to about 700px, but by 992 the reading column
+ * is under 34rem and the charts in it are narrower than the configuration
+ * column is tall. One column and a full-width chart is the better page there.
+ */
+@media (max-width: 992px) {
+  .shell {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 0;
+  }
+
+  .step-config {
+    position: static;
+    max-height: none;
+    overflow: visible;
+    padding: 0;
+  }
+
+  .step-config .next-step {
+    margin-top: 2.5rem;
+    padding: 1.25rem 1.5rem;
+  }
+
+  .step-nav {
+    position: static;
+    margin-top: 2rem;
+    padding-top: 0;
+  }
+
+  .step {
+    scroll-margin-top: 1rem;
+  }
+}
+
 /* ───── Print ───────────────────────────────────────────────────────────────
  *
  * This page is built to be looked at on a screen and screenshotted. Cmd-P
@@ -1586,6 +1726,20 @@ footer p {
   }
 
   .card {
+    padding: 0;
+  }
+
+  /* Paper is one column and scrolls nowhere, so the shell is neither a grid
+     nor sticky nor a scroll container. Step 1 prints first, ahead of the walk
+     it configures, exactly as it reads on a narrow screen. */
+  .shell {
+    display: block;
+  }
+
+  .step-config {
+    position: static;
+    max-height: none;
+    overflow: visible;
     padding: 0;
   }
 

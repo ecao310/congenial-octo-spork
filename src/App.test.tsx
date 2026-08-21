@@ -2670,8 +2670,16 @@ describe('the closing answer', () => {
       screen.getByRole('heading', { name: /what this return costs/i, level: 2 }),
     ).toBeInTheDocument();
     expect(answer().previousElementSibling?.id).toBe('step-conversion');
-    expect(answer().nextElementSibling?.tagName).toBe('FOOTER');
-    expect(answer().nextElementSibling).toHaveTextContent(
+
+    // Read in two hops rather than one, because the shell put a column
+    // between them: the close is the last thing in the reading column, the
+    // reading column is the last thing in the shell, and the disclaimer is
+    // what follows the shell. It used to be the close's own next sibling,
+    // which stopped being true when the footer started spanning both columns.
+    const shell = answer().closest('.shell') as HTMLElement;
+    expect(shell.lastElementChild?.lastElementChild).toBe(answer());
+    expect(shell.nextElementSibling?.tagName).toBe('FOOTER');
+    expect(shell.nextElementSibling).toHaveTextContent(
       /does not constitute tax or financial advice/i,
     );
   });

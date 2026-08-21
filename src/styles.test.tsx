@@ -198,13 +198,18 @@ const fontSizes = (css: string): string[] =>
   Array.from(css.matchAll(/font-size:\s*([^;}]+)/g)).map(([, size]) => size.trim());
 
 /**
- * Ten steps, and no eleventh.
+ * Nine steps, and no tenth.
  *
  * They are FI Calc's own, read off its stylesheet: .9375rem body copy, a
  * 1.75rem page title at weight 900, 1.35rem section headings, 1.125rem under
  * those. Before this the page ran a 2.5rem hero and 1.75rem step headings —
  * a register above everything FI Calc uses — and the sizes in between had
  * arrived one rule at a time.
+ *
+ * It was ten until the controls pass: 1rem was set by a generic `input` rule
+ * painting a text field this page has never rendered, and by the state menu
+ * copying it. Both are gone, and the second `it` below is what caught the
+ * step going unspent rather than lingering as a size nothing sets.
  *
  * That is the failure this closes. A scale does not drift by someone
  * rewriting it; it drifts by a 1.05rem typed into the one rule being edited,
@@ -218,7 +223,6 @@ describe('the type scale', () => {
     '0.8125rem',
     '0.875rem',
     '0.9375rem',
-    '1rem',
     '1.125rem',
     '1.25rem',
     '1.35rem',
@@ -239,5 +243,113 @@ describe('the type scale', () => {
   it('spends every step it declares', () => {
     const spent = new Set(fontSizes(screenBlock(stylesheet)));
     expect(STEPS.filter((step) => !spent.has(step))).toEqual([]);
+  });
+});
+
+/**
+ * Every ring the screen half paints.
+ *
+ * A ring is an `outline` that is not `none`, or a `box-shadow` with no offset
+ * and no blur — `0 0 0 Npx colour`, which is the shape of a border drawn
+ * outside the box rather than of a shadow. `--shadow-float` is the one real
+ * shadow left on the page and it has both an offset and a blur, so it is not
+ * one of these.
+ */
+const rings = (
+  css: string,
+): { selectors: string[]; property: string; value: string }[] =>
+  leafRules(css).flatMap((rule) => {
+    const outline = /(?:^|[;\s])outline:\s*([^;}]+)/.exec(rule.body)?.[1].trim();
+    const shadow = /(?:^|[;\s])box-shadow:\s*([^;}]+)/.exec(rule.body)?.[1].trim();
+    return [
+      ...(outline && outline !== 'none'
+        ? [{ selectors: rule.selectors, property: 'outline', value: outline }]
+        : []),
+      ...(shadow && /^0 0 0 /.test(shadow)
+        ? [{ selectors: rule.selectors, property: 'box-shadow', value: shadow }]
+        : []),
+    ];
+  });
+
+/**
+ * One ring, and only on focus.
+ *
+ * Before the controls pass this page rang in three different ways: a 2px
+ * `rgba(--accent, 0.2)` glow under the fields, a 2px `rgba(--accent, 0.6)`
+ * outline on everything else, and — under the generic `input` rule that has
+ * since been deleted — a glow on controls that then had to spend a rule each
+ * taking it back off. All three were washes, and a translucent ring over a
+ * near-black ground is a smudge: at 0.2 alpha the fields' glow was 1.3:1
+ * against the page, which is to say invisible, on the one indicator a
+ * keyboard reader has no alternative for.
+ *
+ * So the claim is the whole register in two parts: nothing rings except on
+ * focus, and every ring is the same solid accent. Both fail in the direction
+ * that actually happens — a ring pasted into the rule being edited, carrying
+ * whatever alpha it had where it was copied from.
+ *
+ * Fields are the exception the second part allows for and the first does not:
+ * FI Calc rings a `.select` by thickening its own border rather than by
+ * laying an outline around it, so `.state-select:focus` sets `border-color`
+ * and a 1px `box-shadow` in the same accent. That is still one ring in one
+ * colour; it is drawn on the border rather than outside it.
+ */
+describe('the controls', () => {
+  it('paints a ring in no state but focus', () => {
+    const painted = rings(screenBlock(stylesheet));
+    // Guards the extractor itself: an empty list would pass vacuously.
+    expect(painted.length).toBeGreaterThan(5);
+
+    const unfocused = painted
+      .filter((ring) => !ring.selectors.every((s) => s.includes(':focus')))
+      .map((ring) => `${ring.selectors.join(', ')} { ${ring.property} }`);
+
+    expect(unfocused).toEqual([]);
+  });
+
+  it('paints every ring in the same solid accent', () => {
+    const washed = rings(screenBlock(stylesheet))
+      .filter((ring) => !/^\d+px solid var\(--accent\)$|var\(--accent\)$/.test(ring.value))
+      .map((ring) => `${ring.selectors.join(', ')} { ${ring.property}: ${ring.value} }`);
+
+    expect(washed).toEqual([]);
+  });
+});
+
+/** Every corner the screen half draws, one value per `border-radius`. */
+const corners = (css: string): string[] =>
+  Array.from(css.matchAll(/border-radius:\s*([^;}]+)/g)).flatMap(([, value]) =>
+    value.trim().split(/\s+(?![^(]*\))/),
+  );
+
+/**
+ * Three corners, and no fourth.
+ *
+ * The same guard as `the type scale`, aimed at the other number that drifts
+ * by being typed into the one rule someone is already editing. This page was
+ * built on 12px and 16px corners and came down to 8/6/4 in the ground pass;
+ * a stray `10px` would not look wrong from inside its own rule, and there is
+ * nothing else that would catch it.
+ *
+ * `50%` is allowed and is not a fourth step — it is a circle, which is a
+ * shape rather than a corner, and the step nav's numbers are the only things
+ * that take it.
+ */
+describe('the corners', () => {
+  const STEPS = ['var(--radius-lg)', 'var(--radius-md)', 'var(--radius-sm)', '50%', '0'];
+
+  it('rounds every box from one closed list of steps', () => {
+    const drawn = corners(screenBlock(stylesheet));
+    // Guards the extractor itself: an empty list would pass vacuously.
+    expect(drawn.length).toBeGreaterThan(10);
+
+    expect([...new Set(drawn)].filter((step) => !STEPS.includes(step)).sort()).toEqual(
+      [],
+    );
+  });
+
+  it('spends every step it declares', () => {
+    const drawn = new Set(corners(screenBlock(stylesheet)));
+    expect(STEPS.filter((step) => !drawn.has(step))).toEqual([]);
   });
 });

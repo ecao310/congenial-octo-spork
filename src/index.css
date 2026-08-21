@@ -37,6 +37,13 @@
   --surface-sunken: #141416;
   --surface-hover: #26272b;
 
+  /* The fill of anything you set a value in: the state menu and the
+     checkboxes. FI Calc's own (`.input_visuals`, #31333f), and the direction
+     is the point — its fields sit *above* the page, where this page's sank
+     below it. A well is something you read out of; a control is something you
+     reach for, and the two should not be the same colour. */
+  --surface-control: #31333f;
+
   /* Edges. One colour, one pixel, in place of the shadows. */
   --edge: #343940;
   --edge-strong: #4a5059;
@@ -52,6 +59,14 @@
   --accent: #409dff;
   --accent-bright: #7db6ff;
   --accent-rgb: 64, 157, 255;
+
+  /* The chosen option in a segmented strip. FI Calc's `#3f5186` desaturated
+     down from the accent so a strip of three does not shout — but lightened
+     from it, because at #3f5186 the chosen pill is 2.4:1 against the tray it
+     sits in and the choice is then carried by the label's colour alone. At
+     #4d63a4 the pill clears 3:1 against both the tray and the page, so it
+     reads as a shape, and --ink-bright still clears 5.1:1 on it. */
+  --accent-muted: #4d63a4;
 
   /* What each curve, cliff and marker means. */
   --amber: #f59e0b;
@@ -121,8 +136,7 @@
  *   1.35    a step heading, and the close's                `.results_h2`
  *   1.25    a closing figure, a panel title          `.configuration_title`
  *   1.125   an explainer heading, a slider readout      `.modalForm_h2`
- *   1       a text input
- *   .9375   body copy                                            `body`
+ *   .9375   body copy, and the state menu                        `body`
  *   .875    a control label
  *   .8125   a note, a caption, a footnote
  *   .75     a kicker, a range label
@@ -176,24 +190,53 @@ label {
   color: var(--ink-muted);
 }
 
-input {
-  width: 100%;
-  background: var(--surface-sunken);
-  border: 1px solid var(--edge);
-  border-radius: var(--radius-lg);
-  padding: 0.75rem 1rem;
-  color: var(--ink-bright);
-  font-size: 1rem;
-  transition: all 0.2s ease;
-}
+/* ───── The controls ───────────────────────────────────────────────────────
+ *
+ * FI Calc's register again, and this is the pass that spends it on the things
+ * a reader touches. Three rules run through everything below.
+ *
+ * *A hairline, not a fill.* A field is a one-pixel border around a surface a
+ * step lighter than the page, which is FI Calc's own direction and the
+ * reverse of what this page had: its fields sank into `--surface-sunken`,
+ * where FI Calc's rise out of the ground on `--surface-control`.
+ *
+ * *Single-digit corners.* 6px on a control, 4px on something the size of a
+ * checkbox, 8px only on a tray that holds other controls. `the corners` in
+ * styles.test.tsx holds that list closed the way `the type scale` holds the
+ * sizes.
+ *
+ * *One ring, and only on focus.* Nothing here paints an outline in any other
+ * state, and the ring is solid `--accent` rather than a 2px wash of it at 20%
+ * or 60% alpha. A translucent ring over a near-black ground is a smudge — the
+ * fields' 0.2-alpha glow measured 1.3:1 against the page, which is to say
+ * invisible, on the one indicator a keyboard reader has no alternative for.
+ * `the controls` holds that line. Fields ring the way FI Calc rings them, by
+ * thickening their own border (`border-color` plus a 1px `box-shadow` in the
+ * same colour); everything else takes an `outline`, having no border of its
+ * own to thicken.
+ *
+ * What used to sit here was a generic `input { }` rule painting a sunken fill,
+ * an 8px corner and 1rem of padding, plus an `input:focus` glow — and then
+ * three rules taking all of it back off again, because every `input` this page
+ * renders is a range, a checkbox or a visually-hidden radio, and not one of
+ * them wanted any of it. It is deleted rather than re-pointed, and the two
+ * `box-shadow: none` overrides that existed only to cancel its glow go with
+ * it. Its 1rem was also the last thing on the page setting that step, which
+ * is why the scale above is nine steps and not ten.
+ */
 
-input:focus {
-  outline: none;
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.2);
-}
-
+/* FI Calc has no slider, so there is no register here to copy — and the
+   flattest slider available is the platform's own with a single `accent-color`
+   on it. That is deliberately still what this is: no `appearance: none`, no
+   drawn track, no drawn thumb. Custom-drawing one would cost the filled track
+   to the left of the thumb, which is the only thing on a slider that says
+   where the value sits without reading the number, because webkit has no
+   `::-moz-range-progress` to match. The 2rem height is the hit area, not the
+   track; `width` is set here rather than inherited from the deleted `input`
+   rule. */
 input[type='range'] {
+  width: 100%;
+  margin: 0;
   padding: 0;
   border: none;
   background: transparent;
@@ -202,14 +245,10 @@ input[type='range'] {
   cursor: pointer;
 }
 
-input[type='range']:focus {
-  box-shadow: none;
-}
-
 input[type='range']:focus-visible {
-  outline: 2px solid rgba(var(--accent-rgb), 0.6);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-sm);
 }
 
 fieldset.filing-status {
@@ -227,8 +266,18 @@ fieldset.ceiling-picker legend {
   margin-bottom: 0.5rem;
 }
 
+/* The tray, and the one place an 8px corner still earns itself: it holds
+   6px-cornered options with 4px of padding around them, and a tray whose
+   corner matched its contents' would draw a visible gap at each end.
+   `inline-flex` was being overruled: every one of these sits inside an
+   `.input-group`, which is a flex column, so the tray was stretching to the
+   full 900px and the two-option Tax Year strip ran 700px of empty tray to the
+   right of "2026". `align-self` is what an inline-level box needs to shrink
+   to fit inside a flex parent. `.segmented-stacked` sets `width: 100%` and so
+   is unaffected — it is a column of full-width options, not a strip. */
 .segmented {
   display: inline-flex;
+  align-self: flex-start;
   flex-wrap: wrap;
   background: var(--surface-sunken);
   border: 1px solid var(--edge);
@@ -254,23 +303,43 @@ fieldset.ceiling-picker legend {
   cursor: pointer;
 }
 
+/* Weight 600 and a tighter box, both FI Calc's: its own selection-group
+   button is .875rem at 600 with .333em of vertical padding. This keeps the
+   weight but not the padding — .333em is a 30px option, and these are the
+   controls that set the whole return. */
 .segmented-option span {
   display: block;
-  padding: 0.5rem 1rem;
+  padding: 0.375rem 0.75rem;
   border-radius: var(--radius-md);
   font-size: 0.875rem;
-  font-weight: 500;
+  font-weight: 600;
   color: var(--ink-muted);
-  transition: all 0.2s ease;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
 }
 
+/* A solid fill rather than a 20% wash of the accent with accent-coloured text
+   on it. The wash was the old register's, and over a near-black tray it came
+   to almost nothing — so the actual signal that an option was chosen was the
+   label turning blue. That is one channel, and the one a reader with a colour
+   deficiency is least likely to have. Now the chosen option is a shape. */
 .segmented-option input[type='radio']:checked + span {
-  background: rgba(var(--accent-rgb), 0.2);
-  color: var(--accent);
+  background: var(--accent-muted);
+  color: var(--ink-bright);
+}
+
+/* Hung off the label rather than off the span, because the radio is an
+   `opacity: 0` overlay covering the whole option — the pointer is never over
+   the span, only over the input on top of it, and only the label is an
+   ancestor of both. */
+.segmented-option:hover input[type='radio']:not(:checked) + span {
+  background: var(--surface-hover);
+  color: var(--ink-soft);
 }
 
 .segmented-option input[type='radio']:focus-visible + span {
-  outline: 2px solid rgba(var(--accent-rgb), 0.6);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
@@ -288,25 +357,59 @@ fieldset.ceiling-picker legend {
   color: var(--ink-soft);
 }
 
+/* Drawn rather than left to the platform, which is the one place this pass
+   takes a control away from the browser — and the one place FI Calc does too
+   (`.mt-checkbox_checkbox`: a 1em box, a .2em corner, a hairline ring on a
+   barely-lit fill, filling with the accent when checked). A native
+   `accent-color` checkbox is a solid block in every state; the register here
+   is a hairline that fills, and a checkbox is the smallest statement of it. */
 .checkbox-option input[type='checkbox'] {
+  appearance: none;
   width: 1rem;
   height: 1rem;
   flex: none;
   margin: 0;
   padding: 0;
-  border: none;
-  border-radius: 0;
-  background: transparent;
-  accent-color: var(--accent);
+  border: 1px solid var(--edge-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-control);
   cursor: pointer;
+  display: grid;
+  place-content: center;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease;
 }
 
-.checkbox-option input[type='checkbox']:focus {
-  box-shadow: none;
+.checkbox-option input[type='checkbox']:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+/* Two borders of a rotated square: a tick with no glyph and no asset, and —
+   unlike a fill — one that a browser printing without background graphics
+   still draws. See the print sheet, which is where that matters. */
+.checkbox-option input[type='checkbox']::after {
+  content: '';
+  width: 0.25rem;
+  height: 0.5rem;
+  margin-top: -0.125rem;
+  border-right: 2px solid var(--surface);
+  border-bottom: 2px solid var(--surface);
+  transform: rotate(45deg);
+  opacity: 0;
+}
+
+.checkbox-option input[type='checkbox']:checked::after {
+  opacity: 1;
+}
+
+.checkbox-option:hover input[type='checkbox']:not(:checked):not(:disabled) {
+  border-color: var(--accent);
 }
 
 .checkbox-option input[type='checkbox']:focus-visible {
-  outline: 2px solid rgba(var(--accent-rgb), 0.6);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
@@ -473,37 +576,51 @@ fieldset.ceiling-picker legend {
   color: var(--ink-dim);
 }
 
-/* The state menu. Styled off the text inputs rather than the sliders, because
-   it is the only control here that picks a name rather than an amount. */
+/* The state menu, and the only control here that picks a name rather than an
+   amount. Set to FI Calc's `.select` — .9375rem, a 6px corner, a hairline in
+   the stronger edge, and a fill that rises out of the page rather than
+   sinking into it. It was a 1rem field on an 8px corner with 12px of padding
+   above and below, which is a text input's box, and it is not a text input:
+   it opens a list. */
 .state-select {
   width: 100%;
   appearance: none;
-  background: var(--surface-sunken);
-  border: 1px solid var(--edge);
-  border-radius: var(--radius-lg);
-  padding: 0.75rem 2.25rem 0.75rem 1rem;
+  background: var(--surface-control);
+  border: 1px solid var(--edge-strong);
+  border-radius: var(--radius-md);
+  padding: 0.5rem 1.75rem 0.5rem 0.625rem;
   color: var(--ink-bright);
-  font-size: 1rem;
+  font-size: 0.9375rem;
   font-family: inherit;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
   /* The chevron, drawn rather than shipped — one gradient pair, no asset. */
   background-image:
     linear-gradient(45deg, transparent 50%, var(--ink-dim) 50%),
     linear-gradient(135deg, var(--ink-dim) 50%, transparent 50%);
   background-position:
-    calc(100% - 1.125rem) calc(50% + 1px),
-    calc(100% - 0.75rem) calc(50% + 1px);
+    calc(100% - 0.875rem) calc(50% + 1px),
+    calc(100% - 0.5rem) calc(50% + 1px);
   background-size:
     0.375rem 0.375rem,
     0.375rem 0.375rem;
   background-repeat: no-repeat;
 }
 
+.state-select:hover {
+  border-color: var(--accent);
+}
+
+/* The ring a field takes: its own border thickened, not a wash laid around
+   it. One pixel of `box-shadow` in the border's new colour reads as a 2px
+   border without moving the box a pixel, which is exactly how FI Calc rings
+   its own `.select`. */
 .state-select:focus {
   outline: none;
   border-color: var(--accent);
-  box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.2);
+  box-shadow: 0 0 0 1px var(--accent);
 }
 
 .state-select option {
@@ -773,8 +890,9 @@ details.explainer summary {
   list-style: none;
   cursor: pointer;
   user-select: none;
+  /* Nothing paints this box — the corner is here to round the focus ring,
+     which an `outline` takes from the border box's radius. */
   border-radius: var(--radius-md);
-  transition: all 0.2s ease;
 }
 
 details.explainer summary::-webkit-details-marker {
@@ -813,7 +931,7 @@ details.explainer summary:hover::after {
 }
 
 details.explainer summary:focus-visible {
-  outline: 2px solid rgba(var(--accent-rgb), 0.6);
+  outline: 2px solid var(--accent);
   outline-offset: 4px;
 }
 
@@ -973,7 +1091,7 @@ footer p {
 }
 
 .step-nav-item:focus-visible {
-  outline: 2px solid rgba(var(--accent-rgb), 0.6);
+  outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
 
@@ -996,7 +1114,7 @@ footer p {
 }
 
 .step:focus-visible {
-  outline: 2px solid rgba(var(--accent-rgb), 0.6);
+  outline: 2px solid var(--accent);
   outline-offset: 0.75rem;
   border-radius: var(--radius-md);
 }
@@ -1078,7 +1196,7 @@ footer p {
 }
 
 .next-step:focus-visible {
-  outline: 2px solid rgba(var(--accent-rgb), 0.6);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
@@ -1312,7 +1430,7 @@ footer p {
 .advanced-inputs {
   margin-bottom: 1.5rem;
   border: 1px solid var(--edge);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   background: var(--surface-sunken);
 }
 
@@ -1325,8 +1443,8 @@ footer p {
   cursor: pointer;
   user-select: none;
   padding: 0.875rem 1rem;
-  border-radius: var(--radius-lg);
-  transition: background 0.2s ease;
+  border-radius: var(--radius-md);
+  transition: background-color 0.15s ease;
 }
 
 .advanced-inputs > summary::-webkit-details-marker {
@@ -1338,7 +1456,7 @@ footer p {
 }
 
 .advanced-inputs > summary:focus-visible {
-  outline: 2px solid rgba(var(--accent-rgb), 0.6);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
@@ -1391,7 +1509,7 @@ footer p {
 
 .advanced-inputs[open] > summary {
   border-bottom: 1px solid var(--edge);
-  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
 }
 
 /* The block's own padding replaces the input groups' bottom margin on the
@@ -1619,9 +1737,29 @@ footer p {
   .segmented-option input[type='radio']:checked + span {
     background: none;
     border: 1px solid #0369a1;
-    padding: calc(0.5rem - 1px) calc(1rem - 1px);
+    padding: calc(0.375rem - 1px) calc(0.75rem - 1px);
     color: #0c4a6e;
     font-weight: 700;
+  }
+
+  /* The checkbox is drawn rather than native as of the controls pass, so what
+     prints is whatever these rules say. Its tick is two borders of a rotated
+     square precisely so that it prints: a browser dropping background graphics
+     drops a fill, and an unticked box on a printed return is not a cosmetic
+     fault — it is the wrong answer to "are you 65". */
+  .checkbox-option input[type='checkbox'] {
+    background: none;
+    border-color: #64748b;
+  }
+
+  .checkbox-option input[type='checkbox']:checked {
+    background: none;
+    border-color: #0369a1;
+  }
+
+  .checkbox-option input[type='checkbox']::after {
+    border-right-color: #0369a1;
+    border-bottom-color: #0369a1;
   }
 
   /* White on a dark ground, with a chevron drawn in two gradients that only

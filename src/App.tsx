@@ -51,6 +51,14 @@ import {
   scenarioUrl,
   MAX_MUNI_INTEREST,
 } from './utils/scenarioUrl';
+import {
+  STATE_SS_RULES,
+  stateSSRule,
+  stateTestDeltas,
+  statesTaxingSocialSecurity,
+  statesWithMovingTests,
+  taxesBenefitsIn,
+} from './utils/stateTax';
 import { formatCurrency } from './utils/format';
 import type {
   TaxYear,
@@ -169,6 +177,12 @@ const formatPercent = (rate: number): string =>
 /** A rate given as a fraction, rendered as cents lost per dollar earned. */
 const formatCents = (rate: number): string =>
   `${Math.round(rate * 10_000) / 100}\u00A2`;
+
+/** "Colorado, Connecticut and Vermont" — no Oxford comma, as elsewhere here. */
+const sentenceList = (items: string[]): string =>
+  items.length < 2
+    ? (items[0] ?? '')
+    : `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
 
 const formatCompact = (value: number): string =>
   new Intl.NumberFormat('en-US', {
@@ -722,6 +736,16 @@ const App: React.FC = () => {
    * picker's own captions are for.
    */
   const [ceilingId, setCeilingId] = useState<ConversionCeilingId>(opening.ceilingId);
+  /**
+   * Where the reader lives, as a postal abbreviation, or `''` for a reader who
+   * has not said.
+   *
+   * The only input on this page that moves no figure. State treatment of a
+   * benefit is nine different rules and no two of them share a shape, so the
+   * app prints them and cites them rather than modelling them wrong — which
+   * means this selects a paragraph under step 2's chart and nothing else.
+   */
+  const [homeState, setHomeState] = useState<string>(opening.homeState);
 
   /**
    * The address bar, kept in step with the return.
@@ -747,6 +771,7 @@ const App: React.FC = () => {
       muniInterest,
       qcd,
       ceilingId,
+      homeState,
     };
     window.history.replaceState(
       window.history.state,
@@ -764,6 +789,7 @@ const App: React.FC = () => {
     muniInterest,
     qcd,
     ceilingId,
+    homeState,
   ]);
 
   const yearFiling = filingParams(year, filingStatus);
@@ -785,6 +811,25 @@ const App: React.FC = () => {
    */
   const mfsBrackets = filingParams(year, 'mfs').brackets;
   const mfsSingleDivergence = mfsBrackets[mfsBrackets.length - 2].upTo;
+
+  /**
+   * The state footnote's whole input, which is a lookup and not a sum.
+   *
+   * `homeStateRule` stays set when the selected state drops off the year's
+   * list — West Virginia does exactly that between 2025 and 2026 — because a
+   * reader who said "West Virginia" and then changed the year is owed the
+   * sentence explaining that the phase-out finished, not a silently cleared
+   * selector.
+   */
+  const homeStateRule = homeState ? stateSSRule(homeState) : undefined;
+  const homeStateTaxes = homeStateRule
+    ? taxesBenefitsIn(homeStateRule, year)
+    : false;
+  const homeStateDeltas = homeStateRule
+    ? stateTestDeltas(homeStateRule, year)
+    : [];
+  const statesTaxing = statesTaxingSocialSecurity(year);
+  const movingStates = statesWithMovingTests(year);
 
   /**
    * Switching years re-prices the benefit as well as the brackets. Someone who
@@ -1627,6 +1672,49 @@ const App: React.FC = () => {
           </div>
         </div>
 
+        {/* The one control on this page that moves no figure. It belongs in
+            step 1 because it is a fact about the reader rather than about the
+            chart, and it is answered under step 2's chart because that is the
+            curve it qualifies. */}
+        <div className="input-group">
+          <div className="slider-header">
+            <label htmlFor="home-state">State</label>
+            <span className="slider-value">
+              {homeStateRule ? homeStateRule.abbr : 'Not said'}
+            </span>
+          </div>
+          <select
+            id="home-state"
+            className="state-select"
+            value={homeState}
+            onChange={(e) => setHomeState(e.target.value)}
+          >
+            <option value="">Somewhere else \u2014 or rather not say</option>
+            {STATE_SS_RULES.map((rule) => (
+              <option key={rule.abbr} value={rule.abbr}>
+                {rule.state}
+              </option>
+            ))}
+          </select>
+          <div className="slider-range-labels">
+            <span>
+              {statesTaxing.length} of these {STATE_SS_RULES.length} still tax a
+              benefit in {year}
+            </span>
+          </div>
+          <p className="field-note">
+            The menu is the {STATE_SS_RULES.length} states that taxed a Social
+            Security benefit in either year this page prices, and{' '}
+            {statesTaxing.length} of them still do in {year}. Everywhere else
+            leaves the benefit alone \u2014 with or without an income tax of its
+            own \u2014 so &ldquo;somewhere else&rdquo; is the right answer for
+            most readers. Nothing below is priced from this: no two of these{' '}
+            {STATE_SS_RULES.length} rules share a shape, so the page quotes them
+            and cites them rather than modelling them wrong. What it changes is
+            one footnote under step 2&rsquo;s chart.
+          </p>
+        </div>
+
         <details className="advanced-inputs">
           <summary>
             <span className="advanced-label">Advanced inputs</span>
@@ -1926,6 +2014,66 @@ const App: React.FC = () => {
 
           <StandingNote standing={standing} at={ordinaryIncome} />
         </div>
+
+        {/* State tax as a footnote rather than a step of its own: the data is
+            text, so what it needs is a paragraph and a citation, not a chart.
+            The rule stays quotable even when the state has dropped off the
+            year's list \u2014 West Virginia does exactly that between 2025 and
+            2026 \u2014 which is the second branch here. */}
+        <p className="state-footnote" role="note">
+          {homeStateRule ? (
+            homeStateTaxes ? (
+              <>
+                <strong>
+                  {homeStateRule.state} taxes part of this benefit as well, and
+                  the curve above does not.
+                </strong>{' '}
+                {homeStateRule.mechanism}. {homeStateRule.rule} The {year} test
+                is <em>{homeStateRule.test[year]}</em>.
+                {homeStateDeltas.map((delta) => (
+                  <React.Fragment key={delta.year}>
+                    {' '}
+                    It reads differently in {delta.year}: <em>{delta.test}</em>.
+                  </React.Fragment>
+                ))}{' '}
+                <span className="state-source">
+                  {homeStateRule.source}.
+                </span>
+              </>
+            ) : (
+              <>
+                <strong>
+                  {homeStateRule.state} stopped taxing benefits in{' '}
+                  {homeStateRule.exemptFrom}.
+                </strong>{' '}
+                {homeStateRule.rule} So on a {year} return the curve above is
+                the whole of what this benefit costs: {homeStateRule.state}{' '}
+                still taxes other income, but no part of the benefit.{' '}
+                <span className="state-source">
+                  {homeStateRule.source}.
+                </span>
+              </>
+            )
+          ) : (
+            <>
+              <strong>Every figure on this page is a federal one.</strong>{' '}
+              {statesTaxing.length} states still reach a Social Security benefit
+              in {year} \u2014{' '}
+              {sentenceList(statesTaxing.map((rule) => rule.state))} \u2014 and a
+              reader in one of them is looking at a curve that understates their
+              own bill.{' '}
+              {movingStates.length > 0 ? (
+                <>
+                  {sentenceList(movingStates.map((rule) => rule.state))}{' '}
+                  {movingStates.length > 1 ? 'read' : 'reads'} differently in
+                  the other year this page prices, so the tax year set in step 1
+                  moves {movingStates.length > 1 ? 'them' : 'it'} too.{' '}
+                </>
+              ) : null}
+              Name your state in step 1 and this footnote says what it does.
+            </>
+          )}
+        </p>
 
         <details className="explainer">
           <summary>

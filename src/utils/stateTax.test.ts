@@ -5,6 +5,7 @@ import {
   statesWithMovingTests,
   stateSSRule,
   stateTestDeltas,
+  taxesBenefitsIn,
 } from './stateTax';
 import { TAX_YEARS } from './tax';
 
@@ -21,6 +22,29 @@ describe('state treatment of Social Security benefits', () => {
       'VT',
       'WV',
     ]);
+  });
+
+  /**
+   * The predicate the footnote branches on: a reader who named West Virginia
+   * and then moved the year is owed the sentence saying the phase-out
+   * finished, so the rule has to stay lookup-able after it stops being on the
+   * year's list.
+   */
+  it('answers per state and per year, and agrees with the list', () => {
+    const wv = stateSSRule('WV')!;
+    expect(taxesBenefitsIn(wv, 2025)).toBe(true);
+    expect(taxesBenefitsIn(wv, 2026)).toBe(false);
+
+    for (const year of TAX_YEARS) {
+      const listed = new Set(
+        statesTaxingSocialSecurity(year).map((r) => r.abbr),
+      );
+      for (const rule of STATE_SS_RULES) {
+        expect(taxesBenefitsIn(rule, year), `${rule.abbr} ${year}`).toBe(
+          listed.has(rule.abbr),
+        );
+      }
+    }
   });
 
   it('drops West Virginia for 2026, leaving eight', () => {

@@ -5,7 +5,10 @@
  * lived only in React state: a refresh threw the return away and there was
  * nothing to send to a spouse or an advisor. Putting them in the query string
  * fixes both at once, because the address bar is already the share surface
- * every reader knows how to use.
+ * every reader knows how to use. An eleventh value rides along that prices
+ * nothing — `homeState`, which picks step 2's state footnote — because a link
+ * is meant to carry the return as its reader described it, and where they live
+ * is part of the description even when it moves no line on a chart.
  *
  * Three decisions are worth writing down, since the encoding itself is
  * trivial and these are not.
@@ -45,6 +48,7 @@ import {
   conversionCeilings,
 } from './tax';
 import type { FilingStatus, TaxYear, ConversionCeilingId } from './tax';
+import { stateSSRule } from './stateTax';
 import { formatCurrency } from './format';
 
 /** The whole return the page prices, and the whole of what a link carries. */
@@ -59,6 +63,16 @@ export interface PageScenario {
   muniInterest: number;
   qcd: number;
   ceilingId: ConversionCeilingId;
+  /**
+   * Postal abbreviation of the state whose treatment of the benefit step 2
+   * footnotes, or `''` for a reader who has not said.
+   *
+   * The one value here that prices nothing: state tax is text on this page, not
+   * arithmetic, so this changes a paragraph and no figure. It travels in the
+   * link anyway, because the link is meant to carry the return as the reader
+   * described it, and "I live in Montana" is part of that description.
+   */
+  homeState: string;
 }
 
 /** The other income the page opens with, before the reader touches anything. */
@@ -118,6 +132,7 @@ export function defaultScenario(year: TaxYear = defaultTaxYear()): PageScenario 
     muniInterest: 0,
     qcd: 0,
     ceilingId: 'bracket12',
+    homeState: '',
   };
 }
 
@@ -163,6 +178,9 @@ export function encodeScenario(scenario: PageScenario): string {
   if (scenario.spouseIsSenior) params.set('spouse', '1');
   if (scenario.ceilingId !== opening.ceilingId) {
     params.set('ceiling', scenario.ceilingId);
+  }
+  if (scenario.homeState !== opening.homeState) {
+    params.set('state', scenario.homeState);
   }
   return params.toString();
 }
@@ -320,6 +338,27 @@ export function decodeScenario(search: string): DecodedScenario {
     }
   }
 
+  /*
+   * A state this table has nothing to say about is not an error to report. The
+   * list is the states that *tax* the benefit, so "CA" is a perfectly sensible
+   * thing for a reader to have typed and the honest answer is the same one
+   * California gets from the page's own selector: nothing, because California
+   * leaves the benefit alone. Only a string that is not a state at all earns a
+   * note.
+   */
+  const rawState = params.get('state');
+  let homeState = '';
+  if (rawState !== null && rawState.trim() !== '') {
+    const matched = stateSSRule(rawState);
+    if (matched) {
+      homeState = matched.abbr;
+    } else if (!/^[A-Za-z]{2}$/.test(rawState.trim())) {
+      notes.push(
+        `This link names a state as “${rawState}”, which is not a two-letter abbreviation, so no state footnote is shown.`,
+      );
+    }
+  }
+
   return {
     scenario: {
       year,
@@ -332,6 +371,7 @@ export function decodeScenario(search: string): DecodedScenario {
       muniInterest,
       qcd,
       ceilingId,
+      homeState,
     },
     notes,
   };

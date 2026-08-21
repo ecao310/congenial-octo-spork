@@ -184,13 +184,26 @@ export const STATE_SS_RULES: StateSSRule[] = [
   },
 ];
 
+/**
+ * Whether one state still reaches some part of a benefit in the given tax
+ * year.
+ *
+ * The condition is one comparison, but it is the condition that decides which
+ * of two paragraphs a reader who named their state is shown, so it is worth
+ * having in one place rather than spelled out again at the render layer.
+ */
+export function taxesBenefitsIn(
+  rule: StateSSRule,
+  year: TaxYear = defaultTaxYear(),
+): boolean {
+  return rule.exemptFrom === null || year < rule.exemptFrom;
+}
+
 /** The states that still tax some part of a benefit in the given tax year. */
 export function statesTaxingSocialSecurity(
   year: TaxYear = defaultTaxYear(),
 ): StateSSRule[] {
-  return STATE_SS_RULES.filter(
-    (rule) => rule.exemptFrom === null || year < rule.exemptFrom,
-  );
+  return STATE_SS_RULES.filter((rule) => taxesBenefitsIn(rule, year));
 }
 
 /**

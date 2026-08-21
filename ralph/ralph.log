@@ -4174,3 +4174,77 @@ fragment passing through `scenarioUrl`), 9 in App.test.tsx covering the page's
 half — opening on a ten-value link, writing each change back, not pushing,
 surviving an unmount-and-remount, the fragment marking the step and surviving a
 rewrite, and the note card appearing, saying what it swapped, and dismissing.
+
+---
+
+## Iteration: state treatment as a footnote on step 2 (21 Aug 2026)
+
+`stateTax.ts` had 256 lines of sourced lookup table, its own test file, four
+exported functions and no reader at all — the tab that used to render it went
+with the Strategies tab in 5fe9854. Meanwhile the page's only admission that
+states exist was one clause at the bottom of the IRMAA explainer. Nine states
+taxed a Social Security benefit in 2025, so a reader in Montana was being shown
+a curve that understates their own bill with nothing on screen saying so.
+
+### Why a footnote and not a step
+
+The data is text. Colorado runs off age bands, Connecticut caps the taxed share
+at 25% of benefits *received*, Utah works through a credit rather than a
+subtraction, Vermont prorates, Montana has no rule at all. There is no shared
+shape to compute, which is exactly why the table was written as prose with
+citations in the first place — so what it needs is a paragraph and a source
+line, not a chart, not a slider and not a fifth step in a flow that is already
+four long. A menu in step 1, one conditional paragraph under step 2's chart.
+
+### The three branches
+
+The footnote has a branch per state of knowledge, and the middle one is the
+reason the design works:
+
+1. **No state named.** Names all nine (via `statesTaxingSocialSecurity`), says
+   everything on the page is federal, and — via `statesWithMovingTests` —
+   names the states whose rule reads differently in the *other* year the page
+   prices. That last clause is what gives step 1's year selector a reach into
+   this footnote: Minnesota re-indexes, Rhode Island indexes a year behind, West
+   Virginia's phase-out finishes.
+2. **A state that still taxes.** Mechanism, rule, this year's income test, the
+   other year's test when `stateTestDeltas` finds one, and the source.
+3. **A state that has stopped.** West Virginia in 2026, and the only reason the
+   selection is *not* cleared when the state falls off the year's list. A reader
+   who said "West Virginia" and then moved the year is owed the sentence saying
+   the phase-out finished — clearing the menu under them would throw away both
+   the answer and the question. `taxesBenefitsIn` (new, one comparison) is the
+   predicate that picks between 2 and 3; the menu itself is always the full
+   `STATE_SS_RULES`, with a caption counting how many of them still bite in the
+   selected year (9 of 9 in 2025, 8 of 9 in 2026).
+
+### `homeState` in the link
+
+An eleventh value in `PageScenario`, and the first one that prices nothing. It
+travels anyway: a link is meant to carry the return as its reader described it,
+and "I live in Montana" is part of that description even though it moves no line
+on any chart.
+
+Its decode rules are looser than a dollar figure's, deliberately. `state=CA`
+gets no footnote and *no note* — California is a real state that genuinely does
+not tax the benefit, so the honest answer is the same one the page's own menu
+gives it, and "we could not honour your link" would be a lie. Only a string that
+is not a two-letter abbreviation at all (`state=Montana`) earns a note. Matching
+is through `stateSSRule`, which was already case-insensitive and trims.
+
+### Verified
+
+`npx tsc -b`, `npx eslint src --max-warnings 0`, `npx vitest run` (8 files, 579
+tests, green in 9.9s), `npm run build`. +12 tests: 8 in App.test.tsx (the
+opening federal paragraph and its nine names, the moving-states clause, Montana
+quoted with its source, Minnesota showing both years' tests, West Virginia
+surviving the year flip into the stopped-taxing branch, the menu caption
+counting per year, the link writing `state=VT` and opening on `state=UT`), 3 in
+scenarioUrl.test.ts and 1 in stateTax.test.ts pinning `taxesBenefitsIn` against
+the list it filters.
+
+Three items went to Discovered work: the IRMAA explainer's now-duplicate
+"federal income tax only" clause, the gate bullet that still defers work on
+`stateTax.ts`'s account, and the fact that the state reaches step 2 and stops —
+step 4 sizes a conversion against a federal ceiling and never mentions that
+Montana taxes the conversion too.

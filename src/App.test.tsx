@@ -671,6 +671,119 @@ describe('the shape every step shares', () => {
 });
 
 /**
+ * The chart says what every income costs; this says what the reader's own
+ * income costs and which way it is worth moving. The tooltip has carried the
+ * same arithmetic all along, but only for whichever point a mouse was over —
+ * which is nobody's point in particular, and no point at all on a touchscreen.
+ *
+ * Figures below are 2025, single, the $23,712 average benefit: the rate rises
+ * 0% to $14,750, 15%, 18.5%, then the hump at 22.2% from $22,750 to $40,500,
+ * a 12% valley to $44,000, 22% to $98,750, and 24% past that.
+ */
+describe('the advice under the slider', () => {
+  const incomeSlider = (): HTMLElement =>
+    screen.getByRole('slider', { name: /other income \(not social security\)/i });
+  const advice = (): HTMLElement =>
+    document.querySelector('#step-torpedo .slider-advice') as HTMLElement;
+  const setIncome = (value: number): void => {
+    fireEvent.change(incomeSlider(), { target: { value: String(value) } });
+  };
+
+  it('sits with the slider it is keyed to, under the readout', () => {
+    render(<App />);
+    const group = incomeSlider().closest('.input-group') as HTMLElement;
+    expect(group.contains(advice())).toBe(true);
+    expect(
+      advice().compareDocumentPosition(
+        group.querySelector('.slider-readout') as HTMLElement,
+      ) & Node.DOCUMENT_POSITION_PRECEDING,
+    ).toBeTruthy();
+  });
+
+  it('names both ways off the hump when the reader is standing on it', () => {
+    render(<App />);
+    // The default $30,000 opens the page mid-hump, which is the whole point.
+    expect(advice()).toHaveTextContent('You are standing on the hump');
+    expect(advice()).toHaveTextContent(
+      'it holds from $22,750 to $40,500',
+    );
+    expect(advice()).toHaveTextContent(
+      'Coming back under $22,750 — $7,250 less income — takes the next dollar down to 18.5%',
+    );
+    expect(advice()).toHaveTextContent(
+      'clearing $40,750 — $10,750 more — takes it to 12%',
+    );
+  });
+
+  it('measures the room left when the reader is on the valley floor', () => {
+    render(<App />);
+    setIncome(10_000);
+    expect(advice()).toHaveTextContent('You are on the valley floor');
+    expect(advice()).toHaveTextContent(
+      'every dollar up to $15,000 — $5,000 of room from here',
+    );
+    expect(advice()).toHaveTextContent('climbs to 22.2% by $22,750');
+  });
+
+  it('measures the distance left when the reader is on the climb', () => {
+    render(<App />);
+    setIncome(20_000);
+    expect(advice()).toHaveTextContent('You are on the climb');
+    expect(advice()).toHaveTextContent(
+      '$2,750 further on — at $22,750 — the rate reaches 22.2%',
+    );
+  });
+
+  /**
+   * Past the hump the advice is about deferral, and it has to name the
+   * *nearest* cheaper ground rather than the cheapest: the cheapest is the run
+   * below the standard deduction, which is true and useless. Here that is the
+   * 12% valley the reader has just cleared, not the 0% floor at the far left.
+   */
+  it('prices deferral against the nearest cheaper ground once the hump is behind', () => {
+    render(<App />);
+    setIncome(60_000);
+    expect(advice()).toHaveTextContent('The hump is behind you');
+    expect(advice()).toHaveTextContent(
+      'against 22.2% back between $22,750 and $40,500',
+    );
+    expect(advice()).toHaveTextContent(
+      'nearest cheaper ground on this chart is 12% between $40,750 and $44,000',
+    );
+    expect(advice()).toHaveTextContent('costs 12% rather than 22%');
+    expect(advice()).not.toHaveTextContent('0% between');
+  });
+
+  it('says there is no hump when there is no benefit to drag in', () => {
+    render(<App />);
+    fireEvent.change(
+      screen.getByRole('slider', { name: /social security benefit/i }),
+      { target: { value: '0' } },
+    );
+    setIncome(40_000);
+    expect(advice()).toHaveTextContent('This return has no hump');
+    expect(advice()).toHaveTextContent(
+      'The next dollar costs 12%, and holds there to $64,250',
+    );
+    expect(advice()).not.toHaveTextContent('hump is behind you');
+  });
+
+  it('moves the reader through all four positions on one curve', () => {
+    render(<App />);
+    const opening = (): string =>
+      advice().querySelector('strong')?.textContent ?? '';
+    setIncome(0);
+    expect(opening()).toBe('You are on the valley floor.');
+    setIncome(20_000);
+    expect(opening()).toBe('You are on the climb.');
+    setIncome(30_000);
+    expect(opening()).toBe('You are standing on the hump.');
+    setIncome(60_000);
+    expect(opening()).toBe('The hump is behind you.');
+  });
+});
+
+/**
  * The step-3 rewrite: a long-term gain is a share of the income entered in
  * step 2, never a second figure stacked on top of it. So the reader's total
  * income is one number set once, step 3 moves only its composition, and both

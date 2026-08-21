@@ -20,6 +20,7 @@ import {
   filingParams,
   FilingStatus,
   segmentCurve,
+  standingOn,
   splitOtherIncome,
   incomeAxisMax,
   incomeAxisFeatures,
@@ -45,6 +46,7 @@ import type {
   LTCGMarginalRatePoint,
   MarginalRatePoint,
   CurveSegment,
+  CurveStanding,
   IrmaaCliff,
 } from './utils/tax';
 
@@ -379,6 +381,153 @@ export const LTCGTooltip: React.FC<LTCGTooltipProps> = ({
   );
 };
 
+interface StandingNoteProps {
+  /** Where the reader is standing on step 2's curve. Null before it is drawn. */
+  standing: CurveStanding<MarginalRatePoint> | null;
+  /** The reader's own place on the axis — the figure the slider holds. */
+  at: number;
+}
+
+/**
+ * Why this particular reader should move their income up, down, or not at all.
+ *
+ * The tooltip has always carried this arithmetic — "stay under $x or over $y"
+ * for a hill, "fill this valley" for a valley — but only for whichever point
+ * the mouse happened to be over, which is nobody's point in particular and no
+ * point at all on a touchscreen. The reader's own place is the one place worth
+ * saying it about, so here it is said out loud, keyed to the slider and shown
+ * without being asked for.
+ *
+ * Every branch names dollar figures the reader can act on rather than the
+ * mechanism behind them: the hump is "the dearest stretch on this chart", not
+ * the 85% inclusion cap, because the same shape is also drawn by the senior
+ * deduction's phaseout, and the explainers below the chart are where the
+ * mechanism belongs.
+ */
+export const StandingNote: React.FC<StandingNoteProps> = ({ standing, at }) => {
+  if (!standing) return null;
+  const { kind, here, prev, next, hump, cheaperBehind } = standing;
+  const rate = `${here.rate}%`;
+
+  if (kind === 'peak' && hump) {
+    const drop = at - hump.start;
+    const clear = next ? (
+      <>
+        clearing {formatCurrency(next.start)} &mdash;{' '}
+        {formatCurrency(next.start - at)} more &mdash; takes it to {next.rate}%
+      </>
+    ) : null;
+    return (
+      <p className="slider-advice">
+        <strong>You are standing on the hump.</strong> The next dollar costs{' '}
+        {rate} &mdash; the highest rate this chart reaches, and it holds from{' '}
+        {formatCurrency(hump.start)} to {formatCurrency(hump.end)}.{' '}
+        {prev ? (
+          <>
+            Coming back under {formatCurrency(hump.start)}
+            {drop > 0 ? (
+              <> &mdash; {formatCurrency(drop)} less income &mdash;</>
+            ) : null}{' '}
+            takes the next dollar down to {prev.rate}%
+            {clear ? <>; {clear}</> : null}.{' '}
+          </>
+        ) : (
+          <>
+            It starts at the first dollar of other income, so there is no way
+            off it to the left
+            {clear ? <>: {clear}</> : null}.{' '}
+          </>
+        )}
+        Every dollar in between is charged the hump rate, so the move that pays
+        is around this stretch rather than into it: stop short of the near edge,
+        or take enough at once to land past the far one.
+      </p>
+    );
+  }
+
+  if (kind === 'climbing' && hump) {
+    return (
+      <p className="slider-advice">
+        <strong>You are on the climb.</strong> The next dollar costs {rate}, and{' '}
+        {formatCurrency(hump.start - at)} further on &mdash; at{' '}
+        {formatCurrency(hump.start)} &mdash; the rate reaches {hump.rate}% and
+        holds to {formatCurrency(hump.end)}, the dearest stretch on this chart.
+        Income that stays short of {formatCurrency(hump.start)} is charged at{' '}
+        {rate}; income that cannot is cheaper taken all at once, in one year
+        that clears the hump, than a slice at a time inside it.
+      </p>
+    );
+  }
+
+  if (kind === 'valley' && next) {
+    return (
+      <p className="slider-advice">
+        <strong>You are on the valley floor.</strong> The next dollar costs{' '}
+        {rate}, and so does every dollar up to {formatCurrency(next.start)}{' '}
+        &mdash; {formatCurrency(next.start - at)} of room from here &mdash;
+        after which the rate steps to {next.rate}%
+        {hump ? (
+          <>
+            {' '}
+            and climbs to {hump.rate}% by {formatCurrency(hump.start)}
+          </>
+        ) : null}
+        . That room is what a Roth conversion or a larger withdrawal is for: the
+        same dollar costs {rate} taken here
+        {hump
+          ? ` and ${hump.rate}% taken in a year that has already climbed to ${formatCurrency(hump.start)}`
+          : ''}
+        .
+      </p>
+    );
+  }
+
+  if (kind === 'past' && hump) {
+    return (
+      <p className="slider-advice">
+        <strong>The hump is behind you.</strong> The next dollar costs {rate},
+        against {hump.rate}% back between {formatCurrency(hump.start)} and{' '}
+        {formatCurrency(hump.end)}
+        {next
+          ? `, and it holds at ${rate} until ${formatCurrency(next.start)}, where it steps to ${next.rate}%`
+          : ''}
+        . Whatever that stretch was dragging into the tax base has all been
+        dragged in, so each further dollar is charged at its own bracket rate
+        again.{' '}
+        {cheaperBehind ? (
+          <>
+            Deferral is worth what the receiving year is lower by: the nearest
+            cheaper ground on this chart is {cheaperBehind.rate}% between{' '}
+            {formatCurrency(cheaperBehind.start)} and{' '}
+            {formatCurrency(cheaperBehind.end)}, so a dollar deferred into a
+            year that starts there costs {cheaperBehind.rate}% rather than {rate}.
+          </>
+        ) : (
+          <>
+            Nothing behind you on this chart is cheaper than {rate}, so
+            deferring a dollar out of this year buys nothing on its own &mdash;
+            it has to land in a year with less other income in it, not merely a
+            later one.
+          </>
+        )}
+      </p>
+    );
+  }
+
+  return (
+    <p className="slider-advice">
+      <strong>This return has no hump.</strong> The next dollar costs {rate}
+      {next
+        ? `, and holds there to ${formatCurrency(next.start)}, where it steps to ${next.rate}%`
+        : ''}
+      . No dollar on this chart costs more than the bracket it lands in &mdash;
+      there is no stretch where an extra dollar drags something else into the
+      tax base with it &mdash; so the ordinary rule is the whole rule here: take
+      income in the years your bracket is lowest.
+    </p>
+  );
+};
+
 const App: React.FC = () => {
   const [step, setStep] = useState<StepId>('benefit');
   const [year, setYear] = useState<TaxYear>(() => defaultTaxYear());
@@ -651,6 +800,17 @@ const App: React.FC = () => {
   const hereGainPoint = useMemo(
     () => pointAt(ltcgCurve, (p) => p.ltcg, plannedLtcg),
     [ltcgCurve, plannedLtcg],
+  );
+
+  /**
+   * And what that place is worth knowing about: which side of the hump the
+   * reader is on, and so which way their income is worth moving. Same
+   * segments the tooltip reads, asked about one point rather than whichever
+   * point a mouse is over.
+   */
+  const standing = useMemo(
+    () => standingOn(segments, ordinaryIncome),
+    [segments, ordinaryIncome],
   );
 
   /**
@@ -1269,6 +1429,8 @@ const App: React.FC = () => {
               ? ` Step 3 has ${formatCurrency(plannedLtcg)} of this coming from long-term gains, which is priced into the curve rather than added to it.`
               : ''}
           </p>
+
+          <StandingNote standing={standing} at={ordinaryIncome} />
         </div>
 
         <details className="explainer">

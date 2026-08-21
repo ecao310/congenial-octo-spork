@@ -3475,3 +3475,96 @@ Note also that the existing "a gain crowds out the gift" bullet gets more
 reachable with this change: the summary line still names the gift the reader
 set, not the smaller amount their income can actually exclude, and the gift can
 now be set well past any income.
+
+
+Tell the reader which way to move, not just where they are
+==========================================================
+
+The tooltip has carried this arithmetic since the third iteration — "stay under
+$x or over $y" on a hill, "fill this valley" in a valley — but only for
+whichever point the mouse happened to be over. That is nobody's point in
+particular, and no point at all on a touchscreen. The slider knows the one
+point worth saying it about.
+
+### The classifier
+
+`standingOn(segments, x)` in tax.ts, next to the `segmentCurve` it reads:
+
+    kind: 'valley' | 'climbing' | 'peak' | 'past' | 'flat'
+    here / prev / next   the stretch the reader is in and its neighbours
+    hump                 the hill in play
+    cheaperBehind        the nearest stretch below them charging less
+
+The one rule that needed deciding: **the hump ahead beats the hump behind.**
+The dip between the Social Security torpedo and the senior deduction's
+phaseout is shaped exactly like the dip past the last hump, and `segmentCurve`
+types both of them 'valley' — but a reader in the first has a climb coming and
+a reader in the second does not, so the classifier looks forward first and only
+then back. That is why 'past' can be returned for a segment whose own type is
+'valley'.
+
+`cheaperBehind` is the *nearest* cheaper stretch, not the cheapest. The
+cheapest is almost always the run below the standard deduction, which is true
+and no use to anyone deciding whether to hold a withdrawal back a year. Nearest
+gives the 2025 single filer at $60,000 the 12% valley at $40,750–$44,000 — the
+one they just cleared and could get back to.
+
+That field came out of a wrong sentence rather than a plan. The first draft of
+the 'past' branch read "holding income back only helps if it lands in a year
+that starts below $22,750", naming the near edge of the hump. False for exactly
+the reader most likely to read it: at $60,000 a year starting in the 12% valley
+is cheaper too, and the hump's near edge is nowhere near the boundary that
+matters.
+
+### The prose
+
+`StandingNote` in App.tsx, one branch per kind, rendered under the readout in
+step 2's slider group. Every branch names dollars and rates the reader can act
+on and never names the mechanism — "the dearest stretch on this chart", not
+"the 85% inclusion cap" — because the same hump shape is also drawn by the
+senior deduction phaseout, and the mechanism is what the explainers below the
+chart are for. The default page load ($30,000, single, average benefit) opens
+mid-hump, which is the case the whole app exists to show:
+
+> **You are standing on the hump.** The next dollar costs 22.2% — the highest
+> rate this chart reaches, and it holds from $22,750 to $40,500. Coming back
+> under $22,750 — $7,250 less income — takes the next dollar down to 18.5%;
+> clearing $40,750 — $10,750 more — takes it to 12%. Every dollar in between is
+> charged the hump rate, so the move that pays is around this stretch rather
+> than into it: stop short of the near edge, or take enough at once to land
+> past the far one.
+
+Guards that earn their keep: a reader standing exactly on the near edge drops
+the "$0 less income" clause; a hump that starts at the first dollar (no `prev`)
+says so instead of offering a way off to the left. The second is unreachable
+today — even the separate return with $0 thresholds has a standard deduction
+under it — and stays in because a future input could take it away.
+
+### Tests
+
++17, 462 -> 479.
+
+tax.test.ts (10): all four positions on the hand-written curve from the
+`segmentCurve` test, the hump-ahead-beats-hump-behind rule, a curve with no
+hump read from both ends, a value that falls between samples, an empty curve,
+`cheaperBehind` nearest-not-cheapest, and two real curves — the average
+benefit walked valley -> peak -> past, and a $0 benefit that has no hill at all.
+
+App.test.tsx (7): the note's placement under the readout inside the slider's
+own group, one test per branch asserting the figures above, and one that walks
+the slider through all four openings on a single curve.
+
+### Verified
+
+`npx tsc -b`, `npx eslint src --max-warnings 0`, `npx vitest run` (7 files, 479
+tests, green in 4.9s), `npm run build`. CSS: one rule, `.slider-advice`, a left
+rule in the slider's own amber rather than a new size.
+
+### Logged, not fixed
+
+Two Discovered Work bullets. Step 3's slider gets no advice — `standingOn` is
+generic and `ltcgSegments` already exists, but every branch here says "income"
+and step 3 moves composition, so it wants its own prose. And the advice cannot
+see the IRMAA cliffs: "clearing $40,750 — $10,750 more" is sound about tax and
+silent about the lump a reader might step over getting there, which the rest of
+this page is careful to price.

@@ -7,6 +7,7 @@ import {
   taxableSocialSecurity,
   totalTax,
   segmentCurve,
+  standingOn,
   splitOtherIncome,
   conversionCeilings,
   conversionMeasureValue,
@@ -840,6 +841,141 @@ describe('segmentCurve', () => {
       end: 8000,
       type: 'flat',
     });
+  });
+});
+
+describe('standingOn', () => {
+  /**
+   * The same shape the segmentCurve test uses, and for the same reason: a hand
+   * written curve says which stretch is which without depending on a year's
+   * figures. Segments run valley(0%) - flat(15%) - hill(22%) - valley(12%) -
+   * flat(22%).
+   */
+  const mockCurve = [
+    { income: 0, marginalRate: 0 },
+    { income: 1000, marginalRate: 0 },
+    { income: 2000, marginalRate: 15 },
+    { income: 3000, marginalRate: 15 },
+    { income: 4000, marginalRate: 22 },
+    { income: 5000, marginalRate: 22 },
+    { income: 6000, marginalRate: 12 },
+    { income: 7000, marginalRate: 12 },
+    { income: 8000, marginalRate: 22 },
+  ];
+  const mockSegments = segmentCurve(mockCurve, (p) => p.income);
+  const standAt = (x: number) => standingOn(mockSegments, x);
+
+  it('puts a reader below the first rise on the valley floor, hump ahead', () => {
+    const standing = standAt(0);
+    expect(standing).toMatchObject({
+      kind: 'valley',
+      here: { rate: 0 },
+      prev: null,
+      next: { rate: 15 },
+      hump: { rate: 22, start: 4000, end: 5000 },
+    });
+  });
+
+  it('puts a reader on a raised stretch below the hump on the climb', () => {
+    expect(standAt(2500)).toMatchObject({
+      kind: 'climbing',
+      here: { rate: 15 },
+      prev: { rate: 0 },
+      hump: { rate: 22, start: 4000 },
+    });
+  });
+
+  it('puts a reader inside the hump at the peak, with both ways off it', () => {
+    expect(standAt(4000)).toMatchObject({
+      kind: 'peak',
+      here: { rate: 22, start: 4000, end: 5000 },
+      prev: { rate: 15 },
+      next: { rate: 12 },
+      hump: { rate: 22, start: 4000 },
+    });
+  });
+
+  it('prefers the hump ahead to the hump behind', () => {
+    // The dip after a hump is a valley by shape, but with nothing higher left
+    // to warn about the advice is about the one already cleared.
+    expect(standAt(6500)).toMatchObject({
+      kind: 'past',
+      here: { rate: 12 },
+      hump: { rate: 22, start: 4000, end: 5000 },
+    });
+    expect(standAt(8000)).toMatchObject({ kind: 'past', here: { rate: 22, start: 8000 } });
+  });
+
+  it('reads a curve with no hump as flat, whichever end the reader is at', () => {
+    const climbing = segmentCurve(
+      [
+        { income: 0, marginalRate: 0 },
+        { income: 1000, marginalRate: 10 },
+        { income: 2000, marginalRate: 12 },
+      ],
+      (p) => p.income,
+    );
+    expect(standingOn(climbing, 0)).toMatchObject({ kind: 'flat', hump: null });
+    expect(standingOn(climbing, 2000)).toMatchObject({ kind: 'flat', hump: null });
+  });
+
+  it('clamps to the nearest stretch at or below a value that misses a sample', () => {
+    // Between segment 0's last sample ($1,000) and segment 1's first ($2,000).
+    expect(standAt(1500)).toMatchObject({ kind: 'valley', here: { rate: 0 } });
+    // Past the right edge of the curve entirely.
+    expect(standAt(80_000)).toMatchObject({ here: { rate: 22, start: 8000 } });
+  });
+
+  it('has nothing to say about an empty curve', () => {
+    expect(standingOn([], 0)).toBeNull();
+  });
+
+  /**
+   * What deferral is worth: the nearest stretch behind the reader that charges
+   * less than they do. Nearest rather than cheapest, because the cheapest is
+   * almost always the run below the standard deduction — true, and no use to
+   * anyone deciding whether to hold a withdrawal back a year.
+   */
+  it('finds the nearest cheaper ground behind, not the cheapest', () => {
+    // From the 22% at the far right: the 12% dip it just cleared, not the 0%
+    // floor at the left edge.
+    expect(standAt(8000)?.cheaperBehind).toMatchObject({ rate: 12, start: 6000 });
+    // From the 12% dip: everything between it and the 0% floor is dearer.
+    expect(standAt(6500)?.cheaperBehind).toMatchObject({ rate: 0, start: 0 });
+    // Nothing at all behind the first stretch.
+    expect(standAt(0)?.cheaperBehind).toBeNull();
+  });
+
+  it('walks a real single filer from the valley floor over the torpedo', () => {
+    const curve = marginalRateCurve(
+      { ssBenefit: AVG_ANNUAL_SS_BENEFIT, filingStatus: 'single', year: PINNED_YEAR },
+      { maxIncome: 150_000, step: 250 },
+    );
+    const segments = segmentCurve(curve, (p) => p.income);
+    const hump = segments.find((seg) => seg.type === 'hill');
+    if (!hump) throw new Error('the average benefit should still make a hump');
+
+    // Every dollar of the hump is dearer than either side of it: that is what
+    // makes the advice on it "go round, not through".
+    expect(standingOn(segments, hump.start)?.kind).toBe('peak');
+    expect(standingOn(segments, hump.end)?.kind).toBe('peak');
+    expect(standingOn(segments, 0)?.kind).toBe('valley');
+    expect(standingOn(segments, 150_000)?.kind).toBe('past');
+
+    // And the hump the reader is warned about from below is the one they are
+    // standing on when they get there.
+    expect(standingOn(segments, 0)?.hump).toBe(hump);
+    expect(standingOn(segments, 150_000)?.hump).toBe(hump);
+  });
+
+  it('sends a return with no benefit to drag in past the humps entirely', () => {
+    const curve = marginalRateCurve(
+      { ssBenefit: 0, filingStatus: 'single', year: PINNED_YEAR },
+      { maxIncome: 150_000, step: 250 },
+    );
+    const segments = segmentCurve(curve, (p) => p.income);
+    expect(segments.some((seg) => seg.type === 'hill')).toBe(false);
+    expect(standingOn(segments, 40_000)).toMatchObject({ kind: 'flat', hump: null });
   });
 });
 

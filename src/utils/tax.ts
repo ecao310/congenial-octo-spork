@@ -1493,6 +1493,98 @@ export function segmentCurve<T extends { marginalRate: number }>(
   });
 }
 
+/**
+ * Where the reader is standing relative to the nearest hump.
+ *
+ * `segmentCurve` classifies every stretch of the curve; this says which
+ * stretch is *theirs*, which is the difference between a chart that shows a
+ * torpedo and a chart that shows them theirs. The four positions are the four
+ * pieces of advice: on a valley floor there is room to fill, on the climb the
+ * next dollars are the dear ones, at the peak the only cheap move is sideways,
+ * and past it the cap has already taken what it can.
+ */
+export type CurveStandingKind = 'valley' | 'climbing' | 'peak' | 'past' | 'flat';
+
+export interface CurveStanding<T> {
+  kind: CurveStandingKind;
+  /** The segment the reader's own value falls in. */
+  here: CurveSegment<T>;
+  /** The stretch below `here`, or null at the left edge. */
+  prev: CurveSegment<T> | null;
+  /** The stretch above `here`, or null at the right edge. */
+  next: CurveSegment<T> | null;
+  /**
+   * The hump in play: the one ahead when climbing or filling a valley, the one
+   * underfoot at the peak, the one behind once it has been cleared. Null only
+   * when the curve has no hump at all — a return with no benefit to drag in,
+   * where the rate climbs with the brackets and never comes back down.
+   */
+  hump: CurveSegment<T> | null;
+  /**
+   * The nearest stretch below the reader that charges less than they do, or
+   * null if every dollar behind them was at least as dear.
+   *
+   * This is what deferral is worth: a dollar held out of this year is only
+   * cheaper in a year that sits lower on this same curve, and the nearest such
+   * stretch is the reachable one. The *cheapest* stretch behind is almost
+   * always the run below the standard deduction, which is true and useless.
+   */
+  cheaperBehind: CurveSegment<T> | null;
+}
+
+/**
+ * Reads a segmented curve back at one x and says what the reader should do
+ * about it.
+ *
+ * The nearest hump *ahead* wins over the one behind, because the advice is
+ * about the next dollar rather than the last one; a reader in the dip between
+ * the Social Security torpedo and the senior deduction's phaseout is filling a
+ * valley, not standing past a hump.
+ */
+export function standingOn<T extends { marginalRate: number }>(
+  segments: CurveSegment<T>[],
+  x: number,
+): CurveStanding<T> | null {
+  if (segments.length === 0) return null;
+
+  // The last stretch that starts at or below the reader. Sliders step in a
+  // multiple of what the curve samples, so this is an exact hit in practice;
+  // the search is written to survive a value that falls between samples.
+  let hereIdx = 0;
+  for (let i = 0; i < segments.length; i += 1) {
+    if (segments[i].start > x) break;
+    hereIdx = i;
+  }
+
+  const here = segments[hereIdx];
+  const prev = hereIdx > 0 ? segments[hereIdx - 1] : null;
+  const next = hereIdx < segments.length - 1 ? segments[hereIdx + 1] : null;
+  const earlier = segments.slice(0, hereIdx).reverse();
+  const cheaperBehind =
+    earlier.find((seg) => seg.rate < here.rate) ?? null;
+  const at = { here, prev, next, cheaperBehind };
+
+  if (here.type === 'hill') {
+    return { kind: 'peak', ...at, hump: here };
+  }
+
+  const ahead = segments.slice(hereIdx + 1).find((seg) => seg.type === 'hill');
+  if (ahead) {
+    return {
+      kind: here.type === 'valley' ? 'valley' : 'climbing',
+      ...at,
+      hump: ahead,
+    };
+  }
+
+  const behind = earlier.find((seg) => seg.type === 'hill');
+  if (behind) {
+    return { kind: 'past', ...at, hump: behind };
+  }
+
+  return { kind: 'flat', ...at, hump: null };
+}
+
 /* ------------------------------------------------------------------ */
 /*  IRMAA - Medicare's income-related monthly adjustment amount        */
 /* ------------------------------------------------------------------ */

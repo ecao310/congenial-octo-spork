@@ -359,48 +359,19 @@ describe('the 400% poverty-line cliff on the ordinary-income chart', () => {
 });
 
 /**
- * The slider under each chart picks a point on a curve that is already drawn —
+ * The slider under the chart picks a point on a curve that is already drawn —
  * it does not draw the curve. The marker is what says so on the chart itself,
  * where the readout underneath says what the point costs.
  */
-describe('the “you are here” marker', () => {
-  /**
-   * The `<text>` recharts renders for a marker's label, chart by chart.
-   *
-   * Labels do not live inside the reference line that owns them: recharts
-   * lifts every label into a single z-index layer at the root of the SVG so
-   * that nothing can draw over one. So they are found by their words, per
-   * chart, rather than by their line.
-   */
-  const hereLabels = (container: HTMLElement): SVGTextElement[] =>
-    Array.from(container.querySelectorAll('.recharts-wrapper')).map((chart) => {
-      const label = chart.querySelector<SVGTextElement>('text.here-label');
-      if (!label) throw new Error('a chart has no “you are here” label');
-      return label;
-    });
+describe('the \u201cyou are here\u201d marker', () => {
+  /** The caption under the plot, which is what names the axis figure now. */
+  const axisCaption = (container: HTMLElement): string =>
+    container.querySelector('.chart-axis-label')?.textContent ?? '';
 
-  /**
-   * The marker's label is stacked — the words, then each of the two figures
-   * the axis position is made of — so it is read as a list of `tspan`s rather
-   * than as one string. `textContent` runs them together with nothing between.
-   */
-  const hereLabelLines = (container: HTMLElement): string[] =>
-    Array.from(hereLabels(container)[0].querySelectorAll('tspan')).map(
-      (t) => t.textContent ?? '',
-    );
-
-  it('puts one labelled marker on the page\u2019s one chart', () => {
+  it('puts one marker on the page\u2019s one chart', () => {
     const { container } = render(<App />);
     expect(container.querySelectorAll('.recharts-wrapper')).toHaveLength(1);
     expect(herePositions(container)).toHaveLength(1);
-    // The axis is total income, so the marker is where both halves of that
-    // figure are named: the benefit the slider cannot move, and the other
-    // income it can. $24,852 is the default single benefit for the year.
-    expect(hereLabelLines(container)).toEqual([
-      'You are here',
-      '$24,852 SS',
-      '+ $30,000 other',
-    ]);
     // The marker wears the colour of the control that drives it — amber, for
     // other income — which is what lets the readout under it point at "the
     // dashed amber line" and be understood.
@@ -409,6 +380,32 @@ describe('the “you are here” marker', () => {
         container.querySelectorAll('.recharts-reference-line.here-line line'),
       ).map((line) => line.getAttribute('stroke')),
     ).toEqual(['#f59e0b']);
+  });
+
+  /**
+   * The marker used to carry three stacked lines of text — "You are here", the
+   * benefit, the other income — inside the plot. They went because the caption
+   * under the axis and the readout under the slider already say all of it, and
+   * on a 420px screen those words covered a quarter of the curve. A label put
+   * back on this line would be a fourth place saying the same thing over the
+   * picture it is explaining, so the plot holds no words but the axis's own.
+   */
+  it('points without labelling, so the words stay off the curve', () => {
+    const { container } = render(<App />);
+    expect(container.querySelectorAll('text.here-label')).toHaveLength(0);
+
+    // Stated as the whole plot rather than as this one label: as the page
+    // opens, both cliff switches are off, so the axis's own numbers are the
+    // only words over the curve and anything else appearing there is a
+    // regression worth hearing about.
+    const words = Array.from(container.querySelectorAll('.recharts-wrapper text'));
+    // Guards the extractor: a plot that rendered no text would pass vacuously.
+    expect(words.length).toBeGreaterThan(5);
+    expect(
+      words
+        .filter((t) => !t.classList.contains('recharts-cartesian-axis-tick-value'))
+        .map((t) => t.textContent),
+    ).toEqual([]);
   });
 
   it('moves with its own slider', () => {
@@ -423,7 +420,7 @@ describe('the “you are here” marker', () => {
     expect(herePositions(container)[0]).toBeGreaterThan(torpedo);
   });
 
-  it('stands at the reader’s own fraction of the axis', () => {
+  it('stands at the reader\u2019s own fraction of the axis', () => {
     const { container } = render(<App />);
     const at = (value: number): number => {
       fireEvent.change(
@@ -439,52 +436,41 @@ describe('the “you are here” marker', () => {
     expect(at(75_000)).toBeCloseTo((left + right) / 2, 6);
   });
 
-  it('flips the label to the near side of the line past mid-axis', () => {
+  /**
+   * The half of the axis figure the income slider *cannot* move is the one a
+   * picture cannot show, and this is the failure that proves it: raise the
+   * benefit and the marker does not budge — both ends of the domain are the
+   * benefit plus something, so it carries the whole axis right underneath a
+   * marker that stays where it was. Every figure under it changes and nothing
+   * in the plot says a benefit moved. The caption is what says it, so the
+   * caption is what this test holds.
+   */
+  it('holds still when the benefit moves, and the caption says why', () => {
     const { container } = render(<App />);
-    // Default $30,000 of $150,000: text runs rightwards, away from the axis.
-    expect(hereLabels(container)[0]).toHaveAttribute('text-anchor', 'start');
-
-    fireEvent.change(
-      screen.getByRole('slider', { name: /other income \(not social security\)/i }),
-      { target: { value: '120000' } },
+    // $24,852 is the default single benefit for the year.
+    expect(axisCaption(container)).toBe(
+      'Total income ($) including $24,852 of Social Security',
     );
-    // Near the right edge it runs leftwards instead, or it would be clipped.
-    expect(hereLabels(container)[0]).toHaveAttribute('text-anchor', 'end');
-  });
 
-  it('names both halves of the axis figure, and moves the one its slider owns', () => {
-    const { container } = render(<App />);
-    const figures = (): string => hereLabelLines(container).slice(1).join(' ');
-    expect(figures()).toBe('$24,852 SS + $30,000 other');
-
-    fireEvent.change(
-      screen.getByRole('slider', { name: /other income \(not social security\)/i }),
-      { target: { value: '60000' } },
-    );
-    expect(figures()).toBe('$24,852 SS + $60,000 other');
-
-    // And the benefit is the half the *other* slider owns. Raising it carries
-    // the whole axis right — both ends of the domain are the benefit plus
-    // something — so the marker keeps its place on screen while the figures
-    // under it all change. That standstill is exactly why the label has to
-    // name both halves: nothing about the picture says a benefit moved.
-    const before = herePositions(container)[0];
     // recharts lifts tick labels out of the axis layer, so they are found by
     // their own class rather than under `.recharts-xAxis`.
     const firstTick = (): string | null =>
       container.querySelector('.recharts-cartesian-axis-tick-value')
         ?.textContent ?? null;
     const tickBefore = firstTick();
+    const before = herePositions(container)[0];
+
     fireEvent.change(
       screen.getByRole('slider', { name: /annual social security benefit/i }),
       { target: { value: '36000' } },
     );
-    expect(figures()).toBe('$36,000 SS + $60,000 other');
+    expect(axisCaption(container)).toBe(
+      'Total income ($) including $36,000 of Social Security',
+    );
     expect(herePositions(container)[0]).toBe(before);
     expect(firstTick()).not.toBe(tickBefore);
   });
 });
-
 
 /**
  * Every number the plot is drawn with, read back off the SVG.

@@ -198,13 +198,37 @@ describe('App', () => {
     // The axis is total income, so the benefit is the fixed half of every
     // figure on it and the caption is where that half is named in dollars.
     expect(
-      screen.getByText(/total income \(\$\) · \$24,852 social security \+ \$0 to/i),
+      screen.getByText('Total income ($) including $24,852 of Social Security'),
     ).toBeInTheDocument();
     fireEvent.change(slider, { target: { value: '36000' } });
     expect(slider).toHaveValue('36000');
     expect(within(benefitGroup()).getByText('$36,000')).toBeInTheDocument();
     expect(
-      screen.getByText(/total income \(\$\) · \$36,000 social security \+ \$0 to/i),
+      screen.getByText('Total income ($) including $36,000 of Social Security'),
+    ).toBeInTheDocument();
+  });
+
+  /**
+   * The caption names what is inside a figure on the axis, and with no benefit
+   * and nothing tax-exempt there is nothing inside it but the income the
+   * slider moves. "Including $0 of Social Security" would be a sentence about
+   * a zero, so the parts drop out one at a time and the axis keeps its name.
+   */
+  it('drops the caption\u2019s clause when there is no benefit to name', () => {
+    render(<App />);
+    fireEvent.change(
+      screen.getByRole('slider', { name: /social security benefit/i }),
+      { target: { value: '0' } },
+    );
+    expect(screen.getByText('Total income ($)')).toBeInTheDocument();
+
+    // And the tax-exempt half stands on its own when it is the only part left.
+    fireEvent.change(
+      screen.getByRole('slider', { name: /tax-exempt \(municipal\) interest/i }),
+      { target: { value: '5000' } },
+    );
+    expect(
+      screen.getByText('Total income ($) including $5,000 of tax-exempt interest'),
     ).toBeInTheDocument();
   });
 
@@ -569,7 +593,8 @@ describe('App', () => {
 
     expect(
       screen.getByText(
-        /\$24,852 Social Security \+ \$0 to \$150,000 of other income \+ \$5,000 tax-exempt interest/i,
+        'Total income ($) including $24,852 of Social Security and ' +
+          '$5,000 of tax-exempt interest',
       ),
     ).toBeInTheDocument();
   });
@@ -1581,14 +1606,15 @@ describe('qualified charitable distribution', () => {
   it('takes the gift back out of the axis label', () => {
     render(<App />);
     expect(
-      screen.getByText(
-        /\$24,852 social security \+ \$0 to \$150,000 of other income$/i,
-      ),
+      screen.getByText('Total income ($) including $24,852 of Social Security'),
     ).toBeInTheDocument();
     setSlider(/qualified charitable distribution/i, '10000');
+    // The gift is the one part that comes *out* of the axis figure, so it gets
+    // its own clause after the list of what is in it.
     expect(
       screen.getByText(
-        /of other income \u2212 \$10,000 given straight to charity$/i,
+        'Total income ($) including $24,852 of Social Security, less ' +
+          '$10,000 given straight to charity',
       ),
     ).toBeInTheDocument();
   });

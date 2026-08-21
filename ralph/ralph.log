@@ -7596,3 +7596,111 @@ immediately before each mutation.
 
 The next unchecked bullet is the graph one: remove the "You are here" label and
 have the x-label read total income ($) including $z of social security.
+
+---
+
+## Backlog 6 — remove the "You are here" label; put the benefit in the axis caption
+
+`[x] remove "You are here label" on graph. x-label should say total income ($)
+including $z social security.`
+
+### What came off
+
+The marker's label was three stacked `tspan`s inside the plot — `You are here`
+/ `$24,852 SS` / `+ $30,000 other` — drawn by `hereLine` at App.tsx:195. Gone,
+along with everything that existed only to place it: the `nearRight` flip that
+chose which side of the line the words ran on, the `gap`, the `axisDomain`
+argument that the flip was computed from, and the `hereLabel` derivation at
+:1214. `hereLine` is now `(value, colour)` and renders a bare `ReferenceLine`.
+
+Measured at 420px: the label was about 250px of text over a 348px plot. The
+screenshot at that width now shows the whole curve.
+
+### Where the words went
+
+`.chart-axis-label` said `Total income ($) · $24,852 Social Security + $0 to
+$150,000 of other income`, with two conditional clauses after it. It now says
+`Total income ($) including $24,852 of Social Security`.
+
+The dropped half — `$0 to $150,000 of other income` — is not lost: the step
+intro two elements above already says "the $24,852 benefit set above, which
+does not move, plus $0 to $150,000 of other income", the slider's own range
+labels say `$0` and `$150,000`, and the chart's `aria-label` says the whole
+decomposition for a screen reader. It was the third statement of it.
+
+`axisCaption` (App.tsx:1167) is assembled rather than written, because the
+parts are conditional and the grammar has to survive any subset:
+
+- `axisIncludes` collects the benefit and the tax-exempt interest, each only
+  when non-zero, joined with `and` after one `including`.
+- The charitable distribution takes its own `, less …` clause, because it is
+  the one part that comes *out* of the figure rather than into it.
+- With nothing in the list the caption is the bare `Total income ($)`. This is
+  reachable: the benefit slider goes to $0, and `including $0 of Social
+  Security` is a sentence about a zero.
+
+Checked in a real Chromium at 1280 / 900 / 420, and with muni and gift set:
+`Total income ($) including $24,852 of Social Security and $5,000 of
+tax-exempt interest, less $10,000 given straight to charity`, and with the
+benefit zeroed on top of that, the same sentence starting at the interest.
+
+### Tests
+
+`the "you are here" marker` in App.chart.test.tsx lost `hereLabels` and
+`hereLabelLines` and the two tests that read them:
+
+- `flips the label to the near side of the line past mid-axis` — deleted with
+  the flip it tested.
+- `names both halves of the axis figure, and moves the one its slider owns` →
+  `holds still when the benefit moves, and the caption says why`. The claim it
+  was really holding survives and is worth keeping: raise the benefit and the
+  marker does not move, because both ends of the domain move with it, so every
+  figure changes and nothing in the picture says a benefit did. The label used
+  to be what said it; the caption is now, so the test reads the caption.
+- New: `points without labelling, so the words stay off the curve`. Stated
+  about the whole plot rather than about `text.here-label` alone — as the page
+  opens both cliff switches are off, so the axis's own tick values are the only
+  words over the curve, and the assertion is that the set of non-tick `<text>`
+  in the plot is empty. Self-guarded against a plot that rendered no text.
+
+App.test.tsx: the three caption tests now assert the exact new sentence rather
+than a regex against the old one, plus a new `drops the caption's clause when
+there is no benefit to name` covering the empty-list branch and the
+interest-only one.
+
+### Mutation-checked four ways, each reverted
+
+| mutation | result |
+| --- | --- |
+| a `label` put back on the `ReferenceLine` | red: `points without labelling…` |
+| benefit clause shown whether or not it is zero | red: `drops the caption's clause…` |
+| caption never names what is inside the figure | red ×5 |
+| gift no longer taken back out of the caption | red: `takes the gift back out of the axis label` |
+
+Mutations were run under snapshot-immediately-before / restore-immediately-after,
+per the previous entry's caution about editing `src/App.tsx` while a human may
+be in it.
+
+### Verification
+
+`npx vitest run` **677 passed in 13 files** (676 before: +2 new, −1 folded).
+`tsc -b`, `eslint . --max-warnings 0` and `npm run build` all clean. Chart read
+off a real Chromium at three widths.
+
+### PLAN.md was edited by a human mid-run
+
+Between this run's first read and its commit, someone reopened the filing
+status bullet — `[x]` back to `[ ]`, with "actually remove the less common 2
+statuses completely" appended — and added "joint return puts both benefits on
+one line..." to the sentences bullet. Both edits are carried into this commit
+untouched; the only PLAN.md change of mine is my own bullet's `[ ]` → `[x]`.
+
+**So the topmost unchecked bullet is now the filing status one again, above
+mine, and it is a different task from the one that was checked off last run:**
+the strip-plus-menu split that landed in `bf5346d` is to be replaced by
+removing Head of Household and Married Filing Separately outright. That means
+`FILING_STATUS_MENU`, `menuStatus`, the `.filing-menu` styles, the print rule
+added for it, and the `chooseFilingStatus` test helper all come back out — and
+`FilingStatus` in tax.ts keeps all four, since the tax code has four and only
+the page is narrowing. Worth checking what `hoh` and `mfs` are load-bearing for
+in tax.ts's own tests before deleting anything above them.

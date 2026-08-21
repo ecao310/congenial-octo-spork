@@ -193,82 +193,35 @@ function pointAt<P>(
 }
 
 /**
- * The dashed vertical marking the reader's own place on a chart.
+ * The dashed vertical marking the reader's own place on the chart.
  *
  * The slider under the chart is a *position* on a curve that is already
  * drawn, not an input to it, and nothing on screen said so: an "Other Income"
- * slider sitting under a chart whose x-axis is other income reads as the
- * control that draws the curve. The line is what says otherwise.
- * It takes the colour of the slider that drives it — amber — so the pairing is
- * legible without reading either label, and a heavier dash than the IRMAA
- * cliffs it shares the chart with.
+ * slider sitting under a chart reads as the control that draws the curve. The
+ * line is what says otherwise. It takes the colour of the slider that drives
+ * it — amber — so the pairing is legible without reading a word, and a heavier
+ * dash than the IRMAA cliffs it shares the chart with.
  *
- * The label goes *inside* the plot because the strip above the axis top is
- * already the cliff labels' (`position: 'top'`), and it flips to the far side
- * of the line past the middle of the axis so the text never runs off the right
- * edge. `insideTopLeft`/`insideTopRight` are named for a rectangle; on a line,
- * which is a rectangle of zero width, they mean "text to the right of it" and
- * "text to the left of it".
+ * It carries no label. It used to say "You are here" and then name both halves
+ * of the axis figure in three stacked lines inside the plot, which is a strip
+ * of curve about 250px wide spent on words the page says twice underneath
+ * anyway: the caption under the axis names the benefit that does not move, the
+ * slider beside it names the income that does, and the readout below says
+ * which point on the curve this is and what it costs. The line only has to
+ * point at it.
  *
  * A plain function, not a component: recharts identifies its children by
  * element type, and a wrapper component would render as an unknown child.
  */
-/**
- * The reader's own place on the chart, drawn as a labelled vertical.
- *
- * The label says where they are in words *and* in dollars, because the axis
- * beneath it no longer answers that on its own: it is drawn in total income,
- * and a point on it splits into a benefit that does not move and other income
- * that does. Reading one figure off the axis and being unable to say which
- * half of it the slider controls is the thing this label exists to prevent.
- *
- * Stacked rather than run together, and drawn here rather than handed to
- * recharts as a string, because as one line it is about 250px wide at 13px and
- * the whole plot on a 420px screen is about 275px: it was clipped mid-figure
- * by the right edge. The measured constraint is that the widest line has to
- * clear half the plot, or there is a band either side of the flip below where
- * the label fits on neither side of its own line — which is what three short
- * lines buy over two longer ones.
- *
- * Which side of the line the words run on is a fraction of the *span* rather
- * than of the top of it, because the left edge of this axis is the benefit
- * rather than zero. Half rather than the old three fifths, since the label is
- * wider than it was.
- */
-const hereLine = (
-  value: number,
-  [from, to]: readonly [number, number],
-  colour: string,
-  lines: readonly string[],
-) => {
-  const nearRight = value > from + (to - from) * 0.5;
-  const gap = nearRight ? -8 : 8;
-  return (
-    <ReferenceLine
-      className="here-line"
-      x={value}
-      stroke={colour}
-      strokeDasharray="6 4"
-      strokeWidth={CHART.rule}
-      label={({ viewBox }: { viewBox: { x: number; y: number } }) => (
-        <text
-          className="recharts-label here-label"
-          y={viewBox.y}
-          textAnchor={nearRight ? 'end' : 'start'}
-          fill={colour}
-          fontSize={CHART.label}
-          fontWeight={600}
-        >
-          {lines.map((line, i) => (
-            <tspan key={line} x={viewBox.x + gap} dy={i === 0 ? 14 : CHART.label + 3}>
-              {line}
-            </tspan>
-          ))}
-        </text>
-      )}
-    />
-  );
-};
+const hereLine = (value: number, colour: string) => (
+  <ReferenceLine
+    className="here-line"
+    x={value}
+    stroke={colour}
+    strokeDasharray="6 4"
+    strokeWidth={CHART.rule}
+  />
+);
 
 /**
  * How the axis on the page's one chart is drawn, in one object rather than
@@ -1200,22 +1153,36 @@ const App: React.FC = () => {
     Math.round(totalIncomeFor({ ...hereScenario, ordinaryIncome: income }));
 
   /**
-   * What the marker on the chart says, which is the axis figure taken back
-   * apart.
+   * The caption under the plot: what a figure on the axis has inside it.
    *
-   * Both halves in dollars, because on a total-income axis neither is legible
-   * from the position of the line: the benefit is the part that does not move
-   * when the slider does, and the other income is the part that does, and a
-   * reader who cannot tell which is which cannot tell what the slider is for.
-   * Named here rather than written into the chart because it is prose, and
-   * prose belongs with the rest of what the page derives. Stacked short,
-   * because one line of it is too wide for a narrow plot — see `hereLine`.
+   * The axis is total income, and a point on it does not explain itself. Part
+   * of it is a benefit the income slider cannot move, and any tax-exempt
+   * interest the reader holds is in it too even though nothing is charged on
+   * that — so a reader who reads one figure off the axis cannot say which part
+   * of it the slider beneath is for. This sentence is where that is answered
+   * now: the marker inside the plot used to answer it in three stacked lines
+   * over the curve, and one line under the axis says the same thing without
+   * spending a quarter of a narrow plot on it.
+   *
+   * A charitable distribution is the one that goes the other way — it is out
+   * of the figure rather than in it — so it takes its own clause rather than
+   * joining the list.
+   *
+   * Each part appears only when it is non-zero, so a return with no benefit
+   * and nothing tax-exempt gets the bare axis name rather than a sentence
+   * about two zeroes.
    */
-  const hereLabel: string[] = [
-    'You are here',
-    `${formatCurrency(ssBenefit)} SS`,
-    `+ ${formatCurrency(ordinaryIncome)} other`,
-  ];
+  const axisIncludes: string[] = [
+    ssBenefit > 0 ? `${formatCurrency(ssBenefit)} of Social Security` : '',
+    muniInterest > 0
+      ? `${formatCurrency(muniInterest)} of tax-exempt interest`
+      : '',
+  ].filter(Boolean);
+
+  const axisCaption =
+    'Total income ($)' +
+    (axisIncludes.length > 0 ? ` including ${axisIncludes.join(' and ')}` : '') +
+    (qcd > 0 ? `, less ${formatCurrency(qcd)} given straight to charity` : '');
 
   /**
    * The average rate, for reading next to the marginal one.
@@ -2042,7 +2009,7 @@ const App: React.FC = () => {
                         }}
                       />
                     )}
-                    {hereLine(totalIncome, axisDomain, PALETTE.amber, hereLabel)}
+                    {hereLine(totalIncome, PALETTE.amber)}
                     <Area
                       type="stepAfter"
                       dataKey="marginalRate"
@@ -2055,16 +2022,7 @@ const App: React.FC = () => {
                   </AreaChart>
                 </ResponsiveContainer>
               </div>
-              <p className="chart-axis-label">
-                Total income ($) &middot; {formatCurrency(ssBenefit)} Social
-                Security + $0 to {formatCurrency(axisMax)} of other income
-                {muniInterest > 0
-                  ? ` + ${formatCurrency(muniInterest)} tax-exempt interest`
-                  : ''}
-                {qcd > 0
-                  ? ` \u2212 ${formatCurrency(qcd)} given straight to charity`
-                  : ''}
-              </p>
+              <p className="chart-axis-label">{axisCaption}</p>
             </figure>
 
             <div className="input-group chart-slider">

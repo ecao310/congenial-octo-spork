@@ -3,11 +3,54 @@
 
 <head>
   <meta charset="UTF-8" />
-  <link rel="icon" type="image/svg+xml" href="/vite.svg" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <!-- The favicon is drawn in the page's own two colours; `apple-touch-icon`
+       is the same mark rasterised, because iOS will not take an SVG. Both
+       hrefs go through %BASE_URL% rather than a bare `/`, which vite rewrites
+       for the production build and the /preview/ one alike. -->
+  <link rel="icon" type="image/svg+xml" href="%BASE_URL%favicon.svg" />
+  <link rel="apple-touch-icon" href="%BASE_URL%apple-touch-icon.png" />
+  <meta name="theme-color" content="#1a1a1b" />
+
   <title>How Much Can You Take Out This Year? — Retirement Tax Torpedo</title>
   <meta name="description"
     content="See what the next dollar of retirement income really costs: the Social Security tax torpedo, capital-gains stacking, IRMAA cliffs and the senior deduction phaseout, drawn across every income level for your own return.">
+
+  <!-- What the link looks like when it is sent rather than opened.
+       ────────────────────────────────────────────────────────────────────
+       The close's copy button hands the reader a URL with their whole return
+       in the query string, and until this block existed that URL rendered in
+       Messages, in Slack or in a forum post as a bare
+       `?filing=mfj&income=90000` with nothing saying what it showed.
+
+       The card is deliberately *not* the reader's own scenario. This page is
+       static files on GitHub Pages: no server sees the query string, so no
+       preview can be rendered from it, and a card that quoted figures would
+       be quoting the default's figures at everyone who shared a link. So it
+       says what the page is, and the figures stay on the page.
+
+       Absolute URLs, because a crawler will not resolve a relative og:image —
+       assembled from the origin plus %BASE_URL% so the preview build under
+       /preview/ points at its own copy rather than production's. -->
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Retirement Tax Torpedo" />
+  <meta property="og:title" content="How Much Can You Take Out This Year?" />
+  <meta property="og:description"
+    content="The next dollar out of an IRA rarely costs what its bracket says. See where Social Security's tax torpedo turns 12% into 22.2% — drawn across every income level for your own return." />
+  <meta property="og:url" content="https://ecao310.github.io%BASE_URL%" />
+  <meta property="og:image" content="https://ecao310.github.io%BASE_URL%og-cover.png" />
+  <meta property="og:image:type" content="image/png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt"
+    content="A chart of the marginal tax rate on the next dollar of retirement income: flat at 0%, stepping up to a 22.2% plateau, dropping back to 12%, then climbing through 22% and 24%." />
+
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="How Much Can You Take Out This Year?" />
+  <meta name="twitter:description"
+    content="The next dollar out of an IRA rarely costs what its bracket says. See where Social Security's tax torpedo turns 12% into 22.2% — drawn across every income level for your own return." />
+  <meta name="twitter:image" content="https://ecao310.github.io%BASE_URL%og-cover.png" />
 </head>
 
 <body>

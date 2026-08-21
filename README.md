@@ -107,12 +107,34 @@ would set a figure no reader could see or change. The step is a fragment
 (`#step-torpedo`), not a query parameter: it is where the reader is standing,
 not what the return holds.
 
+What the link looks like before it is opened is `index.html`: an Open Graph
+and Twitter card block, pointing at `public/og-cover.png`. The card is not the
+reader's own scenario and cannot be — this is static files on GitHub Pages, so
+no server ever sees the query string, and a card built from figures would be
+quoting the default's figures at everyone who shared a link. It says what the
+page is; the figures stay on the page.
+
+The curve on that card is the real one. `scripts/og-cover.mjs` bundles
+`marginalRateCurve` out of `src/utils`, samples it for the scenario the page
+opens on, and rasterises the result:
+
+```bash
+node scripts/og-cover.mjs   # rewrites public/og-cover.png and public/apple-touch-icon.png
+```
+
+It is run by hand rather than in CI, because rasterising needs a browser and
+neither deploy workflow installs one — so the PNG is committed. `the cover` in
+`src/meta.test.ts` is what notices when it goes stale: it reads the image's
+size back out of the file, checks the mark and the card are still painted in
+`:root`'s own colours, and fails if the rate the description quotes is no
+longer the rate the arithmetic reaches.
+
 ## Development
 
 ```bash
 npm install
 npm run dev      # start dev server
-npm run test     # vitest, 650 tests
+npm run test     # vitest, 665 tests
 npm run lint     # eslint
 npm run build    # tsc -b && vite build
 ```
@@ -125,6 +147,8 @@ npm run build    # tsc -b && vite build
 | `src/utils/tax.ts` | Every figure on the page, and the only place a rate or a threshold is written down. |
 | `src/utils/scenarioUrl.ts` | The return, encoded into the address bar and clamped back out of it. |
 | `src/shelf/` | Finished, tested modules that nothing on the page imports. See [`src/shelf/README.md`](src/shelf/README.md). |
+| `public/` | The favicon, the touch icon and the link-preview card. |
+| `scripts/og-cover.mjs` | Redraws the card from the page's own arithmetic. Run by hand; see above. |
 
 Nothing outside `src/shelf/` may import from it, and a test enforces that.
 Bringing a shelved module back is a `git mv` in the same commit as the section

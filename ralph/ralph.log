@@ -6634,3 +6634,98 @@ And the guard, for the fifth note running: `git status --porcelain` then
 `npx vitest run`, before picking a task. Six runs in a row have opened dirty.
 Writing it here again has not worked; there is now a bullet under Discovered
 Work asking for it to go in the loop prompt or a `prepare` script instead.
+
+---
+
+## 21 Aug 2026 — Say what the link is before anyone opens it
+
+Task: "A shared link previews as a bare URL." — `index.html` had a title and a
+description and nothing else, and the favicon was still the template's
+`/vite.svg`.
+
+The guard worked this time in the ordinary way: `git status --porcelain` then
+`npx vitest run` opened on a clean tree and 655 green, so the run was a build
+rather than a rescue. Seven runs of the dirty-tree streak ended.
+
+### What landed
+
+- **`index.html`** — `og:type`/`site_name`/`title`/`description`/`url`/`image`
+  with `image:type`, `:width`, `:height`, `:alt`, plus the four `twitter:*`
+  and a `theme-color`. Both icon links and all three URLs are built through
+  `%BASE_URL%`, which vite substitutes per build: production gets
+  `/congenial-octo-spork/`, the preview workflow's `--base` gets
+  `/congenial-octo-spork/preview/`, so the preview's card is its own file
+  rather than production's. Verified in both builds.
+- **`public/og-cover.png`** — 1200x630, 72 kB. The curve on it is the *real*
+  one: `marginalRateCurve` sampled for `defaultScenario()`, not a drawn hump.
+- **`public/favicon.svg`** + **`public/apple-touch-icon.png`** (180x180, iOS
+  will not take an SVG). `public/vite.svg` deleted.
+- **`scripts/og-cover.mjs`** — the generator. Bundles `src/utils/{tax,
+  scenarioUrl}` with esbuild's JS API into a temp dir, imports it, lays out
+  the SVG in the page's own tokens, and rasterises through playwright-core.
+- **`src/meta.test.ts`** — 10 tests, and **`README.md`** documents both.
+
+### Two decisions worth writing down
+
+**The card is not the reader's scenario, and cannot be.** This is static files
+on Pages: no server ever sees the query string, so nothing can render a
+per-link card. A card that quoted figures would quote the *default's* figures
+at everyone who shared a link — worse than saying nothing, because it would be
+confidently wrong about someone's return. So the card says what the page is
+and the figures stay on the page. That reasoning is in the HTML comment
+because the next person to look at it will otherwise try to fix it.
+
+**The picture is generated, not drawn.** A hand-drawn hump would go on
+claiming 22.2% long after a bracket moved. Bundling the real curve costs ~40
+lines and means re-running the script is the whole maintenance story.
+
+### On the labels — the bug the first render had
+
+First pass pinned the "22.2%" dot to the last sample before the fall-back and
+the "back to 12%" dot to the first one after it. Both are correct points and
+they are ~6px apart, so the two labels stacked into one unreadable column on
+the cliff between them. Both features are *plateaux* — the 22.2% run is every
+income at which the next dollar drags 85 cents of benefit with it — so
+`middleOfRun` walks out to each run's own ends and labels its midpoint. The
+drop then separates them without either label leaving the thing it names.
+
+### Verified
+
+- `tsc -b`, `eslint . --max-warnings 0`, `vite build`, `vitest run`: 12 files,
+  **665 tests** (655 + 10).
+- **Mutation-checked all four load-bearing assertions**, restoring between
+  each: relative `og:image` → 2 fail; `og:image:width` 1200→1600 → 1 fail;
+  `href="%BASE_URL%favicon.svg"` → `"/favicon.svg"` → 1 fail; description
+  saying 21.4% instead of 22.2% → 1 fail; restored → 10 pass. None of the ten
+  is vacuous.
+- Real Chromium against `vite preview` on the built `dist`: all three assets
+  200 with the right content-types (svg 670 B, touch icon 1712 B, card
+  72168 B), zero 404s, zero page errors, and the DOM's `og:image`/`og:url`
+  read as absolute `https://ecao310.github.io/...` URLs.
+- Looked at both PNGs. The card reads at feed scale; the mark reads at 16px.
+
+### The test worth naming
+
+`quotes a rate the opening scenario still reaches` recomputes the curve and
+asserts the og:description's "12% into 22.2%" is still the hump and the valley
+the arithmetic reaches. The image regenerates itself; the *prose beside it*
+cannot, and that sentence is the one thing on the card that could silently
+become a lie. Mutation-checked above.
+
+### Note for the next run
+
+Standing browser note, unchanged in substance and now with a better executable
+lookup worth stealing: `chromium.executablePath()` answers with the build
+playwright-core *wants* (1234 today), which is not what is installed (1228).
+`readdirSync` the cache, filter `/^chromium(_headless_shell)?-\d+$/`, sort by
+build number descending, take the first path that `existsSync`. That is in
+`scripts/og-cover.mjs` as `chromiumPath()` and does not go stale on the next
+playwright bump. Otherwise: `pkill -f "vite preview"` first, port off
+preview's own output, served under `/congenial-octo-spork/`, and write the
+driver to `/tmp` then `cp` it into the root for the bare import and `rm` it in
+the same command line.
+
+Deleted the previous run's untracked `drive.mjs` from the root. It was scratch
+— a hardcoded port and a screenshot to `/tmp` — and two runs in a row have now
+opened, diagnosed it, and left it. The pattern is documented in the paragraph
+above, which is cheaper to keep than the file.

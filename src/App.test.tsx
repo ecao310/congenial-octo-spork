@@ -931,6 +931,133 @@ describe('a gain is a share of the income, not an addition to it', () => {
   });
 });
 
+/* ------------------------------------------------------------------ */
+/*  What the return actually owes                                      */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Every rate this page quoted was the price of the *next* dollar. The total
+ * bill existed only inside the two tooltips, which means a reader who never
+ * hovered — and every reader on a touch screen — walked all four steps
+ * without once being told what the return costs.
+ *
+ * It is one figure, not two: the two charts sweep the same return two ways and
+ * the reader stands at the same place on each, so step 2 and step 3 quote the
+ * same total, and step 4's "this year's bill" is the third copy of it. The
+ * effective rate beside it is the average the marginal rate is so often
+ * mistaken for.
+ */
+describe('the total the return owes', () => {
+  const readout = (step: string): HTMLElement =>
+    document.querySelector(`#step-${step} .slider-readout`) as HTMLElement;
+  const set = (name: RegExp, value: number): void => {
+    fireEvent.change(screen.getByRole('slider', { name }), {
+      target: { value: String(value) },
+    });
+  };
+
+  it('states the bill and the effective rate under the torpedo slider', () => {
+    render(<App />);
+    // $30,000 of other income and the $23,712 average benefit.
+    expect(readout('torpedo')).toHaveTextContent(
+      'owes $2,813 in federal tax on $53,712 of total income — an effective rate of 5.24%',
+    );
+  });
+
+  /** The distinction the whole pairing exists to draw. */
+  it('names the effective rate as the average and the marginal as the next dollar', () => {
+    render(<App />);
+    expect(readout('torpedo')).toHaveTextContent('taxed at 22.2%');
+    expect(readout('torpedo')).toHaveTextContent(
+      'the average across every dollar of it; the figure before it is the price of the next one',
+    );
+  });
+
+  it('quotes the same total under the gains slider, on an income it does not move', () => {
+    render(<App />);
+    expect(readout('gains')).toHaveTextContent(
+      'owes $2,813 in federal tax on the $53,712 of total income this slider never moves — an effective rate of 5.24%',
+    );
+  });
+
+  it('quotes the same total again as step 4\u2019s bill before the conversion', () => {
+    render(<App />);
+    expect(
+      document.querySelector('#step-conversion .slider-readout'),
+    ).toHaveTextContent("taking this year's bill from $2,813 to $5,578");
+  });
+
+  /**
+   * Step 3 moves the composition of an income it never changes the size of, so
+   * the bill and the rate move and the denominator does not.
+   */
+  it('re-prices the bill when the split changes, leaving the income alone', () => {
+    render(<App />);
+    set(/long-term capital gains inside that income/i, 20_000);
+    expect(readout('gains')).toHaveTextContent(
+      'owes $543 in federal tax on the $53,712 of total income this slider never moves — an effective rate of 1.01%',
+    );
+    expect(readout('torpedo')).toHaveTextContent(
+      'owes $543 in federal tax on $53,712 of total income — an effective rate of 1.01%',
+    );
+  });
+
+  it('moves all three figures when the income does', () => {
+    render(<App />);
+    set(/other income \(not social security\)/i, 90_000);
+    expect(readout('torpedo')).toHaveTextContent(
+      'owes $15,683 in federal tax on $113,712 of total income — an effective rate of 13.79%',
+    );
+  });
+
+  /**
+   * The denominator is the total income the axis label under step 2's chart
+   * already defines, and for the same reasons: tax-exempt interest is money
+   * received, and a charitable distribution is money that leaves the IRA
+   * without ever reaching the filer.
+   */
+  it('counts tax-exempt interest as income received', () => {
+    render(<App />);
+    set(/tax-exempt \(municipal\) interest/i, 10_000);
+    expect(readout('torpedo')).toHaveTextContent(
+      'owes $3,833 in federal tax on $63,712 of total income',
+    );
+  });
+
+  it('leaves a charitable distribution out of it', () => {
+    render(<App />);
+    set(/other income \(not social security\)/i, 90_000);
+    set(/qualified charitable distribution/i, 20_000);
+    expect(readout('torpedo')).toHaveTextContent(
+      'owes $11,283 in federal tax on $93,712 of total income',
+    );
+  });
+
+  /**
+   * And only the part of the gift that can actually be excluded: 408(d)(8) has
+   * only the ordinary half of the income to come out of, so a gain that
+   * crowds it out puts the rest of the gift back in the denominator.
+   */
+  it('counts back the part of a gift a gain has crowded out', () => {
+    render(<App />);
+    set(/other income \(not social security\)/i, 90_000);
+    set(/qualified charitable distribution/i, 20_000);
+    set(/long-term capital gains inside that income/i, 80_000);
+    // Only $10,000 of ordinary income is left for the gift to come out of.
+    expect(readout('torpedo')).toHaveTextContent(
+      'owes $5,849 in federal tax on $103,712 of total income',
+    );
+  });
+
+  it('says nothing at all when nothing comes in', () => {
+    render(<App />);
+    set(/social security benefit/i, 0);
+    set(/other income \(not social security\)/i, 0);
+    expect(readout('torpedo')).not.toHaveTextContent('of total income');
+    expect(readout('torpedo')).not.toHaveTextContent('effective rate');
+  });
+});
+
 /**
  * The scenario block opens on five inputs and hides two.
  *

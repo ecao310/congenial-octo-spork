@@ -29,6 +29,7 @@ import {
   standardDeductionFor,
   taxableSocialSecurity,
   qcdLimitFor,
+  qcdFor,
   SENIOR_DEDUCTION,
   SENIOR_DEDUCTION_FIRST_YEAR,
   SENIOR_DEDUCTION_LAST_YEAR,
@@ -876,6 +877,60 @@ const App: React.FC = () => {
       ? ltcgCurve[0].totalTax - hereGainPoint.totalTax
       : null;
 
+  /**
+   * The reader's own return, in the shape the tax chain reads it.
+   *
+   * Steps 2 and 3 treat the gain as a *share* of one other-income figure; the
+   * tax chain treats the two as separate line items. `splitOtherIncome` is the
+   * translation. It matters to both things built on it below: the charitable
+   * exclusion has only the ordinary half to come out of, and a conversion is
+   * ordinary income, so it has to land on the ordinary half rather than on a
+   * total that is part gain.
+   */
+  const hereScenario = useMemo(
+    () => ({
+      ...splitOtherIncome(ordinaryIncome, plannedLtcg),
+      ssBenefit,
+      filingStatus,
+      seniors,
+      muniInterest,
+      qcd,
+      year,
+    }),
+    [ordinaryIncome, plannedLtcg, ssBenefit, filingStatus, seniors, muniInterest, qcd, year],
+  );
+
+  /**
+   * Everything this return takes in, which is the denominator an effective
+   * rate needs and the page had nowhere until now.
+   *
+   * It is the total the axis label under step 2's chart already defines, and
+   * for the same reasons: other income, plus the *whole* benefit rather than
+   * the share of it 86(a) makes taxable, plus tax-exempt interest, less
+   * anything handed straight to charity — money that leaves the IRA without
+   * ever reaching the filer. Taxable income would be the wrong denominator
+   * here: measured against it, the untaxed benefit disappears from the
+   * comparison, and the untaxed benefit is the thing the whole page is about.
+   */
+  const totalIncome = Math.max(
+    0,
+    ordinaryIncome - qcdFor(hereScenario) + ssBenefit + muniInterest,
+  );
+
+  /**
+   * The average rate, for reading next to the marginal one.
+   *
+   * Every rate the page quotes today is the price of the *next* dollar. What
+   * it never said is what the return as a whole costs — and the gap between
+   * the two is the single most reliable misreading of a marginal rate, so the
+   * two figures belong in the same sentence rather than in two places.
+   *
+   * Taken as a fraction so `formatPercent` renders it the way the chart axis
+   * renders every other rate on the page.
+   */
+  const effectiveRateOn = (tax: number): number =>
+    totalIncome > 0 ? tax / totalIncome : 0;
+
   // Medicare is per enrollee, so a joint return with both spouses over 65 pays
   // every surcharge twice off one MAGI figure. Below 65 nobody is enrolled yet,
   // but the two-year lookback means this year's income still sets the first
@@ -940,34 +995,17 @@ const App: React.FC = () => {
   const ceiling = ceilings.find((c) => c.id === ceilingId) ?? ceilings[0];
 
   /**
-   * The return step 4 converts *from*, in the shape `sizeConversion` reads.
-   *
-   * Steps 2 and 3 treat the gain as a share of one other-income figure; the
-   * tax chain treats the two as separate line items. `splitOtherIncome` is the
-   * translation, and it matters here for the same reason it matters on the
-   * charts: a conversion is ordinary income, so it has to land on the ordinary
-   * half rather than on a total that is part gain.
-   */
-  const conversionScenario = useMemo(
-    () => ({
-      ...splitOtherIncome(ordinaryIncome, plannedLtcg),
-      ssBenefit,
-      filingStatus,
-      seniors,
-      muniInterest,
-      qcd,
-      year,
-    }),
-    [ordinaryIncome, plannedLtcg, ssBenefit, filingStatus, seniors, muniInterest, qcd, year],
-  );
-
-  /**
    * The answer the h1 asks for: the largest conversion that stays under the
    * chosen line, what it costs, and what the dollar past the line costs.
+   *
+   * `hereScenario` is the return it converts *from* — the same one the
+   * effective rate above is measured on, which is why `sizing.taxBefore` and
+   * the total step 2 quotes are the same figure rather than two roundings of
+   * it.
    */
   const sizing = useMemo(
-    () => sizeConversion(ceiling, conversionScenario),
-    [ceiling, conversionScenario],
+    () => sizeConversion(ceiling, hereScenario),
+    [ceiling, hereScenario],
   );
 
   /**
@@ -1616,6 +1654,18 @@ const App: React.FC = () => {
             <strong>{herePoint ? `${herePoint.marginalRate}%` : '\u2014'}</strong>,
             where the dashed amber line crosses the curve above &mdash; that
             point on the curve, not the curve itself, is what the slider moves.
+            {herePoint && totalIncome > 0 ? (
+              <>
+                {' '}
+                The return itself owes{' '}
+                <strong>{formatCurrency(herePoint.totalTax)}</strong> in federal
+                tax on {formatCurrency(totalIncome)} of total income &mdash; an
+                effective rate of{' '}
+                <strong>{formatPercent(effectiveRateOn(herePoint.totalTax))}</strong>
+                . That is the average across every dollar of it; the figure
+                before it is the price of the next one.
+              </>
+            ) : null}
             {plannedLtcg > 0
               ? ` Step 3 has ${formatCurrency(plannedLtcg)} of this coming from long-term gains, which is priced into the curve rather than added to it.`
               : ''}
@@ -1972,21 +2022,37 @@ const App: React.FC = () => {
               , where the dashed emerald line crosses the curve above
               {hereGainPoint && hereGainPoint.marginalRate > 20
                 ? ' \u2014 past the 20% ceiling a gain can be charged on its own, so the rest of it is benefit being dragged into the tax base alongside the gain.'
-                : '.'}{' '}
+                : '.'}
               {mixSaving === null ? null : mixSaving > 0 ? (
                 <>
+                  {' '}
                   Splitting the same {formatCurrency(ordinaryIncome)} this way
                   rather than taking all of it as ordinary income saves{' '}
                   <strong>{formatCurrency(mixSaving)}</strong> in federal tax.
                 </>
               ) : (
                 <>
+                  {' '}
                   Splitting the same {formatCurrency(ordinaryIncome)} this way
                   rather than taking all of it as ordinary income changes the
                   federal tax by nothing at all &mdash; at this income the
                   ordinary schedule and the capital-gain one charge the same.
                 </>
               )}
+              {hereGainPoint && totalIncome > 0 ? (
+                <>
+                  {' '}
+                  All told the return owes{' '}
+                  <strong>{formatCurrency(hereGainPoint.totalTax)}</strong> in
+                  federal tax on the {formatCurrency(totalIncome)} of total
+                  income this slider never moves &mdash; an effective rate of{' '}
+                  <strong>
+                    {formatPercent(effectiveRateOn(hereGainPoint.totalTax))}
+                  </strong>
+                  . The same dollars, taxed differently: what the slider moves
+                  is the bill, not the income.
+                </>
+              ) : null}
             </p>
           </div>
           </>

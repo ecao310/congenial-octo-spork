@@ -3807,3 +3807,91 @@ standing in for an `.input-group` (deliberately not `.filing-status`, whose
 element-plus-class `margin: 0` `.chart-slider` cannot win back), and an indigo
 band/swatch/advice rule — the one accent no curve, cliff or marker already
 owned.
+
+
+Say what the return owes, not only what the next dollar costs
+=============================================================
+
+Every rate the page quoted was the price of the next dollar. The total bill
+existed only inside `CustomTooltip` and `LTCGTooltip`, so a reader who never
+hovered — and every reader on a touch screen — walked all four steps without
+once being told what the return costs. Both "You are here" readouts now say it,
+and say the effective rate beside it, which nothing on the page stated at all.
+
+### One figure, three places
+
+`herePoint.totalTax` and `hereGainPoint.totalTax` are the same number: the two
+charts sweep one return two ways and the reader stands at the same return on
+each. `sizeConversion` rounds the same `totalTax` call into `taxBefore`, so
+step 4's "this year's bill" is the third copy. Default return, 2025: $2,813 in
+all three. Each readout still reads its own curve rather than sharing a value,
+which is the pattern the marginal rates already follow — the claim that they
+agree is left out of the prose, because a curve sampled at $1,000 steps and a
+slider left at a $500 multiple could in principle disagree.
+
+### The denominator
+
+The page already defines total income, in the axis label under step 2's chart:
+other income + the whole benefit + tax-exempt interest − anything given
+straight to charity. The effective rate uses that, not taxable income. Against
+taxable income the untaxed benefit vanishes from the comparison, and the
+untaxed benefit is the thing the page is about.
+
+Three consequences, all tested. Muni interest is money received, so it lands in
+the denominator ($10,000 of it takes the default return to $63,712 and the rate
+to 6.02% on a bill of $3,833). A gift leaves the IRA without reaching the
+filer, so it comes out ($90,000 of income less a $20,000 gift is $93,712). And
+only the gift 408(d)(8) can actually exclude comes out — `qcdFor`, not the
+slider's own value — so at $90,000 with $80,000 of it a gain, $10,000 of the
+gift is crowded out and counts back in, giving $103,712.
+
+That last one is where the readout is now right and the axis label above it is
+wrong: the label subtracts the asked-for gift. Logged in Discovered work,
+alongside the older disagreement it belongs with — both tooltips compute total
+income as `income + ssBenefit`, ignoring muni and the gift, so the tooltip and
+the sentence below it now differ by the muni whenever it is set. Neither was
+introduced here; the new sentence is what makes them visible.
+
+### The wording
+
+Step 2: "The return itself owes $2,813 in federal tax on $53,712 of total
+income — an effective rate of 5.24%. That is the average across every dollar of
+it; the figure before it is the price of the next one." The last clause is the
+whole reason the two figures share a sentence — a marginal rate read as an
+average is the standard misreading, and here they are 22.2% and 5.24%.
+
+No comparison is asserted between them. Effective is usually the smaller, but
+just past a big torpedo drop the marginal rate falls back to 12% while the
+average is still carrying the 22.2% stretch behind it, so "well under" would be
+a claim the page cannot make.
+
+Step 3: "All told the return owes $2,813 in federal tax on the $53,712 of total
+income this slider never moves — an effective rate of 5.24%. The same dollars,
+taxed differently: what the slider moves is the bill, not the income." Step 3's
+axis is the composition of an income whose size it never changes, so the
+denominator is the constant and the numerator is what moves. At $20,000 of
+gain: $543 and 1.01%.
+
+Both clauses are suppressed when nothing comes in — no benefit, no income —
+where "owes $0 on $0 of total income" would be the only thing they could say.
+
+### Two small tidyings
+
+`conversionScenario` was the reader's return in the shape the tax chain reads,
+built for step 4 and needed again for `qcdFor`. Renamed `hereScenario`, moved up
+beside `herePoint`, and step 4 now reads it rather than owning it.
+
+The joining space between step 3's marginal-rate clause and the mix-saving
+sentence moved inside the two `mixSaving` branches. It was rendering as a
+double space whenever `mixSaving` was null, which is every return with no gain
+set — i.e. the default one — now that a third clause follows it.
+
+### Verified
+
+`npx tsc -b`, `npx eslint src --max-warnings 0`, `npx vitest run` (7 files, 510
+tests, green in 8s), `npm run build`. +10 tests in a new `the total the return
+owes` describe: the bill and rate under each slider, the average/marginal
+wording, step 4's third copy of the total, re-pricing on the gains slider with
+the denominator held, all three figures moving with the income, the muni and
+gift denominators, the crowded-out gift, and the silent case. No CSS: both
+clauses are prose inside `.slider-readout`.

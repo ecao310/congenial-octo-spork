@@ -16,7 +16,7 @@ import {
   seniorDeductionFor,
   taxableSocialSecurity,
   totalTax,
-} from './tax';
+} from '../utils/tax';
 
 /* ------------------------------------------------------------------ */
 /*  Indexing published figures forward                                */

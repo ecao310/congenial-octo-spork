@@ -4248,3 +4248,79 @@ Three items went to Discovered work: the IRMAA explainer's now-duplicate
 `stateTax.ts`'s account, and the fact that the state reaches step 2 and stops —
 step 4 sizes a conversion against a federal ceiling and never mentions that
 Montana taxes the conversion too.
+
+---
+
+## Iteration: the three unrendered modules get a shelf (21 Aug 2026)
+
+`projection.ts` (636), `sequencing.ts` (800) and `lumpSum.ts` (409) sat in
+`src/utils/` beside seven modules the page actually reaches, imported by nothing
+but each other and their own tests, and kept collecting Discovered Work bullets
+no reader could ever see. The backlog gave two candidates: a step 5, or a
+holding directory.
+
+### Why the directory and not the step
+
+The page is a *this-year* page. Its h1 asks "How Much Can You Take Out This
+Year?" and its four steps set a scenario, walk the torpedo, split income into
+gains and size a conversion — all inside one tax year, all priced off figures
+the IRS has published. These three answer a different question, and to answer it
+they need inputs the rest of the page never asks for: an inflation rate, a
+spending need, three account balances, a birth year, and for `lumpSum.ts` a
+figure for every prior year an award reaches back to. That is a second app's
+worth of input hanging off one step, and a step 5 that rendered only one of the
+three would leave the other two exactly as undecided as they were.
+
+So: `src/shelf/`, six files moved with `git mv`, one `sed` rewriting `'./tax'`
+to `'../utils/tax'` (the only import that crossed the new line — `sequencing.ts`
+importing `./projection` and each test importing its own subject all travelled
+together).
+
+### The rule, and the test that makes it one
+
+A directory named "shelf" is a label until something enforces it, so
+`shelf.test.ts` does:
+
+1. **Nothing outside `src/shelf/` imports from `src/shelf/`.** Walks every
+   `.ts`/`.tsx` under `src/`, skips the shelf itself, and matches
+   `/(^|\/)shelf\//` against each import specifier. Verified by actually
+   breaking it — an `export { rmdDivisor } from '../shelf/projection'` appended
+   to `format.ts` failed the test with `"utils/format.ts imports
+   ../shelf/projection"`, and was reverted.
+2. **The README's table is exactly what is on the shelf.** Matches only rows
+   starting `| \`name\` |`, because the prose below it names `stateTax.ts` —
+   which is *not* shelved — and a looser regex would read that as a fourth
+   module.
+
+Together they make un-shelving a move rather than an import: bringing a module
+back means `git mv`-ing it to `src/utils/` in the same commit as the section
+that renders it. The move is the decision; reversing the move is the only way to
+reverse the decision.
+
+`fileURLToPath(new URL('.', import.meta.url))` does not work here — vitest
+rewrites `import.meta.url` to a non-`file:` URL and it throws "The URL must be
+of scheme file". Resolved from `process.cwd()` instead, which vitest sets to the
+config root.
+
+### `src/shelf/README.md`
+
+Table of the three with line counts and one sentence each on what they compute;
+why they are here (5fe9854 was a render-layer deletion, and the page's shape
+changed under them); the rule; what it would take to bring each back, ranked —
+`projection.ts` first, because its thesis *is* the app's thesis, the $25k/$34k
+thresholds frozen since 1984 while every benefit has moved; and the three open
+defects that stay open while the code is here. It ends on `stateTax.ts` as the
+worked example of un-shelving: same predicament last iteration, now rendering as
+step 2's footnote.
+
+### Verified
+
+`npx tsc -b`, `npx eslint src --max-warnings 0`, `npx vitest run` (9 files, 581
+tests, green in 10.0s — 579 before, +2 from the guard), `npm run build`. No test
+of the three modules changed; they run in the same suite as before, from a new
+path.
+
+One bullet to Discovered work: the old gate bullet named four deferred items,
+and this splits them three-and-one. The three shelf ones stay deferred and are
+now written down where a reader of the code will find them; the 2026 state
+figures bullet is live work, because `stateTax.ts` is on the page.

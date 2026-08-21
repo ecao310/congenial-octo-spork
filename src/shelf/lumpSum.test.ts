@@ -18,7 +18,7 @@ import {
   standardDeductionFor,
   taxableSocialSecurity,
   totalTax,
-} from './tax';
+} from '../utils/tax';
 
 /**
  * Line-by-line reference implementation of IRS Pub 915 Worksheet 2, "Figure

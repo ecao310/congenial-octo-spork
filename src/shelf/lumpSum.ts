@@ -7,7 +7,7 @@ import {
   resolveScenario,
   taxableSocialSecurity,
   totalTax,
-} from './tax';
+} from '../utils/tax';
 
 /* ------------------------------------------------------------------ */
 /*  Retroactive awards and the lump-sum election (IRC 86(e))          */

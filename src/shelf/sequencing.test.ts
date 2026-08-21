@@ -13,7 +13,7 @@ import {
   conversionMeasureValue,
   filingParams,
   taxableSocialSecurity,
-} from './tax';
+} from '../utils/tax';
 import { UNIFORM_LIFETIME_DIVISORS } from './projection';
 
 const ALL_IDS: SequencingStrategyId[] = SEQUENCING_STRATEGIES.map((s) => s.id);

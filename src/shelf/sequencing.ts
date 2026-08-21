@@ -8,7 +8,7 @@ import {
   resolveScenario,
   taxableSocialSecurity,
   totalTax,
-} from './tax';
+} from '../utils/tax';
 import {
   projectYearParams,
   qcdInYear,

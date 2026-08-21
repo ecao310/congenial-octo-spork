@@ -24,7 +24,7 @@ import {
   qcdAnnualLimit,
   taxableSocialSecurity,
   totalTax,
-} from './tax';
+} from '../utils/tax';
 
 describe('rmdApplicableAge', () => {
   it('is 73 for 1951 through 1958 and 75 from 1960 on', () => {

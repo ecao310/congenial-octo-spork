@@ -72,7 +72,7 @@ import {
   taxesBenefitsIn,
 } from './utils/stateTax';
 import { formatCurrency } from './utils/format';
-import { PALETTE } from './palette';
+import { CHART, PALETTE } from './palette';
 import type {
   TaxYear,
   LTCGMarginalRatePoint,
@@ -255,12 +255,12 @@ const hereLine = (value: number, axisMax: number, colour: string) => (
     x={value}
     stroke={colour}
     strokeDasharray="6 4"
-    strokeWidth={2}
+    strokeWidth={CHART.rule}
     label={{
       value: 'You are here',
       position: value > axisMax * 0.6 ? 'insideTopRight' : 'insideTopLeft',
       fill: colour,
-      fontSize: 11,
+      fontSize: CHART.label,
       fontWeight: 600,
     }}
   />
@@ -370,13 +370,54 @@ function CurveCaption<T>({ id, segments, lead }: CurveCaptionProps<T>) {
   );
 }
 
-const TOOLTIP_STYLE: React.CSSProperties = {
-  background: PALETTE.surfaceRaised,
-  border: `1px solid ${PALETTE.edge}`,
-  borderRadius: '8px',
-  color: PALETTE.inkBright,
-  padding: '0.75rem',
-};
+/**
+ * How every axis on all three charts is drawn, in one object rather than six
+ * copies.
+ *
+ * Three tiers, each spending a token the page already declares: the frame is
+ * `--edge-strong`, the mesh behind it is `--edge`, and the words are
+ * `--ink-muted`. recharts defaults a tick label's `fill` to the axis's own
+ * `stroke`, which is what made the axis line and its labels the same colour
+ * before — an axis line as bright as its numbers, in a register whose whole
+ * point is that chrome is quieter than content.
+ *
+ * `tickLine` is off because the grid already says where a tick is, and
+ * `fontSize` is set on the axis rather than only on `tick` because recharts
+ * measures label widths with it when it decides how many ticks fit.
+ */
+/**
+ * What a hover draws: the rule that follows the pointer down the plot, and
+ * the dot it puts on the curve.
+ *
+ * The one part of these three charts no test here can read back, because
+ * recharts decides a hover from `getBoundingClientRect` and jsdom reports
+ * every box as zero — so this is the one place the register is held by having
+ * been looked at rather than by an assertion. Both were recharts' own
+ * defaults until now, which is to say `#ccc` and `#fff`: two colours this
+ * page does not declare, and the brightest things on a plot whose whole point
+ * is that chrome is quieter than content.
+ *
+ * The dot's ring is the page's own ground rather than a colour, so it reads
+ * as the curve being cut away from under the dot rather than as a second
+ * mark on top of it.
+ */
+const HOVER_CURSOR = {
+  stroke: PALETTE.inkMuted,
+  strokeWidth: CHART.hairline,
+} as const;
+
+const HOVER_DOT = {
+  stroke: PALETTE.surface,
+  strokeWidth: CHART.rule,
+} as const;
+
+const AXIS_PROPS = {
+  stroke: PALETTE.edgeStrong,
+  strokeWidth: CHART.hairline,
+  fontSize: CHART.label,
+  tickLine: false,
+  tick: { fill: PALETTE.inkMuted },
+} as const;
 
 interface TooltipPayloadPoint {
   income: number;
@@ -444,18 +485,18 @@ export const CustomTooltip: React.FC<CustomTooltipProps> = ({
   // now — so the only thing left to say is how much of it, and on what.
   const niit = niitFor(scenario);
   return (
-    <div style={TOOLTIP_STYLE}>
-      <div style={{ fontWeight: 600, marginBottom: '0.25rem' }}>
+    <div className="chart-tooltip">
+      <div className="chart-tooltip-head">
         Other income {formatCurrency(point.income)} · Total income {formatCurrency(totalIncome)}
       </div>
       {split.ltcg > 0 && (
-        <div style={{ fontSize: '0.8125rem', color: PALETTE.emerald }}>
+        <div style={{ color: PALETTE.emerald }}>
           Of which {formatCurrency(split.ltcg)} is a long-term gain —{' '}
           {formatCurrency(split.ordinaryIncome)} is ordinary
         </div>
       )}
       {given > 0 && (
-        <div style={{ fontSize: '0.8125rem', color: PALETTE.lime }}>
+        <div style={{ color: PALETTE.lime }}>
           Less {formatCurrency(given)} given straight to charity —{' '}
           {formatCurrency(point.income - given)} of it reaches the return
         </div>
@@ -467,7 +508,7 @@ export const CustomTooltip: React.FC<CustomTooltipProps> = ({
         Total Federal Tax: <strong style={{ color: PALETTE.orange }}>{formatCurrency(point.totalTax)}</strong>
       </div>
       {niit.tax > 0 && (
-        <div style={{ fontSize: '0.8125rem', color: PALETTE.violet }}>
+        <div style={{ color: PALETTE.violet }}>
           Including {formatCurrency(niit.tax)} of net investment income tax —
           3.8% of {formatCurrency(niit.base)}
         </div>
@@ -480,18 +521,18 @@ export const CustomTooltip: React.FC<CustomTooltipProps> = ({
         {irmaa.tier > 0 ? ` (tier ${irmaa.tier} of 5)` : ''}
       </div>
       {irmaa.headroom !== null && (
-        <div style={{ fontSize: '0.8125rem', color: PALETTE.inkMuted }}>
+        <div style={{ color: PALETTE.inkMuted }}>
           {formatCurrency(irmaa.headroom)} of MAGI to the next cliff, then{' '}
           {formatCurrency(irmaa.nextStep)}/yr more
         </div>
       )}
       {segment && segment.type === 'hill' && (
-        <div style={{ marginTop: '0.5rem', borderTop: `1px solid ${PALETTE.edge}`, paddingTop: '0.5rem', fontSize: '0.875rem', color: PALETTE.inkMuted }}>
+        <div className="chart-tooltip-advice">
           Consider avoiding this tax hill by staying under {formatCurrency(segment.start)} or over {formatCurrency(segment.end)}
         </div>
       )}
       {segment && segment.type === 'valley' && (
-        <div style={{ marginTop: '0.5rem', borderTop: `1px solid ${PALETTE.edge}`, paddingTop: '0.5rem', fontSize: '0.875rem', color: PALETTE.inkMuted }}>
+        <div className="chart-tooltip-advice">
           Consider filling out this tax valley at {formatCurrency(point.income)}
         </div>
       )}
@@ -557,8 +598,8 @@ export const LTCGTooltip: React.FC<LTCGTooltipProps> = ({
   // now — so the only thing left to say is how much of it, and on what.
   const niit = niitFor(scenario);
   return (
-    <div style={TOOLTIP_STYLE}>
-      <div style={{ fontWeight: 600, marginBottom: '0.25rem' }}>
+    <div className="chart-tooltip">
+      <div className="chart-tooltip-head">
         {formatCurrency(point.ltcg)} of {formatCurrency(ordinaryIncome)} is gain · Total income {formatCurrency(totalIncome)}
       </div>
       <div>
@@ -568,18 +609,18 @@ export const LTCGTooltip: React.FC<LTCGTooltipProps> = ({
         Total Federal Tax: <strong style={{ color: PALETTE.orange }}>{formatCurrency(point.totalTax)}</strong>
       </div>
       {niit.tax > 0 && (
-        <div style={{ fontSize: '0.8125rem', color: PALETTE.violet }}>
+        <div style={{ color: PALETTE.violet }}>
           Including {formatCurrency(niit.tax)} of net investment income tax —
           3.8% of {formatCurrency(niit.base)}
         </div>
       )}
       {segment && segment.type === 'hill' && (
-        <div style={{ marginTop: '0.5rem', borderTop: `1px solid ${PALETTE.edge}`, paddingTop: '0.5rem', fontSize: '0.875rem', color: PALETTE.inkMuted }}>
+        <div className="chart-tooltip-advice">
           Consider avoiding this tax hill by staying under {formatCurrency(segment.start)} or over {formatCurrency(segment.end)}
         </div>
       )}
       {segment && segment.type === 'valley' && (
-        <div style={{ marginTop: '0.5rem', borderTop: `1px solid ${PALETTE.edge}`, paddingTop: '0.5rem', fontSize: '0.875rem', color: PALETTE.inkMuted }}>
+        <div className="chart-tooltip-advice">
           Consider filling out this tax valley at {formatCurrency(point.ltcg)}
         </div>
       )}
@@ -2259,25 +2300,30 @@ const App: React.FC = () => {
                   >
                     <defs>
                       <linearGradient id="rateGradient" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor={PALETTE.accent} stopOpacity={0.5} />
+                        <stop offset="5%" stopColor={PALETTE.accent} stopOpacity={CHART.fill} />
                         <stop offset="95%" stopColor={PALETTE.accent} stopOpacity={0} />
                       </linearGradient>
                     </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke={PALETTE.edge} />
+                    <CartesianGrid
+                      stroke={PALETTE.edge}
+                      strokeWidth={CHART.hairline}
+                      vertical={false}
+                    />
                     <XAxis
+                      {...AXIS_PROPS}
                       dataKey="income"
                       type="number"
                       domain={[0, axisMax]}
                       tickFormatter={formatCompact}
-                      stroke={PALETTE.inkMuted}
                     />
                     <YAxis
-                      stroke={PALETTE.inkMuted}
+                      {...AXIS_PROPS}
                       tickFormatter={(value) => `${value}%`}
-                      width={70}
+                      width={CHART.axis}
                       domain={[0, 'auto']}
                     />
                     <Tooltip
+                      cursor={HOVER_CURSOR}
                       content={
                         <CustomTooltip
                           ssBenefit={ssBenefit}
@@ -2298,11 +2344,12 @@ const App: React.FC = () => {
                         x={cliff.otherIncome}
                         stroke={PALETTE.rose}
                         strokeDasharray="4 4"
+                        strokeWidth={CHART.rule}
                         label={{
                           value: `IRMAA ${cliff.tier}`,
                           position: 'top',
                           fill: PALETTE.roseBright,
-                          fontSize: 11,
+                          fontSize: CHART.label,
                         }}
                       />
                     ))}
@@ -2319,11 +2366,12 @@ const App: React.FC = () => {
                         x={subsidyCliffOnChart.otherIncome}
                         stroke={PALETTE.fuchsia}
                         strokeDasharray="4 4"
+                        strokeWidth={CHART.rule}
                         label={{
                           value: `${PTC_CLIFF_PERCENT * 100}% FPL`,
                           position: 'top',
                           fill: PALETTE.fuchsiaBright,
-                          fontSize: 11,
+                          fontSize: CHART.label,
                         }}
                       />
                     )}
@@ -2332,8 +2380,10 @@ const App: React.FC = () => {
                       type="stepAfter"
                       dataKey="marginalRate"
                       stroke={PALETTE.accent}
-                      strokeWidth={2}
+                      strokeWidth={CHART.line}
                       fill="url(#rateGradient)"
+                      fillOpacity={1}
+                      activeDot={HOVER_DOT}
                     />
                   </AreaChart>
                 </ResponsiveContainer>
@@ -2945,25 +2995,30 @@ const App: React.FC = () => {
                     >
                       <defs>
                         <linearGradient id="ltcgGradient" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor={PALETTE.amber} stopOpacity={0.5} />
+                          <stop offset="5%" stopColor={PALETTE.amber} stopOpacity={CHART.fill} />
                           <stop offset="95%" stopColor={PALETTE.amber} stopOpacity={0} />
                         </linearGradient>
                       </defs>
-                      <CartesianGrid strokeDasharray="3 3" stroke={PALETTE.edge} />
+                      <CartesianGrid
+                        stroke={PALETTE.edge}
+                        strokeWidth={CHART.hairline}
+                        vertical={false}
+                      />
                       <XAxis
+                        {...AXIS_PROPS}
                         dataKey="ltcg"
                         type="number"
                         domain={[0, gainsAxisMax]}
                         tickFormatter={formatCompact}
-                        stroke={PALETTE.inkMuted}
                       />
                       <YAxis
-                        stroke={PALETTE.inkMuted}
+                        {...AXIS_PROPS}
                         tickFormatter={(value) => `${value}%`}
-                        width={70}
+                        width={CHART.axis}
                         domain={[0, 'auto']}
                       />
                       <Tooltip
+                        cursor={HOVER_CURSOR}
                         content={
                           <LTCGTooltip
                             ordinaryIncome={ordinaryIncome}
@@ -2981,8 +3036,10 @@ const App: React.FC = () => {
                         type="stepAfter"
                         dataKey="marginalRate"
                         stroke={PALETTE.amber}
-                        strokeWidth={2}
+                        strokeWidth={CHART.line}
                         fill="url(#ltcgGradient)"
+                        fillOpacity={1}
+                        activeDot={HOVER_DOT}
                       />
                     </AreaChart>
                   </ResponsiveContainer>
@@ -3217,25 +3274,30 @@ const App: React.FC = () => {
                   >
                     <defs>
                       <linearGradient id="conversionGradient" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor={PALETTE.accent} stopOpacity={0.5} />
+                        <stop offset="5%" stopColor={PALETTE.accent} stopOpacity={CHART.fill} />
                         <stop offset="95%" stopColor={PALETTE.accent} stopOpacity={0} />
                       </linearGradient>
                     </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke={PALETTE.edge} />
+                    <CartesianGrid
+                      stroke={PALETTE.edge}
+                      strokeWidth={CHART.hairline}
+                      vertical={false}
+                    />
                     <XAxis
+                      {...AXIS_PROPS}
                       dataKey="income"
                       type="number"
                       domain={[0, conversionAxisMax]}
                       tickFormatter={formatCompact}
-                      stroke={PALETTE.inkMuted}
                     />
                     <YAxis
-                      stroke={PALETTE.inkMuted}
+                      {...AXIS_PROPS}
                       tickFormatter={(value) => `${value}%`}
-                      width={70}
+                      width={CHART.axis}
                       domain={[0, 'auto']}
                     />
                     <Tooltip
+                      cursor={HOVER_CURSOR}
                       content={
                         <CustomTooltip
                           ssBenefit={ssBenefit}
@@ -3255,7 +3317,7 @@ const App: React.FC = () => {
                         x1={ordinaryIncome}
                         x2={conversionTarget}
                         fill={PALETTE.indigo}
-                        fillOpacity={0.2}
+                        fillOpacity={CHART.fill}
                         stroke="none"
                       />
                     )}
@@ -3265,7 +3327,7 @@ const App: React.FC = () => {
                         x={conversionTarget}
                         stroke={PALETTE.indigo}
                         strokeDasharray="4 4"
-                        strokeWidth={2}
+                        strokeWidth={CHART.rule}
                         /* The amount goes on the line rather than inside the
                            band: "You are here" already runs rightwards from the
                            band's near edge, and a narrow band would put the two
@@ -3276,7 +3338,7 @@ const App: React.FC = () => {
                           value: `${formatCurrency(sizing.conversion)} converted`,
                           position: 'top',
                           fill: PALETTE.indigoBright,
-                          fontSize: 11,
+                          fontSize: CHART.label,
                           fontWeight: 600,
                         }}
                       />
@@ -3286,8 +3348,10 @@ const App: React.FC = () => {
                       type="stepAfter"
                       dataKey="marginalRate"
                       stroke={PALETTE.accent}
-                      strokeWidth={2}
+                      strokeWidth={CHART.line}
                       fill="url(#conversionGradient)"
+                      fillOpacity={1}
+                      activeDot={HOVER_DOT}
                     />
                   </AreaChart>
                 </ResponsiveContainer>

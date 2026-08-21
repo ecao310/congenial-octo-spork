@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { render } from '@testing-library/react';
 import App from './App';
-import { PALETTE } from './palette';
+import { CHART, PALETTE } from './palette';
 
 /**
  * A CSS rule that can never match is silent. Nothing throws, nothing warns,
@@ -185,6 +185,48 @@ describe('the palette', () => {
       .filter((token) => token.css !== token.value);
 
     expect(disagreed).toEqual([]);
+  });
+});
+
+/**
+ * `CHART` is the second copy of two of the page's measures, held to the first
+ * the same way `PALETTE` is — by a test, because a stale number renders as
+ * quietly as a stale colour.
+ *
+ * Only two of the five entries have a counterpart in CSS, and they are the
+ * two where a disagreement would actually show. The y-axis gutter is one: an
+ * SVG that holds back 44px and a caption that indents 44px are describing the
+ * same edge, and if they stop agreeing the words under every plot stop
+ * starting where the plot does. The label size is the other: 13px inside the
+ * plot is `0.8125rem` under it, and the claim this pass made is that a chart
+ * and its notes read at one size.
+ *
+ * The other three — the curve, the rule and the hairline — are stroke widths,
+ * which nothing in CSS draws, and `the chart register` in App.chart.test.tsx
+ * is what holds those closed instead.
+ */
+describe('the chart metrics', () => {
+  it('holds back the same gutter the notes under the plot indent by', () => {
+    const root = (screenBlock(stylesheet).match(/:root\s*\{[^}]*\}/g) ?? []).join('\n');
+    expect(/--chart-axis:\s*([^;]+);/.exec(root)?.[1].trim()).toBe(`${CHART.axis}px`);
+  });
+
+  it('sets the plot’s labels at the step its notes are set in', () => {
+    // 13px is 0.8125rem, and the root font size is the browser's own 16px:
+    // `index.css` sets 15px on `body` rather than on `:root` precisely so
+    // that every rem length on the page stays where it was put.
+    const step = `${CHART.label / 16}rem`;
+    expect(step).toBe('0.8125rem');
+
+    const notes = ['.chart-axis-label', '.chart-key', '.chart-caption'];
+    const set = leafRules(screenBlock(stylesheet))
+      .filter((rule) => rule.selectors.some((selector) => notes.includes(selector)))
+      .map((rule) => ({
+        selector: rule.selectors.join(', '),
+        size: /font-size:\s*([^;}]+)/.exec(rule.body)?.[1].trim(),
+      }));
+    expect(set).toHaveLength(notes.length);
+    expect(set.filter((note) => note.size !== step)).toEqual([]);
   });
 });
 

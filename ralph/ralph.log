@@ -5537,3 +5537,146 @@ overtaken — two later backlog bullets remove the year selector and every
 reference to states outright — so neither was worth a rule here.
 
 The tree opened clean this run, which is the first time in three.
+
+## 2026-08-21 — Task: Re-theme the four charts (visual overhaul, step 5 of 6)
+
+There are three, not four. The bullet was written while the Over Time tab still
+rendered one; 5fe9854 removed it. Left the bullet's wording alone and noted the
+count here instead.
+
+### What the charts were drawn with
+
+Every number in the three plots had been typed into whichever chart was being
+edited, so none of them agreed with the page around it:
+
+- **11px labels under 15px ticks.** The tick values inherited body copy, which
+  the type pass had left at .9375rem; the cliff names, the marker and the
+  ceiling were all at a hard-coded `11`. So the axis shouted and the things it
+  was annotating whispered, and neither size was on the page's own scale.
+- **A 1px IRMAA cliff beside a 2px marker.** Nothing said why. Five cliffs took
+  recharts' default width and the two lines added later did not.
+- **A wash whose real alpha was 0.3.** The gradient's top stop was `0.5`, and
+  recharts multiplies an `<Area>`'s fill by its own default `fillOpacity` of
+  0.6 — so the number in the source was one nobody could read off the screen.
+- **A dashed grid, drawn both ways.** `strokeDasharray="3 3"` in both
+  directions, across a plot whose *meaningful* lines are dashed verticals: on
+  step 2 the mesh ran straight through five dashed cliffs, a dashed subsidy
+  cliff and a dashed marker.
+- **An axis line the same colour as its own numbers.** recharts defaults a tick
+  label's `fill` to the axis's `stroke`, and both were `--ink-muted` — chrome
+  painted at content's weight, in a register whose whole premise is the
+  opposite.
+- **A 70px y-axis gutter**, sized for 15px ticks, written once in the TSX
+  (`width={70}`) and three more times in CSS as `padding-left: 70px`, with
+  nothing holding the four together.
+- **recharts' own `#ccc` and `#fff`** on the hover cursor and the active dot:
+  two colours this page does not declare, and the brightest marks on the plot.
+
+### What it is drawn with now
+
+`CHART` in `palette.ts`, beside `PALETTE` and for exactly the same reason: an
+SVG `stroke-width` is an attribute and an attribute cannot hold a `var(--…)`,
+so the page's scales have to be written a second time for a chart to spend
+them. Five entries — `label: 13`, `line: 3`, `rule: 2`, `hairline: 1`,
+`fill: 0.2`, `axis: 44`.
+
+Three tiers of chrome, each spending a token `:root` already declares: the
+frame is `--edge-strong`, the mesh behind it is `--edge`, the words are
+`--ink-muted`. The grid is solid and horizontal only, so a vertical line on
+this page means something again. `tickLine` is off. All six axes take one
+`AXIS_PROPS` object rather than six copies of the same four props.
+
+Each `<Area>` now sets `fillOpacity={1}` beside its gradient, so `CHART.fill`
+is the alpha rather than a factor of it.
+
+The tooltip moved out of `App.tsx` and into the stylesheet. It had been an
+inline `TOOLTIP_STYLE` plus a `fontSize` on nearly every row — 15px for the
+priced figures, 13px for the notes beside them, 14px for the advice at the
+foot — which is a stack of decisions made one row at a time rather than a
+size. An inline style is also a rule no scale can see: the `8px` corner and
+all three sizes sat outside the lists that hold the rest of the page closed.
+As `.chart-tooltip` it takes `var(--radius-lg)`, `var(--surface-raised)`, a
+hairline `var(--edge)` and one `0.8125rem` for everything inside it. It also
+gets `--shadow-float`, which the ground pass reserved for "the thing that
+genuinely floats over the page rather than sitting on it" and then gave to
+nothing: a tooltip that follows the pointer across a curve is exactly that.
+
+What stays inline in `App.tsx` is colour, and only the colours that carry
+meaning — a row is emerald because it is a gain, violet because it is the
+surtax — which is `PALETTE` being spent the same way the SVG spends it.
+
+`--chart-axis: 44px` is the one number a stylesheet and an SVG attribute both
+have to know. 13px inside the plot is `0.8125rem` under it, so `.chart-axis-label`
+came down from body copy to join `.chart-key` and `.chart-caption`: the chart
+and its notes now read at one size.
+
+### The guards
+
+- **`the chart register`** (App.chart.test.tsx, 5 new). Reads the numbers back
+  off the rendered SVG rather than off the source, because the surface is the
+  only place a scale is either kept or lost: every `font-size` in the three
+  plots is `CHART.label`; every `stroke-width` is one of the three steps; the
+  curve, the reference line and the grid each take the one that names them;
+  the grid rules one way only and the sole dasharrays left are the cliffs' and
+  the marker's; and every wash is `CHART.fill`.
+- **`the chart metrics`** (styles.test.tsx, 2 new). Pairs the two entries that
+  have a CSS counterpart — the gutter against `--chart-axis`, and
+  `CHART.label / 16` against the step `.chart-axis-label`, `.chart-key` and
+  `.chart-caption` are all set in. The three stroke widths have no CSS side,
+  and the register test above is what holds those.
+
+### Verified
+
+- `npx tsc -b`, `npx eslint src --max-warnings 0`, `npx vitest run`
+  (11 files, 685 tests — +7, all seven new), `npm run build`.
+- All seven falsified once each: an `11` back in a cliff label fails "says
+  every word at one size"; a 2px curve fails both weight claims
+  (`expected [ '2', '3' ] to deeply equal [ '3' ]`); `vertical={true}` fails
+  the one-way claim; `stopOpacity={0.5}` fails the wash claim
+  (`[ '0', '0.2', '0.5' ]`); `--chart-axis: 70px` fails the gutter pairing;
+  and deleting the axis label's `font-size` fails the size pairing.
+- Rendered rather than reasoned about. Built, `vite preview`, drove Chromium
+  through `playwright-core` at 1440x900 and 420x800. Read back off the live
+  page: three SVGs, one `font-size` (`13`), three `stroke-width`s (1/3/2), two
+  `stop-opacity`s (0.2/0), computed tick size 13px in `--ink-muted`, zero
+  vertical grid groups, the plot starting at x=54 (44 gutter + 10 chart
+  margin) against a 44px caption indent, `scrollWidth === clientWidth` at both
+  sizes, zero page errors. Hovered mid-plot: the tooltip computes to 13px, an
+  8px corner, `--surface-raised` and `--shadow-float`. Screenshotted the
+  torpedo chart, the tooltip, step 3's gains chart at both widths, and step
+  4's band and ceiling.
+- The hover cursor and the active dot are the one part of these charts no test
+  here can reach — recharts decides a hover from `getBoundingClientRect` and
+  jsdom reports every box as zero — so those two were verified by looking at
+  them, which is why they live in one commented `HOVER_CURSOR`/`HOVER_DOT`
+  pair rather than being typed into three `<Tooltip>`s.
+- `playwright-core` note from the last two runs still holds: cached Chromium
+  build 1228 against `playwright-core` 1.62.1, so `chromium.launch()` needs
+  `executablePath` at
+  `~/Library/Caches/ms-playwright/chromium_headless_shell-1228/chrome-headless-shell-mac-arm64/chrome-headless-shell`,
+  and the driving script has to sit in the project root for the bare import to
+  resolve.
+
+### Discovered, and left for the next bullet
+
+Under `emulateMedia({ media: 'print' })` the charts render **30 tick labels on
+screen and 0 on paper** — the axes, the tick values and the grid all vanish and
+what prints is a bare curve with no scale under it. The print sheet's own chart
+block sets `height: auto !important` on `.chart-container` and both recharts
+divs; `ResponsiveContainer` re-measures on that, gets zero, and unmounts the
+plot the `viewBox` trick was meant to scale. Checked against the commit before
+this pass and it is identical there, so it is not a regression from it. Logged
+in PLAN.md next to the print-sheet bullet, which is the next item in the list.
+
+### Left standing, and why
+
+The print block still says "The grid is white at 10% alpha", which stopped
+being true in the ground pass and is now further off — the grid is solid
+`--edge` and horizontal only. Not fixed here: the next bullet re-reads that
+whole block against the new ground, and half-correcting a comment it is about
+to rewrite is worse than leaving it to be found there.
+
+Step 3's amber wash reads warmer than the other two at the same 0.2, because
+amber is a brighter hue than the accent, not because the alpha differs. Left
+alone — a later bullet already asks whether step 3 should have a hue of its
+own, and that is where a per-curve alpha would be argued if it is wanted.

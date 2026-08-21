@@ -21,6 +21,7 @@ vi.mock('recharts', async () => {
 });
 
 import App from './App';
+import { CHART } from './palette';
 
 /**
  * The app opens on `defaultTaxYear()`, which follows the wall calendar. Every
@@ -438,5 +439,120 @@ describe('the conversion band on step 4’s chart', () => {
     // starts earlier and finishes wider.
     expect(movedLeft).toBeLessThan(left);
     expect(movedRight - movedLeft).toBeGreaterThan(right - left);
+  });
+});
+
+/**
+ * Every number the three plots are drawn with, read back off the SVG.
+ *
+ * `CHART` in palette.ts is the page's scales written a second time, because
+ * an SVG `stroke-width` is an attribute and an attribute cannot hold a
+ * `var(--…)`. A second copy of anything drifts, and the way this one drifts is
+ * not by someone rewriting it: it is by an `11` or a `2` typed into whichever
+ * chart is being edited, which from inside that chart looks like nothing at
+ * all. That is how the page arrived here — 11px labels under 15px ticks, a
+ * 1px IRMAA cliff beside a 2px marker, and a half-opaque wash whose real
+ * alpha was 0.3 because recharts had multiplied it by its own default.
+ *
+ * So the claims below are made about the rendered surface rather than about
+ * the source: they read the attributes a browser would paint from, which is
+ * the only place the scale is either kept or lost.
+ */
+const chartSvgs = (container: HTMLElement): SVGElement[] =>
+  Array.from(container.querySelectorAll('.recharts-wrapper svg'));
+
+/** Every value of one attribute across all three plots, deduplicated. */
+const drawnWith = (container: HTMLElement, attribute: string): string[] => [
+  ...new Set(
+    chartSvgs(container).flatMap((svg) =>
+      Array.from(svg.querySelectorAll(`[${attribute}]`)).map(
+        (el) => el.getAttribute(attribute) as string,
+      ),
+    ),
+  ),
+];
+
+/** The same, for one kind of element. */
+const drawnOn = (
+  container: HTMLElement,
+  selector: string,
+  attribute: string,
+): string[] => [
+  ...new Set(
+    chartSvgs(container).flatMap((svg) =>
+      Array.from(svg.querySelectorAll(selector)).map(
+        (el) => el.getAttribute(attribute) as string,
+      ),
+    ),
+  ),
+];
+
+describe('the chart register', () => {
+  it('says every word in the plot at one size', () => {
+    const { container } = render(<App />);
+    expect(chartSvgs(container)).toHaveLength(3);
+
+    const sizes = drawnWith(container, 'font-size');
+    // Guards the extractor: a plot that rendered no text would pass vacuously.
+    expect(
+      container.querySelectorAll('.recharts-cartesian-axis-tick-value').length,
+    ).toBeGreaterThan(5);
+
+    expect(sizes).toEqual([String(CHART.label)]);
+  });
+
+  it('draws every line at one of three weights', () => {
+    const { container } = render(<App />);
+
+    expect(drawnWith(container, 'stroke-width').sort()).toEqual(
+      [CHART.hairline, CHART.line, CHART.rule].map(String).sort(),
+    );
+  });
+
+  it('spends each of the three on the thing it names', () => {
+    const { container } = render(<App />);
+
+    expect(drawnOn(container, '.recharts-area-curve', 'stroke-width')).toEqual([
+      String(CHART.line),
+    ]);
+    expect(
+      drawnOn(container, '.recharts-reference-line-line', 'stroke-width'),
+    ).toEqual([String(CHART.rule)]);
+    expect(
+      drawnOn(container, '.recharts-cartesian-grid line', 'stroke-width'),
+    ).toEqual([String(CHART.hairline)]);
+  });
+
+  /**
+   * The grid was dashed and drew both ways, so every plot carried a set of
+   * vertical dashes that mean nothing — on step 2, directly across the dashed
+   * cliffs and the dashed marker, which are the lines that do. Horizontal
+   * only is what leaves a vertical line on this page saying one thing.
+   */
+  it('rules the plot one way, so a vertical line still means something', () => {
+    const { container } = render(<App />);
+
+    expect(container.querySelectorAll('.recharts-cartesian-grid-horizontal')).toHaveLength(3);
+    expect(container.querySelectorAll('.recharts-cartesian-grid-vertical')).toHaveLength(0);
+    expect(drawnWith(container, 'stroke-dasharray').sort()).toEqual(['4 4', '6 4']);
+  });
+
+  /**
+   * The gradient runs from `CHART.fill` down to nothing, and step 4's band is
+   * flat at the same alpha — so the wash under a curve and the wash behind
+   * one are the same weight, which is the whole reason there is one token
+   * rather than two numbers.
+   */
+  it('washes every fill at one alpha', () => {
+    const { container } = render(<App />);
+
+    expect(drawnWith(container, 'stop-opacity').sort()).toEqual(
+      ['0', String(CHART.fill)].sort(),
+    );
+    expect(
+      drawnOn(container, '.recharts-reference-area-rect', 'fill-opacity'),
+    ).toEqual([String(CHART.fill)]);
+    // recharts would otherwise multiply the stop above by its own 0.6.
+    expect(drawnOn(container, '.recharts-area-area', 'fill-opacity')).toEqual(['1']);
   });
 });

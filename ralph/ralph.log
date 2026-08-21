@@ -3110,3 +3110,76 @@ figure and every IRMAA cliff line priced as if nothing had been realized — and
 IRMAA MAGI is AGI, which includes capital gains, so those lines are wrong by
 the whole gain. Threading it through changes the shape of the app's centrepiece
 chart, which is a task of its own. Added to Discovered work.
+
+## 2026-08-21 — Task: Draw a labelled dashed vertical at the reader's position
+
+Struck two bullets with one change: the Backlog-2 item and the "you are here"
+ReferenceLine bullet in Discovered Work, which the backlog item itself said to
+do as one.
+
+Last iteration gave each slider a `.slider-readout` sentence reading the curve
+back at the reader's value. This puts the same fact on the chart: a dashed
+vertical at the slider's own x, labelled `You are here`. Prose says what the
+point costs, the line says where it is.
+
+### `hereLine(value, axisMax, colour)`
+
+A plain function returning a `<ReferenceLine>`, not a component — recharts
+identifies its children by element type, so a wrapper renders as an unknown
+child and is dropped. Same reason `cliffsOnChart.map` sits inline.
+
+Three things it settles:
+
+- **Colour** is the driving slider's, not the curve's: amber (#f59e0b) on step
+  2, emerald (#34d399) on step 3. So each marker matches the control under it
+  rather than the line beside it, and the readout can say "the dashed amber
+  line" and be followed. A test pins the two strokes to that prose.
+- **Dash** is `6 4` at strokeWidth 2, against the IRMAA cliffs' `4 4` at 1 —
+  the two dashed verticals on step 2 have to read as different kinds of thing.
+- **Label side** flips at 60% of the axis. `insideTopLeft`/`insideTopRight` are
+  named for a rectangle; a reference line is a rectangle of zero width, so on
+  one they mean "text to the right of the line" and "text to the left of it"
+  (recharts' getCartesianPosition: `upperX + offset`, anchor `start` vs
+  `upperX + 0 - offset`, anchor `end`). Without the flip the label runs off the
+  right edge at high incomes.
+
+Label goes *inside* the plot, not above it: `position: 'top'` is already the
+IRMAA labels', and stacking a fourth label in that strip guarantees a
+collision. Inside-top lands at plot-top + 5, clear of them. It can overlap the
+curve when the reader stands on the torpedo peak, but labels render in
+recharts' z-index-2000 layer, above every series, so it stays legible.
+
+### Prose
+
+Both readouts now name the line rather than gesturing at "that point on the
+curve above". Kept the "At $30,000 of other income the next dollar is taxed at
+X%" clause verbatim — two existing tests assert on it, and it is still the
+sentence's job.
+
+### Tests
+
+`App.chart.test.tsx`, new `describe('the "you are here" marker')`, 4 cases:
+one labelled marker per chart with the right two strokes; each marker tracks
+its own slider and only its own (moving other income leaves the gains marker
+where it was); the marker sits at the reader's own fraction of a linear axis
+($75k is exactly halfway between the $0 and $150k positions); the label flips
+`text-anchor` from `start` to `end` past mid-axis.
+
+Two gotchas worth keeping:
+
+- The cliff-position helper had to be re-scoped. Its selector was every
+  `.recharts-reference-line-line` in the first chart, which now counts the
+  marker as a fourth cliff — `:not(.here-line)` fixes it. `className` on a
+  ReferenceLine lands on the wrapping Layer, not on the `<line>`.
+- Labels are **not** inside the reference line that owns them. Recharts lifts
+  every label into one `g.recharts-zIndex-layer_2000` at the root of the SVG,
+  so a marker's label is found by its words within a `.recharts-wrapper`, not
+  by its line. Cost a probe run to discover.
+
+### Verified
+
+`npx tsc -b`, `npx eslint src --max-warnings 0`, `npx vitest run` (7 files,
+416 tests, green in 4.0s), `npm run build`. No CSS change — the marker is all
+SVG attributes. JS bundle 554.28 kB. No headless browser in the project, so
+the geometry is asserted in jsdom rather than seen; that is what the fraction
+and anchor tests are for.

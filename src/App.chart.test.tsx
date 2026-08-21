@@ -22,20 +22,32 @@ vi.mock('recharts', async () => {
 
 import App from './App';
 
+/** The x-coordinates of a selection of reference lines, left to right. */
+const positionsOf = (root: ParentNode, selector: string): number[] =>
+  Array.from(root.querySelectorAll(`${selector} .recharts-reference-line-line`))
+    .map((line) => Number(line.getAttribute('x1')));
+
 /**
- * The x-coordinates of the reference lines drawn on the first chart.
+ * The x-coordinates of the IRMAA cliff lines on the first chart.
  *
  * Scoped to that chart rather than the whole page: it is the only one drawing
- * reference lines today, but the tabs that did so too are coming back, and an
- * unscoped query would then pick up more than one chart's worth.
+ * cliffs today, but the tabs that did so too are coming back, and an unscoped
+ * query would then pick up more than one chart's worth. Scoped away from the
+ * "you are here" marker too, which is a reference line on both charts and
+ * would otherwise be counted as a fourth cliff.
  */
 const cliffPositions = (container: HTMLElement): number[] => {
   const ordinaryIncomeChart = container.querySelector('.recharts-wrapper');
   if (!ordinaryIncomeChart) throw new Error('no chart rendered');
-  return Array.from(
-    ordinaryIncomeChart.querySelectorAll('.recharts-reference-line-line'),
-  ).map((line) => Number(line.getAttribute('x1')));
+  return positionsOf(
+    ordinaryIncomeChart,
+    '.recharts-reference-line:not(.here-line)',
+  );
 };
+
+/** Where the reader's own marker stands on each chart, torpedo then gains. */
+const herePositions = (container: HTMLElement): number[] =>
+  positionsOf(container, '.recharts-reference-line.here-line');
 
 describe('IRMAA cliffs on the ordinary-income chart', () => {
   it('draws one labelled reference line per cliff inside the x-axis', () => {
@@ -96,5 +108,97 @@ describe('IRMAA cliffs on the ordinary-income chart', () => {
     // The joint tier-1 threshold is $212,000 of MAGI — off the right edge.
     expect(cliffPositions(container)).toHaveLength(0);
     expect(screen.queryByText(/^IRMAA \d$/)).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * The slider under each chart picks a point on a curve that is already drawn —
+ * it does not draw the curve. The marker is what says so on the chart itself,
+ * where the readout underneath says what the point costs.
+ */
+describe('the “you are here” marker', () => {
+  /**
+   * The `<text>` recharts renders for a marker's label, chart by chart.
+   *
+   * Labels do not live inside the reference line that owns them: recharts
+   * lifts every label into a single z-index layer at the root of the SVG so
+   * that nothing can draw over one. So they are found by their words, per
+   * chart, rather than by their line.
+   */
+  const hereLabels = (container: HTMLElement): SVGTextElement[] =>
+    Array.from(container.querySelectorAll('.recharts-wrapper')).map((chart) => {
+      const label = Array.from(
+        chart.querySelectorAll<SVGTextElement>('text.recharts-label'),
+      ).find((t) => t.textContent === 'You are here');
+      if (!label) throw new Error('a chart has no “you are here” label');
+      return label;
+    });
+
+  it('puts one labelled marker on each of the two charts', () => {
+    const { container } = render(<App />);
+    expect(container.querySelectorAll('.recharts-wrapper')).toHaveLength(2);
+    expect(herePositions(container)).toHaveLength(2);
+    expect(hereLabels(container).map((t) => t.textContent)).toEqual([
+      'You are here',
+      'You are here',
+    ]);
+    // Each marker wears the colour of the slider that drives it — amber for
+    // other income, emerald for gains — which is what lets the readout under
+    // each slider point at "the dashed amber line" and be understood.
+    expect(
+      Array.from(
+        container.querySelectorAll('.recharts-reference-line.here-line line'),
+      ).map((line) => line.getAttribute('stroke')),
+    ).toEqual(['#f59e0b', '#34d399']);
+  });
+
+  it('moves each marker with its own slider, and only its own', () => {
+    const { container } = render(<App />);
+    const [torpedo, gains] = herePositions(container);
+
+    fireEvent.change(
+      screen.getByRole('slider', { name: /other ordinary income/i }),
+      { target: { value: '90000' } },
+    );
+    // $30,000 to $90,000 on a $150,000 axis: right, and a long way.
+    expect(herePositions(container)[0]).toBeGreaterThan(torpedo);
+    expect(herePositions(container)[1]).toBeCloseTo(gains, 6);
+
+    fireEvent.change(
+      screen.getByRole('slider', {
+        name: /long-term capital gains you plan to realize/i,
+      }),
+      { target: { value: '50000' } },
+    );
+    expect(herePositions(container)[1]).toBeGreaterThan(gains);
+  });
+
+  it('stands at the reader’s own fraction of the axis', () => {
+    const { container } = render(<App />);
+    const at = (value: number): number => {
+      fireEvent.change(
+        screen.getByRole('slider', { name: /other ordinary income/i }),
+        { target: { value: String(value) } },
+      );
+      return herePositions(container)[0];
+    };
+    const left = at(0);
+    const right = at(150_000);
+    expect(right).toBeGreaterThan(left);
+    // The axis is linear, so half the income is half the distance across it.
+    expect(at(75_000)).toBeCloseTo((left + right) / 2, 6);
+  });
+
+  it('flips the label to the near side of the line past mid-axis', () => {
+    const { container } = render(<App />);
+    // Default $30,000 of $150,000: text runs rightwards, away from the axis.
+    expect(hereLabels(container)[0]).toHaveAttribute('text-anchor', 'start');
+
+    fireEvent.change(
+      screen.getByRole('slider', { name: /other ordinary income/i }),
+      { target: { value: '120000' } },
+    );
+    // Near the right edge it runs leftwards instead, or it would be clipped.
+    expect(hereLabels(container)[0]).toHaveAttribute('text-anchor', 'end');
   });
 });

@@ -170,6 +170,44 @@ function pointAt<P>(
   return found;
 }
 
+/**
+ * The dashed vertical marking the reader's own place on a chart.
+ *
+ * The slider under each chart is a *position* on a curve that is already
+ * drawn, not an input to it, and nothing on screen said so: an "Other Ordinary
+ * Income" slider sitting under a chart whose x-axis is other ordinary income
+ * reads as the control that draws the curve. The line is what says otherwise.
+ * It takes the colour of the slider that drives it — amber on step 2, emerald
+ * on step 3 — so the pairing is legible without reading either label, and a
+ * heavier dash than the IRMAA cliffs it shares step 2 with.
+ *
+ * The label goes *inside* the plot because the strip above the axis top is
+ * already the cliff labels' (`position: 'top'`), and it flips to the far side
+ * of the line past the middle of the axis so the text never runs off the right
+ * edge. `insideTopLeft`/`insideTopRight` are named for a rectangle; on a line,
+ * which is a rectangle of zero width, they mean "text to the right of it" and
+ * "text to the left of it".
+ *
+ * A plain function, not a component: recharts identifies its children by
+ * element type, and a wrapper component would render as an unknown child.
+ */
+const hereLine = (value: number, axisMax: number, colour: string) => (
+  <ReferenceLine
+    className="here-line"
+    x={value}
+    stroke={colour}
+    strokeDasharray="6 4"
+    strokeWidth={2}
+    label={{
+      value: 'You are here',
+      position: value > axisMax * 0.6 ? 'insideTopRight' : 'insideTopLeft',
+      fill: colour,
+      fontSize: 11,
+      fontWeight: 600,
+    }}
+  />
+);
+
 const TOOLTIP_STYLE: React.CSSProperties = {
   background: 'rgba(15, 23, 42, 0.95)',
   border: '1px solid rgba(56, 189, 248, 0.3)',
@@ -994,6 +1032,7 @@ const App: React.FC = () => {
                   }}
                 />
               ))}
+              {hereLine(ordinaryIncome, MAX_INCOME, '#f59e0b')}
               <Area
                 type="stepAfter"
                 dataKey="marginalRate"
@@ -1067,9 +1106,9 @@ const App: React.FC = () => {
           <p className="slider-readout">
             <strong>You are here.</strong> At {formatCurrency(ordinaryIncome)} of
             other income the next dollar is taxed at{' '}
-            <strong>{herePoint ? `${herePoint.marginalRate}%` : '\u2014'}</strong>{' '}
-            &mdash; that point on the curve above, not the curve itself, is what
-            the slider moves.
+            <strong>{herePoint ? `${herePoint.marginalRate}%` : '\u2014'}</strong>,
+            where the dashed amber line crosses the curve above &mdash; that
+            point on the curve, not the curve itself, is what the slider moves.
           </p>
         </div>
 
@@ -1355,6 +1394,7 @@ const App: React.FC = () => {
                   />
                 }
               />
+              {hereLine(plannedLtcg, MAX_LTCG, '#34d399')}
               <Area
                 type="stepAfter"
                 dataKey="marginalRate"
@@ -1397,6 +1437,7 @@ const App: React.FC = () => {
             <strong>
               {hereGainPoint ? `${hereGainPoint.marginalRate}%` : '\u2014'}
             </strong>
+            , where the dashed emerald line crosses the curve above
             {hereGainPoint && hereGainPoint.marginalRate > 20
               ? ' \u2014 past the 20% ceiling a gain can be charged on its own, so the rest of it is benefit being dragged into the tax base alongside the gain.'
               : '.'}

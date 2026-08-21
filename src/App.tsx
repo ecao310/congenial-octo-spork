@@ -12,7 +12,7 @@ import {
 } from 'recharts';
 import {
   marginalRateCurve,
-  ltcgMarginalRateCurve,
+  ltcgRateCurve,
   maxAnnualSSBenefit,
   avgAnnualSSBenefit,
   SS_BASES,
@@ -69,7 +69,7 @@ import { formatCurrency } from './utils/format';
 import { CHART, PALETTE } from './palette';
 import type {
   TaxYear,
-  LTCGMarginalRatePoint,
+  LTCGRatePoint,
   MarginalRatePoint,
   CurveSegment,
   CurveStanding,
@@ -483,7 +483,7 @@ export const CustomTooltip: React.FC<CustomTooltipProps> = ({
 
 interface LTCGTooltipProps {
   active?: boolean;
-  payload?: Array<{ payload: LTCGMarginalRatePoint }>;
+  payload?: Array<{ payload: LTCGRatePoint }>;
   /**
    * The whole other-income figure the swept gain is carved *out of*, not a
    * figure the gain sits on top of. It is the same at every point on the axis;
@@ -491,7 +491,7 @@ interface LTCGTooltipProps {
    */
   ordinaryIncome: number;
   ssBenefit: number;
-  segments: CurveSegment<LTCGMarginalRatePoint>[];
+  segments: CurveSegment<LTCGRatePoint>[];
   /** Tax-exempt interest, which the return takes in without reporting it. */
   muniInterest?: number;
   /** Charitable distribution asked for, before the ordinary-income cap. */
@@ -544,7 +544,11 @@ export const LTCGTooltip: React.FC<LTCGTooltipProps> = ({
         {formatCurrency(point.ltcg)} of {formatCurrency(ordinaryIncome)} is gain · Total income {formatCurrency(totalIncome)}
       </div>
       <div>
-        Marginal Rate: <strong style={{ color: PALETTE.amber }}>{point.marginalRate}%</strong>
+        Effective Rate on the Gain:{' '}
+        <strong style={{ color: PALETTE.amber }}>{point.effectiveRate}%</strong>
+      </div>
+      <div>
+        Next Dollar of Gain: <strong>{point.marginalRate}%</strong>
       </div>
       <div>
         Total Federal Tax: <strong style={{ color: PALETTE.orange }}>{formatCurrency(point.totalTax)}</strong>
@@ -555,14 +559,17 @@ export const LTCGTooltip: React.FC<LTCGTooltipProps> = ({
           3.8% of {formatCurrency(niit.base)}
         </div>
       )}
+      {/* The segments are cut on the marginal rate, which is no longer the line
+          being drawn — so the advice names the next dollar rather than pointing
+          at a hill or a valley the reader cannot see on this curve. */}
       {segment && segment.type === 'hill' && (
         <div className="chart-tooltip-advice">
-          Consider avoiding this tax hill by staying under {formatCurrency(segment.start)} or over {formatCurrency(segment.end)}
+          The next dollar of gain is dearest through here — consider staying under {formatCurrency(segment.start)} or over {formatCurrency(segment.end)}
         </div>
       )}
       {segment && segment.type === 'valley' && (
         <div className="chart-tooltip-advice">
-          Consider filling out this tax valley at {formatCurrency(point.ltcg)}
+          The next dollar of gain is cheapest through here — consider filling this stretch out at {formatCurrency(point.ltcg)}
         </div>
       )}
     </div>
@@ -1255,7 +1262,7 @@ const App: React.FC = () => {
    */
   const ltcgCurve = useMemo(
     () =>
-      ltcgMarginalRateCurve(
+      ltcgRateCurve(
         { ssBenefit, ordinaryIncome, filingStatus, seniors, muniInterest, qcd, year },
         { maxLTCG: gainsAxisMax, step: 250, gainsWithinIncome: true },
       ),
@@ -1657,12 +1664,25 @@ const App: React.FC = () => {
             )}. ${standingHeadline(standing)}`
           : '';
       case 'gains':
+        if (!hereGainPoint) return '';
+        if (plannedLtcg === 0)
+          return `None of your ${formatCurrency(
+            ordinaryIncome,
+          )} is a long-term gain. The first dollar taken as one would be taxed at ${
+            hereGainPoint.marginalRate
+          }%. Federal tax ${formatCurrency(
+            hereGainPoint.totalTax,
+          )} on ${formatCurrency(totalIncome)} of total income, an effective rate of ${formatPercent(
+            effectiveRateOn(hereGainPoint.totalTax),
+          )}.`;
         return hereGainPoint
           ? `With ${formatCurrency(plannedLtcg)} of your ${formatCurrency(
               ordinaryIncome,
-            )} coming from long-term gains, the next dollar of gain is taxed at ${
+            )} coming from long-term gains, federal tax takes ${
+              hereGainPoint.effectiveRate
+            }% of the gain itself and ${
               hereGainPoint.marginalRate
-            }%. Federal tax ${formatCurrency(
+            }% of the next dollar of it. Federal tax ${formatCurrency(
               hereGainPoint.totalTax,
             )} on the same ${formatCurrency(
               totalIncome,
@@ -2859,7 +2879,7 @@ const App: React.FC = () => {
                 <div
                   className="chart-container"
                   role="img"
-                  aria-label={`Chart: the marginal tax rate as more of ${formatCurrency(ordinaryIncome)} of other income is taken as long-term capital gain, plotted from $0 to ${formatCurrency(gainsAxisMax)}.`}
+                  aria-label={`Chart: the effective tax rate on the gain — the share of it federal tax takes — as more of ${formatCurrency(ordinaryIncome)} of other income is taken as long-term capital gain, plotted from $0 to ${formatCurrency(gainsAxisMax)}.`}
                 >
                   <ResponsiveContainer width="100%" height="100%">
                     <AreaChart
@@ -2905,9 +2925,11 @@ const App: React.FC = () => {
                         }
                       />
                       {hereLine(plannedLtcg, gainsAxisMax, PALETTE.emerald)}
+                      {/* An average rather than a schedule, so it is drawn as a
+                          curve rather than as the steps the marginal rate cut. */}
                       <Area
-                        type="stepAfter"
-                        dataKey="marginalRate"
+                        type="monotone"
+                        dataKey="effectiveRate"
                         stroke={PALETTE.amber}
                         strokeWidth={CHART.line}
                         fill="url(#ltcgGradient)"
@@ -2960,16 +2982,43 @@ const App: React.FC = () => {
                 </div>
 
                 <p className="slider-readout">
-                  <strong>You are here.</strong> With {formatCurrency(plannedLtcg)} of
-                  your {formatCurrency(ordinaryIncome)} coming from long-term gains,
-                  the next dollar of gain is taxed at{' '}
-                  <strong>
-                    {hereGainPoint ? `${hereGainPoint.marginalRate}%` : '\u2014'}
-                  </strong>
-                  , where the dashed emerald line crosses the curve above
-                  {hereGainPoint && hereGainPoint.marginalRate > 20
-                    ? ' \u2014 past the 20% ceiling a gain can be charged on its own, so the rest of it is benefit being dragged into the tax base alongside the gain.'
-                    : '.'}
+                  {/* The curve is an average, and at $0 of gain there is nothing
+                      to average — "tax takes 0% of the gain" is true and says
+                      nothing, and $0 is where the page opens. So the no-gain case
+                      leads with the first dollar instead, which is the figure that
+                      moves a reader off the left edge. */}
+                  <strong>You are here.</strong>{' '}
+                  {plannedLtcg === 0 ? (
+                    <>
+                      None of your {formatCurrency(ordinaryIncome)} is a long-term
+                      gain, so the curve above starts where the dashed emerald line
+                      does &mdash; at nothing, with no gain for tax to take a share
+                      of. The first dollar you took as gain instead would be taxed
+                      at{' '}
+                      <strong>
+                        {hereGainPoint ? `${hereGainPoint.marginalRate}%` : '\u2014'}
+                      </strong>
+                      .
+                    </>
+                  ) : (
+                    <>
+                      With {formatCurrency(plannedLtcg)} of your{' '}
+                      {formatCurrency(ordinaryIncome)} coming from long-term gains,
+                      federal tax takes{' '}
+                      <strong>
+                        {hereGainPoint ? `${hereGainPoint.effectiveRate}%` : '\u2014'}
+                      </strong>{' '}
+                      of the gain itself, where the dashed emerald line crosses the
+                      curve above &mdash; an average of every rate the gain has met
+                      on the way up. The next dollar of it would be taxed at{' '}
+                      <strong>
+                        {hereGainPoint ? `${hereGainPoint.marginalRate}%` : '\u2014'}
+                      </strong>
+                      {hereGainPoint && hereGainPoint.marginalRate > 20
+                        ? ' \u2014 past the 20% ceiling a gain can be charged on its own, so the rest of it is benefit being dragged into the tax base alongside the gain.'
+                        : '.'}
+                    </>
+                  )}
                   {mixSaving === null ? null : mixSaving > 0 ? (
                     <>
                       {' '}
@@ -3044,12 +3093,19 @@ const App: React.FC = () => {
                   the 0% ceiling.
                 </p>
                 <p>
-                  The <em>height</em> of the curve answers the other question: what
-                  the next dollar of gain would cost on top of everything. That is
-                  where the two effects compound — the dollar is charged its own
-                  preferential rate <em>and</em> drags up to 85&cent; of benefit
-                  into the tax base at ordinary rates, so the combined figure can
-                  run well past the statutory 15%. The same compounding shows up on
+                  The <em>height</em> of the curve answers the other question: of
+                  the gain itself, what share does federal tax take — the whole
+                  return’s tax, less what the same return would owe with that gain
+                  never realized, over the gain. It is an average rather than a
+                  schedule, so it moves smoothly where the statutory rates jump: a
+                  gain that fits under the 0% ceiling costs nothing, and one that
+                  pokes above it is charged 15% on the part that pokes and 0% on
+                  the rest. That is also where the two effects compound — the gain
+                  is charged its own preferential rate <em>and</em> drags up to
+                  85&cent; of benefit into the tax base at ordinary rates, so the
+                  figure can run past the statutory 15% even where the gain never
+                  leaves its own band. Hovering gives the other rate, the one on
+                  the next dollar. The same compounding shows up on
                   step 2&apos;s chart from the other side: with a gain set, the next
                   dollar of ordinary income lifts the whole gain stack with it, and
                   can shove part of it out of the 0% band into 15%.

@@ -6238,3 +6238,117 @@ Cached Chromium build 1228, `executablePath` at
 chrome-headless-shell-mac-arm64/chrome-headless-shell`, served under
 `/congenial-octo-spork/`. Deleted this run's `drive-caption.mjs` and killed
 the preview.
+
+## Give the gain an average rather than a next dollar
+
+Backlog 5, "in cap gains section, make the graph the effective rate for
+capital gains, not marginal rate." Step 3's chart plotted `marginalRate` — the
+cost of the next dollar of gain — as a `stepAfter` staircase. It now plots
+`effectiveRate`, drawn `monotone`, and the staircase is gone.
+
+### The definition
+
+`effectiveRate` on `LTCGRatePoint` is the share of the gain itself that
+federal tax takes: `totalFederalTax(here)` less what the same return would owe
+with that gain never realized, over the gain. Zero at $0 of gain, where there
+is nothing to average.
+
+The counterfactual was the one real decision. Three were on the table and two
+are wrong for this: "the gain taxed as ordinary income instead" gives a
+negative number (a saving, which the readout already reports as `mixSaving`),
+and "the gain's own preferential-schedule tax" is a flat zero for any reader
+whose taxable income never clears the 0% ceiling — true and useless. What went
+in is "the gain was never realized", which reads the same way in both sweep
+modes: `{ ...here, ltcg: 0 }` with nothing put in its place. On the additive
+sweep that makes the curve the integral of the marginal one over its own
+width; on step 3's `gainsWithinIncome` sweep it prices the gain against the
+smaller all-ordinary return the reader would have had without it, so the
+torpedo the gain drags in lands on the gain, which is the section's subject.
+
+### The shape does not match the bullet
+
+The bullet predicted "graph starts increasing after the 15% threshold". It
+does not, and cannot on this axis. That prediction is the additive picture —
+gain stacked on a fixed income, flat at nothing under the 0% ceiling and
+climbing toward 15% past it, which is exactly what the curve does with
+`gainsWithinIncome` off. Step 3 sweeps it on: total income is held still and
+only the split moves, so a gain that sits above the 0% ceiling at the left
+edge reaches *down* into it as it grows and the average falls. Measured on the
+built page: $150,000 single is 15% flat to about $40,000 of gain and then
+declines to 8.1% at the right edge; the page as it opens ($30,000 of income,
+$24,852 of benefit) rises to 10.2%, holds, and falls to nothing.
+
+Both curves are true about the same return; they answer different questions,
+and choosing between them is choosing the axis rather than the series. Logged
+under Discovered work rather than decided here — and the backlog bullet three
+below asks to shelve this whole section anyway.
+
+### What else moved
+
+- The tooltip leads with `Effective Rate on the Gain` and keeps
+  `Next Dollar of Gain` under it. The second line is not decoration: the hill
+  and valley advice below it is cut on the marginal rate, and without it that
+  advice has nothing on the card to hang off.
+- That advice was reworded. `segmentCurve` still cuts on `marginalRate`, which
+  is no longer drawn, so "Consider avoiding this tax hill" pointed at a feature
+  the reader cannot see. It now says "The next dollar of gain is dearest
+  through here — consider staying under $X or over $Y". Step 2's tooltip keeps
+  the old wording; it still plots the marginal rate.
+- The slider readout forks at $0. "Federal tax takes 0% of the gain itself" is
+  true, says nothing, and is where the page opens — so with no gain set it
+  leads with what the first dollar taken as gain would cost instead. The live
+  region takes the same fork.
+- The "Why the two effects stack" explainer's third paragraph was about the
+  height of the curve being the next dollar. Rewritten to the average, with the
+  0%-ceiling arithmetic spelled out and a pointer to the hover for the other
+  rate.
+- `ltcgMarginalRateCurve` → `ltcgRateCurve`, `LTCGMarginalRatePoint` →
+  `LTCGRatePoint`. The type carries two rates now and the old names named one.
+
+### Tests
+
+680 → 689. Five in `tax.test.ts` under a new `effectiveRate` describe: zero at
+the origin, flat at nothing under the 0% ceiling and strictly climbing past it
+without reaching 15% (the additive sweep), the counterfactual pinned against
+`totalFederalTax` directly, past 15% where the torpedo lands on the gain, and
+the same counterfactual on a within-income sweep. Two in `App.chart.test.tsx`:
+the curve starts on the zero line (flipping the `dataKey` back to
+`marginalRate` fails it — 64 against an axis at 370), and it emits cubic
+segments where step 2's staircase emits none. Two in `App.test.tsx` for the
+tooltip's two rate lines and the readout's two figures.
+
+One assertion I wrote was wrong and the run caught it: I had the whole
+return's effective rate as the larger of the two figures. At $20,000 of
+ordinary income and a $100,000 gain it is the smaller — 7.34% against the
+gain's own 8.38% — because the standard deduction shelters nearly all of the
+ordinary half, so the gain carries the bill and the other income only dilutes
+the denominator. The test now says that, with the $500 of ordinary tax pinned
+beside it.
+
+### Verified
+
+- `npx tsc -b`, `npx eslint src --max-warnings 0`, `npx vitest run`
+  (11 files, 689 tests), `npm run build`.
+- Rendered rather than reasoned about. Built, `vite preview` on 4185, drove
+  Chromium through `playwright-core`: the new aria-label, both readout forks,
+  the tooltip's four lines at $10,500 of gain, y ticks 0/3/6/9/12%, no page
+  errors. Screenshotted step 3 at the default and at $150,000 of income.
+  Under `emulateMedia({ media: 'print' })` step 3 keeps 10 tick values and its
+  one curve path, so the print sheet is unharmed.
+- One scare worth writing down: a horizontal-overflow reading of 564px at
+  1440. It is the measurement, not the page — `emulateMedia` back to `screen`
+  leaves `ResponsiveContainer` holding the print width until it re-measures,
+  and reading `scrollWidth` in the same tick catches it mid-flight. With a
+  600ms wait it is 0, as it is on a fresh load at 1440 and at 420.
+
+### Note for the next run
+
+Same standing browser note as every run that needs one: the script must sit in
+the project root for the bare `playwright-core` import to resolve,
+`pkill -f "vite preview"` first, and read the port off preview's own output.
+Cached Chromium build 1228, `executablePath` at
+`~/Library/Caches/ms-playwright/chromium_headless_shell-1228/
+chrome-headless-shell-mac-arm64/chrome-headless-shell`, served under
+`/congenial-octo-spork/`. Deleted this run's four scratch drivers and killed
+the preview. Add to it: if you toggle print media and then measure layout,
+wait before you believe the number.

@@ -1282,16 +1282,26 @@ export function totalTax(scenario: Scenario = {}): number {
   return federalIncomeTax(ordinaryTaxable, scenario) + ltcgTax;
 }
 
-export interface LTCGMarginalRatePoint {
+export interface LTCGRatePoint {
   ltcg: number;
+  /** The next dollar of gain, on top of everything already here. */
   marginalRate: number;
+  /**
+   * The share of the gain itself that federal tax takes: the whole return's
+   * tax, less what the same return would owe with that gain not realized at
+   * all, over the gain. Zero while the gain fits under the 0% ceiling, and
+   * climbing from there — an average of every rate the gain has met, where
+   * `marginalRate` is only the rate the last dollar met.
+   */
+  effectiveRate: number;
   /** `totalFederalTax` — chapter 1 plus the 1411 surtax. */
   totalTax: number;
 }
 
 /**
- * Effective marginal rate on the next dollar of LTCG, sampled from $0 to
- * `maxLTCG`. Captures both the LTCG bracket rate and the SS torpedo
+ * The two rates on a long-term gain, sampled from $0 to `maxLTCG`: what the
+ * next dollar of it would cost, and what the gain has cost so far as a share
+ * of itself. Both capture the LTCG bracket rate and the SS torpedo
  * amplification (benefits dragged into AGI by LTCG raising provisional
  * income).
  *
@@ -1324,16 +1334,16 @@ export interface LtcgCurveRange {
   gainsWithinIncome?: boolean;
 }
 
-export function ltcgMarginalRateCurve(
+export function ltcgRateCurve(
   scenario: Scenario = {},
   { maxLTCG = 200_000, step = 250, gainsWithinIncome = false }: LtcgCurveRange = {},
-): LTCGMarginalRatePoint[] {
+): LTCGRatePoint[] {
   const otherIncome = resolveScenario(scenario).ordinaryIncome;
   const at = (gain: number): Scenario =>
     gainsWithinIncome
       ? { ...scenario, ...splitOtherIncome(otherIncome, gain) }
       : { ...scenario, ltcg: gain };
-  const data: LTCGMarginalRatePoint[] = [];
+  const data: LTCGRatePoint[] = [];
   for (let ltcg = 0; ltcg <= maxLTCG; ltcg += step) {
     const here = at(ltcg);
     // A gain dollar past the 1411 threshold is both net investment income and
@@ -1341,9 +1351,16 @@ export function ltcgMarginalRateCurve(
     // on top of whichever capital-gain band it lands in. See `niitFor`.
     const taxHere = totalFederalTax(here);
     const rate = totalFederalTax({ ...here, ltcg: (here.ltcg ?? 0) + 1 }) - taxHere;
+    // The counterfactual is "this gain was never realized", not "it was taken
+    // as ordinary income instead" — so the gain comes out and nothing replaces
+    // it, in the additive reading and the within-income one alike. Taking it
+    // as ordinary income is the other question, and the readout under the
+    // slider is where the page asks it.
+    const gained = taxHere - totalFederalTax({ ...here, ltcg: 0 });
     data.push({
       ltcg,
       marginalRate: Math.round(rate * 10_000) / 100,
+      effectiveRate: ltcg > 0 ? Math.round((gained / ltcg) * 10_000) / 100 : 0,
       totalTax: Math.round(taxHere),
     });
   }

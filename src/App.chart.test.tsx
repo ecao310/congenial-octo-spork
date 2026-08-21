@@ -612,3 +612,53 @@ describe('the chart register', () => {
     expect(drawnOn(container, '.recharts-area-area', 'fill-opacity')).toEqual(['1']);
   });
 });
+
+/**
+ * Step 3 plots the share of the gain federal tax takes, not the rate on the
+ * next dollar of it. The two are different lines about the same return, and
+ * the cheapest thing to pin is where each one starts: at $0 of gain there is
+ * no gain to charge, so the average is 0 and the curve begins on the floor,
+ * where the marginal rate it replaced began at whatever the next dollar would
+ * have cost — 10.2% on the page as it opens.
+ */
+describe('the gains chart draws the average, not the next dollar', () => {
+  /** The gains chart is the second of the three the page renders. */
+  const gainsChart = (container: HTMLElement): Element => {
+    const charts = container.querySelectorAll('.recharts-wrapper');
+    if (charts.length < 2) throw new Error('no gains chart rendered');
+    return charts[1];
+  };
+
+  /** Where the plotted curve starts, and where the x-axis sits under it. */
+  const curveStart = (chart: Element): number => {
+    const d = chart.querySelector('.recharts-area-curve')!.getAttribute('d')!;
+    return Number(d.replace(/^M-?[\d.]+,/, '').match(/^-?[\d.]+/)![0]);
+  };
+  const axisY = (chart: Element): number =>
+    Number(
+      chart
+        .querySelector('.recharts-xAxis .recharts-cartesian-axis-line')!
+        .getAttribute('y1'),
+    );
+
+  it('begins on the zero line, where no gain has been charged anything', () => {
+    const { container } = render(<App />);
+    const chart = gainsChart(container);
+    // The floor of the plot is 0%, so the two coincide to within the stroke.
+    expect(curveStart(chart)).toBeCloseTo(axisY(chart), 0);
+  });
+
+  it('draws a curve rather than the marginal rate’s steps', () => {
+    const { container } = render(<App />);
+    const d = gainsChart(container)
+      .querySelector('.recharts-area-curve')!
+      .getAttribute('d')!;
+    // `type="monotone"` emits cubic segments; `stepAfter` emits only lines.
+    expect(d).toMatch(/C/);
+    const torpedo = container
+      .querySelectorAll('.recharts-wrapper')[0]
+      .querySelector('.recharts-area-curve')!
+      .getAttribute('d')!;
+    expect(torpedo).not.toMatch(/C/);
+  });
+});

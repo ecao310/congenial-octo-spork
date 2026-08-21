@@ -751,7 +751,7 @@ describe('the shape every step shares', () => {
     const readout = (): HTMLElement =>
       document.querySelector('#step-gains .slider-readout') as HTMLElement;
     expect(readout()).toHaveTextContent(
-      'With $0 of your $30,000 coming from long-term gains',
+      'None of your $30,000 is a long-term gain',
     );
 
     fireEvent.change(
@@ -764,6 +764,31 @@ describe('the shape every step shares', () => {
       'With $20,000 of your $30,000 coming from long-term gains',
     );
     expect(readout()).toHaveTextContent(/taxed at\s+\d+(\.\d+)?%/);
+  });
+
+  /**
+   * Two rates, and the readout has to say which one the line above it crosses.
+   * The curve is the average, so that is the figure tied to the marker; the
+   * rate on the next dollar follows it as a separate sentence rather than
+   * pointing at a picture that no longer plots it.
+   */
+  it('ties the marker to the average and names the next dollar separately', () => {
+    render(<App />);
+    const readout = (): HTMLElement =>
+      document.querySelector('#step-gains .slider-readout') as HTMLElement;
+
+    fireEvent.change(
+      screen.getByRole('slider', {
+        name: /long-term capital gains inside that income/i,
+      }),
+      { target: { value: '20000' } },
+    );
+    expect(readout()).toHaveTextContent(
+      /federal tax takes\s+\d+(\.\d+)?%\s+of the gain itself, where the dashed emerald line crosses the curve above/,
+    );
+    expect(readout()).toHaveTextContent(
+      /The next dollar of it would be taxed at\s+\d+(\.\d+)?%/,
+    );
   });
 });
 
@@ -946,7 +971,7 @@ describe('the charts as images', () => {
       'Chart: the marginal tax rate on the next dollar of other income, plotted from $0 to $150,000.',
     );
     expect(chart('gains').getAttribute('aria-label')).toBe(
-      'Chart: the marginal tax rate as more of $30,000 of other income is taken as long-term capital gain, plotted from $0 to $30,000.',
+      'Chart: the effective tax rate on the gain \u2014 the share of it federal tax takes \u2014 as more of $30,000 of other income is taken as long-term capital gain, plotted from $0 to $30,000.',
     );
   });
 });
@@ -1557,7 +1582,7 @@ describe('Tooltip Recommendations', () => {
       render(
         <LTCGTooltip
           active={true}
-          payload={[{ payload: { ltcg: 15_000, marginalRate: 27.2, totalTax: 3_000 } }]}
+          payload={[{ payload: { ltcg: 15_000, marginalRate: 27.2, effectiveRate: 12.4, totalTax: 3_000 } }]}
           ordinaryIncome={scenario.ordinaryIncome}
           ssBenefit={scenario.ssBenefit}
           segments={mockLtcgSegments}
@@ -1579,7 +1604,7 @@ describe('Tooltip Recommendations', () => {
       render(
         <LTCGTooltip
           active={true}
-          payload={[{ payload: { ltcg: 38_000, marginalRate: 0, totalTax: 3_000 } }]}
+          payload={[{ payload: { ltcg: 38_000, marginalRate: 0, effectiveRate: 0, totalTax: 3_000 } }]}
           ordinaryIncome={scenario.ordinaryIncome}
           ssBenefit={scenario.ssBenefit}
           segments={mockLtcgSegments}
@@ -1598,7 +1623,7 @@ describe('Tooltip Recommendations', () => {
       render(
         <LTCGTooltip
           active={true}
-          payload={[{ payload: { ltcg: 12_000, marginalRate: 0, totalTax: 3_890 } }]}
+          payload={[{ payload: { ltcg: 12_000, marginalRate: 0, effectiveRate: 0, totalTax: 3_890 } }]}
           ordinaryIncome={30_000}
           ssBenefit={24_852}
           segments={mockLtcgSegments}
@@ -1613,7 +1638,7 @@ describe('Tooltip Recommendations', () => {
       render(
         <LTCGTooltip
           active={true}
-          payload={[{ payload: { ltcg: 4000, marginalRate: 10.2, totalTax: 3221 } }]}
+          payload={[{ payload: { ltcg: 4000, marginalRate: 10.2, effectiveRate: 8.1, totalTax: 3221 } }]}
           ordinaryIncome={30000}
           ssBenefit={24852}
           segments={mockLtcgSegments}
@@ -1621,7 +1646,7 @@ describe('Tooltip Recommendations', () => {
       );
       expect(
         screen.getByText(
-          /Consider avoiding this tax hill by staying under \$0 or over \$10,000/,
+          /The next dollar of gain is dearest through here \u2014 consider staying under \$0 or over \$10,000/,
         ),
       ).toBeInTheDocument();
     });
@@ -1630,15 +1655,41 @@ describe('Tooltip Recommendations', () => {
       render(
         <LTCGTooltip
           active={true}
-          payload={[{ payload: { ltcg: 12000, marginalRate: 0, totalTax: 3890 } }]}
+          payload={[{ payload: { ltcg: 12000, marginalRate: 0, effectiveRate: 0, totalTax: 3890 } }]}
           ordinaryIncome={30000}
           ssBenefit={24852}
           segments={mockLtcgSegments}
         />,
       );
       expect(
-        screen.getByText(/Consider filling out this tax valley at \$12,000/),
+        screen.getByText(
+          /The next dollar of gain is cheapest through here \u2014 consider filling this stretch out at \$12,000/,
+        ),
       ).toBeInTheDocument();
+    });
+
+    /**
+     * The curve is the average now, so that is the figure the tooltip leads
+     * with. The marginal rate stays under it: it is what the hill and valley
+     * advice below is cut on, and dropping it would leave that advice with
+     * nothing on the card to hang off.
+     */
+    it('leads with the rate on the gain and keeps the one on the next dollar', () => {
+      render(
+        <LTCGTooltip
+          active={true}
+          payload={[
+            { payload: { ltcg: 4000, marginalRate: 10.2, effectiveRate: 8.1, totalTax: 3221 } },
+          ]}
+          ordinaryIncome={30000}
+          ssBenefit={24852}
+          segments={mockLtcgSegments}
+        />,
+      );
+      expect(screen.getByText(/Effective Rate on the Gain:/)).toBeInTheDocument();
+      expect(screen.getByText('8.1%')).toBeInTheDocument();
+      expect(screen.getByText(/Next Dollar of Gain:/)).toBeInTheDocument();
+      expect(screen.getByText('10.2%')).toBeInTheDocument();
     });
   });
 });
@@ -3447,7 +3498,10 @@ describe('the live reading under the controls', () => {
     set(gains, 10_000);
     settle();
     expect(region()).toHaveTextContent(
-      'With $10,000 of your $30,000 coming from long-term gains, the next dollar of gain is taxed at',
+      'With $10,000 of your $30,000 coming from long-term gains, federal tax takes',
+    );
+    expect(region()).toHaveTextContent(
+      /% of the gain itself and [\d.]+% of the next dollar of it/,
     );
   });
 

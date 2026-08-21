@@ -11,7 +11,7 @@ Backlog 5
 [x] Nothing prints on the three charts but the curve. Under `emulateMedia({ media: 'print' })` a built page renders 30 axis tick labels on screen and 0 on paper — the whole axis, both sets of tick values and the grid vanish, and what is left is a bare curve with no scale under it. The cause is in the print sheet's own chart block: it sets `height: auto !important` on `.chart-container` and on both recharts divs, and `ResponsiveContainer` re-measures on that change, gets zero, and unmounts the plot it was scaling. The `viewBox` trick the comment describes only works on an SVG that is still there. Confirmed identical on the commit before the charts pass, so it is not a regression from it — it belongs to the print-sheet bullet above, which is the next one in this list.
 [x] Remove tax year selector. always 2026.
 [x] Move Medicare's IRMAA cliffs. to be a tool tip. on the tax torpedo graph, have a settings button. Opens something with checkboxes for if IRMAA and 400% FPL breakpoints are rendered. default to off. 
-[ ] remove The curve in words.
+[x] remove The curve in words.
 [ ] in cap gains section, make the graph the effective rate for capital gains, not marginal rate. so graph starts increasing after the 15% threshold.
 [ ] if married filing jointly, social security slider should have different maximum and average than single.
 [ ] remove the sections for capital gains and roth conversion from the page to keep it focused on tax torpedo. i may add it back later, so keep the code around. since sections are removed, also remove the links to the next sections from everywhere.

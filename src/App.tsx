@@ -255,51 +255,6 @@ const hereLine = (value: number, axisMax: number, colour: string) => (
 );
 
 /**
- * The curve as a sentence: every stretch of constant marginal rate, named in
- * order, left to right.
- *
- * `segmentCurve` has carried this shape since the first tooltip — it is what
- * says "stay under $x or over $y" over a hill, and what `standingOn`
- * classifies into advice — but every word the page has ever spent on it has
- * been relative to wherever the reader happens to be standing. The picture
- * itself went undescribed: a recharts chart is an SVG of unlabelled paths, so
- * a reader who cannot see it got nothing at all from the centrepiece of the
- * page, and a reader who can still had to read the band edges off a compact
- * axis.
- *
- * Each band is named by its own last sampled point, so consecutive bands
- * quote figures one sampling step apart rather than a shared edge. That is the
- * approximation the advice under every slider already makes when it quotes
- * `hump.start` and `hump.end`, and the step is $250 on the narrowest chart.
- */
-const bandRun = <T,>(segments: CurveSegment<T>[]): string | null => {
-  if (segments.length === 0) return null;
-  if (segments.length === 1) {
-    const [only] = segments;
-    return `a flat ${only.rate}% the whole way, from ${formatCurrency(only.start)} to ${formatCurrency(only.end)}`;
-  }
-  const last = segments.length - 1;
-  return segments
-    .map((seg, i) => {
-      if (i === 0) return `${seg.rate}% up to ${formatCurrency(seg.end)}`;
-      if (i === last) return `then ${seg.rate}% out to ${formatCurrency(seg.end)}`;
-      return `${seg.rate}% to ${formatCurrency(seg.end)}`;
-    })
-    .join(', ');
-};
-
-/**
- * How many times a curve humps, as prose. Only two and up ever reach it: none
- * and one are sentences of their own below, because "it humps once" says less
- * than naming the one hump does.
- */
-const HUMP_COUNTS: Record<number, string> = {
-  2: 'twice',
-  3: 'three times',
-  4: 'four times',
-};
-
-/**
  * A small count as a word, because "The 7 lines" reads as one more figure on a
  * page that is nothing but figures. Past ten it gives up and hands back the
  * numeral, which is the point at which a reader would want one anyway.
@@ -325,65 +280,6 @@ const spellCountCap = (n: number): string => {
   const word = spellCount(n);
   return word.charAt(0).toUpperCase() + word.slice(1);
 };
-
-/**
- * Where the humps are, in one sentence.
- *
- * A hump is `segmentCurve`'s `hill`: a stretch dearer than the ground on both
- * sides of it, which on this page is either the Social Security inclusion
- * phase or the senior deduction's phaseout, and often both. Deliberately
- * unnamed, for the same reason `StandingNote` leaves it unnamed — the shape is
- * what matters and two different mechanisms draw it, so the explainers below
- * the chart are where the mechanism belongs.
- *
- * The claim made about every hump is the one its classification actually
- * guarantees: the ground just past it is cheaper. "Costs more than the ground
- * on both sides" is only true of a hump with ground on both sides, and the
- * gains curve routinely humps against its own left edge.
- */
-const humpNote = <T,>(segments: CurveSegment<T>[]): string => {
-  const hills = segments.filter((seg) => seg.type === 'hill');
-  const span = (hill: CurveSegment<T>): string =>
-    `${hill.rate}% between ${formatCurrency(hill.start)} and ${formatCurrency(hill.end)}`;
-
-  if (hills.length === 0) {
-    return 'No stretch of it is a hump: none costs more than the ground on both sides of it.';
-  }
-  if (hills.length === 1) {
-    return `The hump is the ${hills[0].rate}% stretch between ${formatCurrency(hills[0].start)} and ${formatCurrency(hills[0].end)}; the ground just past it is cheaper, which is what makes it worth stepping over rather than into.`;
-  }
-  return `It humps ${HUMP_COUNTS[hills.length] ?? `${hills.length} times`}: ${hills.map(span).join(', and ')} — the ground just past each one is cheaper than the ground on it.`;
-};
-
-interface CurveCaptionProps<T> {
-  /** Referenced by the chart's `aria-describedby`, so it needs a stable id. */
-  id: string;
-  segments: CurveSegment<T>[];
-  /** How the caption opens, before the bands: what this particular sweep is. */
-  lead: React.ReactNode;
-}
-
-/**
- * The text alternative to a chart, and the only place on the page that states
- * where the hump starts and stops without the reader first putting a slider
- * inside it.
- *
- * Visible rather than screen-reader-only on purpose: the band edges are the
- * chart's whole content, and reading them off a compact axis is guesswork for
- * everybody.
- */
-function CurveCaption<T>({ id, segments, lead }: CurveCaptionProps<T>) {
-  const bands = bandRun(segments);
-  if (!bands) return null;
-  return (
-    <figcaption className="chart-caption" id={id}>
-      <strong>The curve in words.</strong> {lead} {bands}.
-      {/* A curve of one band has already said it has no hump by being one
-          band, so the hump note would only repeat it back. */}
-      {segments.length > 1 ? ` ${humpNote(segments)}` : ''}
-    </figcaption>
-  );
-}
 
 /**
  * How every axis on all three charts is drawn, in one object rather than six
@@ -2408,7 +2304,6 @@ const App: React.FC = () => {
                 className="chart-container"
                 role="img"
                 aria-label={`Chart: the marginal tax rate on the next dollar of other income, plotted from $0 to ${formatCurrency(axisMax)}.`}
-                aria-describedby="torpedo-chart-caption"
               >
                 <ResponsiveContainer width="100%" height="100%">
                   <AreaChart
@@ -2520,12 +2415,6 @@ const App: React.FC = () => {
                   ? ` \u2212 ${formatCurrency(qcd)} given straight to charity`
                   : ''}
               </p>
-
-              <CurveCaption
-                id="torpedo-chart-caption"
-                segments={segments}
-                lead="Left to right, the rate on the next dollar of other income is"
-              />
             </figure>
 
             <div className="input-group chart-slider">
@@ -2971,7 +2860,6 @@ const App: React.FC = () => {
                   className="chart-container"
                   role="img"
                   aria-label={`Chart: the marginal tax rate as more of ${formatCurrency(ordinaryIncome)} of other income is taken as long-term capital gain, plotted from $0 to ${formatCurrency(gainsAxisMax)}.`}
-                  aria-describedby="gains-chart-caption"
                 >
                   <ResponsiveContainer width="100%" height="100%">
                     <AreaChart
@@ -3044,12 +2932,6 @@ const App: React.FC = () => {
                     ? ' where you stand \u2014 the further right you go, the less of the gift has ordinary income to come out of, so the more of this income reaches the return'
                     : ' at every point on this axis'}
                 </p>
-
-                <CurveCaption
-                  id="gains-chart-caption"
-                  segments={ltcgSegments}
-                  lead="Left to right, the rate on the next dollar taken as gain rather than as ordinary income is"
-                />
               </figure>
 
               <div className="input-group chart-slider">
@@ -3250,7 +3132,6 @@ const App: React.FC = () => {
                     ? `Chart: step 2's marginal-rate curve redrawn from $0 to ${formatCurrency(conversionAxisMax)}, with the sized conversion shaded from ${formatCurrency(ordinaryIncome)} to ${formatCurrency(conversionTarget)}.`
                     : `Chart: step 2's marginal-rate curve redrawn from $0 to ${formatCurrency(conversionAxisMax)}. Nothing fits under the line picked, so no conversion is shaded.`
                 }
-                aria-describedby="conversion-chart-caption"
               >
                 <ResponsiveContainer width="100%" height="100%">
                   <AreaChart
@@ -3373,12 +3254,6 @@ const App: React.FC = () => {
                   </span>
                 )}
               </p>
-
-              <CurveCaption
-                id="conversion-chart-caption"
-                segments={conversionSegments}
-                lead={`Step 2's own curve, redrawn out to ${formatCurrency(conversionAxisMax)}: left to right, the rate on the next dollar of other income is`}
-              />
             </figure>
 
             <fieldset className="input-group chart-slider ceiling-picker">

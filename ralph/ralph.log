@@ -6167,3 +6167,74 @@ the port off preview's own output. Cached Chromium build 1228,
 `executablePath` at `~/Library/Caches/ms-playwright/chromium_headless_shell-1228/
 chrome-headless-shell-mac-arm64/chrome-headless-shell`, served under
 `/congenial-octo-spork/`.
+
+## Take the curve out of words
+
+Backlog 5, "remove The curve in words." The figcaption under each of the three
+charts — `<strong>The curve in words.</strong>` followed by every band of the
+curve named left to right, then a sentence on where the humps are — is off the
+page. It had been the charts' `aria-describedby` target since Backlog 3's text
+alternative bullet.
+
+### What went
+
+`CurveCaption`, and the two functions that wrote its sentences: `bandRun`
+(the run of bands) and `humpNote` (with its `HUMP_COUNTS` lookup). Both were
+used only by the caption, so they went with it — `spellCount`/`COUNT_WORDS`,
+which sits between them in the file, is the Lines button's own counter and
+stays. The three call sites and the three `aria-describedby` attributes they
+pointed at, `.chart-caption` and `.chart-caption strong` in `index.css`, and
+`.chart-caption` from the font-size list in `styles.test.tsx`.
+
+`segmentCurve` and the three `segments` memos stay: they still feed both
+tooltips and `standingOn`, which is the advice under every slider.
+
+Two comments went stale rather than wrong and were re-written rather than
+left: `.chart-axis-label`'s explanation of the 13px step listed the caption
+among the things it matches, and `.chart-figure`'s said the group holds a
+caption. The figure itself stays a `<figure>` with no `<figcaption>` — valid,
+and it is the box the print sheet keeps whole across a fold
+(`break-inside: avoid`).
+
+### What did not go
+
+`role="img"` and the `aria-label` on each `.chart-container`. Those are the
+plot's *name*, not its description, and without them a recharts chart is a
+tree of unlabelled paths. Dropping `aria-describedby` while keeping the ids
+would have been worse than either — a chart promising a long description that
+resolves to nothing — so the attributes came off with the captions.
+
+### Tests
+
+`describe('the curve in words')` became `describe('the charts as images')`:
+the four assertions that were about labels rather than captions survive
+unchanged (three names, step 4's shaded-band label and its absence, step 3's
+figure disappearing at $0 income), and the first test now pins the removal —
+three charts, three names, no `aria-describedby` on any of them, and no
+`figcaption` anywhere in the document. The eight band/hump-prose tests went.
+688 → 680.
+
+### Verified
+
+- `npx tsc -b`, `npx eslint src --max-warnings 0`, `npx vitest run`
+  (11 files, 680 tests), `npm run build`.
+- Rendered rather than reasoned about. Built, `vite preview` on 4180, drove
+  Chromium through `playwright-core`: 0 `figcaption`, 0 `.chart-caption`, 3
+  `.chart-container` each with a `Chart: …` label and `aria-describedby` null,
+  all three axis labels still under their plots, 30 tick labels, no page
+  errors, no horizontal scroll at 1440 or 420. Under
+  `emulateMedia({ media: 'print' })` the same, so the print sheet is unharmed.
+  Screenshotted step 2: the chart now runs plot → axis label → slider →
+  "You are here" → standing advice, with nothing between the axis and the
+  slider.
+
+### Note for the next run
+
+Same standing browser note as every run that needs one: the script must sit in
+the project root for the bare `playwright-core` import to resolve,
+`pkill -f "vite preview"` first, and read the port off preview's own output.
+Cached Chromium build 1228, `executablePath` at
+`~/Library/Caches/ms-playwright/chromium_headless_shell-1228/
+chrome-headless-shell-mac-arm64/chrome-headless-shell`, served under
+`/congenial-octo-spork/`. Deleted this run's `drive-caption.mjs` and killed
+the preview.

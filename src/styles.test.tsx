@@ -329,7 +329,7 @@ describe('the chart metrics', () => {
     const step = `${CHART.label / 16}rem`;
     expect(step).toBe('0.8125rem');
 
-    const notes = ['.chart-axis-label', '.chart-key', '.chart-caption'];
+    const notes = ['.chart-axis-label', '.chart-key'];
     const set = leafRules(screenBlock(stylesheet))
       .filter((rule) => rule.selectors.some((selector) => notes.includes(selector)))
       .map((rule) => ({

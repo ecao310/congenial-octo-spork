@@ -732,10 +732,11 @@ h1 {
   margin-bottom: 2.5rem;
 }
 
-/* Everything that describes one chart, grouped: the plot, the axis label, the
-   key to its reference lines, and the caption that says in words what the plot
-   says in paint. The margin reset is the whole styling job — <figure> ships
-   with 40px of it. */
+/* Everything that describes one chart, grouped: the plot, the axis label and
+   the key to its reference lines. Still a <figure> with no <figcaption> now
+   that the band-by-band caption is off the page — it is what the print sheet
+   keeps whole across a fold. The margin reset is the whole styling job —
+   <figure> ships with 40px of it. */
 .chart-figure {
   margin: 0;
 }
@@ -919,10 +920,10 @@ h1 {
    clipped by the chart's viewport. The padding-left offsets the text to the
    centre of the plot area, which starts after the y-axis gutter.
 
-   Set at the caption step rather than left to inherit body copy: everything
-   this figure says in words — the tick labels inside the plot, this label,
-   the key and the curve in words — is now one size, which is the size the
-   two below it were already. It was the odd one out at 15px. */
+   Set at the chart's own step rather than left to inherit body copy:
+   everything this figure says in words — the tick labels inside the plot,
+   this label and the key — is one size, which is the size the key was
+   already. This label was the odd one out at 15px. */
 .chart-axis-label {
   margin: 0.25rem 0 0;
   padding-left: var(--chart-axis);
@@ -970,24 +971,6 @@ h1 {
    still has to tell the two switches apart by hue. */
 .chart-key-swatch-subsidy {
   border-top-color: var(--fuchsia);
-}
-
-/* The curve in words. Sized and coloured like the key above it, because it is
-   the same kind of thing — a note about the picture rather than part of it —
-   and shares the axis label's gutter so it starts where the plot area does.
-   Visible rather than screen-reader-only: reading a band edge off a compact
-   axis is guesswork for a sighted reader too. */
-.chart-caption {
-  margin: 0.875rem 0 0;
-  padding-left: var(--chart-axis);
-  font-size: 0.8125rem;
-  line-height: 1.5;
-  color: var(--ink-muted);
-}
-
-.chart-caption strong {
-  color: var(--ink-soft);
-  font-weight: 600;
 }
 
 /* Step 4's key names a band and the line that closes it, both indigo — the one

@@ -10,7 +10,7 @@ Backlog 2 (21 Aug)
 [x] Re-scale the chart x-axes so the features worth seeing fit on screen. MAX_INCOME is 150_000, which shows the SS torpedo and the first two IRMAA cliffs but cuts the 2025-2028 senior deduction phaseout in half for a joint filer (it runs $150k–$250k MFJ, $75k–$175k single). The domain probably has to depend on filing status and year rather than stay a constant.
 [x] Raise the charitable distribution slider to the IRS annual maximum and extend the chart x-axis when a slider is set past the right edge. `qcdSliderMax` is `Math.min(qcdLimit, MAX_INCOME)` (App.tsx:653), so a joint return — whose 408(d)(8) limit is doubled, $216,000 for 2025 — is clipped to $150,000 by the chart's domain rather than by the statute.
 [x] Say why this particular reader should move income up or down, keyed to where their slider sits: on the valley floor, climbing the hump, at the peak, or past it. The tooltip already computes "fill this valley at $x" / "stay under $y or over $z" for the hovered point (App.tsx:325-378); this is the same arithmetic as always-on prose keyed to the slider instead.
-[ ] Update title and hero text to be what the tool is useful for, instead of what the current parameters are set to.
+[x] Update title and hero text to be what the tool is useful for, instead of what the current parameters are set to.
 
 Backlog
 [x] Get IRS worksheet. Create test cases for the calculation.

@@ -3568,3 +3568,87 @@ and step 3 moves composition, so it wants its own prose. And the advice cannot
 see the IRMAA cliffs: "clearing $40,750 — $10,750 more" is sound about tax and
 silent about the lump a reader might step over getting there, which the rest of
 this page is careful to price.
+
+
+Say what the page is for, not what its controls are set to
+==========================================================
+
+The h1 read "Marginal Tax Rate" and the subtitle under it read "Federal
+marginal rate on the next dollar of other income for a single filer (2025
+brackets, standard deduction), with Social Security taxed under the 50%/85%
+provisional-income rules." Accurate, and a readout of two controls the reader
+had not scrolled to yet. The first thing on the page was the app describing its
+own state.
+
+### The hero
+
+    How Much Can You Take Out This Year?
+
+    One more dollar out of an IRA — a withdrawal, a Roth conversion, a
+    realized gain — can drag Social Security into the tax base with it and
+    shove a long-term gain out of the 0% band, so what the next dollar
+    actually costs is often nothing like your bracket. This draws that cost
+    across every income level for your own return, and marks the stretches
+    worth filling and the ones worth stepping around.
+
+The title is the question a reader arrives with, phrased as the decision they
+are there to make rather than as the quantity the chart plots. The subtitle
+names the three moves that ask it (withdrawal, conversion, sale), the two
+mechanisms that make the answer surprising, and — in the last clause — what the
+page now does about it, which is the `standingOn` advice the previous iteration
+landed. No filing status, no year, no benefit: nothing in the hero changes when
+a control moves.
+
+`index.html` got the same treatment. Its `<title>` and description had the same
+"see your federal marginal tax rate across income levels" framing, and the
+description is what a search result shows, so it now names the four things the
+chart draws (torpedo, gain stacking, IRMAA cliffs, senior-deduction phaseout).
+
+### Where the state went
+
+Deleting the status and the year from the hero would have deleted them from the
+page — nothing else says which return is being priced in one place. They moved
+to a recap line at the foot of step 1, after the advanced disclosure and
+immediately before the next-step box:
+
+> Everything from here on prices one return: **2025** brackets and standard
+> deduction, **a single filer**, under 65, collecting **$23,712** of Social
+> Security a year.
+
+That is the right place for it twice over: it is the last thing in the step
+that sets those values, and the first thing a reader passes on the way into the
+step that spends them. `ageProse` handles the one case with three answers
+rather than two — a joint return with one qualifying spouse is not the same
+return as one with two, since the senior deduction and the standard-deduction
+addition each apply per person. A $0 benefit reads "collecting no Social
+Security at all" rather than "$0 of Social Security a year", and the sentence
+gains "Plus whatever is set under Advanced inputs above." only when muni
+interest or a charitable gift has been moved off zero — the recap names three
+settings and must not imply it names five.
+
+### Tests
+
++7, 479 -> 486. The hero test asserts the new heading and the subtitle's
+subject matter, then asserts the negative that motivated the whole change:
+switching to a joint 2026 return leaves the subtitle untouched. The recap gets
+its own describe — placement (inside `#step-benefit`, immediately before
+`.next-step`), the default sentence in full, following year/status/benefit
+together, one senior versus two, the $0-benefit wording, and the advanced
+clause appearing and disappearing.
+
+Three existing assertions read the old subtitle for the year ("2025 brackets,
+standard deduction") and were re-pointed at the recap. They cannot use
+`getByText` for the figure any more — the year sits in its own `<strong>`, and
+`getNodeText` only joins an element's direct text children — so a shared
+`scenarioRecap()` helper finds the line by its opening phrase and the
+assertions run through `toHaveTextContent`, which reads the whole subtree. The
+head-of-household test that counts two occurrences of "a head of household"
+still counts two; the second one is the recap now instead of the subtitle, and
+its comment says so.
+
+### Verified
+
+`npx tsc -b`, `npx eslint src --max-warnings 0`, `npx vitest run` (7 files, 486
+tests, green in 5.1s), `npm run build`. CSS: `.scenario-recap` (a left rule in
+the step's own sky blue, matching `.slider-advice`'s treatment) and a 62ch
+`max-width` on `.subtitle`, which is now three lines instead of two.

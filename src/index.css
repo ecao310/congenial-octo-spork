@@ -356,6 +356,7 @@ h1 {
 
 .subtitle {
   color: #94a3b8;
+  max-width: 62ch;
   margin-bottom: 2.5rem;
 }
 
@@ -681,6 +682,24 @@ footer p {
 .step-prose {
   color: #94a3b8;
   margin: 0 0 1.5rem;
+}
+
+/* The line that closes step 1 by naming the return everything else prices.
+   Set apart the way the slider advice is — a rule in the step's own colour,
+   not a bigger type size — because it is a summary of the inputs above it,
+   not a new claim. */
+.scenario-recap {
+  margin: 2rem 0 0;
+  padding: 0.375rem 0 0.375rem 0.875rem;
+  border-left: 2px solid rgba(56, 189, 248, 0.5);
+  font-size: 0.875rem;
+  line-height: 1.6;
+  color: #94a3b8;
+}
+
+.scenario-recap strong {
+  color: #e2e8f0;
+  font-weight: 600;
 }
 
 .step-prose strong {

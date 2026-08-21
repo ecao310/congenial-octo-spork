@@ -685,6 +685,21 @@ const App: React.FC = () => {
     { label: 'Charitable', value: qcd },
   ].filter(({ value }) => value > 0);
 
+  /**
+   * How the age toggles read inside the recap that closes step 1. A joint
+   * return has three answers rather than two, because one qualifying spouse
+   * and two are different returns — one senior deduction against two, and the
+   * standard-deduction addition once against twice.
+   */
+  const ageProse =
+    seniors === 0
+      ? 'under 65'
+      : filingStatus !== 'mfj'
+        ? '65 or older'
+        : seniors === 2
+          ? 'both spouses 65 or older'
+          : 'one spouse 65 or older';
+
   const baseDeduction = yearFiling.standardDeduction;
   const standardDeduction = standardDeductionFor({ filingStatus, seniors, year });
   const seniorAddition = standardDeduction - baseDeduction;
@@ -943,12 +958,14 @@ const App: React.FC = () => {
 
   return (
     <div className="card">
-      <h1>Marginal Tax Rate</h1>
+      <h1>How Much Can You Take Out This Year?</h1>
       <p className="subtitle">
-        Federal marginal rate on the next dollar of other income for{' '}
-        {FILING_STATUS_PROSE[filingStatus]} ({year} brackets, standard
-        deduction),
-        with Social Security taxed under the 50%/85% provisional-income rules.
+        One more dollar out of an IRA — a withdrawal, a Roth conversion, a
+        realized gain — can drag Social Security into the tax base with it and
+        shove a long-term gain out of the 0% band, so what the next dollar
+        actually costs is often nothing like your bracket. This draws that cost
+        across every income level for your own return, and marks the stretches
+        worth filling and the ones worth stepping around.
       </p>
 
       <div
@@ -1269,6 +1286,30 @@ const App: React.FC = () => {
             </p>
           </div>
         </details>
+
+        {/* What this step settled, in one line. The hero used to name the
+            filing status and the year; it now says what the page is for, so
+            the return being priced is named here instead — at the foot of the
+            step that sets it, on the way into the step that spends it. */}
+        <p className="scenario-recap">
+          Everything from here on prices one return: <strong>{year}</strong>{' '}
+          brackets and standard deduction,{' '}
+          <strong>{FILING_STATUS_PROSE[filingStatus]}</strong>, {ageProse},
+          collecting{' '}
+          {ssBenefit > 0 ? (
+            <>
+              <strong>{formatCurrency(ssBenefit)}</strong> of Social Security a
+              year.
+            </>
+          ) : (
+            <>
+              <strong>no Social Security</strong> at all.
+            </>
+          )}
+          {advancedSet.length > 0
+            ? ' Plus whatever is set under Advanced inputs above.'
+            : ''}
+        </p>
 
         {nextStepBox(0)}
       </section>

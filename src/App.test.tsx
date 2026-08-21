@@ -38,6 +38,14 @@ const stepNav = (): HTMLElement => screen.getByRole('toolbar', { name: 'Steps' }
 const navItem = (name: (typeof stepNames)[number]): HTMLElement =>
   within(stepNav()).getByRole('button', { name });
 
+/**
+ * The line that closes step 1 by naming the return every later step prices.
+ * The year, the status, the ages and the benefit are each in their own
+ * element, so these tests read the whole sentence rather than one text node.
+ */
+const scenarioRecap = (): HTMLElement =>
+  screen.getByText(/Everything from here on prices one return/);
+
 /** The nav button carrying `aria-current="step"`, by its visible label. */
 const currentStep = (): string | undefined =>
   within(stepNav())
@@ -59,9 +67,28 @@ describe('App', () => {
       .getByRole('slider', { name: /social security benefit/i })
       .closest('.input-group') as HTMLElement;
 
-  it('renders the heading', () => {
+  it('leads with what the page is for rather than with the settings', () => {
     render(<App />);
-    expect(screen.getByRole('heading', { name: /marginal tax rate/i })).toBeInTheDocument();
+    const hero = screen.getByRole('heading', {
+      name: /how much can you take out this year/i,
+      level: 1,
+    });
+    expect(hero).toBeInTheDocument();
+
+    // The subtitle used to name the filing status and the tax year, which made
+    // the first thing on the page a readout of two controls the reader had not
+    // reached yet. It now says what the next dollar costs and why.
+    const subtitle = hero.nextElementSibling as HTMLElement;
+    expect(subtitle).toHaveClass('subtitle');
+    expect(subtitle).toHaveTextContent(/a withdrawal, a Roth conversion, a realized gain/);
+    expect(subtitle).toHaveTextContent(/nothing like your bracket/);
+    expect(subtitle).not.toHaveTextContent(/single filer/i);
+    expect(subtitle).not.toHaveTextContent(/2025|2026/);
+
+    // And it stays put when those controls move.
+    fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Jointly' }));
+    fireEvent.click(screen.getByRole('radio', { name: '2026' }));
+    expect(subtitle).not.toHaveTextContent(/married|2026/i);
   });
 
   it('renders the benefit slider defaulting to the 2025 average benefit', () => {
@@ -1157,6 +1184,106 @@ describe('Tooltip Recommendations', () => {
   });
 });
 
+/* ------------------------------------------------------------------ */
+/*  The line that closes step 1                                        */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The hero says what the page is for; this says what it is currently pricing.
+ * The two used to be one sentence, which meant the first thing on the page was
+ * a readout of controls the reader had not scrolled to yet.
+ */
+describe('scenario recap', () => {
+  it('closes step 1, on the way into the next one', () => {
+    render(<App />);
+    const recap = scenarioRecap();
+    expect(recap.closest('section')).toHaveAttribute('id', 'step-benefit');
+    // Last thing before the box that hands the reader on.
+    expect(recap.nextElementSibling).toHaveClass('next-step');
+  });
+
+  it('names the return the defaults describe', () => {
+    render(<App />);
+    expect(scenarioRecap()).toHaveTextContent(
+      'Everything from here on prices one return: 2025 brackets and standard ' +
+        'deduction, a single filer, under 65, collecting $23,712 of Social ' +
+        'Security a year.',
+    );
+  });
+
+  it('follows the year, the status and the benefit', () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Jointly' }));
+    fireEvent.click(screen.getByRole('radio', { name: '2026' }));
+    fireEvent.change(
+      screen.getByRole('slider', { name: /social security benefit/i }),
+      { target: { value: '48000' } },
+    );
+    expect(scenarioRecap()).toHaveTextContent(
+      'Everything from here on prices one return: 2026 brackets and standard ' +
+        'deduction, a married couple filing jointly, under 65, collecting ' +
+        '$48,000 of Social Security a year.',
+    );
+  });
+
+  /**
+   * One qualifying spouse and two are different returns — one senior deduction
+   * against two, and the standard-deduction addition once against twice — so
+   * the joint case gets its own wording rather than a bare "65 or older".
+   */
+  it('distinguishes one senior from two on a joint return', () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Jointly' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Age 65 or older' }));
+    expect(scenarioRecap()).toHaveTextContent('one spouse 65 or older');
+
+    fireEvent.click(
+      screen.getByRole('checkbox', { name: 'Both spouses are 65 or older' }),
+    );
+    expect(scenarioRecap()).toHaveTextContent('both spouses 65 or older');
+  });
+
+  it('says 65 or older once for a return with only one filer', () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Age 65 or older' }));
+    expect(scenarioRecap()).toHaveTextContent('a single filer, 65 or older,');
+  });
+
+  it('says so when there is no benefit at all', () => {
+    render(<App />);
+    fireEvent.change(
+      screen.getByRole('slider', { name: /social security benefit/i }),
+      { target: { value: '0' } },
+    );
+    expect(scenarioRecap()).toHaveTextContent(
+      'collecting no Social Security at all.',
+    );
+    expect(scenarioRecap()).not.toHaveTextContent('$0 of Social Security');
+  });
+
+  /**
+   * The recap names the three headline settings; the advanced disclosure keeps
+   * its own summary of the two it hides. What the recap owes the reader is not
+   * to imply the list is complete when it is not.
+   */
+  it('points at the advanced inputs only once one has been set', () => {
+    render(<App />);
+    expect(scenarioRecap()).not.toHaveTextContent('Advanced inputs');
+
+    fireEvent.change(screen.getByLabelText('Tax-Exempt (Municipal) Interest'), {
+      target: { value: '5000' },
+    });
+    expect(scenarioRecap()).toHaveTextContent(
+      'Plus whatever is set under Advanced inputs above.',
+    );
+
+    fireEvent.change(screen.getByLabelText('Tax-Exempt (Municipal) Interest'), {
+      target: { value: '0' },
+    });
+    expect(scenarioRecap()).not.toHaveTextContent('Advanced inputs');
+  });
+});
+
 describe('tax year selector', () => {
   const yearRadio = (year: number): HTMLElement =>
     screen.getByRole('radio', { name: String(year) });
@@ -1166,7 +1293,7 @@ describe('tax year selector', () => {
     expect(screen.getByRole('group', { name: /tax year/i })).toBeInTheDocument();
     expect(yearRadio(2025)).toBeChecked();
     expect(yearRadio(2026)).not.toBeChecked();
-    expect(screen.getByText(/2025 brackets, standard deduction/)).toBeInTheDocument();
+    expect(scenarioRecap()).toHaveTextContent('2025 brackets and standard deduction');
   });
 
   it('re-prices the standard deduction for 2026', () => {
@@ -1179,7 +1306,7 @@ describe('tax year selector', () => {
     expect(yearRadio(2026)).toBeChecked();
     expect(yearRadio(2025)).not.toBeChecked();
 
-    expect(screen.getByText(/2026 brackets, standard deduction/)).toBeInTheDocument();
+    expect(scenarioRecap()).toHaveTextContent('2026 brackets and standard deduction');
     expect(screen.getByText(/^Standard deduction/)).toHaveTextContent(
       'Standard deduction $16,100. Turning 65 adds $2,050.',
     );
@@ -1225,9 +1352,9 @@ describe('tax year selector', () => {
     const opening = defaultTaxYear();
     expect(TAX_YEARS).toContain(opening);
     expect(yearRadio(opening)).toBeChecked();
-    expect(
-      screen.getByText(new RegExp(`${opening} brackets, standard deduction`)),
-    ).toBeInTheDocument();
+    expect(scenarioRecap()).toHaveTextContent(
+      `${opening} brackets and standard deduction`,
+    );
   });
 });
 
@@ -1392,7 +1519,7 @@ describe('head of household', () => {
     selectHoh();
     expect(hoh).toBeChecked();
     expect(screen.getByRole('radio', { name: 'Single' })).not.toBeChecked();
-    // Once in the subtitle above the chart, once opening the status note.
+    // Once in the recap that closes step 1, once opening the status note.
     expect(screen.getAllByText(/a head of household/i)).toHaveLength(2);
   });
 

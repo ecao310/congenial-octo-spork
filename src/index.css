@@ -541,6 +541,18 @@ h1 {
   border-top: 2px dashed #f43f5e;
 }
 
+/* Step 2 draws two kinds of cliff, so its key comes in two colours. Fuchsia is
+   the second one: near enough to the rose above it to read as the same kind of
+   thing — a whole year's money turning on one dollar — and far enough to say
+   it is a different line, belonging to a reader who is not on Medicare yet. */
+.chart-key-subsidy strong {
+  color: #f0abfc;
+}
+
+.chart-key-swatch-subsidy {
+  border-top-color: #e879f9;
+}
+
 /* The curve in words. Sized and coloured like the key above it, because it is
    the same kind of thing — a note about the picture rather than part of it —
    and shares the axis label's 70px offset so it starts where the plot area
@@ -1446,6 +1458,16 @@ footer p {
   .chart-key strong,
   .warning-note strong {
     color: #be123c;
+  }
+
+  /* After the rule above, not before it: same specificity, so the second cliff
+     keeps its own colour on paper only because it is written second. */
+  .chart-key-subsidy strong {
+    color: #a21caf;
+  }
+
+  .chart-key-swatch-subsidy {
+    border-top-color: #a21caf;
   }
 
   /* ── Boxes ──

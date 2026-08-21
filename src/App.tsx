@@ -43,6 +43,12 @@ import {
   irmaaCliffs,
   irmaaMagiYear,
   IRMAA_LOOKBACK_YEARS,
+  ptcCliff,
+  ptcFor,
+  acaMagi,
+  fplGuidelineYear,
+  FPL_GUIDELINE_LOOKBACK_YEARS,
+  PTC_CLIFF_PERCENT,
   conversionCeilings,
   sizeConversion,
   CONVERSION_MEASURE_LABELS,
@@ -73,6 +79,7 @@ import type {
   CurveSegment,
   CurveStanding,
   IrmaaCliff,
+  PtcCliff,
   ConversionCeilingId,
 } from './utils/tax';
 
@@ -1404,16 +1411,68 @@ const App: React.FC = () => {
     )
     .join('; ');
 
+  /**
+   * Whether anyone on this return still has to buy their own health coverage.
+   *
+   * The 400% cliff and the IRMAA cliffs are mutually exclusive *per person*:
+   * 36B(c)(2)(B) makes anyone eligible for Medicare ineligible for the premium
+   * tax credit, so the line below is drawn for exactly the readers the red
+   * ones are least about — and a joint return with one spouse over 65 and one
+   * under it meets both, which is why this counts people rather than asking
+   * whether the filer is a senior.
+   *
+   * What it cannot know is where that coverage comes from. An employer plan, a
+   * retiree plan or a spouse's plan all leave the cliff irrelevant, and the
+   * page has no field for it. So the line is drawn on the age this return
+   * already states and the prose beside it carries the condition, rather than
+   * a checkbox nobody would tick being the thing that decides whether the
+   * biggest cliff on the chart is mentioned at all.
+   */
+  const preMedicare = seniors < (filingStatus === 'mfj' ? 2 : 1);
+
+  /**
+   * The 400% line for this household, or null in a tax year that has no cliff.
+   *
+   * The same scenario the IRMAA cliffs are placed from, and it moves with the
+   * same inputs — but along a different MAGI, so it does not move by the same
+   * amounts. `householdSize` is deliberately left unset: the page has no field
+   * for dependents, so the scenario's own default sizes the poverty line from
+   * the filing status. See `defaultHouseholdSize`.
+   */
+  const subsidyCliff = useMemo(
+    () =>
+      ptcCliff({
+        ssBenefit,
+        filingStatus,
+        muniInterest,
+        qcd,
+        year,
+        ltcg: plannedLtcg,
+      }),
+    [ssBenefit, filingStatus, muniInterest, qcd, year, plannedLtcg],
+  );
+
+  /** The 400% line when it is this return's to meet and the axis can show it. */
+  const subsidyCliffOnChart: PtcCliff | null =
+    preMedicare &&
+    subsidyCliff &&
+    subsidyCliff.otherIncome > 0 &&
+    subsidyCliff.otherIncome <= axisMax
+      ? subsidyCliff
+      : null;
+
   /* ───── Step 4: how many dollars fit before the next one costs more ───── */
 
   /**
-   * The six lines a conversion can be sized against, for this return.
+   * The lines a conversion can be sized against, for this return.
    *
    * Only the year and the filing status move them — a ceiling is a fixed line,
    * not a position relative to one — so the list is rebuilt when either
-   * changes and the reader's pick survives, because every status offers the
-   * same six ids. `?? ceilings[0]` is for nothing that can happen today and
-   * everything that could if an id were ever retired.
+   * changes. Every status offers the same ids, but not every year does: 400%
+   * of the poverty line was not a ceiling at all in 2025, when the credit
+   * tapered past it rather than stopping. So `?? ceilings[0]` is what a reader
+   * who picked that line and then switched to 2025 lands on, and `ceilingId`
+   * is deliberately left alone so switching back restores their pick.
    */
   const ceilings = useMemo(
     () => conversionCeilings({ filingStatus, year }),
@@ -1605,6 +1664,14 @@ const App: React.FC = () => {
    */
   const hereMagi = irmaaMagi(hereScenario);
   const hereIrmaa = irmaaFor(hereMagi, { filingStatus, beneficiaries, year });
+
+  /**
+   * And 36B's reading of it, which is wider than either: the whole benefit,
+   * whatever share of it the torpedo has dragged into the tax base. The gap
+   * between this figure and Medicare's is the untaxed part of the benefit, and
+   * it is why the two cliffs on step 2's chart do not travel together.
+   */
+  const hereSubsidy = ptcFor(acaMagi(hereScenario), hereScenario);
 
   /**
    * The year's federal tax at the reader's point.
@@ -2223,6 +2290,7 @@ const App: React.FC = () => {
                 />
                 {cliffsOnChart.map((cliff) => (
                   <ReferenceLine
+                    className="irmaa-cliff"
                     key={cliff.tier}
                     x={cliff.otherIncome}
                     stroke="#f43f5e"
@@ -2235,6 +2303,27 @@ const App: React.FC = () => {
                     }}
                   />
                 ))}
+                {/* Pink rather than a second red: it is a cliff like the IRMAA
+                    ones, but it belongs to a different reader — the one still
+                    buying their own coverage — and the key underneath tells
+                    them apart by colour before it tells them apart in words.
+                    Fuchsia is what was left: the sky curve, the rose cliffs,
+                    the amber marker and every slider on the page already own a
+                    colour, muni interest's violet included. */}
+                {subsidyCliffOnChart && (
+                  <ReferenceLine
+                    className="subsidy-cliff"
+                    x={subsidyCliffOnChart.otherIncome}
+                    stroke="#e879f9"
+                    strokeDasharray="4 4"
+                    label={{
+                      value: `${PTC_CLIFF_PERCENT * 100}% FPL`,
+                      position: 'top',
+                      fill: '#f0abfc',
+                      fontSize: 11,
+                    }}
+                  />
+                )}
                 {hereLine(ordinaryIncome, axisMax, '#f59e0b')}
                 <Area
                   type="stepAfter"
@@ -2285,6 +2374,64 @@ const App: React.FC = () => {
                 other income, past the right edge of the axis &mdash; and would cost{' '}
                 {formatCurrency(firstCliffPastAxis.step)}/yr in Medicare premiums
                 {beneficiaries > 1 ? ' for the two of you' : ''}.
+              </span>
+            </p>
+          ) : null}
+
+          {/* The second key, for the second cliff. It renders whenever this
+              return is one the credit could reach — under 65, in a year that
+              has a cliff — and says where the line is even when the line is
+              not drawn, because "no line" and "off the right edge" are
+              different answers. */}
+          {preMedicare && subsidyCliff ? (
+            <p className="chart-key chart-key-subsidy">
+              <span
+                className="chart-key-swatch chart-key-swatch-subsidy"
+                aria-hidden="true"
+              />
+              <span>
+                {subsidyCliffOnChart ? (
+                  <>
+                    <strong>
+                      The {PTC_CLIFF_PERCENT * 100}% poverty-line cliff.
+                    </strong>{' '}
+                    Household income over{' '}
+                    {formatCurrency(subsidyCliff.magi)} &mdash;{' '}
+                    {PTC_CLIFF_PERCENT * 100}% of the{' '}
+                    {formatCurrency(subsidyCliff.povertyLine)} poverty line for a
+                    household of {subsidyCliff.householdSize}, reached at{' '}
+                    {formatCurrency(Math.round(subsidyCliff.otherIncome))} of
+                    other income &mdash; ends the Marketplace premium tax credit
+                    for the whole year. Under the line this household pays at most{' '}
+                    {formatCurrency(subsidyCliff.cappedContribution)} for the
+                    benchmark plan; over it, the whole premium.
+                  </>
+                ) : subsidyCliff.otherIncome <= 0 ? (
+                  <>
+                    <strong>
+                      Already past the {PTC_CLIFF_PERCENT * 100}% poverty-line
+                      cliff.
+                    </strong>{' '}
+                    The benefit and tax-exempt interest set above come to more
+                    than {formatCurrency(subsidyCliff.magi)} on their own, so
+                    there is no Marketplace premium tax credit to lose at any
+                    point on this chart.
+                  </>
+                ) : (
+                  <>
+                    <strong>
+                      The {PTC_CLIFF_PERCENT * 100}% poverty-line cliff is off
+                      the right edge.
+                    </strong>{' '}
+                    It needs {formatCurrency(subsidyCliff.magi)} of household
+                    income &mdash;{' '}
+                    {formatCurrency(Math.round(subsidyCliff.otherIncome))} of
+                    other income &mdash; and past it there is no Marketplace
+                    premium tax credit for the year.
+                  </>
+                )}{' '}
+                Only for coverage bought on the Marketplace, and only until
+                Medicare starts.
               </span>
             </p>
           ) : null}
@@ -2547,6 +2694,125 @@ const App: React.FC = () => {
             </p>
           </div>
         </details>
+
+        {preMedicare ? (
+          <details className="explainer">
+            <summary>
+              {/* The line is only drawn in a year that has one, so the
+                  heading only points at it in a year that has one. */}
+              <h2 id="subsidy-cliff-heading">
+                The {PTC_CLIFF_PERCENT * 100}% poverty-line cliff
+                {subsidyCliff ? <> &mdash; the pink dashed line</> : null}
+              </h2>
+            </summary>
+            <div className="explainer-content">
+              {subsidyCliff ? (
+                <>
+                  <p>
+                    Health coverage bought on the Marketplace comes with a{' '}
+                    <strong>premium tax credit</strong> that pays whatever the
+                    benchmark silver plan costs above a set share of household
+                    income. IRC 36B(c)(1)(A) allows it to a household whose
+                    income is &ldquo;at least 100 percent but not more than 400
+                    percent&rdquo; of the federal poverty line. There is no row
+                    in the table past 400%, so past 400% the credit is not
+                    smaller &mdash; it is nothing. For this household that line
+                    is {formatCurrency(subsidyCliff.magi)}:{' '}
+                    {PTC_CLIFF_PERCENT * 100}% of the{' '}
+                    {formatCurrency(subsidyCliff.povertyLine)} poverty line for{' '}
+                    {subsidyCliff.householdSize === 1
+                      ? 'one person'
+                      : `${subsidyCliff.householdSize} people`}
+                    .
+                  </p>
+                  <p>
+                    <strong>What it costs is not on this page.</strong> Just
+                    under the line the household pays at most{' '}
+                    {(subsidyCliff.topApplicablePercentage * 100).toFixed(2)}% of
+                    its income &mdash;{' '}
+                    {formatCurrency(subsidyCliff.cappedContribution)} &mdash; for
+                    the benchmark plan, and the credit covers the rest. One
+                    dollar over, it pays the full premium, which depends on ages
+                    and county and which this page has no way to know. So the
+                    line is drawn where it falls and the loss is left blank: for
+                    a couple in their early sixties it is routinely five figures.
+                  </p>
+                  <p>
+                    <strong>It is not Medicare&apos;s line, or the tax
+                    code&apos;s.</strong> 36B(d)(2)(B) counts AGI plus
+                    tax-exempt interest plus{' '}
+                    <em>the untaxed part of the Social Security benefit</em>.
+                    That last term undoes the torpedo: whatever share of the{' '}
+                    {formatCurrency(ssBenefit)} benefit stays out of the tax
+                    base, this adds straight back, so the whole benefit counts
+                    at every income level. The practical difference shows in
+                    where the lines sit: raise the benefit by a dollar and the
+                    pink line moves a full dollar left, while the red ones move
+                    at most 85 cents, because 85 cents is all of that dollar
+                    that can ever reach the tax base. Two cliffs, two MAGIs, and
+                    no reading one off the other.
+                  </p>
+                  <p>
+                    <strong>You are here.</strong> This return&apos;s household
+                    income is {formatCurrency(Math.round(hereSubsidy.magi))},{' '}
+                    {(hereSubsidy.fplMultiple * 100).toFixed(0)}% of the poverty
+                    line.{' '}
+                    {hereSubsidy.overCliff
+                      ? 'That is past the cliff: there is no premium tax credit for this year, and coming back under it takes ' +
+                        formatCurrency(
+                          Math.round(hereSubsidy.magi - (hereSubsidy.cliffMagi ?? 0)),
+                        ) +
+                        ' less income.'
+                      : `Another ${formatCurrency(
+                          Math.round(hereSubsidy.headroom ?? 0),
+                        )} of it reaches the line, and the dollar after that is the one that costs.`}
+                  </p>
+                  <p>
+                    <strong>The cliff is back, and it was gone.</strong> From
+                    2021 through 2025 there was no 400% ceiling at all: ARPA
+                    section 9661, extended by the Inflation Reduction Act,
+                    replaced the table with one that ran past 400% and capped
+                    the household&apos;s own share at 8.5% of income however
+                    high income went. That expired for tax years beginning after
+                    2025. The poverty line itself runs{' '}
+                    {FPL_GUIDELINE_LOOKBACK_YEARS} year behind, where
+                    Medicare&apos;s MAGI runs {IRMAA_LOOKBACK_YEARS}: 26 CFR
+                    1.36B-1(h) fixes it at the guidelines in effect when open
+                    enrolment began, which is the previous 1 November, so {year}{' '}
+                    coverage is priced off the {fplGuidelineYear(year)}{' '}
+                    guidelines &mdash; already a year old when the year starts.
+                  </p>
+                  <p>
+                    <strong>Who this is not for.</strong> Nobody enrolled in
+                    Medicare is eligible for the credit, which is why the line
+                    disappears from this chart once everyone on the return has
+                    turned 65 &mdash; and why a couple with one spouse on either
+                    side of 65 is standing in front of both cliffs at once.
+                    Coverage from an employer, a retiree plan or a spouse&apos;s
+                    plan takes the credit away too, so a reader with any of
+                    those can read this line as decoration. The poverty line
+                    used here is the one for the 48 contiguous states and DC;
+                    Alaska and Hawaii have their own, higher, so the line falls
+                    further right there than it is drawn.{' '}
+                    {subsidyCliff.householdSize === 1
+                      ? 'A dependent would move it right by about $5,500 of income, and this page has no field for one.'
+                      : 'A dependent past the two people this filing status implies would move it right by about $5,500 of income, and this page has no field for one.'}
+                  </p>
+                </>
+              ) : (
+                <p>
+                  On a {year} return there is no cliff to draw. ARPA section
+                  9661, extended through 2025 by the Inflation Reduction Act,
+                  took the 400% ceiling out of IRC 36B(c)(1)(A) and capped a
+                  household&apos;s own share of the benchmark premium at 8.5% of
+                  income at every income level, so the Marketplace credit tapers
+                  away instead of stopping. It returns for tax years beginning
+                  after 2025: switch the year above to see where it falls.
+                </p>
+              )}
+            </div>
+          </details>
+        ) : null}
 
         <details className="explainer">
           <summary>

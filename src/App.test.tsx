@@ -2162,6 +2162,117 @@ describe('the IRMAA cliff lines on the torpedo chart', () => {
   });
 });
 
+/**
+ * The reader-facing half of the 400% cliff. The line itself is asserted on in
+ * App.chart.test.tsx, which mocks ResponsiveContainer so recharts draws; what
+ * is checked here is the key beside it and the explainer under it, which are
+ * plain HTML and are the only things that say what a pink dash means.
+ *
+ * The clock is pinned to 2025, a year with no cliff, so every test that wants
+ * one clicks its way to 2026 — and the first one below is about what a reader
+ * sees when there is nothing to draw.
+ */
+describe('the 400% poverty-line cliff under the torpedo chart', () => {
+  const yearRadio = (year: number): HTMLElement =>
+    screen.getByRole('radio', { name: String(year) });
+
+  const subsidyKey = (container: HTMLElement): HTMLElement | null =>
+    container.querySelector<HTMLElement>('.chart-key-subsidy');
+
+  const subsidyExplainer = (): HTMLElement => {
+    const heading = screen.getByRole('heading', { name: /400% poverty-line cliff/ });
+    const details = heading.closest('details');
+    if (!details) throw new Error('no subsidy explainer rendered');
+    return details;
+  };
+
+  it('says on a 2025 return that there is no cliff, and draws no key for one', () => {
+    const { container } = render(<App />);
+    expect(subsidyKey(container)).toBeNull();
+    // The heading stops pointing at a line the chart is not drawing.
+    expect(
+      screen.getByRole('heading', { name: /400% poverty-line cliff/ }),
+    ).not.toHaveTextContent('pink dashed line');
+    expect(subsidyExplainer()).toHaveTextContent(
+      'On a 2025 return there is no cliff to draw',
+    );
+    expect(subsidyExplainer()).toHaveTextContent('ARPA section 9661');
+  });
+
+  it('prices the line for a 2026 return, and says what the household pays under it', () => {
+    const { container } = render(<App />);
+    fireEvent.click(yearRadio(2026));
+    const key = subsidyKey(container);
+    expect(key).not.toBeNull();
+    // 4 x the $15,650 one-person line, reached at $62,600 less the $24,852
+    // benefit that is already all of household income.
+    expect(key).toHaveTextContent('Household income over $62,600');
+    expect(key).toHaveTextContent('$15,650 poverty line for a household of 1');
+    expect(key).toHaveTextContent('reached at $37,748 of other income');
+    // 9.96% of $62,600, per Rev. Proc. 2025-25's last row.
+    expect(key).toHaveTextContent('pays at most $6,235 for the benchmark plan');
+    expect(key).toHaveTextContent('until Medicare starts');
+
+    // 26 CFR 1.36B-1(h): the line is a year old before the year opens, where
+    // Medicare's MAGI is two.
+    expect(subsidyExplainer()).toHaveTextContent(
+      'runs 1 year behind, where Medicare',
+    );
+    expect(subsidyExplainer()).toHaveTextContent(
+      'MAGI runs 2: 26 CFR 1.36B-1(h)',
+    );
+    expect(subsidyExplainer()).toHaveTextContent(
+      '2026 coverage is priced off the 2025 guidelines',
+    );
+  });
+
+  it('quotes the reader their own distance from the line', () => {
+    render(<App />);
+    fireEvent.click(yearRadio(2026));
+    // $30,000 of other income plus the whole $24,852 benefit: $54,852, which
+    // is 350% of the $15,650 line with $7,748 of it left to go.
+    expect(subsidyExplainer()).toHaveTextContent(
+      'household income is $54,852, 350% of the poverty line',
+    );
+    expect(subsidyExplainer()).toHaveTextContent('Another $7,748 of it reaches the line');
+
+    fireEvent.change(
+      screen.getByRole('slider', { name: /other income \(not social security\)/i }),
+      { target: { value: '50000' } },
+    );
+    expect(subsidyExplainer()).toHaveTextContent('That is past the cliff');
+    expect(subsidyExplainer()).toHaveTextContent('takes $12,252 less income');
+  });
+
+  it('says where the line is even when it is off the right edge', () => {
+    const { container } = render(<App />);
+    fireEvent.click(yearRadio(2026));
+    fireEvent.change(screen.getByRole('slider', { name: /tax-exempt \(municipal\) interest/i }), {
+      target: { value: '40000' },
+    });
+    // $24,852 of benefit and $40,000 of interest is $64,852 before a dollar of
+    // other income — over the line already, so there is nothing left to lose.
+    expect(subsidyKey(container)).toHaveTextContent(
+      'Already past the 400% poverty-line cliff',
+    );
+    expect(subsidyKey(container)).toHaveTextContent(
+      'no Marketplace premium tax credit to lose at any point on this chart',
+    );
+  });
+
+  it('takes the whole section away once everyone on the return is on Medicare', () => {
+    const { container } = render(<App />);
+    fireEvent.click(yearRadio(2026));
+    expect(subsidyKey(container)).not.toBeNull();
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Age 65 or older' }));
+    expect(subsidyKey(container)).toBeNull();
+    expect(
+      screen.queryByRole('heading', { name: /400% poverty-line cliff/ }),
+    ).not.toBeInTheDocument();
+  });
+});
+
 describe('separate-return divergence figure', () => {
   it('re-dates with the tax year instead of quoting a 2025 constant', () => {
     // The separate and single rate schedules part company where the separate
@@ -2364,6 +2475,50 @@ describe('sizing the conversion', () => {
           .closest('.segmented-option'),
       ).toHaveTextContent(caption);
     }
+  });
+
+  /**
+   * The seventh line, and the only one whose existence turns on the year: 400%
+   * of the poverty line is a ceiling in 2026 and was not one in 2025. This
+   * file opens on 2025, so the test above is the six-line case and this is the
+   * seven-line one — which is what a reader on the live page sees.
+   */
+  it('adds the poverty-line ceiling in 2026, and drops a reader’s pick back when they leave', () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole('radio', { name: '2026' }));
+    const ids = (): (string | null)[] =>
+      within(section())
+        .getAllByRole('radio')
+        .map((r) => r.getAttribute('value'));
+    expect(ids()).toEqual([
+      'bracket12',
+      'bracket22',
+      'ss50',
+      'ss85',
+      'ltcg0',
+      'irmaa1',
+      'fpl400',
+    ]);
+    expect(
+      screen
+        .getByRole('radio', { name: /^400% of the federal poverty line/ })
+        .closest('.segmented-option'),
+    ).toHaveTextContent('$62,600 of household income (36B MAGI)');
+
+    // $62,600 less the $24,852 benefit, which 36B counts in full, less the
+    // $30,000 of other income already on the return.
+    pick(/^400% of the federal poverty line/);
+    expect(readout()).toHaveTextContent('$7,748 fits.');
+
+    // Back to a year with no such line: the pick is retired rather than
+    // stranded, and picking it again is a matter of returning to 2026.
+    fireEvent.click(screen.getByRole('radio', { name: '2025' }));
+    expect(ids()).not.toContain('fpl400');
+    expect(within(section()).getAllByRole('radio')[0]).toBeChecked();
+    fireEvent.click(screen.getByRole('radio', { name: '2026' }));
+    expect(
+      screen.getByRole('radio', { name: /^400% of the federal poverty line/ }),
+    ).toBeChecked();
   });
 
   it('re-sizes the conversion when a different line is picked', () => {

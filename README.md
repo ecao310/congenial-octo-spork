@@ -22,17 +22,18 @@ the reader along it, then collapsed explainers, then a box to the next step.
    the tax year, who files it, who on it has reached 65, and how much Social
    Security it collects.
 2. **The tax torpedo** — marginal rate against every dollar that is not Social
-   Security, with the IRMAA cliffs and the senior-deduction phaseout drawn on
-   the same axis, and a footnote for the states that still tax the benefit —
-   nine in 2025, eight in 2026 once West Virginia's phaseout finishes.
+   Security, with the IRMAA cliffs, the 400% poverty-line cliff and the
+   senior-deduction phaseout drawn on the same axis, and a footnote for the
+   states that still tax the benefit — nine in 2025, eight in 2026 once West
+   Virginia's phaseout finishes.
 3. **Capital gains stacking** — how much of the income already entered is a
    long-term gain. Gains are a *share* of that figure, not an addition to it,
    so moving the slider re-prices the same return rather than inventing a
    richer one.
 4. **Sizing the conversion** — pick a ceiling (a bracket edge, an inclusion
-   threshold, the top of the 0% gain band, an IRMAA tier) and read off the
-   largest conversion that fits under it, what it costs, and the average cost
-   per dollar converted.
+   threshold, the top of the 0% gain band, an IRMAA tier, 400% of the poverty
+   line) and read off the largest conversion that fits under it, what it costs,
+   and the average cost per dollar converted.
 
 The page closes on the eight figures the whole walk was for: total income,
 federal tax, the 3.8% net investment income surtax inside it, effective rate,
@@ -47,8 +48,22 @@ deduction plus the 65+ additional amount plus the OBBBA senior deduction and
 its 6% phaseout, ordinary brackets for all four filing statuses, capital gains
 stacked on top of ordinary taxable income, QCDs excluded under IRC 408(d)(8),
 tax-exempt interest that moves provisional income without moving the tax base,
-the 3.8% net investment income tax of IRC 1411, and the IRMAA tiers on their
-two-year MAGI lag.
+the 3.8% net investment income tax of IRC 1411, the IRMAA tiers on their
+two-year MAGI lag, and the premium tax credit's 400% cliff under IRC 36B.
+
+That last one is a credit the government stops paying rather than a tax it
+charges, and it has a MAGI of its own: 36B(d)(2)(B) counts AGI plus tax-exempt
+interest plus *the untaxed part of the benefit*, which undoes the torpedo and
+puts the whole benefit in household income at every income level. So it rises a
+flat dollar per dollar of other income where Medicare's rises by up to $1.85,
+and the two cliffs on step 2's chart travel at different speeds. It also has a
+year in it: ARPA section 9661, extended through 2025 by the Inflation Reduction
+Act, replaced the applicable-percentage table with one that ran past 400% and
+capped a household's own share at 8.5% of income, so there is no cliff to draw
+on a 2025 return and there is one on a 2026 return. What crossing it costs is
+the benchmark silver premium for the household's age and county, which this app
+has no way to know — so the line is drawn where it falls and the loss is left
+blank.
 
 Section 1411 is charged on the *lesser* of net investment income and MAGI over
 the threshold, which is why it belongs on a page about stacking: a pension or

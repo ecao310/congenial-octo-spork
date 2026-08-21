@@ -22,29 +22,54 @@ vi.mock('recharts', async () => {
 
 import App from './App';
 
+/**
+ * The app opens on `defaultTaxYear()`, which follows the wall calendar. Every
+ * dollar figure in the comments below is a 2026 one, and one assertion here
+ * turns on the year outright — the 400% poverty-line cliff exists in 2026 and
+ * did not exist in 2025 — so the clock is pinned rather than left to drift
+ * onto whatever Rev. Proc. the calendar reaches next.
+ */
+const PINNED_YEAR = 2026;
+
+beforeEach(() => {
+  // Date only: React Testing Library needs the real setTimeout.
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date(`${PINNED_YEAR}-07-01T00:00:00Z`));
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 /** The x-coordinates of a selection of reference lines, left to right. */
 const positionsOf = (root: ParentNode, selector: string): number[] =>
   Array.from(root.querySelectorAll(`${selector} .recharts-reference-line-line`))
     .map((line) => Number(line.getAttribute('x1')));
 
 /**
- * The x-coordinates of the IRMAA cliff lines on the first chart.
+ * The x-coordinates of one kind of reference line on the first chart.
  *
- * Scoped to that chart rather than the whole page: it is the only one drawing
- * cliffs today, but the tabs that did so too are coming back, and an unscoped
- * query would then pick up more than one chart's worth — step 4's ceiling line
- * included. Scoped away from the "you are here" marker too, which is a
- * reference line on all three charts and would otherwise be counted as a
- * fourth cliff.
+ * Scoped to that chart rather than the whole page: the tabs that drew cliffs
+ * of their own are coming back, and an unscoped query would then pick up more
+ * than one chart's worth — step 4's ceiling line included. Scoped by class
+ * rather than by "everything that is not the marker", because step 2 now draws
+ * two kinds of cliff in two colours: five IRMAA thresholds and the one 400%
+ * poverty-line cliff, which move along different MAGIs and so never move
+ * together.
  */
-const cliffPositions = (container: HTMLElement): number[] => {
+const linesOn = (container: HTMLElement, className: string): number[] => {
   const ordinaryIncomeChart = container.querySelector('.recharts-wrapper');
   if (!ordinaryIncomeChart) throw new Error('no chart rendered');
-  return positionsOf(
-    ordinaryIncomeChart,
-    '.recharts-reference-line:not(.here-line)',
-  );
+  return positionsOf(ordinaryIncomeChart, `.recharts-reference-line.${className}`);
 };
+
+/** The IRMAA cliff lines, left to right. */
+const cliffPositions = (container: HTMLElement): number[] =>
+  linesOn(container, 'irmaa-cliff');
+
+/** The 400% poverty-line cliff, when this return meets one on this axis. */
+const subsidyPositions = (container: HTMLElement): number[] =>
+  linesOn(container, 'subsidy-cliff');
 
 /** Where the reader's own marker stands on each chart, in page order:
     torpedo, gains, conversion. */
@@ -54,7 +79,7 @@ const herePositions = (container: HTMLElement): number[] =>
 describe('IRMAA cliffs on the ordinary-income chart', () => {
   it('draws one labelled reference line per cliff inside the x-axis', () => {
     const { container } = render(<App />);
-    // Cliffs 4 and 5 need $200,000 and $500,000 of MAGI, past the chart.
+    // Cliffs 4 and 5 need $205,000 and $500,000 of MAGI, past the chart.
     expect(screen.getAllByText(/^IRMAA [123]$/)).toHaveLength(3);
     expect(screen.queryByText('IRMAA 4')).not.toBeInTheDocument();
 
@@ -88,17 +113,17 @@ describe('IRMAA cliffs on the ordinary-income chart', () => {
       screen.getByRole('radio', { name: 'Married Filing Separately' }),
     );
     // Tiers 1 through 3 do not exist for a separate return, and tier 5 needs
-    // $394,000 of MAGI, so exactly one line survives — the fourth.
+    // $391,000 of MAGI, so exactly one line survives — the fourth.
     expect(screen.getByText('IRMAA 4')).toBeInTheDocument();
     expect(screen.queryByText(/^IRMAA [1235]$/)).not.toBeInTheDocument();
     const positions = cliffPositions(container);
     expect(positions).toHaveLength(1);
 
-    // It sits at $85,845 of other income: $106,000 of MAGI less the $20,155.20
+    // It sits at $87,876 of other income: $109,000 of MAGI less the $21,124.20
     // of benefits already in AGI. A single filer's *first* cliff shares that
-    // $106,000 threshold and — both being far past the 85% cap by then — lands
+    // $109,000 threshold and — both being far past the 85% cap by then — lands
     // in exactly the same place. What differs is the price of crossing it:
-    // $1,052.40 a year for the single filer, $5,826 for the separate one.
+    // $1,148.40 a year for the single filer, $6,355.20 for the separate one.
     fireEvent.click(screen.getByRole('radio', { name: 'Single' }));
     expect(cliffPositions(container)[0]).toBeCloseTo(positions[0], 6);
     expect(screen.getByText('IRMAA 1')).toBeInTheDocument();
@@ -133,9 +158,10 @@ describe('IRMAA cliffs on the ordinary-income chart', () => {
 
     fireEvent.click(screen.getByRole('checkbox', { name: 'Age 65 or older' }));
     // Claiming the senior deduction stretches the axis to $250,000 to fit a
-    // phaseout that ends at $228,876 of other income, and the first cliff is
-    // inside it. The second, at $252,876, misses by $2,876 — the axis is sized
-    // by what the curve does, and cliffs ride along or they do not.
+    // phaseout that ends at $228,876 of other income, and the first cliff, at
+    // $196,876, is inside it. The second, at $252,876, misses by $2,876 — the
+    // axis is sized by what the curve does, and cliffs ride along or they do
+    // not.
     expect(cliffPositions(container)).toHaveLength(1);
     expect(screen.getByText('IRMAA 1')).toBeInTheDocument();
     expect(screen.queryByText('IRMAA 2')).not.toBeInTheDocument();
@@ -144,9 +170,84 @@ describe('IRMAA cliffs on the ordinary-income chart', () => {
   it('drops the lines entirely when no cliff fits on the axis', () => {
     const { container } = render(<App />);
     fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Jointly' }));
-    // The joint tier-1 threshold is $212,000 of MAGI — off the right edge.
+    // The joint tier-1 threshold is $218,000 of MAGI — off the right edge.
     expect(cliffPositions(container)).toHaveLength(0);
     expect(screen.queryByText(/^IRMAA \d$/)).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * The second cliff on the same chart, and the only reference line here whose
+ * existence turns on the tax year rather than on the axis: 400% of the federal
+ * poverty line was not a ceiling at all from 2021 through 2025.
+ *
+ * It travels along a MAGI of its own — 36B counts the whole benefit, where
+ * Medicare counts only the share the torpedo dragged in — so it is drawn in
+ * its own colour and asserted on through its own selector. The dollar
+ * arithmetic behind the placement is in tax.test.ts; what is checked here is
+ * that the line is on the chart, and for whom.
+ */
+describe('the 400% poverty-line cliff on the ordinary-income chart', () => {
+  it('draws one line, left of every IRMAA cliff', () => {
+    const { container } = render(<App />);
+    // $62,600 of household income, less the $24,852 benefit that is already
+    // all of it — so $37,748 of other income, against IRMAA 1 at $87,876.
+    const subsidy = subsidyPositions(container);
+    expect(subsidy).toHaveLength(1);
+    expect(screen.getByText('400% FPL')).toBeInTheDocument();
+    expect(subsidy[0]).toBeGreaterThan(0);
+    expect(subsidy[0]).toBeLessThan(cliffPositions(container)[0]);
+  });
+
+  it('moves left further than the IRMAA lines do as the benefit grows', () => {
+    const { container } = render(<App />);
+    const before = { subsidy: subsidyPositions(container)[0], irmaa: cliffPositions(container)[0] };
+    fireEvent.change(screen.getByRole('slider', { name: /social security benefit/i }), {
+      target: { value: '34852' },
+    });
+    const after = { subsidy: subsidyPositions(container)[0], irmaa: cliffPositions(container)[0] };
+    // The axis is unchanged at $150,000 either side, so pixels are dollars on
+    // a fixed scale: 36B takes the whole $10,000, and 86(a) can put at most
+    // 85% of it in the tax base Medicare measures.
+    expect(after.subsidy).toBeLessThan(before.subsidy);
+    expect(before.subsidy - after.subsidy).toBeCloseTo(
+      (before.irmaa - after.irmaa) / 0.85,
+      4,
+    );
+  });
+
+  it('drops the line once everyone on the return is on Medicare', () => {
+    const { container } = render(<App />);
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Age 65 or older' }));
+    // 36B(c)(2)(B): nobody eligible for Medicare is eligible for the credit.
+    expect(subsidyPositions(container)).toHaveLength(0);
+    expect(screen.queryByText('400% FPL')).not.toBeInTheDocument();
+    // The red ones are still there — this is the reader they are about.
+    expect(cliffPositions(container).length).toBeGreaterThan(0);
+  });
+
+  it('keeps it for a joint return with one spouse still under 65', () => {
+    const { container } = render(<App />);
+    fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Jointly' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Age 65 or older' }));
+    // One spouse over, one under: the return stands in front of both cliffs at
+    // once, which is the case the per-person rule exists for.
+    expect(subsidyPositions(container)).toHaveLength(1);
+    expect(cliffPositions(container)).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Both spouses are 65 or older' }));
+    expect(subsidyPositions(container)).toHaveLength(0);
+  });
+
+  it('drops the line on a 2025 return, where the law had no cliff', () => {
+    const { container } = render(<App />);
+    expect(subsidyPositions(container)).toHaveLength(1);
+    fireEvent.click(screen.getByRole('radio', { name: '2025' }));
+    // ARPA 9661, extended through 2025 by the IRA, capped the household's own
+    // share at 8.5% of income at every income level — so there was no line.
+    expect(subsidyPositions(container)).toHaveLength(0);
+    fireEvent.click(screen.getByRole('radio', { name: '2026' }));
+    expect(subsidyPositions(container)).toHaveLength(1);
   });
 });
 

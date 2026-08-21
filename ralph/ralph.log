@@ -5016,3 +5016,91 @@ tree along with the layout, and a region that is not in the tree is never read.
 One new bullet in PLAN.md: the state selector's silence, and whether a reading
 that *summarises* rather than repeats belongs in a region whose premise so far
 is that it says what the page says.
+
+## 2026-08-21 — Task: Land the 400% FPL cliff, which was written and never committed
+
+### What this iteration found
+
+`git status` opened dirty: eight files modified, ~1,300 lines added, and
+`ralph/PLAN.md` carrying a new hand-written "Backlog 5" list whose first bullet,
+`add 400% FPL similar to IRMAA`, was already flipped to `[x]`. HEAD was
+`2411bae` ("Say the readout out loud"), in sync with `origin/dev`, and its log
+entry was the last one in this file. So a previous iteration did the whole FPL
+task, marked it done, and exited — or was cut off — before committing, pushing,
+or writing anything here.
+
+That made landing it this iteration's task. An uncommitted tree is the one state
+this loop cannot survive: the next run would have read a `[x]` bullet, seen no
+commit, and had no way to tell finished work from abandoned work.
+
+### What the orphaned change is
+
+The 400% poverty-line cliff of IRC 36B, drawn on step 2's chart beside the IRMAA
+cliffs it rhymes with. Read out of the diff rather than written here:
+
+- **`src/utils/tax.ts` (+377).** `FPL_YEAR_PARAMS`, its own table for the same
+  reason `IRMAA_YEAR_PARAMS` is — the guidelines come from a January HHS notice
+  and the percentages from a summer Rev. Proc., neither of which is the autumn
+  one that sets the brackets. `acaMagi` is the page's fourth MAGI and the widest:
+  36B(d)(2)(B) adds the *untaxed* part of the benefit back, which undoes the
+  torpedo, so this line rises a flat dollar per dollar of other income where
+  Medicare's rises by up to $1.85. `otherIncomeAtAcaMagi` is the third solver
+  alongside `otherIncomeAtAgi` and `otherIncomeAtIrmaaMagi`, still solved rather
+  than rearranged even though its function is a straight line — the charitable
+  exclusion puts a flat stretch at the left end, and three solvers that agree in
+  form are easier to trust than two that agree and one that is clever.
+  `ptcCliff` / `ptcFor` / `povertyLine` / `fplMultipleOf` answer the arithmetic;
+  `Scenario.householdSize` is plumbed through `resolveScenario` with
+  `defaultHouseholdSize`. A seventh `ConversionMeasure`, `'acaMagi'`, gives step
+  4 a ceiling at the line.
+- **`src/App.tsx` (+274).** `preMedicare` — 36B(c)(2)(B) makes anyone eligible
+  for Medicare ineligible for the credit, so the line is drawn only for a return
+  where someone has not turned 65. A fuchsia `ReferenceLine` labelled `400% FPL`,
+  its own key entry beside the rose IRMAA one, and an explainer that states the
+  reader's own multiple of the line.
+- **`src/index.css` (+22).** `.chart-key-subsidy` on screen and again inside the
+  `@media print` block, written *after* the rose rule because they share
+  specificity.
+- **README.md (+31).** Both the step list and the "what it models" paragraph.
+
+Three honest omissions are written into the source rather than left silent: the
+Alaska and Hawaii guidelines (one table, not three — the contiguous figure puts
+the line to the *left* of theirs, which is the conservative direction), the
+household size the page never asks for, and what crossing the line actually
+costs, which is the benchmark silver premium for an age and a county this app
+cannot know. Each already has its own bullet under Discovered Work.
+
+The 2025 row carries `cliff: false`. ARPA section 9661, extended through 2025 by
+IRA section 12001, capped a household's share at 8.5% of income with no upper
+bound — so there is no cliff to draw on a 2025 return and there is one on a 2026
+return, which is why the year is a flag rather than an assumption.
+
+### Verified before committing
+
+Nothing here was taken on the strength of the `[x]`:
+
+- `npx tsc -b` — clean.
+- `npx eslint src --max-warnings 0` — clean.
+- `npx vitest run` — 10 files, 665 tests, all passing. That is +31 over the 634
+  recorded in the previous entry, spread across `tax.test.ts` (+335 lines),
+  `App.test.tsx` (+155) and `App.chart.test.tsx` (+143).
+- `npm run build` — succeeds; 618.35 kB / 185.19 kB gzipped, still over Vite's
+  500 kB warning, which is the standing Backlog 4 bullet and not this change.
+
+The axis needed no change and got none: 400% of the 2025 guidelines is $62,600
+for one person and $84,600 for two, both comfortably inside `MIN_INCOME_AXIS`
+($150,000). `subsidyCliffOnChart` still gates on `otherIncome <= axisMax`, so a
+household large enough to push the line off the right edge drops the line rather
+than drawing it in the margin.
+
+### Also
+
+`ralph/last.txt` — a 0-byte file the loop harness drops next to `loop.log` —
+joined it in `.gitignore`, so a future iteration's `git status` is not ambiguous
+about whether the tree is dirty.
+
+### For the next iteration
+
+Backlog 5 is the user's own list and its remaining six bullets are the queue.
+The topmost is "update visuals and structure. i like the look of ficalc", which
+its own wording says to break into steps first.

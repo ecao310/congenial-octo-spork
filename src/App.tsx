@@ -72,6 +72,7 @@ import {
   taxesBenefitsIn,
 } from './utils/stateTax';
 import { formatCurrency } from './utils/format';
+import { PALETTE } from './palette';
 import type {
   TaxYear,
   LTCGMarginalRatePoint,
@@ -370,10 +371,10 @@ function CurveCaption<T>({ id, segments, lead }: CurveCaptionProps<T>) {
 }
 
 const TOOLTIP_STYLE: React.CSSProperties = {
-  background: 'rgba(15, 23, 42, 0.95)',
-  border: '1px solid rgba(56, 189, 248, 0.3)',
+  background: PALETTE.surfaceRaised,
+  border: `1px solid ${PALETTE.edge}`,
   borderRadius: '8px',
-  color: '#f8fafc',
+  color: PALETTE.inkBright,
   padding: '0.75rem',
 };
 
@@ -448,49 +449,49 @@ export const CustomTooltip: React.FC<CustomTooltipProps> = ({
         Other income {formatCurrency(point.income)} · Total income {formatCurrency(totalIncome)}
       </div>
       {split.ltcg > 0 && (
-        <div style={{ fontSize: '0.8125rem', color: '#34d399' }}>
+        <div style={{ fontSize: '0.8125rem', color: PALETTE.emerald }}>
           Of which {formatCurrency(split.ltcg)} is a long-term gain —{' '}
           {formatCurrency(split.ordinaryIncome)} is ordinary
         </div>
       )}
       {given > 0 && (
-        <div style={{ fontSize: '0.8125rem', color: '#a3e635' }}>
+        <div style={{ fontSize: '0.8125rem', color: PALETTE.lime }}>
           Less {formatCurrency(given)} given straight to charity —{' '}
           {formatCurrency(point.income - given)} of it reaches the return
         </div>
       )}
       <div>
-        Marginal Rate: <strong style={{ color: '#38bdf8' }}>{point.marginalRate}%</strong>
+        Marginal Rate: <strong style={{ color: PALETTE.accent }}>{point.marginalRate}%</strong>
       </div>
       <div>
-        Total Federal Tax: <strong style={{ color: '#ea580c' }}>{formatCurrency(point.totalTax)}</strong>
+        Total Federal Tax: <strong style={{ color: PALETTE.orange }}>{formatCurrency(point.totalTax)}</strong>
       </div>
       {niit.tax > 0 && (
-        <div style={{ fontSize: '0.8125rem', color: '#c084fc' }}>
+        <div style={{ fontSize: '0.8125rem', color: PALETTE.violet }}>
           Including {formatCurrency(niit.tax)} of net investment income tax —
           3.8% of {formatCurrency(niit.base)}
         </div>
       )}
       <div>
         Medicare IRMAA:{' '}
-        <strong style={{ color: '#fb7185' }}>
+        <strong style={{ color: PALETTE.roseBright }}>
           {formatCurrency(irmaa.annualSurcharge)}/yr
         </strong>
         {irmaa.tier > 0 ? ` (tier ${irmaa.tier} of 5)` : ''}
       </div>
       {irmaa.headroom !== null && (
-        <div style={{ fontSize: '0.8125rem', color: '#94a3b8' }}>
+        <div style={{ fontSize: '0.8125rem', color: PALETTE.inkMuted }}>
           {formatCurrency(irmaa.headroom)} of MAGI to the next cliff, then{' '}
           {formatCurrency(irmaa.nextStep)}/yr more
         </div>
       )}
       {segment && segment.type === 'hill' && (
-        <div style={{ marginTop: '0.5rem', borderTop: '1px solid rgba(255, 255, 255, 0.1)', paddingTop: '0.5rem', fontSize: '0.875rem', color: '#94a3b8' }}>
+        <div style={{ marginTop: '0.5rem', borderTop: `1px solid ${PALETTE.edge}`, paddingTop: '0.5rem', fontSize: '0.875rem', color: PALETTE.inkMuted }}>
           Consider avoiding this tax hill by staying under {formatCurrency(segment.start)} or over {formatCurrency(segment.end)}
         </div>
       )}
       {segment && segment.type === 'valley' && (
-        <div style={{ marginTop: '0.5rem', borderTop: '1px solid rgba(255, 255, 255, 0.1)', paddingTop: '0.5rem', fontSize: '0.875rem', color: '#94a3b8' }}>
+        <div style={{ marginTop: '0.5rem', borderTop: `1px solid ${PALETTE.edge}`, paddingTop: '0.5rem', fontSize: '0.875rem', color: PALETTE.inkMuted }}>
           Consider filling out this tax valley at {formatCurrency(point.income)}
         </div>
       )}
@@ -561,24 +562,24 @@ export const LTCGTooltip: React.FC<LTCGTooltipProps> = ({
         {formatCurrency(point.ltcg)} of {formatCurrency(ordinaryIncome)} is gain · Total income {formatCurrency(totalIncome)}
       </div>
       <div>
-        Marginal Rate: <strong style={{ color: '#f59e0b' }}>{point.marginalRate}%</strong>
+        Marginal Rate: <strong style={{ color: PALETTE.amber }}>{point.marginalRate}%</strong>
       </div>
       <div>
-        Total Federal Tax: <strong style={{ color: '#ea580c' }}>{formatCurrency(point.totalTax)}</strong>
+        Total Federal Tax: <strong style={{ color: PALETTE.orange }}>{formatCurrency(point.totalTax)}</strong>
       </div>
       {niit.tax > 0 && (
-        <div style={{ fontSize: '0.8125rem', color: '#c084fc' }}>
+        <div style={{ fontSize: '0.8125rem', color: PALETTE.violet }}>
           Including {formatCurrency(niit.tax)} of net investment income tax —
           3.8% of {formatCurrency(niit.base)}
         </div>
       )}
       {segment && segment.type === 'hill' && (
-        <div style={{ marginTop: '0.5rem', borderTop: '1px solid rgba(255, 255, 255, 0.1)', paddingTop: '0.5rem', fontSize: '0.875rem', color: '#94a3b8' }}>
+        <div style={{ marginTop: '0.5rem', borderTop: `1px solid ${PALETTE.edge}`, paddingTop: '0.5rem', fontSize: '0.875rem', color: PALETTE.inkMuted }}>
           Consider avoiding this tax hill by staying under {formatCurrency(segment.start)} or over {formatCurrency(segment.end)}
         </div>
       )}
       {segment && segment.type === 'valley' && (
-        <div style={{ marginTop: '0.5rem', borderTop: '1px solid rgba(255, 255, 255, 0.1)', paddingTop: '0.5rem', fontSize: '0.875rem', color: '#94a3b8' }}>
+        <div style={{ marginTop: '0.5rem', borderTop: `1px solid ${PALETTE.edge}`, paddingTop: '0.5rem', fontSize: '0.875rem', color: PALETTE.inkMuted }}>
           Consider filling out this tax valley at {formatCurrency(point.ltcg)}
         </div>
       )}
@@ -2256,20 +2257,20 @@ const App: React.FC = () => {
               >
                 <defs>
                   <linearGradient id="rateGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#38bdf8" stopOpacity={0.5} />
-                    <stop offset="95%" stopColor="#38bdf8" stopOpacity={0} />
+                    <stop offset="5%" stopColor={PALETTE.accent} stopOpacity={0.5} />
+                    <stop offset="95%" stopColor={PALETTE.accent} stopOpacity={0} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255, 255, 255, 0.1)" />
+                <CartesianGrid strokeDasharray="3 3" stroke={PALETTE.edge} />
                 <XAxis
                   dataKey="income"
                   type="number"
                   domain={[0, axisMax]}
                   tickFormatter={formatCompact}
-                  stroke="#94a3b8"
+                  stroke={PALETTE.inkMuted}
                 />
                 <YAxis
-                  stroke="#94a3b8"
+                  stroke={PALETTE.inkMuted}
                   tickFormatter={(value) => `${value}%`}
                   width={70}
                   domain={[0, 'auto']}
@@ -2293,12 +2294,12 @@ const App: React.FC = () => {
                     className="irmaa-cliff"
                     key={cliff.tier}
                     x={cliff.otherIncome}
-                    stroke="#f43f5e"
+                    stroke={PALETTE.rose}
                     strokeDasharray="4 4"
                     label={{
                       value: `IRMAA ${cliff.tier}`,
                       position: 'top',
-                      fill: '#fb7185',
+                      fill: PALETTE.roseBright,
                       fontSize: 11,
                     }}
                   />
@@ -2314,21 +2315,21 @@ const App: React.FC = () => {
                   <ReferenceLine
                     className="subsidy-cliff"
                     x={subsidyCliffOnChart.otherIncome}
-                    stroke="#e879f9"
+                    stroke={PALETTE.fuchsia}
                     strokeDasharray="4 4"
                     label={{
                       value: `${PTC_CLIFF_PERCENT * 100}% FPL`,
                       position: 'top',
-                      fill: '#f0abfc',
+                      fill: PALETTE.fuchsiaBright,
                       fontSize: 11,
                     }}
                   />
                 )}
-                {hereLine(ordinaryIncome, axisMax, '#f59e0b')}
+                {hereLine(ordinaryIncome, axisMax, PALETTE.amber)}
                 <Area
                   type="stepAfter"
                   dataKey="marginalRate"
-                  stroke="#38bdf8"
+                  stroke={PALETTE.accent}
                   strokeWidth={2}
                   fill="url(#rateGradient)"
                 />
@@ -2945,20 +2946,20 @@ const App: React.FC = () => {
                 >
                   <defs>
                     <linearGradient id="ltcgGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.5} />
-                      <stop offset="95%" stopColor="#f59e0b" stopOpacity={0} />
+                      <stop offset="5%" stopColor={PALETTE.amber} stopOpacity={0.5} />
+                      <stop offset="95%" stopColor={PALETTE.amber} stopOpacity={0} />
                     </linearGradient>
                   </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255, 255, 255, 0.1)" />
+                  <CartesianGrid strokeDasharray="3 3" stroke={PALETTE.edge} />
                   <XAxis
                     dataKey="ltcg"
                     type="number"
                     domain={[0, gainsAxisMax]}
                     tickFormatter={formatCompact}
-                    stroke="#94a3b8"
+                    stroke={PALETTE.inkMuted}
                   />
                   <YAxis
-                    stroke="#94a3b8"
+                    stroke={PALETTE.inkMuted}
                     tickFormatter={(value) => `${value}%`}
                     width={70}
                     domain={[0, 'auto']}
@@ -2976,11 +2977,11 @@ const App: React.FC = () => {
                       />
                     }
                   />
-                  {hereLine(plannedLtcg, gainsAxisMax, '#34d399')}
+                  {hereLine(plannedLtcg, gainsAxisMax, PALETTE.emerald)}
                   <Area
                     type="stepAfter"
                     dataKey="marginalRate"
-                    stroke="#f59e0b"
+                    stroke={PALETTE.amber}
                     strokeWidth={2}
                     fill="url(#ltcgGradient)"
                   />
@@ -3217,20 +3218,20 @@ const App: React.FC = () => {
               >
                 <defs>
                   <linearGradient id="conversionGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#38bdf8" stopOpacity={0.5} />
-                    <stop offset="95%" stopColor="#38bdf8" stopOpacity={0} />
+                    <stop offset="5%" stopColor={PALETTE.accent} stopOpacity={0.5} />
+                    <stop offset="95%" stopColor={PALETTE.accent} stopOpacity={0} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255, 255, 255, 0.1)" />
+                <CartesianGrid strokeDasharray="3 3" stroke={PALETTE.edge} />
                 <XAxis
                   dataKey="income"
                   type="number"
                   domain={[0, conversionAxisMax]}
                   tickFormatter={formatCompact}
-                  stroke="#94a3b8"
+                  stroke={PALETTE.inkMuted}
                 />
                 <YAxis
-                  stroke="#94a3b8"
+                  stroke={PALETTE.inkMuted}
                   tickFormatter={(value) => `${value}%`}
                   width={70}
                   domain={[0, 'auto']}
@@ -3254,7 +3255,7 @@ const App: React.FC = () => {
                     className="conversion-band"
                     x1={ordinaryIncome}
                     x2={conversionTarget}
-                    fill="#818cf8"
+                    fill={PALETTE.indigo}
                     fillOpacity={0.2}
                     stroke="none"
                   />
@@ -3263,7 +3264,7 @@ const App: React.FC = () => {
                   <ReferenceLine
                     className="ceiling-line"
                     x={conversionTarget}
-                    stroke="#818cf8"
+                    stroke={PALETTE.indigo}
                     strokeDasharray="4 4"
                     strokeWidth={2}
                     /* The amount goes on the line rather than inside the
@@ -3275,17 +3276,17 @@ const App: React.FC = () => {
                     label={{
                       value: `${formatCurrency(sizing.conversion)} converted`,
                       position: 'top',
-                      fill: '#a5b4fc',
+                      fill: PALETTE.indigoBright,
                       fontSize: 11,
                       fontWeight: 600,
                     }}
                   />
                 )}
-                {hereLine(ordinaryIncome, conversionAxisMax, '#f59e0b')}
+                {hereLine(ordinaryIncome, conversionAxisMax, PALETTE.amber)}
                 <Area
                   type="stepAfter"
                   dataKey="marginalRate"
-                  stroke="#38bdf8"
+                  stroke={PALETTE.accent}
                   strokeWidth={2}
                   fill="url(#conversionGradient)"
                 />

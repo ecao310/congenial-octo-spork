@@ -5104,3 +5104,109 @@ about whether the tree is dirty.
 Backlog 5 is the user's own list and its remaining six bullets are the queue.
 The topmost is "update visuals and structure. i like the look of ficalc", which
 its own wording says to break into steps first.
+
+## 2026-08-21 — Task: Ground the palette and the shape (visual overhaul, step 1 of 6)
+
+### Breaking the bullet up first
+
+`update visuals and structure. i like the look of ficalc` says in its own
+wording to break itself into steps, so that came first and is now six
+sub-bullets indented under it in PLAN.md. The parent stays `[ ]` until they
+are all struck; a future iteration reading "topmost first" should land on the
+parent, see the sub-list, and take the topmost unchecked child.
+
+### What FI Calc actually looks like
+
+Worth writing down because I guessed wrong before checking. I assumed a light
+theme. It is not: `curl`ing `ficalc.app/assets/index-FkTiL_43.css` gives
+
+    --fi-bg-color: #1a1a1b   --fi-font-color: #9799ae
+    --border-color: #343940  --accentColor: #0270e8  --primaryBlue: #409dff
+    --maxAppWidth: 44rem     --configuration-width: 18rem
+    --chartFontSize: 13px    --chartLineWidth: 3px
+
+and the shape falls out of the same file: `border-radius` is 4/6/8px and never
+more; the only `box-shadow`s in 61KB are three focus rings and one modal; the
+font stack is `system-ui`, no webfont; body copy is `.9375rem` and the type
+scale tops out at 1.4rem.
+
+So the difference from this page is not dark-vs-light. It is flat-vs-glass.
+This page was slate-900 under a radial gradient with a frosted card floating on
+it — `backdrop-filter: blur(12px)`, a 1.5rem radius, a 32px drop shadow — and
+sky-400 accenting. FI Calc is near-black, hairline-bordered, small-cornered,
+and accents in one blue.
+
+### What this step did
+
+**One token layer, and a test that keeps it the only one.** 51 distinct colour
+literals were spread across 1,300 lines of `index.css` and 19 more across
+`App.tsx`. They are now 36 custom properties in `:root` plus `src/palette.ts`,
+which is the same palette in the one form an SVG attribute can read.
+
+Two invariants in `styles.test.tsx` hold it there:
+
+- `the screen stylesheet` — no colour literal outside `:root`, in the screen
+  half of the sheet. Written as "an `rgb(`/`rgba(` whose first argument is a
+  number", so `rgba(var(--accent-rgb), 0.2)` passes and `rgba(56, 189, 248,
+  0.2)` does not. Keywords are left alone: `transparent` and `currentColor`
+  name a relationship, not a colour.
+- `the palette` — `palette.ts` and `:root` agree token for token. Two copies
+  drift silently, because a stale colour still renders.
+
+`palette.ts` holds literals rather than `var(--accent)` because jsdom does not
+resolve custom properties in SVG attributes: every chart test would then be
+asserting on the string `var(--accent)`, which cannot tell a right colour from
+a wrong one.
+
+**The print half is excluded from all of it, on purpose.** That block is a
+*light* palette — `#000` on `#fff`, the accents darkened for paper — so it is
+not a candidate for the dark tokens and re-pointing `--surface` to white would
+have dragged the whole ink ramp with it. Its header comment was stale about the
+radial gradient and now is not.
+
+**Contrast went up, not down.** Every ink tier was measured against the new
+`--surface` before it was chosen. Four of five land within 2 points of where
+they were on slate; the fifth, `--ink-dim`, was 3.75:1 against the old
+background — under AA for the footnotes, range labels and step kickers that use
+it — and is 4.72:1 now. The two App-only colours folded into existing tokens on
+the same grounds: `#ea580c` read 4.52:1 on the tooltip and `--orange` reads
+5.74:1, and `#c084fc` was `--violet` to within a rounding error.
+
+**The data colours did not move.** Amber is the marker, rose is a Medicare
+cliff, fuchsia is the subsidy cliff, indigo is the conversion band, and a
+reader matches a swatch in the key to a line in the SVG by hue alone. Renaming
+them is this step; recolouring them is not, and the charts step is where the
+SVG moves with them.
+
+**The card stopped being a card.** It was a pane of frosted glass on a
+gradient. The gradient is gone, so a bordered box drawn in the page's own
+colour is just a line. What is left is its padding, which is all it was ever
+doing for the reader.
+
+### Verified
+
+- `npx tsc -b`, `npx eslint src --max-warnings 0`, `npx vitest run`
+  (10 files, 667 tests — two new), `npm run build`, and read the tokens back
+  out of the minified `dist` CSS.
+- Both new invariants falsified once each to check they bite: pasting `#94a3b8`
+  back into `.field-note` fails `the screen stylesheet`; typoing `--accent` to
+  `#3f9dff` in `palette.ts` alone fails `the palette`.
+- Rendered rather than reasoned about: built, `vite preview`, and screenshotted
+  the hero and step 2's chart through Playwright's cached Chromium at 2x. Zero
+  page errors, and the chart reads correctly — flat plot, hairline grid, the
+  new blue curve, and the amber/rose/fuchsia markers unchanged against it.
+  (`playwright-core` was installed with `--no-save`; package.json and the
+  lockfile are untouched.)
+- The one existing test that asserts on colours — `['#f59e0b', '#34d399',
+  '#f59e0b']` in `App.chart.test.tsx` — still passes, which is the check that
+  the data hues really did stay put.
+
+### Left standing, and why
+
+The `h1` and step 3's heading still paint themselves with a `linear-gradient`
+and knock the glyphs out. Both gradients now run accent-to-indigo, which is two
+blues a step apart rather than the sky-to-indigo it was — visibly duller, and
+not worth a spot fix, because the next sub-step deletes both gradients outright
+along with the `@media print` rules that exist only to undo them.
+
+The 618KB chunk warning is unchanged and is still its own Backlog 4 bullet.

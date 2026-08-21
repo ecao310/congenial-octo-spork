@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { render } from '@testing-library/react';
 import App from './App';
+import { PALETTE } from './palette';
 
 /**
  * A CSS rule that can never match is silent. Nothing throws, nothing warns,
@@ -110,5 +111,93 @@ describe('the print stylesheet', () => {
     );
 
     expect(knockedOut.filter((selector) => !restored.has(selector))).toEqual([]);
+  });
+});
+
+/**
+ * The screen half of the stylesheet: everything ahead of `@media print`.
+ *
+ * The two halves paint from different palettes on purpose — the screen is
+ * near-black with a light ink ramp on it, paper is the other way round — so
+ * a claim about where colour comes from has to be made about one of them at
+ * a time. This is the screen's.
+ */
+const screenBlock = (css: string): string => {
+  const stripped = css.replace(/\/\*[\s\S]*?\*\//g, '');
+  const print = stripped.indexOf('@media print');
+  return print === -1 ? stripped : stripped.slice(0, print);
+};
+
+/**
+ * A colour written out where it is used rather than named in `:root`.
+ *
+ * `rgba(var(--accent-rgb), 0.2)` is not one of these and `rgba(56, 189, 248,
+ * 0.2)` is, which is why the test is for an `rgb(`/`rgba(` whose first
+ * argument is a *number*. Keywords are left alone deliberately:
+ * `transparent`, `currentColor` and `none` name a relationship rather than a
+ * colour, and there is nothing about them to centralise.
+ */
+const looseColours = (css: string): string[] =>
+  css.match(/#[0-9a-fA-F]{3,8}\b|rgba?\(\s*\d[^)]*\)/g) ?? [];
+
+/**
+ * The palette lives in `:root` and nowhere else.
+ *
+ * This is the invariant that makes a restyle a bounded job instead of an
+ * open-ended hunt. Before it, one blue was spelled `#38bdf8` in twenty places
+ * across 1,300 lines and in seven more inside `App.tsx`, so "change the
+ * accent" meant finding all twenty-seven — and the cost of missing one is
+ * silent, because a stale colour still renders.
+ *
+ * It bites in the direction that actually happens: nobody adds a token they
+ * do not use, but everybody pastes a hex into the rule they are already
+ * editing. That paste fails here.
+ */
+describe('the screen stylesheet', () => {
+  it('writes every colour it paints with in :root and nowhere else', () => {
+    const screen = screenBlock(stylesheet);
+
+    const declared = screen.match(/:root\s*\{[^}]*\}/g) ?? [];
+    // Guards the extractor: no `:root` found would make the rest vacuous.
+    expect(declared.length).toBeGreaterThan(0);
+    expect(looseColours(declared.join('\n')).length).toBeGreaterThan(20);
+
+    const used = declared.reduce((css, block) => css.replace(block, ''), screen);
+    expect(looseColours(used)).toEqual([]);
+  });
+});
+
+/**
+ * `palette.ts` and `:root` are the same palette written twice, once for CSS
+ * and once for SVG. Two copies drift — silently, because a stale colour still
+ * renders — so the only thing keeping them one palette is this.
+ *
+ * The direction that matters is a token changed in one file and not the
+ * other: the whole reason the tokens exist is that "change the accent" should
+ * be one edit, and it is only one edit if a second copy cannot survive it.
+ */
+describe('the palette', () => {
+  it('gives the charts the same colours the stylesheet declares', () => {
+    const root = (screenBlock(stylesheet).match(/:root\s*\{[^}]*\}/g) ?? []).join(
+      '\n',
+    );
+    const declared = Object.fromEntries(
+      Array.from(root.matchAll(/(--[\w-]+):\s*([^;]+);/g)).map(([, name, value]) => [
+        name,
+        value.trim(),
+      ]),
+    );
+    // Guards the extractor: an empty map would make every check below vacuous.
+    expect(Object.keys(declared).length).toBeGreaterThan(20);
+
+    /** `surfaceRaised` is `--surface-raised`, and every name pairs that way. */
+    const custom = (name: string) =>
+      `--${name.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}`;
+
+    const disagreed = Object.entries(PALETTE)
+      .map(([name, value]) => ({ name, value, css: declared[custom(name)] }))
+      .filter((token) => token.css !== token.value);
+
+    expect(disagreed).toEqual([]);
   });
 });

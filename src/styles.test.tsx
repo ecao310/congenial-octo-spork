@@ -47,3 +47,68 @@ describe('the stylesheet', () => {
     expect(dead).toEqual([]);
   });
 });
+
+/**
+ * Every rule with a body, and only the innermost ones.
+ *
+ * `[^{}]*` cannot span a nested `{`, so an `@media` prelude never completes a
+ * match and the scan walks past it to the rules inside — which is what makes
+ * this safe to run over a stylesheet that has an `@media print` block in it.
+ */
+const leafRules = (css: string): { selectors: string[]; body: string }[] =>
+  Array.from(
+    css.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{([^{}]*)\}/g),
+  ).map(([, prelude, body]) => ({
+    selectors: prelude
+      .split(',')
+      .map((selector) => selector.trim().replace(/\s+/g, ' '))
+      .filter(Boolean),
+    body,
+  }));
+
+/** The body of the `@media print` block, braces matched rather than counted. */
+const printBlock = (css: string): string => {
+  const stripped = css.replace(/\/\*[\s\S]*?\*\//g, '');
+  const open = stripped.indexOf('{', stripped.indexOf('@media print'));
+  if (open === -1) return '';
+  let depth = 0;
+  for (let i = open; i < stripped.length; i += 1) {
+    if (stripped[i] === '{') depth += 1;
+    else if (stripped[i] === '}' && (depth -= 1) === 0)
+      return stripped.slice(open + 1, i);
+  }
+  return '';
+};
+
+/**
+ * Two headings on this page paint their text with a `linear-gradient`
+ * background and knock the glyphs out with
+ * `-webkit-text-fill-color: transparent`: the page title and step 3's
+ * heading. On screen that is the effect. On paper, in a browser printing
+ * without background graphics, it is the knockout without the paint — both
+ * headings come out as blank space, the build stays green, and nothing
+ * anywhere reports it.
+ *
+ * The pairing is mechanical, so it is checked mechanically rather than
+ * remembered: anything that goes transparent has to be given its colour back
+ * inside `@media print`. A third gradient heading fails here until it is.
+ */
+describe('the print stylesheet', () => {
+  it('gives every gradient-painted heading its colour back', () => {
+    const knockedOut = leafRules(stylesheet)
+      .filter((rule) => /-webkit-text-fill-color:\s*transparent/.test(rule.body))
+      .flatMap((rule) => rule.selectors);
+    // Guards the extractor itself: finding none would pass vacuously.
+    expect(knockedOut.length).toBeGreaterThan(0);
+
+    const restored = new Set(
+      leafRules(printBlock(stylesheet))
+        .filter((rule) =>
+          /-webkit-text-fill-color:\s*(?!transparent)\S/.test(rule.body),
+        )
+        .flatMap((rule) => rule.selectors),
+    );
+
+    expect(knockedOut.filter((selector) => !restored.has(selector))).toEqual([]);
+  });
+});

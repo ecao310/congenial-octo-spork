@@ -1253,3 +1253,351 @@ footer p {
 .advanced-inputs > .input-group:last-child {
   margin-bottom: 1rem;
 }
+
+/* ───── Print ───────────────────────────────────────────────────────────────
+ *
+ * This page is built to be looked at on a screen and screenshotted. Cmd-P
+ * today gives white text on white paper: `:root` sets `color-scheme: dark`,
+ * `body` lays a slate radial gradient under it, and every colour below is
+ * picked to sit on that gradient. What follows takes it all back off.
+ *
+ * Two decisions, worth writing down because neither reads off the rules.
+ *
+ * *The whole walk prints, not only the close.* The close holds every figure a
+ * reader leaves with and restates the return that produced them, so it is the
+ * obvious candidate for a one-page handout — but on its own it is a table of
+ * numbers. The charts with the reader's own marker standing on them are what
+ * make those numbers mean anything to whoever is handed the page, and they
+ * are the one part of this page that no amount of prose reproduces. So the
+ * walk prints, and the close is forced onto a sheet of its own so that the
+ * handoff is still one clean page for a reader who only wants that.
+ *
+ * *An explainer prints exactly as the reader left it.* Print CSS cannot open
+ * a `<details>` in any browser, and the alternative — a `beforeprint` that
+ * opens them all and an `afterprint` that puts back the ones the reader had
+ * shut — buys roughly a doubling of the page count in reference prose that is
+ * word-for-word identical for every reader, in exchange for disclosure state
+ * this page would then have to remember and restore. So what is on screen is
+ * what prints. A closed explainer is hidden outright rather than printed as a
+ * bare heading, because a heading with nothing under it reads as a fault.
+ *
+ * `.advanced-inputs` is the exception and prints closed, because its summary
+ * carries what has been set — "Both at $0", or the two figures. That is the
+ * whole difference: an explainer's summary asks a question, this one answers
+ * one about the return being printed.
+ */
+@media print {
+  @page {
+    margin: 0.6in;
+  }
+
+  /* ── The ground ── */
+
+  :root {
+    color-scheme: light;
+    color: #000;
+    background: #fff;
+  }
+
+  body {
+    display: block;
+    min-height: 0;
+    background: #fff;
+  }
+
+  #root {
+    max-width: none;
+    padding: 0;
+  }
+
+  .card {
+    padding: 0;
+    border: none;
+    border-radius: 0;
+    background: none;
+    box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  /* The two headings painted with a gradient and knocked out with
+     `-webkit-text-fill-color: transparent` — the page title and step 3's.
+     A browser printing without background graphics prints the knockout and
+     not the paint, so both come out as blank space. `styles.test.tsx` pins
+     the pairing: a third gradient heading fails the suite until it is reset
+     here too. */
+  h1,
+  .section-heading-amber {
+    background: none;
+    -webkit-text-fill-color: currentColor;
+  }
+
+  h1 {
+    font-size: 2rem;
+    color: #0c4a6e;
+  }
+
+  .section-heading-amber {
+    color: #b45309;
+  }
+
+  /* ── Text ──
+     Two groups: what was set bright to carry against a dark ground, and what
+     was set slate to recede from it. On paper they become black and dark
+     grey, which is the same two-step relationship. */
+
+  .step-heading,
+  .answer-heading,
+  .explainer h2,
+  .advanced-label,
+  .next-step-title,
+  .answer-figure dd strong,
+  .slider-readout strong,
+  .scenario-recap strong,
+  .step-prose strong,
+  .explainer strong,
+  .answer-share-line strong,
+  .chart-caption strong,
+  .state-footnote strong,
+  .state-footnote em {
+    color: #000;
+  }
+
+  label,
+  .subtitle,
+  .step-kicker,
+  .step-intro,
+  .step-prose,
+  .scenario-recap,
+  .checkbox-option,
+  .field-note,
+  .slider-readout,
+  .slider-advice,
+  .slider-range-labels,
+  .chart-axis-label,
+  .chart-key,
+  .chart-caption,
+  .state-footnote,
+  .state-source,
+  .explainer p,
+  .explainer ul,
+  .answer-intro,
+  .answer-figure dt,
+  .answer-gloss,
+  .answer-share-line,
+  .answer-note,
+  .advanced-state,
+  .link-note,
+  .warning-note,
+  footer p {
+    color: #333;
+  }
+
+  /* The accents, darkened rather than dropped: each one ties a figure to a
+     line on a chart or to the box it sits in, so hue is the information. */
+  .answer-kicker,
+  .slider-value {
+    color: #0369a1;
+  }
+
+  .slider-value.amber,
+  .slider-advice strong,
+  .link-note strong {
+    color: #b45309;
+  }
+
+  .slider-value.emerald,
+  .advanced-state-set {
+    color: #047857;
+  }
+
+  .slider-value.violet {
+    color: #6d28d9;
+  }
+
+  .slider-value.lime {
+    color: #4d7c0f;
+  }
+
+  .chart-key strong,
+  .warning-note strong {
+    color: #be123c;
+  }
+
+  /* ── Boxes ──
+     Every tinted panel here is an rgba wash that a browser printing without
+     background graphics drops. The border is what carries them, so the wash
+     goes and the border stays — solid, since alpha over white is nearly
+     nothing. */
+
+  .link-note,
+  .warning-note,
+  .answer {
+    background: none;
+  }
+
+  .link-note {
+    border-color: #d97706;
+  }
+
+  .warning-note {
+    border-color: #e11d48;
+  }
+
+  .state-footnote,
+  .scenario-recap,
+  .slider-advice,
+  .answer-figure {
+    border-color: #94a3b8;
+  }
+
+  .answer {
+    border-color: #64748b;
+    padding: 0;
+  }
+
+  .segmented {
+    background: none;
+    border-color: #94a3b8;
+  }
+
+  .segmented-option span {
+    color: #64748b;
+  }
+
+  /* The radio itself is `opacity: 0` and the choice is shown with a fill, so
+     on paper the selection is unmarked. Border and weight instead — and the
+     border comes out of the padding rather than adding to it, so marking the
+     selection cannot be what wraps the last option onto a second row. */
+  .segmented-option input[type='radio']:checked + span {
+    background: none;
+    border: 1px solid #0369a1;
+    padding: calc(0.5rem - 1px) calc(1rem - 1px);
+    color: #0c4a6e;
+    font-weight: 700;
+  }
+
+  /* White on a dark ground, with a chevron drawn in two gradients that only
+     mean something next to a menu that opens. */
+  .state-select {
+    padding: 0.35rem 0.5rem;
+    border-color: #94a3b8;
+    background: none;
+    color: #000;
+  }
+
+  .step,
+  .explainer,
+  .answer-note,
+  footer {
+    border-top-color: #cbd5e1;
+  }
+
+  .advanced-inputs {
+    background: none;
+    border-color: #cbd5e1;
+  }
+
+  .advanced-inputs[open] > summary {
+    border-bottom-color: #cbd5e1;
+  }
+
+  /* ── What a sheet of paper cannot be ──
+     Controls that only do something when clicked, and the disclosure
+     chevrons that promise something will open. */
+
+  .step-nav,
+  .next-step,
+  .answer-share-button,
+  .link-note button,
+  input[type='range'],
+  .slider-range-labels {
+    display: none;
+  }
+
+  details.explainer summary::after,
+  .advanced-inputs > summary::after {
+    display: none;
+  }
+
+  details.explainer:not([open]) {
+    display: none;
+  }
+
+  details.explainer summary,
+  .advanced-inputs > summary {
+    cursor: default;
+  }
+
+  /* ── The charts ──
+     recharts sizes its wrapper and its `<svg>` in pixels off a screen
+     measurement it will not repeat for the printer, so a chart laid out for a
+     900px column overflows a 6.5in page. The `viewBox` recharts already puts
+     on the surface is what makes `width: 100%; height: auto` scale the whole
+     plot rather than crop it.
+
+     Rooted with `>` rather than as a plain descendant on purpose: recharts
+     renders nothing at all under jsdom, where `ResponsiveContainer` measures
+     its parent as zero, so a `.chart-container .recharts-wrapper` would be a
+     dead selector to the guard in `styles.test.tsx` — which is exactly the
+     child-arrangement case that guard documents itself as leaving out. */
+  .chart-container,
+  .chart-container > .recharts-responsive-container,
+  .chart-container > .recharts-responsive-container > .recharts-wrapper {
+    width: 100% !important;
+    max-width: 100% !important;
+    height: auto !important;
+  }
+
+  /* On the container only. The two recharts divs above are in the same rule
+     because they take the same sizing, but a margin on either of them is
+     space inside the plot rather than above it. */
+  .chart-container {
+    margin-top: 1rem;
+  }
+
+  .chart-container svg {
+    width: 100% !important;
+    height: auto !important;
+  }
+
+  /* The grid is white at 10% alpha — on paper it is nothing at all — and the
+     axis was picked to be quiet against slate, not against white. */
+  .chart-container svg .recharts-cartesian-grid line {
+    stroke: #d4d4d8;
+  }
+
+  .chart-container svg .recharts-cartesian-axis-line,
+  .chart-container svg .recharts-cartesian-axis-tick-line {
+    stroke: #64748b;
+  }
+
+  .chart-container svg .recharts-cartesian-axis-tick-value {
+    fill: #334155;
+  }
+
+  /* ── Pagination ──
+     A chart split across a fold is worth nothing, and neither is a heading
+     stranded at the foot of a page. The close gets a sheet to itself: it is
+     the page a reader hands to an advisor, and it already restates the return
+     it prices, so it stands alone. */
+
+  h1,
+  h2,
+  .step-kicker,
+  .answer-kicker {
+    break-after: avoid;
+  }
+
+  .chart-figure,
+  .answer-figure,
+  .slider-header,
+  footer {
+    break-inside: avoid;
+  }
+
+  .answer {
+    break-before: page;
+    margin-top: 0;
+  }
+}

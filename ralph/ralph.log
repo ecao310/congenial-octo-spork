@@ -4783,3 +4783,131 @@ Also: `.chart-container` is a fixed 400px holding a recharts SVG sized to the
 screen, and recharts will not re-measure for print. Scaling it needs the
 `viewBox` the SVG already carries plus `width: 100% !important; height: auto`
 on `.recharts-wrapper` and its `svg`.
+
+## 2026-08-21 — Task: Make the page printable (`@media print`)
+
+Backlog 4, topmost unchecked — the bullet the previous iteration displaced
+when it stopped to fix the link note's box. Its closing notes named four
+things to handle and all four are handled here.
+
+### The two decisions the bullet asked for
+
+**The whole walk prints, not only the close.** The close was the tempting
+answer: it restates the return and holds every figure a reader leaves with, so
+it is already shaped like a one-page handout. But on its own it is a table of
+numbers, and the charts with the reader's own marker standing on them are the
+one part of this page that no amount of prose reproduces — they are what makes
+those numbers mean something to whoever is handed the sheet. So the walk
+prints, and `.answer` gets `break-before: page` so the handoff is still one
+clean page for a reader who only wants that.
+
+**An explainer prints exactly as the reader left it.** No `beforeprint`. The
+listener pair the bullet describes buys roughly a doubling of the page count
+in reference prose that is word-for-word identical for every reader, in
+exchange for disclosure state the page would then have to remember and put
+back — and `afterprint` does not fire reliably when a print is cancelled, so
+the restore is not even guaranteed. What is on screen is what prints.
+
+A *closed* explainer is hidden outright (`details.explainer:not([open])`)
+rather than printed as its own heading: a heading with nothing under it reads
+as a fault on paper. `.advanced-inputs` is the deliberate exception and prints
+closed, because its summary carries what has been set — "Both at $0", or the
+two figures. That is the whole distinction: an explainer's summary asks a
+question, the advanced summary answers one about the return being printed.
+
+### What the block covers
+
+- **The ground.** `color-scheme: light`, black on white, the body gradient and
+  the card's tint/blur/shadow/border/padding all off, `#root` unpadded.
+- **The two gradient headings** the last iteration's notes flagged: `h1` and
+  `.section-heading-amber` paint text with a `linear-gradient` and knock the
+  glyphs out with `-webkit-text-fill-color: transparent`, so a browser
+  printing without background graphics prints the knockout and not the paint.
+  Both come back as solid colour. This is the one thing here with a test.
+- **Text**, in the two groups the dark palette already has: what was set
+  bright to carry against slate (`#f8fafc`/`#e2e8f0`/`#cbd5e1`) goes black,
+  what was set slate to recede (`#94a3b8`/`#64748b`) goes `#333`. The accents
+  are darkened rather than dropped — amber `#b45309`, sky `#0369a1`, rose
+  `#be123c`, emerald `#047857`, violet `#6d28d9`, lime `#4d7c0f` — because
+  each one ties a figure to a line on a chart or to the box it sits in, so the
+  hue is information, not decoration.
+- **Boxes.** Every tinted panel is an rgba wash a browser drops when background
+  graphics are off, so the wash goes and the border carries them, solid.
+- **The filing-status selection**, the second of the last iteration's flags:
+  the radio is `opacity: 0` and the choice is shown with a fill, so on paper
+  it was unmarked. Border and weight instead — and the border is subtracted
+  from the padding, so marking the selection cannot be what wraps the last
+  option onto a second row.
+- **`.state-select`**, the third flag: white on a dark ground, plus a chevron
+  drawn in two gradients that only means something next to a menu that opens.
+- **Interactive-only chrome hidden**: the step nav, the next-step buttons, the
+  copy-link button, the link note's dismiss button, both disclosure chevrons.
+  Also the range inputs and their min/max labels — a track with no thumb says
+  nothing that `.slider-header`'s own label and figure do not say in words,
+  and the chart carries the position.
+- **The charts**, the fourth flag. `.chart-container` is a fixed 400px holding
+  a recharts SVG sized in pixels off a screen measurement recharts will not
+  repeat for the printer, so a plot laid out for a 900px column overflows a
+  6.5in page. `width: 100% !important; height: auto` on the container, the
+  responsive container and the wrapper, plus the same on the surface `<svg>` —
+  the `viewBox` recharts already writes is what makes that scale rather than
+  crop. The `CartesianGrid` is white at 10% alpha, which on paper is nothing
+  at all, so it and the axis stroke get printable greys.
+- **Pagination.** `break-after: avoid` on headings and kickers, `break-inside:
+  avoid` on each chart figure and each answer figure, `break-before: page` on
+  the close.
+
+### The recharts selectors are `>`-rooted on purpose
+
+`.chart-container .recharts-wrapper` would be a dead selector to
+`styles.test.tsx`'s nested-class guard: recharts renders *nothing* under jsdom,
+because `ResponsiveContainer` measures its parent as zero (which is why
+`App.chart.test.tsx` mocks it with a fixed 800x400). Rooting those rules with
+`>` puts them in the child-arrangement case that guard already documents
+itself as leaving out, rather than in a hole it does not know about. Said so
+in the CSS.
+
+### The guard
+
+A print rule is invisible until someone prints. The sharpest mechanical
+invariant in what was found is the gradient-heading one, so that is what is
+pinned: **every selector in the stylesheet that sets
+`-webkit-text-fill-color: transparent` must be given its colour back inside
+`@media print`.** A third gradient heading fails the suite until it is.
+
+`styles.test.tsx` gained a `leafRules` extractor — `/([^{}]+)\{([^{}]*)\}/g`,
+which yields only innermost rules, because `[^{}]*` cannot span a nested `{`
+so an `@media` prelude never completes a match and the scan walks past it to
+the rules inside — and a brace-matching `printBlock`. The existing
+nested-class test is untouched.
+
+Verified it reproduces, twice: dropping the reset fails with
+`expected [ 'h1', '.section-heading-amber' ] to deeply equal []`, and adding a
+third gradient heading with no print reset fails with
+`expected [ '.section-heading-rose' ] to deeply equal []`.
+
+### Caught while writing it
+
+`margin-top: 1rem` was in the shared sizing rule with the two recharts divs,
+where it is space *inside* the plot rather than above it — 2rem of it. Split
+onto `.chart-container` alone before committing.
+
+### Verified
+
+- `npx tsc -b`, `npx eslint src --max-warnings 0`, `npx vitest run` (10 files,
+  625 tests — one new), `npm run build`.
+- Read the minified `dist` CSS back to confirm the whole block survives the
+  build intact and parses: `@page`, the `:not([open])`, the `>`-rooted
+  recharts rules, `break-before: page` and the `[type=radio]:checked` rule all
+  present (the minifier only normalises the attribute quotes).
+- No browser in this repo, so the printed page is reasoned about rather than
+  seen. What is verifiable here is that the rules parse, survive the build,
+  and name elements the page renders.
+
+### Discovered work
+
+One new bullet, logged in PLAN.md: the reference-line labels print in their
+line's own colour at 11px, which is 2–3:1 on white. They are inline SVG `fill`
+attributes written per chart in App.tsx, so CSS can only flatten all of them
+to one colour — which would cost the tie between each label and the line it
+names. Left alone deliberately; it wants a decision in App.tsx, not a rule.

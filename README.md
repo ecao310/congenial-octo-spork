@@ -20,7 +20,9 @@ the reader along it, then collapsed explainers, then a box to the next step.
 
 1. **Your Social Security benefit** — the return everything after it prices:
    who files it, who on it has reached 65, and how much Social Security it
-   collects.
+   collects. A joint return puts both spouses' benefits on one line, so the
+   slider's ceiling and the average marked under it are a couple's there and
+   one worker's everywhere else.
 2. **The tax torpedo** — marginal rate against every dollar that is not Social
    Security. The senior-deduction phaseout is in the curve, because it is tax.
    The IRMAA cliffs and the 400% poverty-line cliff are not: they are a

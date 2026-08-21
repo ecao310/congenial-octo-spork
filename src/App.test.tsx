@@ -113,6 +113,81 @@ describe('App', () => {
     expect(screen.getByText('$62,172 (2026 max)')).toBeInTheDocument();
   });
 
+  /**
+   * Line 6a of a joint return holds both spouses' benefits, so both ends of
+   * this slider and the marker between them are a couple's rather than one
+   * person's. The ceiling doubles exactly — two maximum records — and the
+   * average does not, because SSA's couple figure counts the spousal benefits
+   * that are half a record rather than one.
+   */
+  describe('the benefit slider on a joint return', () => {
+    const goJoint = (): void => {
+      fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Jointly' }));
+    };
+
+    it('doubles the ceiling and moves the average marker with it', () => {
+      render(<App />);
+      goJoint();
+      const slider = screen.getByRole('slider', { name: /social security benefit/i });
+      expect(slider).toHaveAttribute('max', '124344');
+      expect(screen.getByText('$38,496 (2026 couple avg)')).toBeInTheDocument();
+      expect(screen.getByText('$124,344 (2026 couple max)')).toBeInTheDocument();
+      expect(screen.queryByText('$24,852 (2026 avg)')).not.toBeInTheDocument();
+      // And the label says whose benefit is being set.
+      expect(
+        screen.getByLabelText(/Annual Social Security Benefit \(both spouses\)/),
+      ).toBe(slider);
+      expect(within(benefitGroup()).getByText(/well under twice/)).toHaveTextContent(
+        '$24,852',
+      );
+    });
+
+    /**
+     * A reader sitting on the average has accepted the marker rather than
+     * chosen a number, so the marker takes them with it — and switching back
+     * puts them exactly where they started.
+     */
+    it('carries a reader sitting on the average across to the couple average', () => {
+      render(<App />);
+      const slider = screen.getByRole('slider', { name: /social security benefit/i });
+      expect(slider).toHaveValue('24852');
+      goJoint();
+      expect(slider).toHaveValue('38496');
+      fireEvent.click(screen.getByRole('radio', { name: 'Single' }));
+      expect(slider).toHaveValue('24852');
+      expect(slider).toHaveAttribute('max', '62172');
+    });
+
+    it('leaves a figure the reader set alone, and re-caps it on the way back', () => {
+      render(<App />);
+      const slider = screen.getByRole('slider', { name: /social security benefit/i });
+      fireEvent.change(slider, { target: { value: '40000' } });
+      goJoint();
+      // Theirs, not the marker's, so it stays put where the average moved.
+      expect(slider).toHaveValue('40000');
+
+      fireEvent.change(slider, { target: { value: '100000' } });
+      fireEvent.click(screen.getByRole('radio', { name: 'Head of Household' }));
+      // $100,000 is two benefits' worth and there is only one person on this
+      // return now, so it comes back to the ceiling rather than standing past
+      // the right edge of its own slider.
+      expect(slider).toHaveValue('62172');
+      expect(slider).toHaveAttribute('max', '62172');
+    });
+
+    it('leaves every other status setting one person\u2019s benefit', () => {
+      render(<App />);
+      for (const name of ['Head of Household', 'Married Filing Separately']) {
+        fireEvent.click(screen.getByRole('radio', { name }));
+        expect(
+          screen.getByRole('slider', { name: /social security benefit/i }),
+        ).toHaveAttribute('max', '62172');
+        expect(screen.getByText('$24,852 (2026 avg)')).toBeInTheDocument();
+        expect(within(benefitGroup()).queryByText(/well under twice/)).toBeNull();
+      }
+    });
+  });
+
   it('updates the value, readout, and total income formula when moved', () => {
     render(<App />);
     const slider = screen.getByRole('slider', { name: /social security benefit/i });
@@ -2196,11 +2271,11 @@ describe('the IRMAA cliff lines on the torpedo chart', () => {
     render(<App />);
     openLinesPanel();
     fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Jointly' }));
-    // $218,000 of MAGI, less the benefits already in AGI, is past the $150,000
-    // right edge — so the reader gets the figure instead of a switch that
-    // appears to do nothing.
+    // $218,000 of MAGI, less the 85% of a couple's $38,496 benefit already in
+    // AGI, is past the $150,000 right edge — so the reader gets the figure
+    // instead of a switch that appears to do nothing.
     expect(irmaaNote()).toHaveTextContent(
-      'None falls on this chart. The first one this return could reach needs $196,876 of other income, past the right edge, and would cost $1,148/yr.',
+      'None falls on this chart. The first one this return could reach needs $185,278 of other income, past the right edge, and would cost $1,148/yr.',
     );
   });
 
@@ -2218,7 +2293,7 @@ describe('the IRMAA cliff lines on the torpedo chart', () => {
     // IRMAA is charged per enrollee off one household MAGI figure, so both
     // steps are twice what a single filer pays.
     expect(irmaaNote()).toHaveTextContent(
-      'IRMAA 1 at $196,876 costs $2,297/yr, for the two of you.',
+      'IRMAA 1 at $185,278 costs $2,297/yr; IRMAA 2 at $241,278 another $3,473/yr, for the two of you.',
     );
   });
 
@@ -2657,7 +2732,7 @@ describe('sizing the conversion', () => {
   /**
    * Step 4 draws step 2's sweep, so it never narrows below step 2's right
    * edge — but a joint return converting to the top of the 22% bracket runs to
-   * $218,044 of other income, well past the $150,000 the torpedo chart draws.
+   * $210,878 of other income, well past the $150,000 the torpedo chart draws.
    * The axis follows the conversion out; step 2's does not move.
    */
   it('widens its own axis when the conversion runs past the torpedo chart', () => {
@@ -2668,7 +2743,7 @@ describe('sizing the conversion', () => {
 
     fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Jointly' }));
     pick(/^Top of the 22% bracket/);
-    expect(readout()).toHaveTextContent('$192,475 fits.');
+    expect(readout()).toHaveTextContent('$180,878 fits.');
     expect(label()).toHaveTextContent('drawn out to $225,000');
 
     // Step 2's own axis is untouched: its slider still stops where it did.
@@ -2846,8 +2921,9 @@ describe('the closing answer', () => {
       screen.getByRole('checkbox', { name: 'Both spouses are 65 or older' }),
     );
     setIncome(140_000);
+    // $140,000 of other income plus 85% of the couple's $38,496 benefit.
     expect(figure('Medicare surcharge')).toHaveTextContent(
-      'On $161,124 of MAGI, charged to each of you.',
+      'On $172,722 of MAGI, charged to each of you.',
     );
     // Two enrollees, so the cliff below costs twice what one filer pays.
     expect(figure('Medicare surcharge')).toHaveTextContent(
@@ -3143,7 +3219,11 @@ describe('the closing answer', () => {
       expect(
         screen.getByRole('radio', { name: 'Married Filing Jointly' }),
       ).toBeChecked();
-      expect(figure('Total income')).toHaveTextContent('$144,852');
+      // $120,000 plus the couple average the joint radio moved the benefit to.
+      // That average is what a joint link opens on, so it rides in the link as
+      // the status rather than as an `ss` key of its own.
+      expect(copied).not.toContain('ss=');
+      expect(figure('Total income')).toHaveTextContent('$158,496');
     });
 
     /**

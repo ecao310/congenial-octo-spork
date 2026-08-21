@@ -112,7 +112,7 @@ const CEILING_IDS = conversionCeilings().map((c) => c.id);
 export function defaultScenario(): PageScenario {
   return {
     filingStatus: 'single',
-    ssBenefit: avgAnnualSSBenefit(PAGE_TAX_YEAR),
+    ssBenefit: avgAnnualSSBenefit(PAGE_TAX_YEAR, 'single'),
     ordinaryIncome: DEFAULT_ORDINARY_INCOME,
     plannedLtcg: 0,
     isSenior: false,
@@ -140,7 +140,9 @@ export function defaultScenario(): PageScenario {
  * Leaving the benefit out when it sits at the average is the same rule: a
  * reader who never moved that slider has expressed no opinion about the
  * figure, so the link should hand the next reader whatever the page opens
- * with.
+ * with. The average it is measured against is the one for the status the link
+ * carries, not the single filer's — a joint return opens on the couple
+ * average, so `?filing=mfj` on its own is a complete link to it.
  */
 export function encodeScenario(scenario: PageScenario): string {
   const opening = defaultScenario();
@@ -148,7 +150,7 @@ export function encodeScenario(scenario: PageScenario): string {
   if (scenario.filingStatus !== opening.filingStatus) {
     params.set('filing', scenario.filingStatus);
   }
-  if (scenario.ssBenefit !== opening.ssBenefit) {
+  if (scenario.ssBenefit !== avgAnnualSSBenefit(PAGE_TAX_YEAR, scenario.filingStatus)) {
     params.set('ss', String(scenario.ssBenefit));
   }
   if (scenario.ordinaryIncome !== opening.ordinaryIncome) {
@@ -269,11 +271,18 @@ export function decodeScenario(search: string): DecodedScenario {
     }
   }
 
+  // Both bounds are the ones step 1's slider would have held this figure
+  // inside, which on a joint return are the couple's rather than one worker's:
+  // line 6a adds both spouses' benefits together, so a joint link may name
+  // nearly twice what a single one can.
   const ssBenefit = dollars('ss', {
-    fallback: avgAnnualSSBenefit(PAGE_TAX_YEAR),
-    max: maxAnnualSSBenefit(PAGE_TAX_YEAR),
+    fallback: avgAnnualSSBenefit(PAGE_TAX_YEAR, filingStatus),
+    max: maxAnnualSSBenefit(PAGE_TAX_YEAR, filingStatus),
     what: 'a Social Security benefit',
-    reason: `the most anyone can collect in ${PAGE_TAX_YEAR}`,
+    reason:
+      filingStatus === 'mfj'
+        ? `the most a couple can collect in ${PAGE_TAX_YEAR}`
+        : `the most anyone can collect in ${PAGE_TAX_YEAR}`,
   });
 
   const ordinaryIncome = dollars('income', {

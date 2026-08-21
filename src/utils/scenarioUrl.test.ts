@@ -29,8 +29,19 @@ afterEach(() => {
 
 const opening = defaultScenario();
 
+/**
+ * A return the page could actually have produced.
+ *
+ * Step 1 re-seats the benefit on the new status's own average when the reader
+ * changes status while sitting on the old one, so a joint scenario built here
+ * carries the couple average unless the caller names a benefit of its own.
+ */
 const moved = (over: Partial<PageScenario> = {}): PageScenario => ({
   ...opening,
+  ssBenefit: avgAnnualSSBenefit(
+    PAGE_TAX_YEAR,
+    over.filingStatus ?? opening.filingStatus,
+  ),
   ...over,
 });
 
@@ -141,6 +152,25 @@ describe('decodeScenario', () => {
     );
   });
 
+  /**
+   * Which average that is depends on the status the same link carries. Line 6a
+   * on a joint return holds two benefits, so a joint link with no `ss` key
+   * opens on the couple average rather than on one worker's — which is what
+   * makes `?filing=mfj` a complete link to the return the page shows when a
+   * reader clicks that radio and touches nothing else.
+   */
+  it('reads that average as the couple’s when the link files jointly', () => {
+    expect(decodeScenario('filing=mfj').scenario.ssBenefit).toBe(
+      avgAnnualSSBenefit(PAGE_TAX_YEAR, 'mfj'),
+    );
+    expect(decodeScenario('filing=mfj').scenario.ssBenefit).toBe(38_496);
+    for (const status of ['mfs', 'hoh']) {
+      expect(decodeScenario(`filing=${status}`).scenario.ssBenefit).toBe(
+        avgAnnualSSBenefit(PAGE_TAX_YEAR),
+      );
+    }
+  });
+
   it('ignores a flag that is not set to 1', () => {
     expect(decodeScenario('senior=0').scenario.isSenior).toBe(false);
     expect(decodeScenario('senior=true').scenario.isSenior).toBe(false);
@@ -178,6 +208,27 @@ describe('decodeScenario', () => {
       expect(notes[0]).toBe(
         'This link asked for $200,000 of a Social Security benefit. The most this return can carry is $62,172 — the most anyone can collect in 2026, so that is what is set.',
       );
+    });
+
+    /**
+     * And the joint ceiling is the couple's, so the figure that is too much for
+     * one return is carried whole by the other. A bound read off the wrong
+     * status would silently halve a joint reader's benefit on a link the page
+     * itself wrote.
+     */
+    it('lets a joint link carry twice that, and says so when it cuts one back', () => {
+      const carried = decodeScenario('filing=mfj&ss=124344');
+      expect(carried.scenario.ssBenefit).toBe(124_344);
+      expect(carried.notes).toEqual([]);
+
+      const cut = decodeScenario('filing=mfj&ss=200000');
+      expect(cut.scenario.ssBenefit).toBe(124_344);
+      expect(cut.notes[0]).toBe(
+        'This link asked for $200,000 of a Social Security benefit. The most this return can carry is $124,344 — the most a couple can collect in 2026, so that is what is set.',
+      );
+
+      // The same figure on a single return is still cut to one worker's.
+      expect(decodeScenario('ss=124344').scenario.ssBenefit).toBe(62_172);
     });
 
     it('holds a gain to the income it is a share of', () => {

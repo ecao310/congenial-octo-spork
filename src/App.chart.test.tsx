@@ -203,13 +203,14 @@ describe('IRMAA cliffs on the ordinary-income chart', () => {
 
     fireEvent.click(screen.getByRole('checkbox', { name: 'Age 65 or older' }));
     // Claiming the senior deduction stretches the axis to $250,000 to fit a
-    // phaseout that ends at $228,876 of other income, and the first cliff, at
-    // $196,876, is inside it. The second, at $252,876, misses by $2,876 — the
-    // axis is sized by what the curve does, and cliffs ride along or they do
-    // not.
-    expect(cliffPositions(container)).toHaveLength(1);
+    // phaseout that ends at $217,278 of other income, and the first two
+    // cliffs, at $185,278 and $241,278, are inside it. The third, at $309,278,
+    // is not — the axis is sized by what the curve does, and cliffs ride along
+    // or they do not.
+    expect(cliffPositions(container)).toHaveLength(2);
     expect(screen.getByText('IRMAA 1')).toBeInTheDocument();
-    expect(screen.queryByText('IRMAA 2')).not.toBeInTheDocument();
+    expect(screen.getByText('IRMAA 2')).toBeInTheDocument();
+    expect(screen.queryByText('IRMAA 3')).not.toBeInTheDocument();
   });
 
   it('drops the lines entirely when no cliff fits on the axis', () => {
@@ -280,10 +281,10 @@ describe('the 400% poverty-line cliff on the ordinary-income chart', () => {
     showBothThresholds();
     fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Jointly' }));
     fireEvent.click(screen.getByRole('checkbox', { name: 'Age 65 or older' }));
-    // One spouse over, one under: the return stands in front of both cliffs at
-    // once, which is the case the per-person rule exists for.
+    // One spouse over, one under: the return stands in front of both kinds of
+    // cliff at once, which is the case the per-person rule exists for.
     expect(subsidyPositions(container)).toHaveLength(1);
-    expect(cliffPositions(container)).toHaveLength(1);
+    expect(cliffPositions(container)).toHaveLength(2);
 
     fireEvent.click(screen.getByRole('checkbox', { name: 'Both spouses are 65 or older' }));
     expect(subsidyPositions(container)).toHaveLength(0);

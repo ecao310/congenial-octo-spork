@@ -659,9 +659,17 @@ fieldset.ceiling-picker legend {
   font-variant-numeric: tabular-nums;
 }
 
+/* Three markers across the width of the slider above them: the two ends and
+   whatever is worth pointing at in between. `gap` rather than
+   `space-between` alone because a joint return's markers carry an extra word
+   each — "couple avg", "couple max" — and in the 18rem configuration column
+   that is enough to wrap them into one another. The middle one stays centred
+   on its own text rather than on the slider, which is the honest place for it:
+   the average is not the midpoint of anything. */
 .slider-range-labels {
   display: flex;
   justify-content: space-between;
+  gap: 0.5rem;
   font-size: 0.75rem;
   color: var(--ink-dim);
 }

@@ -13,7 +13,7 @@ Backlog 5
 [x] Move Medicare's IRMAA cliffs. to be a tool tip. on the tax torpedo graph, have a settings button. Opens something with checkboxes for if IRMAA and 400% FPL breakpoints are rendered. default to off. 
 [x] remove The curve in words.
 [x] in cap gains section, make the graph the effective rate for capital gains, not marginal rate. so graph starts increasing after the 15% threshold.
-[ ] if married filing jointly, social security slider should have different maximum and average than single.
+[x] if married filing jointly, social security slider should have different maximum and average than single.
 [ ] remove the sections for capital gains and roth conversion from the page to keep it focused on tax torpedo. i may add it back later, so keep the code around. since sections are removed, also remove the links to the next sections from everywhere.
 [ ] tax torpedo graph axis should be total income. dynamic labels should display $ numbers for both SS and other income.
 

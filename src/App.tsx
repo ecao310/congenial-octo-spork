@@ -1071,9 +1071,24 @@ const App: React.FC = () => {
    * The charitable limit is per individual, so it halves on the way from a
    * joint return to any other one. Re-cap the gift rather than leaving the
    * slider parked past its own right edge.
+   *
+   * The benefit moves for the same reason and one more. Line 6a on a joint
+   * return holds two benefits, so both ends of that slider are the couple's:
+   * coming back from `mfj` can leave a figure standing past a right edge that
+   * has nearly halved, and it gets the same re-cap the gift does. The extra
+   * rule is the average. A reader sitting exactly on one status's average has
+   * not chosen that number, they have accepted the marker under the slider —
+   * so when the marker moves, they move with it, and switching back puts them
+   * where they started. Anywhere else on the slider is a figure they set, and
+   * it stays set.
    */
   const changeFilingStatus = (next: FilingStatus): void => {
     setQcd((current) => Math.min(current, qcdLimitFor({ filingStatus: next, year })));
+    setSsBenefit((current) =>
+      current === avgAnnualSSBenefit(year, filingStatus)
+        ? avgAnnualSSBenefit(year, next)
+        : Math.min(current, maxAnnualSSBenefit(year, next)),
+    );
     setFilingStatus(next);
     announce('benefit');
   };
@@ -1081,6 +1096,19 @@ const App: React.FC = () => {
   // Only a joint return can claim the addition twice, and the spouse's
   // checkbox is meaningless until the filer's is on.
   const seniors = isSenior ? (filingStatus === 'mfj' && spouseIsSenior ? 2 : 1) : 0;
+
+  /**
+   * Both ends of the benefit slider, and the marker between them.
+   *
+   * A joint return is the only one that reports two benefits on line 6a, so it
+   * is the only one whose slider is a household's rather than a person's. Note
+   * that this does not follow the senior checkboxes: whether both spouses are
+   * 65 changes the deduction, not who is collecting, and a couple can very
+   * easily be one retiree on a benefit and one spouse who is not 65 yet.
+   */
+  const jointBenefit = filingStatus === 'mfj';
+  const benefitSliderMax = maxAnnualSSBenefit(year, filingStatus);
+  const benefitAverage = avgAnnualSSBenefit(year, filingStatus);
 
   /**
    * The right edge of step 2's chart, and of the slider under it.
@@ -2060,14 +2088,17 @@ const App: React.FC = () => {
 
           <div className="input-group">
             <div className="slider-header">
-              <label htmlFor="ss-benefit">Annual Social Security Benefit</label>
+              <label htmlFor="ss-benefit">
+                Annual Social Security Benefit
+                {jointBenefit ? ' (both spouses)' : ''}
+              </label>
               <span className="slider-value">{formatCurrency(ssBenefit)}</span>
             </div>
             <input
               id="ss-benefit"
               type="range"
               min={0}
-              max={maxAnnualSSBenefit(year)}
+              max={benefitSliderMax}
               step={12}
               value={ssBenefit}
               onChange={(e) => {
@@ -2077,9 +2108,29 @@ const App: React.FC = () => {
             />
             <div className="slider-range-labels">
               <span>$0</span>
-              <span>{formatCurrency(avgAnnualSSBenefit(year))} ({year} avg)</span>
-              <span>{formatCurrency(maxAnnualSSBenefit(year))} ({year} max)</span>
+              <span>
+                {formatCurrency(benefitAverage)} ({year}{' '}
+                {jointBenefit ? 'couple avg' : 'avg'})
+              </span>
+              <span>
+                {formatCurrency(benefitSliderMax)} ({year}{' '}
+                {jointBenefit ? 'couple max' : 'max'})
+              </span>
             </div>
+            {jointBenefit && (
+              <p className="field-note">
+                A joint return puts both benefits on one line, so this slider is
+                the pair of them. The right edge is two maximum records each
+                claimed at 70; the marker in the middle is SSA&apos;s average for
+                a couple who both collect, which is well under twice a single
+                worker&apos;s{' '}
+                <strong>
+                  {formatCurrency(avgAnnualSSBenefit(year, 'single'))}
+                </strong>{' '}
+                because the second benefit is so often a spousal one — half the
+                higher earner&apos;s, not a record of its own.
+              </p>
+            )}
           </div>
 
           <details className="advanced-inputs">

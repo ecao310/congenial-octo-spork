@@ -2673,6 +2673,16 @@ describe('tax year', () => {
       expect(params.year).toBe(year);
       expect(params.source).not.toBe('');
       expect(params.maxAnnualSSBenefit).toBeGreaterThan(params.avgAnnualSSBenefit);
+      // A joint return puts two benefits on line 6a. The ceiling is exactly two
+      // maximum records — two people, 35 years at the taxable maximum each,
+      // each claiming at 70 — so it is checked as a doubling rather than as a
+      // figure, and a year added to the table cannot get one end right and the
+      // other wrong. The average is not two average ones and cannot be: SSA
+      // publishes the couple figure separately and it lands well under twice
+      // the retired-worker one, because so many second benefits are spousal.
+      expect(params.maxAnnualCoupleSSBenefit).toBe(2 * params.maxAnnualSSBenefit);
+      expect(params.avgAnnualCoupleSSBenefit).toBeGreaterThan(params.avgAnnualSSBenefit);
+      expect(params.avgAnnualCoupleSSBenefit).toBeLessThan(2 * params.avgAnnualSSBenefit);
       for (const status of ['single', 'mfj', 'mfs'] as FilingStatus[]) {
         const filing = filingParams(year, status);
         for (const schedule of [filing.brackets, filing.ltcgBrackets]) {
@@ -2714,6 +2724,8 @@ describe('tax year', () => {
     expect(taxYearParams(2026).colaPercent).toBe(2.8);
     expect(maxAnnualSSBenefit(2026)).toBe(62_172); // $5,181/mo at age 70
     expect(avgAnnualSSBenefit(2026)).toBe(24_852); // $2,071/mo, January 2026
+    expect(maxAnnualSSBenefit(2026, 'mfj')).toBe(124_344); // two of those records
+    expect(avgAnnualSSBenefit(2026, 'mfj')).toBe(38_496); // $3,208/mo, a couple
     // Every 2026 figure is above its 2025 counterpart, because all of them are
     // indexed. The thresholds tested below are the exception that matters.
     expect(single.standardDeduction).toBeGreaterThan(
@@ -2787,6 +2799,51 @@ describe('tax year', () => {
     expect(share(2025)).toBeCloseTo(0.1446, 4);
     expect(share(2026)).toBeCloseTo(0.1494, 4);
     expect(share(2026)).toBeGreaterThan(share(2025));
+  });
+});
+
+/**
+ * Whose benefit the slider in step 1 is setting.
+ *
+ * `ssBenefit` is line 6a of the return, and a joint return is the only one
+ * where that line holds two people's benefits added together. So the figures
+ * the page hands the slider — its right edge and the average marked under it —
+ * are the couple's for `mfj` and one worker's for everything else, including a
+ * separate return whose spouse collects a benefit on a return of their own.
+ */
+describe('whose benefit the year figures describe', () => {
+  it('gives a joint return the couple figures and every other status one worker\u2019s', () => {
+    for (const year of TAX_YEARS) {
+      const params = taxYearParams(year);
+      expect(maxAnnualSSBenefit(year, 'mfj')).toBe(params.maxAnnualCoupleSSBenefit);
+      expect(avgAnnualSSBenefit(year, 'mfj')).toBe(params.avgAnnualCoupleSSBenefit);
+      for (const status of ['single', 'mfs', 'hoh'] as FilingStatus[]) {
+        expect(maxAnnualSSBenefit(year, status)).toBe(params.maxAnnualSSBenefit);
+        expect(avgAnnualSSBenefit(year, status)).toBe(params.avgAnnualSSBenefit);
+      }
+      // Unstated means one person's, which is what every call site that
+      // predates the joint figures meant by it.
+      expect(maxAnnualSSBenefit(year)).toBe(params.maxAnnualSSBenefit);
+      expect(avgAnnualSSBenefit(year)).toBe(params.avgAnnualSSBenefit);
+    }
+  });
+
+  /**
+   * The interesting half, and the reason the average is a published figure
+   * rather than a doubling: a joint slider is nearly twice as long as a single
+   * one while the marker on it moves by about half that.
+   */
+  it('stretches the ceiling further than it moves the average', () => {
+    const single = { max: maxAnnualSSBenefit(2026), avg: avgAnnualSSBenefit(2026) };
+    const joint = {
+      max: maxAnnualSSBenefit(2026, 'mfj'),
+      avg: avgAnnualSSBenefit(2026, 'mfj'),
+    };
+    expect(joint.max / single.max).toBe(2);
+    expect(joint.avg / single.avg).toBeCloseTo(1.549, 3);
+    // And the average is still a small share of the ceiling either way, which
+    // is why the marker is drawn rather than left to the reader to guess.
+    expect(joint.avg / joint.max).toBeLessThan(single.avg / single.max);
   });
 });
 

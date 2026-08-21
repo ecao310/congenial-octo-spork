@@ -187,6 +187,19 @@ export interface TaxYearParams {
   maxAnnualSSBenefit: number;
   /** SSA average annual benefit for a retired worker in January of this year. */
   avgAnnualSSBenefit: number;
+  /**
+   * The same two figures for a joint return, where two people collect.
+   *
+   * The maximum is the worker maximum doubled: two records, each with 35 years
+   * at the taxable maximum, each claimed at 70. The average is not doubled and
+   * cannot be. SSA publishes it separately — "aged couple, both receiving
+   * benefits" — and it lands well under twice the retired-worker average,
+   * because in a large share of those couples the second benefit is a spousal
+   * one, worth half the higher earner's primary insurance amount rather than a
+   * second full record.
+   */
+  maxAnnualCoupleSSBenefit: number;
+  avgAnnualCoupleSSBenefit: number;
   /** The COLA that produced this year's benefit figures, in percent. */
   colaPercent: number;
   /**
@@ -281,6 +294,8 @@ export const TAX_YEAR_PARAMS: Record<TaxYear, TaxYearParams> = {
     source: 'Rev. Proc. 2024-40; OBBBA standard deductions; SSA (2.5% COLA)',
     maxAnnualSSBenefit: 61_296, // $5,108/mo at age 70
     avgAnnualSSBenefit: 23_712, // $1,976/mo, January 2025
+    maxAnnualCoupleSSBenefit: 122_592, // two of the above
+    avgAnnualCoupleSSBenefit: 37_068, // $3,089/mo, January 2025
     colaPercent: 2.5,
     qcdAnnualLimit: 108_000, // Notice 2024-80
     qcdSplitInterestLimit: 54_000, // Notice 2024-80
@@ -381,6 +396,8 @@ export const TAX_YEAR_PARAMS: Record<TaxYear, TaxYearParams> = {
     source: 'Rev. Proc. 2025-32; SSA (2.8% COLA)',
     maxAnnualSSBenefit: 62_172, // $5,181/mo at age 70
     avgAnnualSSBenefit: 24_852, // $2,071/mo, January 2026
+    maxAnnualCoupleSSBenefit: 124_344, // two of the above
+    avgAnnualCoupleSSBenefit: 38_496, // $3,208/mo, January 2026
     colaPercent: 2.8,
     qcdAnnualLimit: 111_000, // Notice 2025-67
     qcdSplitInterestLimit: 55_000, // Notice 2025-67
@@ -715,13 +732,29 @@ export function deductionFor(scenario: Scenario = {}, magi = 0): number {
  * claiming at age 70; average is the retired-worker benefit in January of that
  * year. Both move with the COLA — unlike the thresholds in `SS_BASES`, which
  * is exactly why the torpedo widens every year.
+ *
+ * A joint return gets the couple figures instead. `ssBenefit` is line 6a, and
+ * on a joint return line 6a holds both spouses' benefits added together; on
+ * every other return it holds one person's, including a separate return whose
+ * spouse collects a benefit of their own on a return of their own. So the
+ * slider's right edge nearly doubles on the way to `mfj` while its average
+ * marker moves by much less — see `maxAnnualCoupleSSBenefit` for why those two
+ * are not the same multiple.
  */
-export function maxAnnualSSBenefit(year: TaxYear = defaultTaxYear()): number {
-  return taxYearParams(year).maxAnnualSSBenefit;
+export function maxAnnualSSBenefit(
+  year: TaxYear = defaultTaxYear(),
+  filingStatus: FilingStatus = 'single',
+): number {
+  const params = taxYearParams(year);
+  return filingStatus === 'mfj' ? params.maxAnnualCoupleSSBenefit : params.maxAnnualSSBenefit;
 }
 
-export function avgAnnualSSBenefit(year: TaxYear = defaultTaxYear()): number {
-  return taxYearParams(year).avgAnnualSSBenefit;
+export function avgAnnualSSBenefit(
+  year: TaxYear = defaultTaxYear(),
+  filingStatus: FilingStatus = 'single',
+): number {
+  const params = taxYearParams(year);
+  return filingStatus === 'mfj' ? params.avgAnnualCoupleSSBenefit : params.avgAnnualSSBenefit;
 }
 
 /* ------------------------------------------------------------------ */

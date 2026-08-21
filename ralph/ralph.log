@@ -6352,3 +6352,123 @@ chrome-headless-shell-mac-arm64/chrome-headless-shell`, served under
 `/congenial-octo-spork/`. Deleted this run's four scratch drivers and killed
 the preview. Add to it: if you toggle print media and then measure layout,
 wait before you believe the number.
+
+## 2026-08-21 — Task: if married filing jointly, social security slider should have different maximum and average than single.
+
+`ssBenefit` is line 6a of the return, and on a joint return line 6a is two
+people's benefits added together. The slider was setting one worker's either
+way: `maxAnnualSSBenefit(year)` and `avgAnnualSSBenefit(year)` took a year and
+nothing else, so a couple who both collect were being asked to describe
+themselves with a ceiling half their size and a marker that named the wrong
+average.
+
+### The two figures, and why only one of them doubles
+
+`TaxYearParams` gains `maxAnnualCoupleSSBenefit` and
+`avgAnnualCoupleSSBenefit`:
+
+- 2025: $122,592 max, $37,068 avg ($3,089/mo)
+- 2026: $124,344 max, $38,496 avg ($3,208/mo)
+
+The maximum is exactly two of the worker maximum — two records, 35 years at the
+taxable maximum each, each claimed at 70 — and a test walks `TAX_YEARS`
+asserting that doubling, so a year added to the table cannot get one end right
+and the other wrong.
+
+The average is not two of the worker average and is the interesting half. SSA
+publishes "aged couple, both receiving benefits" separately, and at $3,208/mo
+against $2,071/mo it is 1.55x rather than 2x, because in a large share of those
+couples the second benefit is a spousal one — half the higher earner's PIA, not
+a second record. That is why it has to be a table entry rather than an
+arithmetic derivation, and the same test pins it strictly between one worker
+average and two.
+
+Both accessors now take `(year, filingStatus = 'single')` — the argument order
+`filingParams` already uses. The default keeps every call site that predates
+this meaning what it meant.
+
+### What the page does with them
+
+- Slider `max`, the middle range marker and the right-hand one all read the
+  status figures. Joint markers say "2026 couple avg" / "2026 couple max", and
+  the control's own label becomes "Annual Social Security Benefit (both
+  spouses)".
+- A field note appears under the joint slider only, saying what the two ends
+  are and why the average is not the single one doubled.
+- `changeFilingStatus` re-seats the benefit. The re-cap is the same one the
+  charitable gift already gets — coming back from `mfj` can leave a figure
+  standing past a right edge that just halved. The second rule is new: a reader
+  sitting exactly on one status's average has accepted the marker rather than
+  chosen a number, so the marker takes them with it, and switching back puts
+  them exactly where they started. Anywhere else on the slider is theirs and
+  stays put.
+
+### The link
+
+`decodeScenario` clamped `ss` against the worker maximum regardless of the
+`filing` key in the same link, which would have silently halved a joint
+benefit on a link the page itself wrote. Both the fallback and the max now read
+the decoded status (the ordering was already right — `filingStatus` is parsed
+first, and `qcd` already did this). The note names the couple bound when it
+cuts one back. `encodeScenario` measures the benefit against the average for
+the status it is writing, so `?filing=mfj` alone is a complete link to a joint
+return at the couple average.
+
+### What moved downstream, and why it is right
+
+Seven existing tests changed their numbers because a joint return now carries
+$38,496 instead of $24,852, which puts 85% of $13,644 more into MAGI and pulls
+every MAGI-denominated feature $11,598 left in other-income terms:
+
+- The joint first IRMAA cliff moves from $196,876 to $185,278 of other income,
+  and on the senior-deduction chart (axis $250,000) the second cliff at
+  $241,278 now fits where $252,876 did not. Two chart tests and two note tests.
+- A joint conversion to the top of the 22% bracket fits $180,878 rather than
+  $192,475 — same ceiling, less room under it.
+- The link round-trip test now reads $158,496 of total income, and asserts the
+  link carries no `ss=` key, which is the new encode rule stated as a fact
+  about the artefact.
+- `scenarioUrl.test.ts`'s `moved()` helper seeds the benefit from the status it
+  is given, because a joint scenario at the single average is one the page can
+  no longer produce.
+
+### Tests
+
+689 -> 697. Four in `App.test.tsx` under a new describe: the doubled ceiling
+and moved markers, the average carrying a reader across and back, a set figure
+staying put and being re-capped on the way back, and every other status still
+setting one person's. Two in `tax.test.ts` for the accessors across all years
+and for the ceiling stretching further than the average does, plus three
+assertions folded into the well-formed-schedule sweep. Two in
+`scenarioUrl.test.ts`: a bare `filing=mfj` reading as the couple average, and a
+joint link carrying $124,344 whole where a single one is cut to $62,172.
+
+### One CSS change
+
+`.slider-range-labels` gets `gap: 0.5rem`. Three `space-between` markers fit on
+one line in the 18rem configuration column at "$24,852 (2026 avg)" but not at
+"$38,496 (2026 couple avg)" — "$0" was butting straight against the next
+marker. Measured in the browser, not reasoned about.
+
+### Verified
+
+- `npx tsc -b`, `npx eslint src --max-warnings 0`, `npx vitest run` (11 files,
+  697 tests), `npm run build`.
+- Driven in Chromium against the built page at 1440 and 420: single reads
+  24852/62172 with "(2026 avg)"; clicking joint gives 38496/124344 with
+  "(2026 couple avg/max)" and the "(both spouses)" label; dragging to $100,000
+  and returning to Single re-caps to $62,172; `?filing=mfj&ss=124344` opens
+  whole with no link note; `?filing=mfj` alone opens on $38,496. No page
+  errors, no horizontal overflow at either width.
+
+### Note for the next run
+
+Standing browser note unchanged: script in the project root for the bare
+`playwright-core` import, `pkill -f "vite preview"` first, port off preview's
+own output, Chromium build 1228 at
+`~/Library/Caches/ms-playwright/chromium_headless_shell-1228/
+chrome-headless-shell-mac-arm64/chrome-headless-shell`, served under
+`/congenial-octo-spork/`. Deleted this run's three scratch drivers and killed
+the preview. Add to it: vitest swallows `console.log` from a scratch probe
+test — write to a file if you need to read a computed figure out of the app's
+own modules.

@@ -237,7 +237,26 @@ fieldset.ceiling-picker legend {
   transform: translateY(0);
 }
 
-.hint-bubble .link-note {
+.hint-bubble .field-note {
+  margin: 0;
+}
+
+.hint-bubble .field-note + .field-note {
+  margin-top: 0.625rem;
+}
+
+/* ───── The link note ───────────────────────────────────────────────────
+ *
+ * What a link asked for that this page could not show. Amber and boxed rather
+ * than red: nothing has gone wrong with the return on screen — one value in
+ * the address was out of bounds and is being held at its edge.
+ *
+ * Scoped to nothing, deliberately. These rules were first typed over the hint
+ * bubble's and kept its `.hint-bubble ` prefix, so the box never drew at all:
+ * the note renders as a direct child of `.card` and no `.link-note` has ever
+ * lived inside a bubble.
+ */
+.link-note {
   margin: 0 0 1.25rem;
   padding: 0.875rem 1rem;
   border: 1px solid rgba(245, 158, 11, 0.35);
@@ -281,14 +300,6 @@ fieldset.ceiling-picker legend {
 .link-note button:hover {
   color: #e2e8f0;
   border-color: rgba(148, 163, 184, 0.6);
-}
-
-.field-note {
-  margin: 0;
-}
-
-.hint-bubble .field-note + .field-note {
-  margin-top: 0.625rem;
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -4693,3 +4693,93 @@ Dismiss button, and the comment says so.
 
 Nothing broken turned up. The chunk warning and the oxc/esbuild banner are
 both already bullets further down Backlog 4.
+
+## 2026-08-21 — Task: Fix the link note's box, which has never drawn
+
+Not a backlog bullet. I picked up the topmost unchecked one — the print
+stylesheet — and while reading `index.css` for the palette found a rule in it
+that can never match. Per the loop's own rule, fixing that became the
+iteration. The print bullet stays unchecked.
+
+### The bug
+
+d5bcf75 ("Put the return in the address bar") added the link note — the amber
+box that says a link asked for a value this page could not show — and wrote
+its CSS by typing over the rule that happened to be sitting there:
+
+    -.hint-bubble .field-note {
+    +.hint-bubble .link-note {
+    +  border-left: 3px solid #f59e0b;
+    +  background: rgba(245, 158, 11, 0.08);
+    +  ...
+
+The `.hint-bubble ` prefix came along for the ride. `.link-note` renders as a
+direct child of `.card` (App.tsx:1548) and never inside a bubble, so the
+entire box treatment — border, left rule, tint, 13px type, `#cbd5e1` — has
+been dead since the day it landed. The note draws as unboxed body-size text
+with an amber `<strong>` in it. Every one of its seven siblings
+(`.link-note p`, `strong`, `ul`, `li + li`, `button`, `button:hover`) is
+correctly unscoped, which is why nothing else looked wrong.
+
+Second casualty in the same hunk: the rule that got typed over left its body
+behind as a bare `.field-note { margin: 0 }`, 35 lines above the real
+`.field-note { margin: 0.5rem 0 0 }` — so it was dead where it stood, and the
+first field note inside the hint bubble picked up 8px of top margin the
+bubble's own padding already provides. Restored to `.hint-bubble .field-note`.
+
+While there, moved the `.link-note` block out from among the hint-bubble rules
+under its own header. The physical interleaving is what made the slip possible
+and would have made it possible again.
+
+### The guard
+
+A rule that cannot match is silent: nothing throws, nothing warns, the build
+is green, and the only symptom is a box that does not draw. jsdom does not
+apply the Vite-imported stylesheet, so no rendering test could have caught it.
+
+`src/styles.test.tsx` instead reads `index.css` off disk, pulls every rule
+prelude with `/[^{}]+(?=\{)/g` (which handles the `@media` nesting that a
+naive split on `}` does not — my first draft got that wrong and extracted
+nothing, which is what the `length > 0` assertion in it is there to catch),
+keeps only the plain `.a .b` shape, renders `<App />` and requires each one to
+match something.
+
+Narrow on purpose. `:hover` and `:has()` describe states one render is not in,
+and `>`/`+` depend on arrangements a default render cannot stand in for — so
+those are excluded rather than overlooked. What is left is a plain claim about
+nesting that `querySelector` settles outright, and it is exactly the shape you
+get by editing the wrong half of a selector you copied. Today it checks one
+selector, `.hint-bubble .field-note`, and passes.
+
+Verified it reproduces: re-adding the `.hint-bubble ` prefix fails the test
+with `expected [ '.hint-bubble .link-note' ] to deeply equal []`.
+
+### Verified
+
+- `npx tsc -b`, `npx eslint src --max-warnings 0`, `npx vitest run`
+  (10 files, 624 tests — one new), `npm run build`.
+- No existing test changed. The fix is CSS only, so the 623 that were green
+  before are green for the same reasons.
+- No browser here, so the box itself is read rather than seen; what is
+  verifiable is that the selector now matches the element the page renders.
+
+### Notes for the print iteration that this displaced
+
+Reading the palette turned up three things the `@media print` block will have
+to handle, worth writing down while they are fresh:
+
+- **`h1` and `.section-heading-amber` print as blank space.** Both paint their
+  text with a `linear-gradient` background and knock the glyphs out with
+  `-webkit-text-fill-color: transparent`. A browser that does not print
+  backgrounds prints nothing at all — so the page title and step 3's heading
+  are the two overrides the printed page is unreadable without.
+- **The filing-status selection prints as unmarked.** `.segmented-option
+  input:checked + span` shows the choice with a `background`, and the radio
+  itself is `opacity: 0`. On paper the checked state needs a border or a
+  weight, not a fill.
+- **`.state-select` is `color: white`** on a dark ground — white on white.
+
+Also: `.chart-container` is a fixed 400px holding a recharts SVG sized to the
+screen, and recharts will not re-measure for print. Scaling it needs the
+`viewBox` the SVG already carries plus `width: 100% !important; height: auto`
+on `.recharts-wrapper` and its `svg`.

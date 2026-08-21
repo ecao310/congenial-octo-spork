@@ -32,6 +32,27 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+/**
+ * The page is tabbed and only the selected panel is mounted, so a test that
+ * asserts on a section has to open that section's tab first. The shared
+ * scenario inputs — tax year, filing status, age, and the five sliders — sit
+ * above the strip and are on every tab, which is why the tests that only touch
+ * those still render the app directly.
+ */
+type TabName =
+  | 'Tax Torpedo'
+  | 'Capital Gains'
+  | 'Medicare'
+  | 'Strategies'
+  | 'Over Time'
+  | 'State Taxes';
+
+const renderTab = (name: TabName): ReturnType<typeof render> => {
+  const utils = render(<App />);
+  fireEvent.click(screen.getByRole('tab', { name }));
+  return utils;
+};
+
 describe('App', () => {
   /**
    * The benefit slider's own input group.
@@ -250,7 +271,7 @@ describe('App', () => {
   });
 
   it('shows the separate-return IRMAA column and its single four-tier cliff', () => {
-    render(<App />);
+    renderTab('Medicare');
     const section = screen
       .getByRole('heading', { name: /medicare's irmaa cliffs/i })
       .closest('section') as HTMLElement;
@@ -269,7 +290,7 @@ describe('App', () => {
   });
 
   it('sizes conversions against IRMAA tier 4 rather than tier 1', () => {
-    render(<App />);
+    renderTab('Strategies');
     selectMfs();
     expect(
       screen.getByRole('option', { name: /IRMAA tier 4 \(Medicare surcharge\)/ }),
@@ -290,7 +311,7 @@ describe('App', () => {
   });
 
   it('renders the Capital Gains Stacking section heading', () => {
-    render(<App />);
+    renderTab('Capital Gains');
     expect(
       screen.getByRole('heading', { name: /capital gains stacking/i }),
     ).toBeInTheDocument();
@@ -307,7 +328,7 @@ describe('App', () => {
   });
 
   it('renders the Roth conversion sizing section and sizes the default scenario', () => {
-    render(<App />);
+    renderTab('Strategies');
     expect(
       screen.getByRole('heading', { name: /roth conversion sizing/i }),
     ).toBeInTheDocument();
@@ -326,7 +347,7 @@ describe('App', () => {
   });
 
   it('resizes the conversion when a different ceiling is picked', () => {
-    render(<App />);
+    renderTab('Strategies');
     const select = screen.getByRole('combobox', { name: /convert up to/i });
 
     fireEvent.change(select, { target: { value: 'irmaa1' } });
@@ -342,7 +363,7 @@ describe('App', () => {
   });
 
   it('counts planned capital gains against the conversion ceiling', () => {
-    render(<App />);
+    renderTab('Strategies');
     const gains = screen.getByRole('slider', { name: /capital gains you plan to realize/i });
     expect(gains).toHaveValue('0');
 
@@ -401,7 +422,7 @@ describe('App', () => {
   });
 
   it('feeds the age 65 deductions into the conversion sizing', () => {
-    render(<App />);
+    renderTab('Strategies');
     expect(screen.getAllByText('$14,069').length).toBeGreaterThanOrEqual(1);
 
     fireEvent.click(screen.getByRole('checkbox', { name: 'Age 65 or older' }));
@@ -515,7 +536,7 @@ describe('App', () => {
   });
 
   it('feeds the muni interest into the conversion sizing', () => {
-    render(<App />);
+    renderTab('Strategies');
     expect(screen.getByText('was $2,813')).toBeInTheDocument();
     expect(screen.getByText('19.65%')).toBeInTheDocument();
 
@@ -547,7 +568,7 @@ describe('App', () => {
         .closest('section');
 
     it('prices the default scenario against the first cliff', () => {
-      render(<App />);
+      renderTab('Medicare');
       const section = irmaaSection();
       // $30,000 of other income drags $11,177.60 of benefits into AGI, and
       // there is no tax-exempt interest, so Medicare's MAGI is $41,178.
@@ -559,7 +580,7 @@ describe('App', () => {
     });
 
     it('places the on-chart cliffs at less other income than their MAGI', () => {
-      render(<App />);
+      renderTab('Medicare');
       const section = irmaaSection();
       // The 85% cap has already bound at these incomes, so every cliff sits
       // exactly $20,155.20 of taxable benefits below its MAGI threshold. Only
@@ -569,7 +590,7 @@ describe('App', () => {
     });
 
     it('shifts the cliffs left by each dollar of tax-exempt interest', () => {
-      render(<App />);
+      renderTab('Medicare');
       fireEvent.change(
         screen.getByRole('slider', { name: /tax-exempt \(municipal\) interest/i }),
         { target: { value: '10000' } },
@@ -585,15 +606,15 @@ describe('App', () => {
     });
 
     it('says so when no cliff lands inside the chart', () => {
-      render(<App />);
+      renderTab('Medicare');
       fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Jointly' }));
       const section = irmaaSection();
-      expect(section).toHaveTextContent('No cliff falls inside the chart above');
+      expect(section).toHaveTextContent('No cliff falls inside the Tax Torpedo chart');
       expect(section).toHaveTextContent('$212,000 of MAGI');
     });
 
     it('charges a couple both on Medicare twice off one MAGI', () => {
-      render(<App />);
+      renderTab('Medicare');
       expect(irmaaSection()).toHaveTextContent('$1,052/yr');
 
       fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Jointly' }));
@@ -608,7 +629,7 @@ describe('App', () => {
     });
 
     it('lists the 2025 premium schedule and marks the current tier', () => {
-      render(<App />);
+      renderTab('Medicare');
       const section = irmaaSection();
       expect(section).toHaveTextContent('Up to $106,000');
       // "From", not "Over": the top row of CMS's table — and of the statutory
@@ -623,7 +644,7 @@ describe('App', () => {
     });
 
     it('states the two-year lag as an explicit x-axis caveat', () => {
-      render(<App />);
+      renderTab('Medicare');
       const section = irmaaSection();
       expect(section).toHaveTextContent('The x-axis caveat.');
       expect(section).toHaveTextContent(
@@ -632,6 +653,117 @@ describe('App', () => {
       expect(section).toHaveTextContent('setting the premium for 2027');
       expect(section).toHaveTextContent('Form SSA-44');
     });
+  });
+});
+
+describe('tabs', () => {
+  const tabNames = [
+    'Tax Torpedo',
+    'Capital Gains',
+    'Medicare',
+    'Strategies',
+    'Over Time',
+    'State Taxes',
+  ];
+
+  it('opens on the tax torpedo, with every other panel unmounted', () => {
+    render(<App />);
+    expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual(tabNames);
+    expect(screen.getByRole('tab', { name: 'Tax Torpedo' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    expect(screen.getAllByRole('tabpanel')).toHaveLength(1);
+    expect(
+      screen.getByRole('heading', { name: /what is the tax torpedo/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('heading', { name: /capital gains stacking/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('swaps the panel when another tab is picked', () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole('tab', { name: 'Capital Gains' }));
+    expect(
+      screen.getByRole('heading', { name: /capital gains stacking/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('heading', { name: /what is the tax torpedo/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  /**
+   * Every section prices off the same scenario, so the inputs live above the
+   * strip rather than inside a panel. A slider that vanished with its tab
+   * would make the whole split unusable — set an income on one tab and it has
+   * to still be set on the next.
+   */
+  it('keeps the shared scenario inputs mounted on every tab', () => {
+    render(<App />);
+    const income = screen.getByRole('slider', { name: /other ordinary income/i });
+    fireEvent.change(income, { target: { value: '90000' } });
+
+    for (const name of tabNames) {
+      fireEvent.click(screen.getByRole('tab', { name }));
+      expect(
+        screen.getByRole('slider', { name: /social security benefit/i }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole('slider', { name: /other ordinary income/i }),
+      ).toHaveValue('90000');
+      expect(screen.getByRole('radio', { name: 'Single' })).toBeChecked();
+    }
+  });
+
+  it('wires each tab to the panel it controls', () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole('tab', { name: 'Medicare' }));
+    const tab = screen.getByRole('tab', { name: 'Medicare' });
+    const panel = screen.getByRole('tabpanel');
+    expect(tab).toHaveAttribute('aria-controls', panel.id);
+    expect(panel).toHaveAttribute('aria-labelledby', tab.id);
+  });
+
+  it('moves between tabs with the arrow keys and wraps at both ends', () => {
+    render(<App />);
+    const tablist = screen.getByRole('tablist');
+    const selected = (): string | null =>
+      screen.getByRole('tab', { selected: true }).textContent;
+
+    fireEvent.keyDown(tablist, { key: 'ArrowRight' });
+    expect(selected()).toBe('Capital Gains');
+
+    fireEvent.keyDown(tablist, { key: 'ArrowLeft' });
+    fireEvent.keyDown(tablist, { key: 'ArrowLeft' });
+    expect(selected()).toBe('State Taxes');
+
+    fireEvent.keyDown(tablist, { key: 'ArrowRight' });
+    expect(selected()).toBe('Tax Torpedo');
+  });
+
+  /**
+   * Roving tabindex: arrowing through the strip must not leave a trail of
+   * tab stops behind it, or a keyboard user pays six presses to leave the
+   * strip on the way to the sliders.
+   */
+  it('keeps only the selected tab in the tab order', () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole('tab', { name: 'Over Time' }));
+    for (const name of tabNames) {
+      expect(screen.getByRole('tab', { name })).toHaveAttribute(
+        'tabindex',
+        name === 'Over Time' ? '0' : '-1',
+      );
+    }
+  });
+
+  it('ignores keys that are not arrows', () => {
+    render(<App />);
+    fireEvent.keyDown(screen.getByRole('tablist'), { key: 'a' });
+    expect(screen.getByRole('tab', { selected: true })).toHaveTextContent(
+      'Tax Torpedo',
+    );
   });
 });
 
@@ -906,7 +1038,7 @@ describe('tax year selector', () => {
   });
 
   it('keeps the IRMAA lag pointed two years past the selected year', () => {
-    render(<App />);
+    renderTab('Medicare');
     expect(
       screen.getByText(/the 2025 income on this chart is really setting the premium for 2027/),
     ).toBeInTheDocument();
@@ -918,7 +1050,7 @@ describe('tax year selector', () => {
   });
 
   it('re-prices the whole IRMAA schedule for 2026, not just its caption', () => {
-    render(<App />);
+    renderTab('Medicare');
     expect(irmaaSection()).toHaveTextContent('2025 premiums, set by 2023 MAGI');
     expect(irmaaSection()).toHaveTextContent('Up to $106,000');
     expect(irmaaSection()).toHaveTextContent('$185.00');
@@ -952,7 +1084,7 @@ describe('state treatment', () => {
     );
 
   it('names the nine states that taxed benefits in 2025, and no others', () => {
-    render(<App />);
+    renderTab('State Taxes');
     expect(stateRows()).toEqual([
       'Colorado',
       'Connecticut',
@@ -975,7 +1107,7 @@ describe('state treatment', () => {
   });
 
   it('gives every listed state a mechanism and that year’s income test', () => {
-    render(<App />);
+    renderTab('State Taxes');
     const section = stateSection();
     expect(section).toHaveTextContent('Income test (2025)');
     expect(section).toHaveTextContent('None — the federal amount flows straight through');
@@ -992,7 +1124,7 @@ describe('state treatment', () => {
   });
 
   it('drops West Virginia and re-prices the indexed states for 2026', () => {
-    render(<App />);
+    renderTab('State Taxes');
     fireEvent.click(screen.getByRole('radio', { name: '2026' }));
     const section = stateSection();
 
@@ -1014,7 +1146,7 @@ describe('state treatment', () => {
   });
 
   it('keeps the full rules collapsed but cites a source for each', () => {
-    render(<App />);
+    renderTab('State Taxes');
     const details = stateSection()!.querySelector('details');
     expect(details).not.toBeNull();
     expect((details as HTMLDetailsElement).open).toBe(false);
@@ -1026,7 +1158,7 @@ describe('state treatment', () => {
   });
 
   it('says outright that it computes nothing', () => {
-    render(<App />);
+    renderTab('State Taxes');
     expect(stateSection()).toHaveTextContent(
       'Nothing on this page computes a state tax.',
     );
@@ -1047,7 +1179,7 @@ describe('multi-year projection', () => {
   };
 
   it('opens on a 20-year horizon at a 2.5% COLA', () => {
-    render(<App />);
+    renderTab('Over Time');
     expect(slider(/years to project/i)).toHaveValue('20');
     expect(slider(/years to project/i)).toHaveAttribute('min', '10');
     expect(slider(/years to project/i)).toHaveAttribute('max', '30');
@@ -1060,14 +1192,14 @@ describe('multi-year projection', () => {
   });
 
   it('names both frozen thresholds and the years they were frozen in', () => {
-    render(<App />);
+    renderTab('Over Time');
     expect(projectionSection()).toHaveTextContent(
       'first provisional-income threshold at $25,000 in 1983 and your second at $34,000 in 1993',
     );
   });
 
   it('climbs the taxable share to the 85% ceiling and names the year', () => {
-    render(<App />);
+    renderTab('Over Time');
     const section = projectionSection();
     // $30,000 of other income and the 2025 average benefit: just under half the
     // benefit is taxable in 2025, all 85% of it by 2035, on unchanged real
@@ -1078,14 +1210,14 @@ describe('multi-year projection', () => {
   });
 
   it('quotes the last year’s tax in first-year dollars, not nominal ones', () => {
-    render(<App />);
+    renderTab('Over Time');
     expect(projectionSection()).toHaveTextContent('Federal tax in 2025 dollars');
     expect(projectionSection()).toHaveTextContent('$1,853 → $4,277');
     expect(projectionSection()).toHaveTextContent("2.31x the first year's");
   });
 
   it('starts required distributions at 73 and shows the divisor it used', () => {
-    render(<App />);
+    renderTab('Over Time');
     const section = projectionSection();
     // Born 1955, so 73 in 2028; $100,000 grown at 5% for three years, over the
     // Uniform Lifetime Table divisor for 73.
@@ -1097,7 +1229,7 @@ describe('multi-year projection', () => {
   });
 
   it('pushes the first distribution to 75 for a 1965 birth year', () => {
-    render(<App />);
+    renderTab('Over Time');
     setSlider(/year you were born/i, '1965');
     const section = projectionSection();
     expect(section).toHaveTextContent('Age 60 in 2025. Distributions become required at 75');
@@ -1107,7 +1239,7 @@ describe('multi-year projection', () => {
   });
 
   it('flags 1959 as the birth year the regulations left reserved', () => {
-    render(<App />);
+    renderTab('Over Time');
     setSlider(/year you were born/i, '1959');
     expect(projectionSection()).toHaveTextContent(
       'the one birth year the regulations have not settled',
@@ -1116,7 +1248,7 @@ describe('multi-year projection', () => {
   });
 
   it('says there is no step when the filer is already past the applicable age', () => {
-    render(<App />);
+    renderTab('Over Time');
     setSlider(/year you were born/i, '1945');
     const section = projectionSection();
     // Age 80 in 2025, applicable age 72 — the distribution is already running,
@@ -1129,7 +1261,7 @@ describe('multi-year projection', () => {
   });
 
   it('drops the distribution entirely when there is no balance', () => {
-    render(<App />);
+    renderTab('Over Time');
     setSlider(/traditional ira and 401\(k\) balance/i, '0');
     const section = projectionSection();
     expect(section).toHaveTextContent('No balance');
@@ -1137,7 +1269,7 @@ describe('multi-year projection', () => {
   });
 
   it('calls the senior-deduction expiry a step without claiming it is the second', () => {
-    render(<App />);
+    renderTab('Over Time');
     // The two steps are independent: the deduction expires in 2029 whatever
     // the birth year, and the first distribution can land either side of it.
     expect(projectionSection()).toHaveTextContent(
@@ -1150,7 +1282,7 @@ describe('multi-year projection', () => {
   });
 
   it('does not claim a climb when the COLA is zero and nothing else moves', () => {
-    render(<App />);
+    renderTab('Over Time');
     setSlider(/traditional ira and 401\(k\) balance/i, '0');
     setSlider(/annual cola and inflation/i, '0');
     const section = projectionSection();
@@ -1161,7 +1293,7 @@ describe('multi-year projection', () => {
   });
 
   it('blames the distribution, not inflation, for a climb at a zero COLA', () => {
-    render(<App />);
+    renderTab('Over Time');
     setSlider(/annual cola and inflation/i, '0');
     const section = projectionSection();
     // The $100,000 balance still grows at 5% while the income it is measured
@@ -1176,7 +1308,7 @@ describe('multi-year projection', () => {
   });
 
   it('credits both inflation and the distribution when both are running', () => {
-    render(<App />);
+    renderTab('Over Time');
     // $10,000 of other income keeps the share short of the ceiling for the
     // whole horizon, so the branch that attributes the climb is the one on
     // screen. It starts at zero: this filer owes nothing on the benefit in
@@ -1199,7 +1331,7 @@ describe('multi-year projection', () => {
   });
 
   it('has nothing to project for a separate return that lived with its spouse', () => {
-    render(<App />);
+    renderTab('Over Time');
     fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Separately' }));
     const section = projectionSection();
     expect(section).toHaveTextContent('85% of the benefit is taxable from the first dollar');
@@ -1208,7 +1340,7 @@ describe('multi-year projection', () => {
   });
 
   it('re-dates the whole projection when the tax year changes', () => {
-    render(<App />);
+    renderTab('Over Time');
     fireEvent.click(screen.getByRole('radio', { name: '2026' }));
     const section = projectionSection();
     expect(section).toHaveTextContent('Age 71 in 2026');
@@ -1240,7 +1372,7 @@ describe('withdrawal sequencing', () => {
   };
 
   it('opens on three orders and its own account balances', () => {
-    render(<App />);
+    renderTab('Over Time');
     expect(slider(/after-tax spending each year/i)).toHaveValue('60000');
     expect(slider(/taxable brokerage account/i)).toHaveValue('300000');
     expect(slider(/of that, cost basis/i)).toHaveValue('60');
@@ -1256,13 +1388,13 @@ describe('withdrawal sequencing', () => {
   });
 
   it('prices the basis slider in cents of realised gain per dollar sold', () => {
-    render(<App />);
+    renderTab('Over Time');
     setSlider(/of that, cost basis/i, '25');
     expect(seqSection()).toHaveTextContent('at 25% basis, 75¢ of every dollar sold');
   });
 
   it('offers no IRMAA ceiling, because the projection cannot index one', () => {
-    render(<App />);
+    renderTab('Over Time');
     const select = screen.getByLabelText(/fill the ira up to/i);
     expect(select).toHaveValue('bracket12');
     const labels = Array.from(select.querySelectorAll('option')).map((o) => o.textContent);
@@ -1271,7 +1403,7 @@ describe('withdrawal sequencing', () => {
   });
 
   it('declares one winner when both scores name the same order', () => {
-    render(<App />);
+    renderTab('Over Time');
     const section = seqSection();
     expect(section).toHaveTextContent('Conventional wins both ways');
     expect(section).toHaveTextContent('$77,757 of lifetime federal tax');
@@ -1280,7 +1412,7 @@ describe('withdrawal sequencing', () => {
   });
 
   it('gives bracket filling the win over a long horizon with a large IRA', () => {
-    render(<App />);
+    renderTab('Over Time');
     setSlider(/traditional ira and 401\(k\) balance/i, '2000000');
     setSlider(/years to project/i, '30');
     const section = seqSection();
@@ -1289,7 +1421,7 @@ describe('withdrawal sequencing', () => {
   });
 
   it('blames the deferred IRA when there is a deferred IRA to blame', () => {
-    render(<App />);
+    renderTab('Over Time');
     // Born 1975 over ten years reaches no applicable age, so nothing is forced
     // out and the conventional order can defer the whole balance.
     setSlider(/year you were born/i, '1975');
@@ -1302,7 +1434,7 @@ describe('withdrawal sequencing', () => {
   });
 
   it('names the gain and the Roth instead when there is no IRA to blame', () => {
-    render(<App />);
+    renderTab('Over Time');
     setSlider(/traditional ira and 401\(k\) balance/i, '0');
     const section = seqSection();
     // The scores still disagree — the cheaper order spent Roth dollars — but
@@ -1317,7 +1449,7 @@ describe('withdrawal sequencing', () => {
   });
 
   it('says there is no IRA to fill rather than blaming the ceiling', () => {
-    render(<App />);
+    renderTab('Over Time');
     setSlider(/traditional ira and 401\(k\) balance/i, '0');
     const section = seqSection();
     expect(section).toHaveTextContent('There is no IRA here to fill');
@@ -1325,7 +1457,7 @@ describe('withdrawal sequencing', () => {
   });
 
   it('blames the ceiling only when the income really has breached it', () => {
-    render(<App />);
+    renderTab('Over Time');
     setSlider(/other ordinary income/i, '150000');
     const section = seqSection();
     expect(section).toHaveTextContent(
@@ -1335,7 +1467,7 @@ describe('withdrawal sequencing', () => {
   });
 
   it('says nothing is being sequenced when the income covers the spending', () => {
-    render(<App />);
+    renderTab('Over Time');
     setSlider(/other ordinary income/i, '150000');
     const section = seqSection();
     // $150,000 plus the benefit funds $60,000 of spending and its tax outright,
@@ -1348,7 +1480,7 @@ describe('withdrawal sequencing', () => {
   });
 
   it('says there is only one account when only one is funded', () => {
-    render(<App />);
+    renderTab('Over Time');
     setSlider(/traditional ira and 401\(k\) balance/i, '0');
     setSlider(/roth ira/i, '0');
     const section = seqSection();
@@ -1358,7 +1490,7 @@ describe('withdrawal sequencing', () => {
   });
 
   it('calls a genuinely close race close', () => {
-    render(<App />);
+    renderTab('Over Time');
     setSlider(/other ordinary income/i, '30000');
     setSlider(/after-tax spending each year/i, '50000');
     setSlider(/traditional ira and 401\(k\) balance/i, '25000');
@@ -1369,7 +1501,7 @@ describe('withdrawal sequencing', () => {
   });
 
   it('refuses to score a retirement the accounts could not fund', () => {
-    render(<App />);
+    renderTab('Over Time');
     setSlider(/after-tax spending each year/i, '150000');
     const section = seqSection();
     expect(section).toHaveTextContent('These accounts do not last 20 years');
@@ -1381,7 +1513,7 @@ describe('withdrawal sequencing', () => {
   });
 
   it('re-dates the comparison when the tax year changes', () => {
-    render(<App />);
+    renderTab('Over Time');
     fireEvent.click(screen.getByRole('radio', { name: '2026' }));
     const section = seqSection();
     expect(section).toHaveTextContent('Both figures are in 2026 dollars');
@@ -1482,7 +1614,7 @@ describe('qualified charitable distribution', () => {
   });
 
   it('re-prices both limits when the tax year changes', () => {
-    render(<App />);
+    renderTab('Strategies');
     expect(qcdSection()).toHaveTextContent('$54,000 to a split-interest entity');
     fireEvent.click(screen.getByRole('radio', { name: '2026' }));
     expect(qcdSlider()).toHaveAttribute('max', '111000');
@@ -1507,7 +1639,7 @@ describe('qualified charitable distribution', () => {
   });
 
   it('prices the benefits it takes back out of the tax base', () => {
-    render(<App />);
+    renderTab('Strategies');
     setSlider(/qualified charitable distribution/i, '10000');
     const section = qcdSection();
     // $30,000 of other income and the average benefit: provisional income
@@ -1523,14 +1655,14 @@ describe('qualified charitable distribution', () => {
   });
 
   it('prompts with the next dollar rather than a row of zeros when unset', () => {
-    render(<App />);
+    renderTab('Strategies');
     expect(qcdSection()).toHaveTextContent(
       /the next dollar given from the IRA rather than the checking account is worth 22\.2% in federal tax/,
     );
   });
 
   it('says so when the 85% cap still binds and only the bracket rate is saved', () => {
-    render(<App />);
+    renderTab('Strategies');
     setSlider(/other ordinary income/i, '100000');
     setSlider(/qualified charitable distribution/i, '8000');
     expect(qcdSection()).toHaveTextContent(
@@ -1540,7 +1672,7 @@ describe('qualified charitable distribution', () => {
   });
 
   it('names the first tier\u2019s own cap rather than calling every flat line 85%', () => {
-    render(<App />);
+    renderTab('Strategies');
     // Half of a $6,000 benefit is $3,000, and $3,000 of inclusion is reached
     // at $31,000 of provisional income — inside the 50% tier, which runs to
     // $34,000. The gift moves provisional income from $33,000 to $31,000, so
@@ -1555,7 +1687,7 @@ describe('qualified charitable distribution', () => {
   });
 
   it('blames the missing benefit, not the thresholds, when there is no benefit', () => {
-    render(<App />);
+    renderTab('Strategies');
     setSlider(/annual social security benefit/i, '0');
     setSlider(/other ordinary income/i, '100000');
     setSlider(/qualified charitable distribution/i, '10000');
@@ -1567,7 +1699,7 @@ describe('qualified charitable distribution', () => {
   });
 
   it('says the benefits were never taxable when provisional income is under the base', () => {
-    render(<App />);
+    renderTab('Strategies');
     setSlider(/annual social security benefit/i, '10000');
     setSlider(/other ordinary income/i, '20000');
     setSlider(/qualified charitable distribution/i, '5000');
@@ -1577,7 +1709,7 @@ describe('qualified charitable distribution', () => {
   });
 
   it('counts the Medicare surcharge the same dollars would have set', () => {
-    render(<App />);
+    renderTab('Strategies');
     setSlider(/annual social security benefit/i, '61296');
     setSlider(/other ordinary income/i, '90000');
     setSlider(/qualified charitable distribution/i, '10000');
@@ -1594,7 +1726,7 @@ describe('qualified charitable distribution', () => {
   });
 
   it('warns when the gift is larger than the distribution it comes from', () => {
-    render(<App />);
+    renderTab('Strategies');
     setSlider(/other ordinary income/i, '5000');
     setSlider(/qualified charitable distribution/i, '20000');
     expect(qcdSection()).toHaveTextContent(/More gift than distribution/);
@@ -1604,7 +1736,7 @@ describe('qualified charitable distribution', () => {
   });
 
   it('says the route made no difference rather than reporting a saving of $0', () => {
-    render(<App />);
+    renderTab('Strategies');
     setSlider(/other ordinary income/i, '10000');
     setSlider(/qualified charitable distribution/i, '5000');
     expect(qcdSection()).toHaveTextContent(/Here the route makes no difference/);
@@ -1616,7 +1748,7 @@ describe('qualified charitable distribution', () => {
   });
 
   it('credits the 0% gains bracket, not the deduction, when the deduction is smaller', () => {
-    render(<App />);
+    renderTab('Strategies');
     // $45,000 of AGI against $15,750 of deductions: the deductions plainly did
     // not cover the return. What zeroes the bill is that everything left is
     // long-term gain, and $29,250 of taxable income is under the $48,350 top
@@ -1632,7 +1764,7 @@ describe('qualified charitable distribution', () => {
   });
 
   it('says nothing can be excluded when there is no distribution to exclude', () => {
-    render(<App />);
+    renderTab('Strategies');
     setSlider(/annual social security benefit/i, '30000');
     setSlider(/other ordinary income/i, '0');
     setSlider(/long-term capital gains/i, '100000');
@@ -1652,7 +1784,7 @@ describe('qualified charitable distribution', () => {
   });
 
   it('prompts for income rather than a rate when there is nothing to give from', () => {
-    render(<App />);
+    renderTab('Strategies');
     setSlider(/other ordinary income/i, '0');
     expect(qcdSection()).toHaveTextContent(/There is nothing here to give/);
     expect(qcdSection()).not.toHaveTextContent(/is worth 0% in federal tax/);
@@ -1789,7 +1921,7 @@ describe('head of household', () => {
   });
 
   it('sizes conversions off its own brackets and gain bands', () => {
-    render(<App />);
+    renderTab('Strategies');
     selectHoh();
     const menu = screen.getByLabelText(/convert up to/i);
     expect(menu).toHaveTextContent('Top of the 12% bracket — $64,850 of taxable income');
@@ -1801,7 +1933,7 @@ describe('head of household', () => {
   });
 
   it("shares Medicare's individual-return column rather than adding a fourth", () => {
-    render(<App />);
+    renderTab('Medicare');
     selectHoh();
     const irmaa = screen
       .getByRole('heading', { name: /medicare's irmaa cliffs/i })
@@ -1817,7 +1949,7 @@ describe('head of household', () => {
   });
 
   it('counts four statuses in the projection, not two', () => {
-    render(<App />);
+    renderTab('Over Time');
     fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Separately' }));
     expect(
       screen.getByText(/The other three statuses have somewhere to climb from/),
@@ -1863,7 +1995,7 @@ describe('retroactive awards and the lump-sum election', () => {
     );
 
   it('opens on two years of back pay at the benefit slider’s monthly rate', () => {
-    render(<App />);
+    renderTab('Strategies');
     expect(screen.getByRole('slider', { name: /months of back pay/i })).toHaveValue(
       '24',
     );
@@ -1874,7 +2006,7 @@ describe('retroactive awards and the lump-sum election', () => {
   });
 
   it('runs from no back pay to five years of it', () => {
-    render(<App />);
+    renderTab('Strategies');
     const slider = screen.getByRole('slider', { name: /months of back pay/i });
     expect(slider).toHaveAttribute('min', '0');
     expect(slider).toHaveAttribute('max', '60');
@@ -1884,7 +2016,7 @@ describe('retroactive awards and the lump-sum election', () => {
   });
 
   it('prices the election against taxing the whole award in one year', () => {
-    render(<App />);
+    renderTab('Strategies');
     // Default scenario: $30,000 of other income, the average benefit, and two
     // years of back pay. Taxed all at once, provisional income is $53,712 and
     // the 85% tier takes $31,333; refigured, each waiting year sits in the 50%
@@ -1900,7 +2032,7 @@ describe('retroactive awards and the lump-sum election', () => {
   });
 
   it('shows each waiting year its own row, and this year’s beside them', () => {
-    render(<App />);
+    renderTab('Strategies');
     expect(worksheetRows()).toEqual([
       ['2023', '12', '$23,712', '$3,428', '14.46%'],
       ['2024', '12', '$23,712', '$3,428', '14.46%'],
@@ -1913,7 +2045,7 @@ describe('retroactive awards and the lump-sum election', () => {
   });
 
   it('re-dates the waiting years and the premium year with the tax year', () => {
-    render(<App />);
+    renderTab('Strategies');
     expect(section()).toHaveTextContent("set by this year's MAGI for 2027");
     fireEvent.click(screen.getByRole('radio', { name: '2026' }));
     expect(section()).toHaveTextContent('24 months across 2 earlier years, 2024–2025');
@@ -1923,7 +2055,7 @@ describe('retroactive awards and the lump-sum election', () => {
   });
 
   it('drops the worksheet and says so when there is no back pay', () => {
-    render(<App />);
+    renderTab('Strategies');
     setSlider(/months of back pay/i, '0');
     expect(section().querySelector('table')).toBeNull();
     expect(section()).toHaveTextContent(
@@ -1933,14 +2065,14 @@ describe('retroactive awards and the lump-sum election', () => {
   });
 
   it('names the Form 1040 checkbox rather than sending you looking for a form', () => {
-    render(<App />);
+    renderTab('Strategies');
     expect(section()).toHaveTextContent(
       /There is no form: you check box 6c on the 1040 and keep the worksheets/,
     );
   });
 
   it('tells you not to elect when the waiting years were the richer ones', () => {
-    render(<App />);
+    renderTab('Strategies');
     // Nothing now, $80,000 through each waiting year: this year has a whole
     // unused base and the waiting years have none, so the election is backwards.
     setSlider(/other ordinary income/i, '0');
@@ -1960,7 +2092,7 @@ describe('retroactive awards and the lump-sum election', () => {
   });
 
   it('separates the benefit it removes from the tax it saves', () => {
-    render(<App />);
+    renderTab('Strategies');
     // No income anywhere: the election takes $5,833 out of the base and the
     // standard deduction had already covered it, so the bill does not move.
     setSlider(/other ordinary income/i, '0');
@@ -1974,7 +2106,7 @@ describe('retroactive awards and the lump-sum election', () => {
   });
 
   it('counts the Medicare cliff the award would have crossed', () => {
-    render(<App />);
+    renderTab('Strategies');
     setSlider(/other ordinary income/i, '150000');
     setSlider(/months of back pay/i, '48');
     expect(section()).toHaveTextContent('tier 3, down from tier 4');
@@ -1986,7 +2118,7 @@ describe('retroactive awards and the lump-sum election', () => {
   });
 
   it('blames the 85% cap when every year involved is actually at it', () => {
-    render(<App />);
+    renderTab('Strategies');
     setSlider(/other ordinary income/i, '150000');
     setSlider(/other income during each waiting year/i, '150000');
     expect(section()).toHaveTextContent(/The election changes nothing here\./);
@@ -1996,7 +2128,7 @@ describe('retroactive awards and the lump-sum election', () => {
   });
 
   it('does not blame the 85% cap for a knife edge in the 50% tier', () => {
-    render(<App />);
+    renderTab('Strategies');
     // $15,000 now and exactly the $25,000 base through the waiting year make
     // the two treatments agree to the dollar with nothing anywhere near 85%:
     // this year alone includes $928, the waiting year adds $1,482, and taxing
@@ -2016,7 +2148,7 @@ describe('retroactive awards and the lump-sum election', () => {
   });
 
   it('says nothing is taxable rather than blaming a cap when nothing is', () => {
-    render(<App />);
+    renderTab('Strategies');
     setSlider(/annual social security benefit/i, '6000');
     setSlider(/other ordinary income/i, '0');
     setSlider(/other income during each waiting year/i, '0');
@@ -2027,7 +2159,7 @@ describe('retroactive awards and the lump-sum election', () => {
   });
 
   it('says a separate return has no unused base to go and find', () => {
-    render(<App />);
+    renderTab('Strategies');
     fireEvent.click(
       screen.getByRole('radio', { name: 'Married Filing Separately' }),
     );
@@ -2054,7 +2186,7 @@ describe('retroactive awards and the lump-sum election', () => {
   });
 
   it('keeps the standing caveats about the earlier years’ returns', () => {
-    render(<App />);
+    renderTab('Strategies');
     expect(section()).toHaveTextContent(
       /You need the earlier years' returns to do this\./,
     );
@@ -2065,7 +2197,7 @@ describe('retroactive awards and the lump-sum election', () => {
       /would need Pub 915's Worksheet 3 rather than Worksheet 2, since the 85% tier did not exist until 1994/,
     );
     expect(section()).toHaveTextContent(
-      /Nothing here feeds the charts above or the projections below/,
+      /Nothing here feeds the charts or the projections on the other tabs/,
     );
   });
 });

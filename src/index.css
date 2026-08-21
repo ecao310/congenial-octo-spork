@@ -783,3 +783,58 @@ footer p {
 .stat-value.fuchsia {
   color: #e879f9;
 }
+
+/* ───── Tab strip ─────
+   The tab list scrolls rather than wraps on a narrow viewport, so the strip
+   stays one row and the panel below it never jumps as the selection moves. */
+.tabs {
+  display: flex;
+  gap: 0.25rem;
+  margin-top: 2rem;
+  padding-bottom: 0.25rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.tab {
+  flex: 0 0 auto;
+  appearance: none;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0.5rem 0.5rem 0 0;
+  padding: 0.625rem 1rem;
+  margin-bottom: -0.375rem;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: #94a3b8;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.2s ease, background 0.2s ease, border-color 0.2s ease;
+}
+
+.tab:hover {
+  color: #e2e8f0;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.tab-active,
+.tab-active:hover {
+  color: #38bdf8;
+  border-bottom-color: #38bdf8;
+  background: rgba(56, 189, 248, 0.1);
+}
+
+.tab:focus-visible {
+  outline: 2px solid rgba(56, 189, 248, 0.6);
+  outline-offset: -2px;
+}
+
+/* The strip already draws the rule that separates it from the panel, so the
+   panel's own leading section must not draw a second one on top of it. */
+.tab-panel > .explainer:first-child {
+  margin-top: 2rem;
+  padding-top: 0;
+  border-top: none;
+}

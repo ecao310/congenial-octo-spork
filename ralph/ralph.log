@@ -2035,3 +2035,81 @@ Defect 3 was exactly that mistake made by the test author.
 
 npx tsc -b, npm run lint, npx vitest run (417 passed, up from 365),
 npm run build — all clean; only the pre-existing >500kB chunk warning.
+
+---
+
+## Split the page into six tabs
+
+`ralph/PLAN.md`: "Page has gotten long. Split into tabs. For example, tab 1
+should be just about the SS 50-85 tax torpedo."
+
+### The split, and why it is by subject rather than by input
+
+Eleven sections had accumulated on one scroll. The grouping:
+
+| Tab | Sections |
+| --- | --- |
+| Tax Torpedo | main marginal-rate chart, tax-exempt-interest pricing, the three `<details>` explainers |
+| Capital Gains | LTCG stacking |
+| Medicare | IRMAA cliffs |
+| Strategies | Roth conversion sizing, QCD, lump-sum election |
+| Over Time | multi-year projection, withdrawal sequencing |
+| State Taxes | state reference table |
+
+The load-bearing decision was *not* the grouping. It was that the scenario
+inputs cannot live in a panel. Six sections price against `ordinaryIncome` and
+five against `plannedLtcg`, so co-locating either slider with its consumers is
+arithmetically impossible — there is no tab that contains all of them. Both
+sliders moved out of the sections that happened to own them (ordinary income
+was inside Capital Gains Stacking, planned LTCG inside Roth conversion sizing)
+and up into a shared block above the tab strip, joining year, filing status,
+age, benefit, muni and QCD. Eight inputs, one scenario, six angles on it.
+
+That is the same fix three separate "Discovered work" bullets had been asking
+for — the muni, IRMAA and QCD sections each said "the sliders further down",
+pointing two and three sections past themselves. All three sentences now say
+"above" and mean it. Flipped those three to [x].
+
+### What the move breaks that a test cannot catch
+
+A slider named "Other Ordinary Income" now sits directly above a chart whose
+x-axis *is* other ordinary income, and the same for LTCG on the Capital Gains
+tab. In both cases the slider is a *point* the prose prices against, not the
+curve's input — the curve sweeps that axis 0→max regardless. Nothing on screen
+distinguishes the two roles. Logged as backlog: a labelled ReferenceLine at the
+slider's value on both charts would.
+
+### Panels unmount rather than hide
+
+`{tab === id && <div role="tabpanel">…}`. Hiding with the `hidden` attribute
+would have kept `getByText` working in the suite, but `getByRole` — 83 of the
+call sites — filters the accessibility tree either way, so `hidden` would have
+bought nothing and left six Recharts trees rendering on every keystroke.
+
+82 tests failed on the unmount, exactly the ones asserting inside a panel. They
+now render through a `renderTab(name)` helper that clicks the tab first. Whole
+describes moved for the single-subject blocks (state treatment, projection,
+sequencing, lump sum); the mixed ones (`App`, `tax year selector`,
+`head of household`, `qualified charitable distribution`) moved test by test,
+which is itself informative — the six QCD tests left on plain `render(<App />)`
+are exactly the ones that only touch the shared slider.
+
+Two more failures were prose assertions pinning sentences the move invalidated
+("No cliff falls inside the chart above" — there is no chart on the Medicare
+tab; "Nothing here feeds the charts above or the projections below" — they are
+a tab away now). Ten such cross-references were rewritten in `App.tsx`, four of
+them naming the destination tab outright.
+
+### Roving tabindex
+
+Arrow keys move selection, `tabIndex` is 0 on the selected tab and -1 on the
+rest, and focus follows. Selection-follows-focus is the right variant here:
+every panel is cheap to mount, so there is nothing to defer with the
+manual-activation dance the APG offers for expensive panels. Seven new tests
+cover the strip itself, including the one that matters most — that the shared
+sliders keep their values across all six tabs.
+
+### Verification
+
+npx tsc -b, npm run lint, npx vitest run (424 passed, up from 417),
+npm run build — all clean; only the pre-existing >500kB chunk warning.

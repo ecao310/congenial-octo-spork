@@ -3983,3 +3983,93 @@ of it.
 `bandRun` and `humpNote` are module-private: exporting them tripped
 `react-refresh/only-export-components`, and the page's prose has always been
 tested through `render(<App />)` anyway.
+
+Close the page with the reader's own answer
+===========================================
+
+Between step 4's last explainer and the disclaimer there was nothing. A reader
+walked four charts and left with no single place saying what the return costs:
+every figure on the page was one step's figure, quoted where that step needed
+it. The page now ends in `#answer` — a card carrying the six figures a reader
+actually leaves with, plus what step 4 sized.
+
+The mirror of the recap that closes step 1. That one names what was set; this
+says what came of it.
+
+### Where it sits
+
+Outside step 4 rather than at the foot of it, against the Discovered Work
+bullet that put it there. It summarises all four steps and belongs to none of
+them, so making it part of step 4's `<section>` would have put it inside the
+step nav's `aria-controls` for step 4 and read as step 4's own close. Last
+before the `<footer>` either way, which is what the original bullet asked for.
+
+That decision has a cost, logged in Discovered work: nothing on the page points
+at it. The nav has four buttons, `nextStepBox` returns null on the last step,
+and the answer is a fifth landmark below three collapsed explainers.
+
+### The seven figures
+
+Total income, federal tax, effective rate, the rate on the next dollar, the
+benefit in the tax base, the Medicare tier, and the room to convert. Six from
+the bullet; the seventh is what the step-4 bullet added when it landed there
+first.
+
+Two of them the page has never stated for any reader. **Benefit in the tax
+base** — $11,178 of $23,712, 47.14% of it, on the default return — is the slope
+every curve is drawn from, and it had never once been a figure. **Medicare
+surcharge** was available only by hovering the chart, which is nothing at all
+on a touch screen: the close names the tier, the MAGI, the distance to the next
+cliff, what crossing it costs, and the two-year lag that means 2025 income is
+setting a 2027 premium.
+
+The other five are third renderings of figures already on screen rather than
+second calculations of them. `hereTax` is `herePoint.totalTax` — the same value
+step 2's readout quotes and the same one step 4 calls "this year's bill", since
+`sizing.taxBefore` computes it straight from `hereScenario`. A test asserts all
+three agree on $2,813 and 5.24%.
+
+### What it says when a figure would be a claim about nothing
+
+Effective rate goes to an em dash when nothing comes in — "0.00%" on $0 of
+income is a statement about a denominator that does not exist — with the reason
+in its own gloss. The benefit row says "None" and names step 1 as the place
+that set it. The conversion row carries all three of `sizeConversion`'s
+outcomes, and both no-room branches now name the ceiling's own measure
+alongside its label, because four income definitions are in that picker and
+"$45,930 past Top of the 12% bracket" does not say which one it is measured in.
+
+### The screenshot
+
+The bullet's last clause — "the thing a reader would screenshot" — is why the
+block restates the return above the figures: `Priced for 2025: a single filer,
+under 65, with $23,712 of Social Security and $30,000 of other income.` An
+answer cropped away from its question is worth nothing, and step 1's recap is
+about 4,000 words up the page.
+
+That repetition is what broke four existing tests. Three `getByText` calls that
+meant "the step 1 recap" started matching two elements, and a count of "a head
+of household" went 2 → 3. Scoped to `scenarioRecap()` and re-counted; logged in
+Discovered work, because it is the second time a page-wide prose assertion has
+broken on an unrelated addition.
+
+### One tidying
+
+`qcdFor(hereScenario)` was inlined in `totalIncome`. Named `given`, because the
+close quotes the figure as well as subtracting it — and it is the *allowed*
+gift, not the slider's, which is the distinction Discovered work item 84 is
+still open on.
+
+### Verified
+
+`npx tsc -b`, `npx eslint src --max-warnings 0`, `npx vitest run` (7 files, 533
+tests, green in 9s), `npm run build`. +11 tests in a new `the closing answer`
+describe: where it sits in the document, all seven default figures, the
+restated return under two statuses, the three-way agreement with steps 2 and 4,
+every figure re-pricing at $90,000 of income (into IRMAA tier 1 and out of any
+room to convert), the tier gloss, two enrollees on a joint return, the
+no-benefit case, muni in and the gift out of the denominator, the ceiling
+swap, and the em-dash rate. CSS: `.answer` takes `.next-step`'s card treatment
+— that is the shape the flow taught for "end of a section" — with a two-column
+`.answer-figures` grid that stacks under 640px, since no row of it means
+anything.

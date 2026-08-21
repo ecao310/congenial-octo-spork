@@ -137,7 +137,9 @@ describe('App', () => {
     expect(
       screen.getByRole('radio', { name: 'Married Filing Separately' }),
     ).not.toBeChecked();
-    expect(screen.getByText(/a single filer/i)).toBeInTheDocument();
+    // The close repeats the status prose, so this asks the recap that closes
+    // step 1 rather than the page.
+    expect(scenarioRecap()).toHaveTextContent('a single filer');
   });
 
   it('does not render a separate total federal tax panel', () => {
@@ -185,9 +187,7 @@ describe('App', () => {
     fireEvent.click(mfj);
     expect(mfj).toBeChecked();
     expect(screen.getByRole('radio', { name: 'Single' })).not.toBeChecked();
-    expect(
-      screen.getByText(/a married couple filing jointly/i),
-    ).toBeInTheDocument();
+    expect(scenarioRecap()).toHaveTextContent('a married couple filing jointly');
   });
 
   /* ───── Married filing separately (lived with spouse) ───── */
@@ -229,9 +229,9 @@ describe('App', () => {
     // And the escape hatch for the other kind of separate filer.
     expect(warning).toHaveTextContent(/lived apart from your spouse for the entire year/i);
     expect(warning).toHaveTextContent('$375,800');
-    expect(
-      screen.getByText(/filing separately who lived with their spouse/i),
-    ).toBeInTheDocument();
+    expect(scenarioRecap()).toHaveTextContent(
+      'filing separately who lived with their spouse',
+    );
   });
 
   it('moves the warning figures with the benefit and the muni slider', () => {
@@ -1851,8 +1851,9 @@ describe('head of household', () => {
     selectHoh();
     expect(hoh).toBeChecked();
     expect(screen.getByRole('radio', { name: 'Single' })).not.toBeChecked();
-    // Once in the recap that closes step 1, once opening the status note.
-    expect(screen.getAllByText(/a head of household/i)).toHaveLength(2);
+    // Once in the recap that closes step 1, once in the close that ends the
+    // page, once opening the status note.
+    expect(screen.getAllByText(/a head of household/i)).toHaveLength(3);
   });
 
   it('explains that the thresholds are a single filer\'s and the rest is not', () => {
@@ -2338,5 +2339,238 @@ describe('sizing the conversion', () => {
     expect(section().querySelector('.chart-key')).toHaveTextContent(
       'runs from your own $30,000 out to $44,069 of other income',
     );
+  });
+});
+
+/**
+ * The close.
+ *
+ * Step 1 ends by naming the return every later step prices; this ends the page
+ * by saying what came of it. Six figures a reader leaves with — total income,
+ * the tax, the average rate, the rate on the next dollar, how much of the
+ * benefit ended up in the tax base, and which Medicare tier the MAGI landed in
+ * — plus what step 4 sized, all in one block for the first time.
+ */
+describe('the closing answer', () => {
+  const answer = (): HTMLElement => document.getElementById('answer') as HTMLElement;
+
+  const intro = (): HTMLElement =>
+    answer().querySelector('.answer-intro') as HTMLElement;
+
+  /** One figure of the close, found by the label above it. */
+  const figure = (label: string): HTMLElement =>
+    within(answer()).getByText(label).closest('.answer-figure') as HTMLElement;
+
+  const setIncome = (value: number): void => {
+    fireEvent.change(
+      screen.getByRole('slider', { name: /other income \(not social security\)/i }),
+      { target: { value: String(value) } },
+    );
+  };
+
+  const setBenefit = (value: number): void => {
+    fireEvent.change(
+      screen.getByRole('slider', { name: /social security benefit/i }),
+      { target: { value: String(value) } },
+    );
+  };
+
+  it('ends the page, after step 4 and before the disclaimer', () => {
+    render(<App />);
+    expect(
+      screen.getByRole('heading', { name: /what this return costs/i, level: 2 }),
+    ).toBeInTheDocument();
+    expect(answer().previousElementSibling?.id).toBe('step-conversion');
+    expect(answer().nextElementSibling?.tagName).toBe('FOOTER');
+    expect(answer().nextElementSibling).toHaveTextContent(
+      /does not constitute tax or financial advice/i,
+    );
+  });
+
+  it('answers with the six figures the default return produces', () => {
+    render(<App />);
+    expect(figure('Total income')).toHaveTextContent('$53,712');
+    expect(figure('Federal income tax')).toHaveTextContent('$2,813');
+    expect(figure('Effective rate')).toHaveTextContent('5.24%');
+    expect(figure('The next dollar')).toHaveTextContent('22.2%');
+    expect(figure('Benefit in the tax base')).toHaveTextContent(
+      '$11,178 of $23,712',
+    );
+    expect(figure('Benefit in the tax base')).toHaveTextContent('47.14% of it');
+    expect(figure('Medicare surcharge')).toHaveTextContent(
+      'None \u2014 the standard premium',
+    );
+    expect(figure('Room to convert')).toHaveTextContent('$14,069 fits');
+  });
+
+  /**
+   * A screenshot of an answer with no question in it is worth nothing, so the
+   * block restates the return above the figures rather than relying on step
+   * 1's recap being in the same frame.
+   */
+  it('restates the return it prices', () => {
+    render(<App />);
+    expect(intro()).toHaveTextContent(
+      'Priced for 2025: a single filer, under 65, with $23,712 of Social Security and $30,000 of other income.',
+    );
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Jointly' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Age 65 or older' }));
+    expect(intro()).toHaveTextContent(
+      'Priced for 2025: a married couple filing jointly, one spouse 65 or older,',
+    );
+  });
+
+  /**
+   * The tax and the two rates are already on the page twice — step 2's readout
+   * quotes both, step 4 calls the same tax "this year's bill". The close is a
+   * third rendering of one figure, not a second calculation of it.
+   */
+  it('quotes the same tax and rates the steps above it do', () => {
+    render(<App />);
+    const torpedoReadout = document.querySelector(
+      '#step-torpedo .slider-readout',
+    ) as HTMLElement;
+    expect(torpedoReadout).toHaveTextContent('owes $2,813 in federal tax');
+    expect(torpedoReadout).toHaveTextContent('an effective rate of 5.24%');
+    expect(
+      document.querySelector('#step-conversion .slider-readout'),
+    ).toHaveTextContent("taking this year's bill from $2,813");
+
+    expect(figure('Federal income tax')).toHaveTextContent('$2,813');
+    expect(figure('Effective rate')).toHaveTextContent('5.24%');
+    expect(figure('The next dollar')).toHaveTextContent('22.2%');
+  });
+
+  it('re-prices every figure when step 2 moves the income', () => {
+    render(<App />);
+    setIncome(90_000);
+    expect(figure('Total income')).toHaveTextContent('$113,712');
+    expect(figure('Federal income tax')).toHaveTextContent('$15,683');
+    expect(figure('Effective rate')).toHaveTextContent('13.79%');
+    // Past the torpedo: the next dollar is back to its own bracket rate.
+    expect(figure('The next dollar')).toHaveTextContent('22%');
+    // And the 85% cap is binding, which is why it is over.
+    expect(figure('Benefit in the tax base')).toHaveTextContent(
+      '$20,155 of $23,712',
+    );
+    expect(figure('Benefit in the tax base')).toHaveTextContent('85% of it');
+    expect(figure('Medicare surcharge')).toHaveTextContent(
+      'Tier 1 of 5 \u2014 $1,052/yr',
+    );
+    expect(figure('Room to convert')).toHaveTextContent('Nothing fits');
+    expect(figure('Room to convert')).toHaveTextContent(
+      'already $45,930 past Top of the 12% bracket, $48,475 of taxable income',
+    );
+  });
+
+  /**
+   * Which tier a reader's own MAGI lands in has only ever been available by
+   * hovering the chart, which is nothing at all on a touch screen.
+   */
+  it('names the tier the MAGI lands in and what the next cliff costs', () => {
+    render(<App />);
+    const medicare = figure('Medicare surcharge');
+    expect(medicare).toHaveTextContent('On $41,178 of MAGI');
+    expect(medicare).toHaveTextContent(
+      'Another $64,822 of it crosses the next cliff, which costs $1,052 a year on the strength of one dollar.',
+    );
+    expect(medicare).toHaveTextContent(
+      'Billed on a 2-year lag, so this is what 2025 income sets for 2027.',
+    );
+  });
+
+  it('charges the surcharge to each enrollee on a joint return', () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Jointly' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Age 65 or older' }));
+    fireEvent.click(
+      screen.getByRole('checkbox', { name: 'Both spouses are 65 or older' }),
+    );
+    setIncome(140_000);
+    expect(figure('Medicare surcharge')).toHaveTextContent(
+      'On $160,155 of MAGI, charged to each of you.',
+    );
+    // Two enrollees, so the cliff below costs twice what one filer pays.
+    expect(figure('Medicare surcharge')).toHaveTextContent(
+      'costs $2,105 a year',
+    );
+  });
+
+  it('says there is nothing to drag in when step 1 sets no benefit', () => {
+    render(<App />);
+    setBenefit(0);
+    expect(intro()).toHaveTextContent(
+      'with no Social Security and $30,000 of other income',
+    );
+    expect(figure('Benefit in the tax base')).toHaveTextContent('None');
+    expect(figure('Benefit in the tax base')).toHaveTextContent(
+      'Step 1 sets no benefit, so there is nothing for other income to drag in',
+    );
+    expect(figure('Total income')).toHaveTextContent('$30,000');
+    expect(figure('Effective rate')).toHaveTextContent('4.91%');
+  });
+
+  /**
+   * The same denominator the effective rate above step 2 uses: money received,
+   * so tax-exempt interest is in it, and a gift that never reaches the filer
+   * is not.
+   */
+  it('counts tax-exempt interest into the total and a charitable gift out', () => {
+    render(<App />);
+    fireEvent.change(
+      screen.getByRole('slider', { name: /tax-exempt \(municipal\) interest/i }),
+      { target: { value: '10000' } },
+    );
+    expect(figure('Total income')).toHaveTextContent('$63,712');
+    expect(figure('Total income')).toHaveTextContent(
+      'plus $10,000 of tax-exempt interest',
+    );
+    expect(figure('Effective rate')).toHaveTextContent('6.02%');
+
+    fireEvent.change(
+      screen.getByRole('slider', { name: /tax-exempt \(municipal\) interest/i }),
+      { target: { value: '0' } },
+    );
+    fireEvent.change(
+      screen.getByRole('slider', { name: /qualified charitable distribution/i }),
+      { target: { value: '20000' } },
+    );
+    expect(figure('Total income')).toHaveTextContent('$33,712');
+    expect(figure('Total income')).toHaveTextContent(
+      'less the $20,000 that went straight to charity',
+    );
+    // The gift takes provisional income under the 50% base, so none of the
+    // benefit is taxable and the return owes nothing.
+    expect(figure('Federal income tax')).toHaveTextContent('$0');
+    expect(figure('Benefit in the tax base')).toHaveTextContent('$0 of $23,712');
+  });
+
+  it('carries whatever line step 4 is sized against', () => {
+    render(<App />);
+    expect(figure('Room to convert')).toHaveTextContent(
+      'Sized against Top of the 12% bracket, $48,475 of taxable income. It costs $2,765, taking the bill to $5,578 \u2014 an average of 19.65% on every dollar converted.',
+    );
+
+    fireEvent.click(
+      screen.getByRole('radio', { name: /^Social Security 50% base/ }),
+    );
+    expect(figure('Room to convert')).toHaveTextContent('Nothing fits');
+    expect(figure('Room to convert')).toHaveTextContent(
+      'already $16,856 past Social Security 50% base, $25,000 of provisional income',
+    );
+  });
+
+  /** No income is no denominator, and "0.00%" would be a claim about nothing. */
+  it('holds the effective rate back when nothing comes in', () => {
+    render(<App />);
+    setBenefit(0);
+    setIncome(0);
+    expect(figure('Total income')).toHaveTextContent('$0');
+    expect(figure('Effective rate')).toHaveTextContent('\u2014');
+    expect(figure('Effective rate')).toHaveTextContent(
+      'there is no income to average a bill over',
+    );
+    expect(figure('Effective rate')).not.toHaveTextContent('%');
   });
 });

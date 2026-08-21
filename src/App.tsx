@@ -1005,6 +1005,14 @@ const App: React.FC = () => {
   );
 
   /**
+   * How much of a charitable gift 408(d)(8) can actually exclude, which is the
+   * gift capped by the ordinary income there is to take it out of. Named
+   * rather than inlined because the close below quotes the figure as well as
+   * subtracting it.
+   */
+  const given = qcdFor(hereScenario);
+
+  /**
    * Everything this return takes in, which is the denominator an effective
    * rate needs and the page had nowhere until now.
    *
@@ -1018,7 +1026,7 @@ const App: React.FC = () => {
    */
   const totalIncome = Math.max(
     0,
-    ordinaryIncome - qcdFor(hereScenario) + ssBenefit + muniInterest,
+    ordinaryIncome - given + ssBenefit + muniInterest,
   );
 
   /**
@@ -1180,6 +1188,40 @@ const App: React.FC = () => {
 
   /** What the ceiling caps, spelled out for the sentence that quotes it. */
   const ceilingMeasure = CONVERSION_MEASURE_LABELS[ceiling.measure];
+
+  /* ───── The close: what the four steps add up to ───── */
+
+  /**
+   * How much of the benefit 86(a) actually taxes, at the reader's own point.
+   *
+   * The page has drawn the taxable share as a slope since the first chart —
+   * it is what makes the torpedo a torpedo — and has never once stated it as
+   * a figure for the return in front of the reader. Same call every point on
+   * every curve makes; this one asks it about one point.
+   */
+  const taxableSS = taxableSocialSecurity(hereScenario);
+
+  /**
+   * Medicare's own reading of this return, which is neither of the income
+   * definitions the tax figures use: AGI with tax-exempt interest added back.
+   * The tooltip has assessed it per hovered point since the cliffs went on
+   * the chart, so a reader who never hovers has never seen which tier their
+   * own MAGI lands in.
+   */
+  const hereMagi = irmaaMagi(hereScenario);
+  const hereIrmaa = irmaaFor(hereMagi, { filingStatus, beneficiaries, year });
+
+  /**
+   * The year's federal tax at the reader's point.
+   *
+   * Read off the curve rather than recomputed, so the close quotes the figure
+   * step 2's readout already quotes rather than a second rounding of it.
+   * `sizing.taxBefore` — what step 4 calls this year's bill — is the same tax
+   * taken straight from `hereScenario`, so all three agree; it stands in here
+   * for a slider parked below the curve's first sample, which would mean
+   * below $0.
+   */
+  const hereTax = herePoint?.totalTax ?? sizing.taxBefore;
 
   /**
    * Where the step nav and the next-step boxes both land.
@@ -2573,6 +2615,166 @@ const App: React.FC = () => {
             </p>
           </div>
         </details>
+      </section>
+
+      {/* ───── The close: the reader's own answer, in one place ─────
+
+          The mirror of the recap that closes step 1. That one names what was
+          set; this one says what came of it — and it is the first place on
+          the page where the six figures a reader actually leaves with sit
+          together rather than one per step.
+
+          Outside step 4 rather than at the foot of it, because it summarises
+          all four steps and belongs to none of them, and last before the
+          disclaimer because it is the thing a reader would screenshot. That
+          is also why it restates the return above the figures: a screenshot
+          of an answer with no question in it is worth nothing. */}
+      <section className="answer" id="answer" aria-labelledby="answer-heading">
+        <p className="answer-kicker">The answer</p>
+        <h2 className="answer-heading" id="answer-heading">
+          What this return costs
+        </h2>
+        <p className="answer-intro">
+          Priced for {year}: {FILING_STATUS_PROSE[filingStatus]}, {ageProse},
+          with{' '}
+          {ssBenefit > 0
+            ? `${formatCurrency(ssBenefit)} of Social Security`
+            : 'no Social Security'}{' '}
+          and {formatCurrency(ordinaryIncome)} of other income
+          {plannedLtcg > 0
+            ? `, ${formatCurrency(plannedLtcg)} of it a long-term gain`
+            : ''}
+          {muniInterest > 0
+            ? `, plus ${formatCurrency(muniInterest)} of tax-exempt interest`
+            : ''}
+          .
+        </p>
+
+        <dl className="answer-figures">
+          <div className="answer-figure">
+            <dt>Total income</dt>
+            <dd>
+              <strong>{formatCurrency(totalIncome)}</strong>
+              <span className="answer-gloss">
+                Other income plus the <em>whole</em> benefit
+                {muniInterest > 0
+                  ? `, plus ${formatCurrency(muniInterest)} of tax-exempt interest`
+                  : ''}
+                {given > 0
+                  ? `, less the ${formatCurrency(given)} that went straight to charity`
+                  : ''}
+                . The untaxed part of the benefit is counted here on purpose:
+                it is the part the whole page is about, and against taxable
+                income it would vanish.
+              </span>
+            </dd>
+          </div>
+
+          <div className="answer-figure">
+            <dt>Federal income tax</dt>
+            <dd>
+              <strong>{formatCurrency(hereTax)}</strong>
+              <span className="answer-gloss">
+                What the {year} return owes. Federal income tax only &mdash;
+                no state, and no Medicare premium, which is charged rather
+                than taxed and gets its own line below.
+              </span>
+            </dd>
+          </div>
+
+          <div className="answer-figure">
+            <dt>Effective rate</dt>
+            <dd>
+              <strong>
+                {totalIncome > 0
+                  ? formatPercent(effectiveRateOn(hereTax))
+                  : '\u2014'}
+              </strong>
+              <span className="answer-gloss">
+                {totalIncome > 0
+                  ? 'That tax over that income: the average across every dollar of it, and the figure to hold against the years the same money would otherwise come out in.'
+                  : 'Nothing comes in, so there is no income to average a bill over.'}
+              </span>
+            </dd>
+          </div>
+
+          <div className="answer-figure">
+            <dt>The next dollar</dt>
+            <dd>
+              <strong>
+                {herePoint ? `${herePoint.marginalRate}%` : '\u2014'}
+              </strong>
+              <span className="answer-gloss">
+                What one more dollar of ordinary income costs, where the amber
+                line crosses step 2&apos;s curve. The gap between this and the
+                average above it is the whole reason that curve is worth
+                drawing.
+              </span>
+            </dd>
+          </div>
+
+          <div className="answer-figure">
+            <dt>Benefit in the tax base</dt>
+            <dd>
+              <strong>
+                {ssBenefit > 0
+                  ? `${formatCurrency(taxableSS)} of ${formatCurrency(ssBenefit)}`
+                  : 'None'}
+              </strong>
+              <span className="answer-gloss">
+                {ssBenefit > 0
+                  ? `${formatPercent(taxableSS / ssBenefit)} of it. 86(a) can never make more than 85% taxable, and whatever is left never reaches the return at all.`
+                  : 'Step 1 sets no benefit, so there is nothing for other income to drag in \u2014 every curve on this page is an ordinary one.'}
+              </span>
+            </dd>
+          </div>
+
+          <div className="answer-figure">
+            <dt>Medicare surcharge</dt>
+            <dd>
+              <strong>
+                {hereIrmaa.tier > 0
+                  ? `Tier ${hereIrmaa.tier} of 5 \u2014 ${formatCurrency(hereIrmaa.annualSurcharge)}/yr`
+                  : 'None \u2014 the standard premium'}
+              </strong>
+              <span className="answer-gloss">
+                On {formatCurrency(hereMagi)} of MAGI
+                {beneficiaries > 1 ? ', charged to each of you' : ''}.{' '}
+                {hereIrmaa.headroom !== null
+                  ? `Another ${formatCurrency(hereIrmaa.headroom)} of it crosses the next cliff, which costs ${formatCurrency(hereIrmaa.nextStep)} a year on the strength of one dollar.`
+                  : 'This is the top tier; there is no cliff above it.'}{' '}
+                Billed on a {IRMAA_LOOKBACK_YEARS}-year lag, so this is what{' '}
+                {year} income sets for {year + IRMAA_LOOKBACK_YEARS}.
+              </span>
+            </dd>
+          </div>
+
+          <div className="answer-figure">
+            <dt>Room to convert</dt>
+            <dd>
+              <strong>
+                {conversionFits
+                  ? `${formatCurrency(sizing.conversion)} fits`
+                  : 'Nothing fits'}
+              </strong>
+              <span className="answer-gloss">
+                {conversionFits
+                  ? `Sized against ${ceiling.label}, ${formatCurrency(ceiling.amount)} of ${ceilingMeasure}. It costs ${formatCurrency(sizing.taxCost)}, taking the bill to ${formatCurrency(sizing.taxAfter)} \u2014 an average of ${sizing.costPerDollar}% on every dollar converted.`
+                  : sizing.alreadyOver
+                    ? `This return is already ${formatCurrency(Math.round(-sizing.headroom))} past ${ceiling.label}, ${formatCurrency(ceiling.amount)} of ${ceilingMeasure}, so there is no room under it to convert into. Step 4 has five other lines to pick from.`
+                    : `This return sits within a dollar of ${ceiling.label}, ${formatCurrency(ceiling.amount)} of ${ceilingMeasure}, so the largest conversion that stays under it rounds to nothing. Step 4 has five other lines to pick from.`}
+              </span>
+            </dd>
+          </div>
+        </dl>
+
+        <p className="answer-note">
+          Every figure here moves the moment any slider does, and none of them
+          is a filing: this is the standard deduction with nothing itemised,
+          no credits, no other household member&apos;s income, no state and no
+          withholding. What they are for is the comparison &mdash; this year
+          against the years the same money would otherwise come out in.
+        </p>
       </section>
 
       <footer>

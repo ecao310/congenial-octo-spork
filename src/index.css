@@ -860,6 +860,105 @@ footer p {
   transform: translateX(0.25rem);
 }
 
+/* ───── The close ───────────────────────────────────────────────────────────
+ *
+ * The mirror of `.scenario-recap`, which is a quiet rule in the margin
+ * because it summarises inputs already on screen. This one is a card, because
+ * it is the page's answer and the thing a reader would screenshot — and it
+ * takes `.next-step`'s treatment exactly, since that is the shape the flow has
+ * taught for "this is the end of a section, and here is where it goes".
+ */
+.answer {
+  margin-top: 2.5rem;
+  padding: 1.5rem;
+  background: rgba(56, 189, 248, 0.06);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  border-radius: 0.75rem;
+}
+
+.answer-kicker {
+  margin: 0;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #38bdf8;
+}
+
+.answer-heading {
+  margin: 0.25rem 0 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #f8fafc;
+}
+
+.answer-intro {
+  margin: 0.5rem 0 0;
+  font-size: 0.9375rem;
+  line-height: 1.6;
+  color: #94a3b8;
+}
+
+/* Two columns where there is room for two. The figures are read down the list
+   rather than across it — no row means anything — so stacking on a narrow
+   screen loses nothing but the width. */
+.answer-figures {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.25rem 1.5rem;
+  margin: 1.5rem 0 0;
+}
+
+.answer-figure {
+  min-width: 0;
+  padding-left: 0.875rem;
+  border-left: 2px solid rgba(56, 189, 248, 0.35);
+}
+
+.answer-figure dt {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+
+.answer-figure dd {
+  margin: 0.25rem 0 0;
+}
+
+.answer-figure dd strong {
+  display: block;
+  font-size: 1.25rem;
+  font-weight: 700;
+  line-height: 1.3;
+  color: #f8fafc;
+  font-variant-numeric: tabular-nums;
+}
+
+.answer-gloss {
+  display: block;
+  margin-top: 0.375rem;
+  font-size: 0.8125rem;
+  line-height: 1.55;
+  color: #94a3b8;
+}
+
+.answer-note {
+  margin: 1.5rem 0 0;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  color: #64748b;
+}
+
+@media (max-width: 640px) {
+  .answer-figures {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 /* ───── Advanced inputs ─────────────────────────────────────────────────────
  *
  * A quieter sibling of `.explainer`: same disclosure chevron, but sunk into

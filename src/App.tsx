@@ -7,6 +7,7 @@ import {
   ResponsiveContainer,
   AreaChart,
   Area,
+  ReferenceArea,
   ReferenceLine,
 } from 'recharts';
 import {
@@ -40,6 +41,9 @@ import {
   irmaaCliffs,
   irmaaMagiYear,
   IRMAA_LOOKBACK_YEARS,
+  conversionCeilings,
+  sizeConversion,
+  CONVERSION_MEASURE_LABELS,
 } from './utils/tax';
 import type {
   TaxYear,
@@ -48,6 +52,7 @@ import type {
   CurveSegment,
   CurveStanding,
   IrmaaCliff,
+  ConversionCeilingId,
 } from './utils/tax';
 
 const DEFAULT_ORDINARY_INCOME = 30_000;
@@ -55,10 +60,11 @@ const DEFAULT_ORDINARY_INCOME = 30_000;
 const MAX_MUNI_INTEREST = 50_000;
 
 /**
- * One worked example in three steps, in the order a reader builds it: the
- * benefit they will collect, what the rest of their income does to it, and how
- * much of that rest is a long-term capital gain. Every step prices the same
- * return, so a figure set in step 1 is still set in step 3.
+ * One worked example in four steps, in the order a reader builds it: the
+ * benefit they will collect, what the rest of their income does to it, how
+ * much of that rest is a long-term capital gain, and how many more dollars
+ * they can take out before the next one costs more. Every step prices the same
+ * return, so a figure set in step 1 is still set in step 4.
  *
  * A gain is a *share* of the income entered in step 2, never something added
  * on top of it — see `splitOtherIncome`. So the reader's total income is one
@@ -80,12 +86,22 @@ const MAX_MUNI_INTEREST = 50_000;
  * `compareSequencing`, `lumpSumElection` and the state table are all still in
  * `utils/`, still under test, and still exported.
  *
- * Every step has the same shape: the chart, then the one slider that says
+ * Every step has the same shape: the chart, then the one control that says
  * where on that chart the reader is standing, then the collapsed explainers,
  * then the box to the next step. Step 1 is the exception that sets the rule —
  * it has no curve of its own, so the return itself (year, filing status, age)
- * stands where the chart stands on the two steps below it, and the benefit
- * slider follows it in the slider's place.
+ * stands where the chart stands on the steps below it, and the benefit slider
+ * follows it in the control's place. Step 4's control is a radio group rather
+ * than a slider, because the lines a conversion is sized against are six named
+ * places rather than a continuum — but it does the same job, moving a marker
+ * along a curve that is already drawn.
+ *
+ * Step 4 is the one that answers the question in the h1. Steps 2 and 3 price
+ * the next dollar; step 4 prices a block of them, by asking which line the
+ * reader would rather not cross and reading back the largest conversion that
+ * stays under it. It re-draws step 2's curve rather than a new one, because
+ * the conversion is measured on step 2's own axis: a Roth conversion is
+ * ordinary income, so it walks the reader rightwards along the same sweep.
  *
  * So the inputs are split across the steps that move them: year, filing
  * status, age and the benefit are step 1, other ordinary income is step 2 and
@@ -116,6 +132,13 @@ const STEPS = [
     heading: 'Capital Gains Stacking',
     blurb:
       'Say how much of that income is a long-term gain, and watch the two effects stack.',
+  },
+  {
+    id: 'conversion',
+    navLabel: 'Roth conversion',
+    heading: 'Sizing the conversion',
+    blurb:
+      'Pick the line you would rather not cross, and read off the largest conversion that fits under it.',
   },
 ] as const;
 
@@ -528,6 +551,18 @@ export const StandingNote: React.FC<StandingNoteProps> = ({ standing, at }) => {
   );
 };
 
+/**
+ * Sampling interval for a swept curve, and the step of any slider walking it.
+ *
+ * The interval doubles each time the axis does, so the widest chart this app
+ * can draw samples no more points than the narrowest one always did — at most
+ * 600 either way. The widest is not step 2's: a conversion sized against the
+ * top of the 22% bracket can carry a joint return past $250,000 of other
+ * income, and a maxed charitable gift on top of that further still.
+ */
+const curveStepFor = (axisMax: number): number =>
+  axisMax > 300_000 ? 1000 : axisMax > 150_000 ? 500 : 250;
+
 const App: React.FC = () => {
   const [step, setStep] = useState<StepId>('benefit');
   const [year, setYear] = useState<TaxYear>(() => defaultTaxYear());
@@ -541,6 +576,13 @@ const App: React.FC = () => {
   const [spouseIsSenior, setSpouseIsSenior] = useState<boolean>(false);
   const [muniInterest, setMuniInterest] = useState<number>(0);
   const [qcd, setQcd] = useState<number>(0);
+  /**
+   * Which line step 4 sizes the conversion against. The top of the 12% bracket
+   * is the default because it is the one a reader arrives already thinking
+   * about — the others are lines they have to be told exist, which is what the
+   * picker's own captions are for.
+   */
+  const [ceilingId, setCeilingId] = useState<ConversionCeilingId>('bracket12');
 
   const yearFiling = filingParams(year, filingStatus);
   /**
@@ -636,21 +678,12 @@ const App: React.FC = () => {
   );
 
   /**
-   * Sampling interval for the swept curve, and the step of the slider that
-   * walks it.
-   *
-   * The interval doubles each time the axis does, so the widest chart this app
-   * can draw samples no more points than the narrowest one always did — at
-   * most 600 either way. The third rung is new: a maxed charitable gift pushes
-   * a joint return claiming the senior deduction out to $500,000 of other
-   * income, where $500 sampling would have cost a thousand points.
-   *
    * The slider steps in whatever the curve samples, never finer than the $500
    * it has always used. `pointAt` reads the reader's position back off the
    * nearest sample at or below it, so a slider that stepped finer than the
    * sweep would quietly report the marginal rate from somewhere else.
    */
-  const curveStep = axisMax > 300_000 ? 1000 : axisMax > 150_000 ? 500 : 250;
+  const curveStep = curveStepFor(axisMax);
   const incomeSliderStep = Math.max(500, curveStep);
 
   /**
@@ -888,6 +921,123 @@ const App: React.FC = () => {
         `${i === 0 ? 'costs' : 'another'} ${formatCurrency(c.step)}/yr`,
     )
     .join('; ');
+
+  /* ───── Step 4: how many dollars fit before the next one costs more ───── */
+
+  /**
+   * The six lines a conversion can be sized against, for this return.
+   *
+   * Only the year and the filing status move them — a ceiling is a fixed line,
+   * not a position relative to one — so the list is rebuilt when either
+   * changes and the reader's pick survives, because every status offers the
+   * same six ids. `?? ceilings[0]` is for nothing that can happen today and
+   * everything that could if an id were ever retired.
+   */
+  const ceilings = useMemo(
+    () => conversionCeilings({ filingStatus, year }),
+    [filingStatus, year],
+  );
+  const ceiling = ceilings.find((c) => c.id === ceilingId) ?? ceilings[0];
+
+  /**
+   * The return step 4 converts *from*, in the shape `sizeConversion` reads.
+   *
+   * Steps 2 and 3 treat the gain as a share of one other-income figure; the
+   * tax chain treats the two as separate line items. `splitOtherIncome` is the
+   * translation, and it matters here for the same reason it matters on the
+   * charts: a conversion is ordinary income, so it has to land on the ordinary
+   * half rather than on a total that is part gain.
+   */
+  const conversionScenario = useMemo(
+    () => ({
+      ...splitOtherIncome(ordinaryIncome, plannedLtcg),
+      ssBenefit,
+      filingStatus,
+      seniors,
+      muniInterest,
+      qcd,
+      year,
+    }),
+    [ordinaryIncome, plannedLtcg, ssBenefit, filingStatus, seniors, muniInterest, qcd, year],
+  );
+
+  /**
+   * The answer the h1 asks for: the largest conversion that stays under the
+   * chosen line, what it costs, and what the dollar past the line costs.
+   */
+  const sizing = useMemo(
+    () => sizeConversion(ceiling, conversionScenario),
+    [ceiling, conversionScenario],
+  );
+
+  /**
+   * Where the ceiling falls on step 2's own axis.
+   *
+   * A ceiling is quoted in taxable income, provisional income or MAGI, none of
+   * which is the axis either chart is drawn on — but the conversion that just
+   * fits under it is, because a conversion is ordinary income measured from
+   * where the reader already stands. So the line the reader must not cross is
+   * drawn at their income plus the conversion, and the band between the two is
+   * the conversion itself.
+   *
+   * `unbounded` means the search hit its own bound without reaching the
+   * ceiling, which none of these six can do on a real return; drawing a
+   * million-dollar band on the strength of it would be worse than drawing
+   * nothing, so it draws nothing.
+   */
+  const conversionFits = !sizing.unbounded && sizing.conversion > 0;
+  const conversionTarget = conversionFits
+    ? ordinaryIncome + sizing.conversion
+    : ordinaryIncome;
+
+  /**
+   * Step 4's own right edge. Never inside step 2's — the two charts are the
+   * same sweep and a reader comparing them should not have to re-read the axis
+   * — but wider whenever the conversion runs past it, which the top of the 22%
+   * bracket does on most joint returns.
+   */
+  const conversionAxisMax = useMemo(
+    () =>
+      incomeAxisMax(
+        { ssBenefit, filingStatus, seniors, muniInterest, qcd, year, ltcg: plannedLtcg },
+        { minimum: Math.max(axisMax, conversionTarget) },
+      ),
+    [ssBenefit, filingStatus, seniors, muniInterest, qcd, year, plannedLtcg, axisMax, conversionTarget],
+  );
+
+  /**
+   * Step 2's curve, re-swept when step 4 needs more of it than step 2 drew.
+   * Identical axes are the common case — the conversion usually lands inside
+   * the torpedo chart — and then this is step 2's array, not a copy of it.
+   */
+  const conversionCurve = useMemo(
+    () =>
+      conversionAxisMax === axisMax
+        ? curve
+        : marginalRateCurve(
+            { ssBenefit, filingStatus, seniors, muniInterest, qcd, year, ltcg: plannedLtcg },
+            {
+              maxIncome: conversionAxisMax,
+              step: curveStepFor(conversionAxisMax),
+              gainsWithinIncome: true,
+            },
+          ),
+    [conversionAxisMax, axisMax, curve, ssBenefit, filingStatus, seniors, muniInterest, qcd, year, plannedLtcg],
+  );
+
+  /**
+   * The hills and valleys of step 4's own sweep. Identical to step 2's
+   * whenever the axes are, and a superset of it when the conversion has pushed
+   * the axis out — which is exactly when reusing step 2's would leave the
+   * tooltip silent over the stretch the conversion actually crosses.
+   */
+  const conversionSegments = useMemo(
+    () => segmentCurve(conversionCurve, (p) => p.income),
+    [conversionCurve],
+  );
+
+  /** What the ceiling caps, spelled out for the sentence that quotes it. */
+  const ceilingMeasure = CONVERSION_MEASURE_LABELS[ceiling.measure];
 
   /**
    * Where the step nav and the next-step boxes both land.
@@ -1876,6 +2026,337 @@ const App: React.FC = () => {
               step 2&apos;s chart from the other side: with a gain set, the next
               dollar of ordinary income lifts the whole gain stack with it, and
               can shove part of it out of the 0% band into 15%.
+            </p>
+          </div>
+        </details>
+
+        {nextStepBox(2)}
+      </section>
+
+      {/* ───── Step 4: how many of those dollars fit before the next one costs more ───── */}
+      <section
+        className="step"
+        id="step-conversion"
+        tabIndex={-1}
+        aria-labelledby="step-conversion-heading"
+      >
+        <p className="step-kicker">Step 4 of {STEPS.length}</p>
+        <h2 className="step-heading" id="step-conversion-heading">
+          Sizing the conversion
+        </h2>
+
+        <p className="step-intro">
+          Steps 2 and 3 price the next dollar. This one prices a block of them.
+          Pick the line you would rather not cross and the chart draws the
+          largest Roth conversion that stays under it, running from where you
+          are standing out to that line &mdash; on the same curve as step 2,
+          because a conversion is ordinary income and walks you rightwards
+          along exactly that axis.
+        </p>
+
+        <div className="chart-container">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart
+              data={conversionCurve}
+              margin={{ top: 22, right: 28, left: 10, bottom: 0 }}
+            >
+              <defs>
+                <linearGradient id="conversionGradient" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#38bdf8" stopOpacity={0.5} />
+                  <stop offset="95%" stopColor="#38bdf8" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255, 255, 255, 0.1)" />
+              <XAxis
+                dataKey="income"
+                type="number"
+                domain={[0, conversionAxisMax]}
+                tickFormatter={formatCompact}
+                stroke="#94a3b8"
+              />
+              <YAxis
+                stroke="#94a3b8"
+                tickFormatter={(value) => `${value}%`}
+                width={70}
+                domain={[0, 'auto']}
+              />
+              <Tooltip
+                content={
+                  <CustomTooltip
+                    ssBenefit={ssBenefit}
+                    segments={conversionSegments}
+                    filingStatus={filingStatus}
+                    muniInterest={muniInterest}
+                    qcd={qcd}
+                    ltcg={plannedLtcg}
+                    beneficiaries={beneficiaries}
+                    year={year}
+                  />
+                }
+              />
+              {conversionFits && (
+                <ReferenceArea
+                  className="conversion-band"
+                  x1={ordinaryIncome}
+                  x2={conversionTarget}
+                  fill="#818cf8"
+                  fillOpacity={0.2}
+                  stroke="none"
+                />
+              )}
+              {conversionFits && (
+                <ReferenceLine
+                  className="ceiling-line"
+                  x={conversionTarget}
+                  stroke="#818cf8"
+                  strokeDasharray="4 4"
+                  strokeWidth={2}
+                  /* The amount goes on the line rather than inside the
+                     band: "You are here" already runs rightwards from the
+                     band's near edge, and a narrow band would put the two
+                     on top of each other. Above the axis is free — this
+                     chart draws no IRMAA cliffs, which is what that strip
+                     carries on step 2. */
+                  label={{
+                    value: `${formatCurrency(sizing.conversion)} converted`,
+                    position: 'top',
+                    fill: '#a5b4fc',
+                    fontSize: 11,
+                    fontWeight: 600,
+                  }}
+                />
+              )}
+              {hereLine(ordinaryIncome, conversionAxisMax, '#f59e0b')}
+              <Area
+                type="stepAfter"
+                dataKey="marginalRate"
+                stroke="#38bdf8"
+                strokeWidth={2}
+                fill="url(#conversionGradient)"
+              />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+        {/* Deliberately not step 2's label. The two charts sweep the same
+            axis, so repeating its total-income formula here would say nothing
+            new; what is worth saying is which stretch of it this one draws. */}
+        <p className="chart-axis-label">
+          Other Income ($), the conversion included &mdash; step 2&apos;s own
+          axis, drawn out to {formatCurrency(conversionAxisMax)}
+        </p>
+
+        <p className="chart-key chart-key-conversion">
+          <span
+            className="chart-key-swatch chart-key-swatch-conversion"
+            aria-hidden="true"
+          />
+          {conversionFits ? (
+            <span>
+              <strong>The conversion, and the line it stops at.</strong> The
+              shaded band runs from your own {formatCurrency(ordinaryIncome)}{' '}
+              out to {formatCurrency(conversionTarget)} of other income &mdash;
+              the point at which the line you picked is reached, once the
+              benefit that the extra income drags into the tax base is counted.
+              That is why the band is shorter than the headroom the line
+              appears to offer. Every dollar inside it is charged at the rates
+              the curve draws above it.
+            </span>
+          ) : (
+            <span>
+              <strong>No band is drawn.</strong> Nothing fits under the line
+              you picked, so there is no conversion to shade. The amber marker
+              is still where you are standing.
+            </span>
+          )}
+        </p>
+
+        <fieldset className="input-group chart-slider ceiling-picker">
+          <legend>The line you would rather not cross</legend>
+          <div className="segmented segmented-stacked">
+            {ceilings.map(({ id, label, amount, measure }) => (
+              <label key={id} className="segmented-option">
+                <input
+                  type="radio"
+                  name="conversion-ceiling"
+                  value={id}
+                  checked={ceiling.id === id}
+                  onChange={() => setCeilingId(id)}
+                />
+                <span>
+                  {label}
+                  <small className="segmented-caption">
+                    {formatCurrency(amount)} of {CONVERSION_MEASURE_LABELS[measure]}
+                  </small>
+                </span>
+              </label>
+            ))}
+          </div>
+
+          <p className="slider-readout">
+            {conversionFits ? (
+              <>
+                <strong>{formatCurrency(sizing.conversion)} fits.</strong> On
+                top of your {formatCurrency(ordinaryIncome)} of other income,
+                that conversion lands on the line you picked &mdash;{' '}
+                {ceiling.label}, {formatCurrency(ceiling.amount)} of{' '}
+                {ceilingMeasure}. It costs{' '}
+                <strong>{formatCurrency(sizing.taxCost)}</strong> in federal
+                tax, taking this year&apos;s bill from{' '}
+                {formatCurrency(sizing.taxBefore)} to{' '}
+                {formatCurrency(sizing.taxAfter)} &mdash; an average of{' '}
+                <strong>{sizing.costPerDollar}%</strong> on every dollar
+                converted, against <strong>{sizing.rateAboveCeiling}%</strong>{' '}
+                on the first dollar past the line.
+              </>
+            ) : sizing.alreadyOver ? (
+              <>
+                <strong>Nothing fits.</strong> This return is already{' '}
+                {formatCurrency(Math.round(-sizing.headroom))} past the line
+                you picked &mdash; {ceiling.label},{' '}
+                {formatCurrency(ceiling.amount)} of {ceilingMeasure} &mdash;
+                before a dollar is converted, so there is no room under it to
+                convert into. Take the other-income slider on step 2 down, or
+                pick a line further out.
+              </>
+            ) : (
+              <>
+                <strong>Nothing fits.</strong> This return sits within a dollar
+                of the line you picked &mdash; {ceiling.label},{' '}
+                {formatCurrency(ceiling.amount)} of {ceilingMeasure} &mdash; so
+                the largest conversion that stays under it rounds to nothing.
+                Pick a line further out to see what a conversion would cost.
+              </>
+            )}
+          </p>
+
+          <p className="slider-advice conversion-advice">
+            <strong>Past the line.</strong> {ceiling.note}
+          </p>
+        </fieldset>
+
+        <details className="explainer">
+          <summary>
+            <h2 id="conversion-what-heading">
+              What a Roth conversion is, and why it is sized rather than chosen
+            </h2>
+          </summary>
+          <div className="explainer-content">
+            <p>
+              A conversion moves money from a traditional IRA to a Roth IRA. The
+              whole amount is ordinary income in the year you do it &mdash; the
+              same as a withdrawal, and it lands on the same axis as everything
+              on step 2 &mdash; and after that it is never taxed again, is not a
+              required distribution at any age, and never counts toward
+              provisional income, so it never drags a benefit into the tax base
+              in a later year.
+            </p>
+            <p>
+              That is why the amount is worth solving for rather than picking. A
+              conversion is the one piece of income a retiree controls to the
+              dollar, and every line on this page has a cheap side and a dear
+              one. Converting up to a line is the cheap side taken in full;
+              converting a dollar past it buys the whole of the dear side, and
+              in the case of an IRMAA cliff, buys it for a whole year on the
+              strength of that single dollar.
+            </p>
+            <p>
+              Since 2018 a conversion cannot be undone: the Tax Cuts and Jobs
+              Act repealed recharacterisation for conversions, so the tax is
+              settled by 31 December of the year you convert. That is the other
+              half of the case for sizing it &mdash; there is no re-cutting it
+              in April when the return is prepared.
+            </p>
+          </div>
+        </details>
+
+        <details className="explainer">
+          <summary>
+            <h2 id="conversion-average-rate-heading">
+              Why the average rate is the number to compare
+            </h2>
+          </summary>
+          <div className="explainer-content">
+            <p>
+              The curve above prices the <em>next</em> dollar. A conversion is
+              not one dollar, it is a block of them that walks across the chart
+              from your own marker to the ceiling, picking up every rate in
+              between &mdash; so what it actually costs is the area under that
+              stretch, not the height of the curve at either end.
+            </p>
+            <p>
+              {conversionFits ? (
+                <>
+                  Here that is {formatCurrency(sizing.taxCost)} on{' '}
+                  {formatCurrency(sizing.conversion)}, or{' '}
+                  <strong>{sizing.costPerDollar}%</strong> averaged over the
+                  block. That is the figure to hold against the rate you expect
+                  in the years the money would otherwise come out: a conversion
+                  pays when it is cheaper than the future, and the future
+                  includes the years a surviving spouse files single on the same
+                  income, and the ten-year window an adult child has to empty an
+                  inherited IRA.
+                </>
+              ) : (
+                <>
+                  With nothing fitting under the line you picked there is no
+                  block to average, but the comparison is unchanged: the average
+                  cost of a conversion is the figure to hold against the rate
+                  you expect in the years the money would otherwise come out
+                  &mdash; including the years a surviving spouse files single on
+                  the same income, and the ten-year window an adult child has to
+                  empty an inherited IRA.
+                </>
+              )}
+            </p>
+            <p>
+              The average is always lower than the rate at the far end and
+              always higher than the rate at the near one, which is the whole
+              reason a conversion sized to a line beats a conversion sized to a
+              bracket rate. It is also why a conversion that runs <em>through</em>{' '}
+              the torpedo can still pay: the hump is priced into the average
+              once, rather than paid year after year by a reader who sits inside
+              it.
+            </p>
+            <p>
+              Two costs are outside these figures. The Medicare surcharge is not
+              tax and appears in none of them &mdash; if the line you picked is
+              an IRMAA tier, crossing it costs the surcharge on top of whatever
+              the curve says. And state income tax is not here at all; this page
+              is federal only.
+            </p>
+          </div>
+        </details>
+
+        <details className="explainer">
+          <summary>
+            <h2 id="conversion-ceilings-heading">
+              The six lines, and what each one is
+            </h2>
+          </summary>
+          <div className="explainer-content">
+            <p>
+              Each line is a different kind of edge, and they are not in the
+              same order on every return &mdash; a large benefit can put the
+              85% base to the left of the 12% bracket top, and a separate return
+              collapses both bases onto $0. The figures below are this
+              return&apos;s, for {year}.
+            </p>
+            <ul>
+              {ceilings.map((c) => (
+                <li key={c.id}>
+                  <strong>{c.label}</strong> &mdash;{' '}
+                  {formatCurrency(c.amount)} of{' '}
+                  {CONVERSION_MEASURE_LABELS[c.measure]}. {c.note}
+                </li>
+              ))}
+            </ul>
+            <p>
+              Four different income definitions are in that list, which is the
+              trap it exists to spring. Taxable income is after the standard
+              deduction; provisional income is before it and counts tax-exempt
+              interest and half the benefit; Medicare&apos;s MAGI is adjusted
+              gross income with tax-exempt interest added back. A conversion
+              that clears one line by $5,000 can be $5,000 over another.
             </p>
           </div>
         </details>

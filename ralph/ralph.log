@@ -3710,3 +3710,100 @@ stay unchecked: each is a real defect, and each returns with its section.
 
 Backlog 3 ends with another "Research and create more action items." so the
 loop can regenerate when these run out.
+
+
+Answer the h1 with a number: the conversion sizer returns as step 4
+===================================================================
+
+`conversionCeilings`, `maxConversionUnder` and `sizeConversion` have been
+complete, documented and tested since before the Strategies tab was deleted in
+5fe9854, and have rendered nowhere since. Meanwhile the h1 asks "How Much Can
+You Take Out This Year?" and the page answered with a curve and a sentence of
+advice. Step 4 answers it with a dollar figure.
+
+### The shape
+
+Same as the other three, with one substitution. Chart, then the one control
+that moves the reader along it, then explainers, then the close — except the
+control is a radio group rather than a slider, because the lines a conversion
+is sized against are six named places rather than a continuum. `landmarks()` in
+the shared-shape test now reports 'control' where it reported 'slider', which
+is the honest generalisation: the slot is about what moves the marker, not
+about which widget does it. Step 3 gained the next-step box it never had, and
+step 4 is last so it has none.
+
+### The chart is step 2's
+
+A ceiling is quoted in taxable income, provisional income or MAGI. The chart's
+axis is none of the three. What ties them together is the conversion itself:
+measured in other income from where the reader already stands, it *is* the
+distance to the line — so drawing the band from `ordinaryIncome` out to
+`ordinaryIncome + sizing.conversion` puts the ceiling on the axis, and the
+dashed line closing the band is the ceiling. That is also why the band is
+visibly shorter than the headroom the line appears to offer: every dollar
+inside the torpedo raises taxable income by more than a dollar. Default return,
+2025: $23,047 of headroom under the top of the 12% bracket, $14,069 of
+conversion.
+
+The axis is `incomeAxisMax(..., { minimum: Math.max(axisMax, conversionTarget) })`,
+so it never narrows below step 2's — the two charts are the same sweep and a
+reader comparing them should not have to re-read the axis — and widens when the
+conversion runs past it. A joint return sized to the top of the 22% bracket
+converts $188,044 and needs $225,000 of axis. When the two axes agree,
+`conversionCurve` *is* `curve`, not a copy of it; `curveStep` came out to a
+module-level `curveStepFor` so both charts sample by the same rule.
+
+Its own `conversionSegments` rather than step 2's, so the tooltip still finds a
+hill or valley over the stretch only this chart draws.
+
+The label went on the ceiling line rather than inside the band: "You are here"
+runs rightwards from the band's near edge, and a narrow band would have stacked
+the two. Above the axis is free here because step 4 draws no IRMAA cliffs.
+
+### What the readout says
+
+Three branches. The conversion that fits, priced: the amount, the tax it costs,
+the year's bill before and after, the average cost per dollar, and the rate on
+the first dollar past the line — 19.65% averaged against 22% marginal, on the
+default return, which is the whole argument for sizing to a line rather than to
+a bracket rate. Then `alreadyOver`, which says how far past the line the return
+already is rather than "$0 fits" (the 50% base is $16,856 behind the default
+reader). Then the sub-dollar case, for completeness.
+
+`ceiling.note` carries the "past the line" advice, so the six ceilings' own
+prose — written with the arithmetic, and already covering the separate-return
+collapse of both SS bases onto $0 — reaches the page unedited.
+
+### Scenario translation
+
+Steps 2 and 3 treat the gain as a share of one other-income figure; the tax
+chain treats the two as separate line items. `sizeConversion` reads the second
+shape, so `conversionScenario` runs `splitOtherIncome` first. Without it a
+conversion would land on a total that is part gain, and a gain is not
+convertible.
+
+### Tests
+
++14, 486 -> 500. Nine in a new `sizing the conversion` describe (the priced
+answer with every figure, the six captioned ceilings, re-sizing on a new line,
+the already-over sentence, re-pricing when step 2's slider moves, the note, the
+explainer list, the widening axis with step 2's slider left alone, and the
+band's far edge in other-income terms). Five in `App.chart.test.tsx` for the
+band's geometry: near edge on the reader's marker, far edge on the ceiling
+line, the label, growth on a further-out line, nothing drawn when nothing fits,
+and both edges sliding with step 2's income. That file does not pin the clock,
+so none of its assertions name a dollar.
+
+Eight existing tests moved from three steps to four; `hereLabels`/
+`herePositions` now see three charts, and step 4's marker is amber like step
+2's because it stands on the same axis at the same figure.
+
+### Verified
+
+`npx tsc -b`, `npx eslint src --max-warnings 0`, `npx vitest run` (7 files, 500
+tests, green in 5.4s), `npm run build`. CSS: `.segmented-stacked` for a picker
+whose six options each carry a caption, `.ceiling-picker` as a fieldset
+standing in for an `.input-group` (deliberately not `.filing-status`, whose
+element-plus-class `margin: 0` `.chart-slider` cannot win back), and an indigo
+band/swatch/advice rule — the one accent no curve, cliff or marker already
+owned.

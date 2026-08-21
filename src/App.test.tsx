@@ -31,7 +31,12 @@ afterEach(() => {
  * to open anything first. What the nav changes is which step is marked current
  * and where focus lands, and that is what the `step flow` describe covers.
  */
-const stepNames = ['Your benefit', 'The tax torpedo', 'Capital gains'] as const;
+const stepNames = [
+  'Your benefit',
+  'The tax torpedo',
+  'Capital gains',
+  'Roth conversion',
+] as const;
 
 const stepNav = (): HTMLElement => screen.getByRole('toolbar', { name: 'Steps' });
 
@@ -436,13 +441,18 @@ describe('App', () => {
 });
 
 describe('the step flow', () => {
-  it('numbers all three steps in the nav, in reading order', () => {
+  it('numbers all four steps in the nav, in reading order', () => {
     render(<App />);
     expect(
       within(stepNav())
         .getAllByRole('button')
         .map((b) => b.textContent),
-    ).toEqual(['1Your benefit', '2The tax torpedo', '3Capital gains']);
+    ).toEqual([
+      '1Your benefit',
+      '2The tax torpedo',
+      '3Capital gains',
+      '4Roth conversion',
+    ]);
   });
 
   /**
@@ -456,6 +466,7 @@ describe('the step flow', () => {
       /your social security benefit/i,
       /^the tax torpedo$/i,
       /capital gains stacking/i,
+      /^sizing the conversion$/i,
     ]) {
       expect(screen.getByRole('heading', { name })).toBeInTheDocument();
     }
@@ -465,7 +476,7 @@ describe('the step flow', () => {
   it('opens with the first step marked current', () => {
     render(<App />);
     expect(currentStep()).toBe('Your benefit');
-    expect(navItem('Capital gains')).not.toHaveAttribute('aria-current');
+    expect(navItem('Roth conversion')).not.toHaveAttribute('aria-current');
   });
 
   /**
@@ -486,6 +497,7 @@ describe('the step flow', () => {
       ['Your benefit', 'step-benefit'],
       ['The tax torpedo', 'step-torpedo'],
       ['Capital gains', 'step-gains'],
+      ['Roth conversion', 'step-conversion'],
     ] as const) {
       const section = document.getElementById(id) as HTMLElement;
       expect(navItem(name)).toHaveAttribute('aria-controls', id);
@@ -501,24 +513,33 @@ describe('the step flow', () => {
    */
   it('walks forward through the next-step boxes', () => {
     render(<App />);
-    fireEvent.click(screen.getByRole('button', { name: /Step 2 of 3/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Step 2 of 4/ }));
     expect(currentStep()).toBe('The tax torpedo');
     expect(document.activeElement).toBe(document.getElementById('step-torpedo'));
 
-    fireEvent.click(screen.getByRole('button', { name: /Step 3 of 3/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Step 3 of 4/ }));
     expect(currentStep()).toBe('Capital gains');
     expect(document.activeElement).toBe(document.getElementById('step-gains'));
+
+    fireEvent.click(screen.getByRole('button', { name: /Step 4 of 4/ }));
+    expect(currentStep()).toBe('Roth conversion');
+    expect(document.activeElement).toBe(
+      document.getElementById('step-conversion'),
+    );
   });
 
   it('names where each box goes, and stops at the last step', () => {
     render(<App />);
     expect(
-      screen.getByRole('button', { name: /Step 2 of 3/ }),
+      screen.getByRole('button', { name: /Step 2 of 4/ }),
     ).toHaveTextContent('The tax torpedo');
     expect(
-      screen.getByRole('button', { name: /Step 3 of 3/ }),
+      screen.getByRole('button', { name: /Step 3 of 4/ }),
     ).toHaveTextContent('Capital Gains Stacking');
-    expect(screen.queryByRole('button', { name: /Step 4 of 3/ })).toBeNull();
+    expect(
+      screen.getByRole('button', { name: /Step 4 of 4/ }),
+    ).toHaveTextContent('Sizing the conversion');
+    expect(screen.queryByRole('button', { name: /Step 5 of 4/ })).toBeNull();
   });
 
   it('moves between steps with the arrow keys and wraps at both ends', () => {
@@ -529,7 +550,7 @@ describe('the step flow', () => {
 
     fireEvent.keyDown(stepNav(), { key: 'ArrowLeft' });
     fireEvent.keyDown(stepNav(), { key: 'ArrowLeft' });
-    expect(currentStep()).toBe('Capital gains');
+    expect(currentStep()).toBe('Roth conversion');
 
     fireEvent.keyDown(stepNav(), { key: 'ArrowRight' });
     expect(currentStep()).toBe('Your benefit');
@@ -552,11 +573,11 @@ describe('the step flow', () => {
    */
   it('keeps only the current step in the tab order', () => {
     render(<App />);
-    fireEvent.click(navItem('Capital gains'));
+    fireEvent.click(navItem('Roth conversion'));
     for (const name of stepNames) {
       expect(navItem(name)).toHaveAttribute(
         'tabindex',
-        name === 'Capital gains' ? '0' : '-1',
+        name === 'Roth conversion' ? '0' : '-1',
       );
     }
   });
@@ -594,12 +615,16 @@ describe('the step flow', () => {
 /**
  * Every step is laid out the same way, and this is the test of it.
  *
- * chart \u2192 the one slider that says where on that chart you are \u2192 the
+ * chart \u2192 the one control that says where on that chart you are \u2192 the
  * collapsed explainers \u2192 the box to the next step. Step 1 has no curve of
- * its own, so it starts at the slider; step 3 is last, so it ends at the
- * explainer. A slider above its chart reads as an input to the chart, which is
- * exactly what it is not \u2014 the chart already prices every value the slider
- * can take.
+ * its own, so it starts at the control; step 4 is last, so it ends at the
+ * explainer. A control above its chart reads as an input to the chart, which
+ * is exactly what it is not \u2014 the chart already prices every value the
+ * control can take.
+ *
+ * "Control" rather than "slider" because step 4's is a radio group: the lines
+ * a conversion is sized against are six named places rather than a continuum.
+ * It does the same job in the same slot.
  */
 describe('the shape every step shares', () => {
   /** The step's own landmarks in DOM order, runs of a kind collapsed. */
@@ -607,10 +632,10 @@ describe('the shape every step shares', () => {
     const section = document.getElementById(id) as HTMLElement;
     const kinds = Array.from(
       section.querySelectorAll(
-        '.chart-container, input[type="range"], details, .next-step',
+        '.chart-container, input[type="range"], .ceiling-picker, details, .next-step',
       ),
     )
-      // A slider inside a disclosure is that disclosure's business, not the
+      // A control inside a disclosure is that disclosure's business, not the
       // step's: the shape is about what the reader meets on the way down.
       .filter((el) => el.tagName === 'DETAILS' || el.closest('details') === null)
       .map((el) =>
@@ -620,33 +645,43 @@ describe('the shape every step shares', () => {
             ? 'next'
             : el.tagName === 'DETAILS'
               ? 'details'
-              : 'slider',
+              : 'control',
       );
     return kinds.filter((kind, i) => kind !== kinds[i - 1]);
   };
 
-  it('lays the two charted steps out chart, slider, explainers, next', () => {
+  it('lays the charted steps out chart, control, explainers, next', () => {
     render(<App />);
     expect(landmarks('step-torpedo')).toEqual([
       'chart',
-      'slider',
+      'control',
       'details',
       'next',
     ]);
-    expect(landmarks('step-gains')).toEqual(['chart', 'slider', 'details']);
+    expect(landmarks('step-gains')).toEqual([
+      'chart',
+      'control',
+      'details',
+      'next',
+    ]);
+    expect(landmarks('step-conversion')).toEqual([
+      'chart',
+      'control',
+      'details',
+    ]);
   });
 
   /**
    * Step 1 draws nothing, so the return it sets stands where a chart stands.
-   * What it still owes the shape is the ordering of the rest: one slider on
+   * What it still owes the shape is the ordering of the rest: one control on
    * screen, the disclosure after it, the next-step box last.
    */
   it('gives the uncharted step the same tail', () => {
     render(<App />);
-    expect(landmarks('step-benefit')).toEqual(['slider', 'details', 'next']);
+    expect(landmarks('step-benefit')).toEqual(['control', 'details', 'next']);
   });
 
-  it('puts each step\u2019s slider on the axis its own chart sweeps', () => {
+  it('puts each step\u2019s control on the axis its own chart sweeps', () => {
     render(<App />);
     for (const [id, name] of [
       ['step-torpedo', /other income \(not social security\)/i],
@@ -655,6 +690,13 @@ describe('the shape every step shares', () => {
       const slider = screen.getByRole('slider', { name });
       expect(document.getElementById(id)?.contains(slider)).toBe(true);
     }
+    // Step 4's is a radio group, and its own chart is the only one on the page
+    // whose axis runs far enough right to hold the conversion it sizes.
+    expect(
+      document
+        .getElementById('step-conversion')
+        ?.querySelectorAll('input[name="conversion-ceiling"]'),
+    ).toHaveLength(6);
   });
 
   /**
@@ -1815,5 +1857,196 @@ describe('the torpedo chart’s right edge', () => {
     // $229,845 + $216,000 of other income, plus a tail, rounded up.
     expect(incomeSlider()).toHaveAttribute('max', '475000');
     expect(incomeSlider()).toHaveAttribute('step', '1000');
+  });
+});
+
+
+/**
+ * Step 4 is the one that answers the h1 with a number.
+ *
+ * Figures below are 2025, single, the $23,712 average benefit, $30,000 of
+ * other income and no gain — the page's own defaults. Under the top of the 12%
+ * bracket ($48,475 of taxable income) $14,069 fits, costing $2,765 and taking
+ * the year's tax from $2,813 to $5,578: 19.65% averaged over the block against
+ * 22% on the first dollar past the line. The headroom is $23,047, and the
+ * conversion is smaller than it because every dollar inside the torpedo raises
+ * taxable income by more than a dollar.
+ */
+describe('sizing the conversion', () => {
+  const section = (): HTMLElement =>
+    document.getElementById('step-conversion') as HTMLElement;
+
+  const readout = (): HTMLElement =>
+    section().querySelector('.slider-readout') as HTMLElement;
+
+  const pick = (label: RegExp): void => {
+    fireEvent.click(screen.getByRole('radio', { name: label }));
+  };
+
+  it('answers the heading with a dollar figure, priced', () => {
+    render(<App />);
+    expect(
+      screen.getByRole('heading', { name: /sizing the conversion/i, level: 2 }),
+    ).toBeInTheDocument();
+
+    expect(readout()).toHaveTextContent('$14,069 fits.');
+    expect(readout()).toHaveTextContent(
+      'On top of your $30,000 of other income',
+    );
+    expect(readout()).toHaveTextContent(
+      'Top of the 12% bracket, $48,475 of taxable income',
+    );
+    expect(readout()).toHaveTextContent('costs $2,765 in federal tax');
+    expect(readout()).toHaveTextContent(
+      "taking this year's bill from $2,813 to $5,578",
+    );
+    expect(readout()).toHaveTextContent('an average of 19.65% on every dollar');
+    expect(readout()).toHaveTextContent(
+      'against 22% on the first dollar past the line',
+    );
+  });
+
+  /**
+   * The picker is step 4's slider. Six lines, each captioned with the income
+   * definition it caps — four different definitions across the six, which is
+   * the trap the caption exists to keep the reader out of.
+   */
+  it('offers all six ceilings, each captioned with what it caps', () => {
+    render(<App />);
+    const radios = within(section()).getAllByRole('radio');
+    expect(radios.map((r) => r.getAttribute('value'))).toEqual([
+      'bracket12',
+      'bracket22',
+      'ss50',
+      'ss85',
+      'ltcg0',
+      'irmaa1',
+    ]);
+    expect(radios[0]).toBeChecked();
+    for (const [label, caption] of [
+      [/^Top of the 12% bracket/, '$48,475 of taxable income'],
+      [/^Top of the 22% bracket/, '$103,350 of taxable income'],
+      [/^Social Security 50% base/, '$25,000 of provisional income'],
+      [/^Social Security 85% base/, '$34,000 of provisional income'],
+      [
+        /^Top of the 0% capital-gains bracket/,
+        '$48,350 of total taxable income (ordinary + gains)',
+      ],
+      [/^IRMAA tier 1/, '$106,000 of MAGI'],
+    ] as const) {
+      expect(
+        screen
+          .getByRole('radio', { name: label })
+          .closest('.segmented-option'),
+      ).toHaveTextContent(caption);
+    }
+  });
+
+  it('re-sizes the conversion when a different line is picked', () => {
+    render(<App />);
+    pick(/^Top of the 22% bracket/);
+    expect(readout()).toHaveTextContent('$68,944 fits.');
+    expect(readout()).toHaveTextContent('costs $14,838 in federal tax');
+    expect(readout()).toHaveTextContent('an average of 21.52%');
+    expect(readout()).toHaveTextContent('against 24% on the first dollar');
+
+    pick(/^IRMAA tier 1/);
+    expect(readout()).toHaveTextContent('$55,844 fits.');
+  });
+
+  /**
+   * The 50% base is $25,000 of provisional income, and the default return is
+   * $41,856 of it before converting anything. Saying "$0 fits" would be true
+   * and useless; what a reader needs is how far past the line they already are.
+   */
+  it('says how far past the line a return already is', () => {
+    render(<App />);
+    pick(/^Social Security 50% base/);
+    expect(readout()).toHaveTextContent('Nothing fits.');
+    expect(readout()).toHaveTextContent(
+      'already $16,856 past the line you picked',
+    );
+    expect(readout()).toHaveTextContent(
+      'Social Security 50% base, $25,000 of provisional income',
+    );
+    expect(section().querySelector('.chart-key')).toHaveTextContent(
+      'No band is drawn.',
+    );
+  });
+
+  /** Every step prices the same return, and step 4 is the proof of it. */
+  it('re-prices when step 2 moves the income the conversion sits on', () => {
+    render(<App />);
+    fireEvent.change(
+      screen.getByRole('slider', { name: /other income \(not social security\)/i }),
+      { target: { value: '0' } },
+    );
+    expect(readout()).toHaveTextContent('On top of your $0 of other income');
+    // More room under the same line, so a larger conversion fits under it.
+    const fits = (readout().textContent ?? '').match(/\$([\d,]+) fits/);
+    expect(fits).not.toBeNull();
+    expect(Number((fits as RegExpMatchArray)[1].replace(/,/g, ''))).toBeGreaterThan(
+      14_069,
+    );
+  });
+
+  it('carries the ceiling’s own note as the advice past the line', () => {
+    render(<App />);
+    const advice = (): HTMLElement =>
+      section().querySelector('.conversion-advice') as HTMLElement;
+    expect(advice()).toHaveTextContent(
+      'The next dollar of ordinary income is taxed at 22% instead of 12%.',
+    );
+
+    pick(/^IRMAA tier 1/);
+    expect(advice()).toHaveTextContent('A true cliff, not a phase-in');
+  });
+
+  it('lists every line in the explainer, with this return’s figures', () => {
+    render(<App />);
+    const list = section().querySelector(
+      '#conversion-ceilings-heading',
+    )?.closest('details')?.querySelector('ul') as HTMLElement;
+    expect(within(list).getAllByRole('listitem')).toHaveLength(6);
+    expect(list).toHaveTextContent(
+      'Top of the 0% capital-gains bracket — $48,350 of total taxable income',
+    );
+    expect(list).toHaveTextContent('IRMAA tier 1 (Medicare surcharge) — $106,000 of MAGI');
+  });
+
+  /**
+   * Step 4 draws step 2's sweep, so it never narrows below step 2's right
+   * edge — but a joint return converting to the top of the 22% bracket runs to
+   * $218,044 of other income, well past the $150,000 the torpedo chart draws.
+   * The axis follows the conversion out; step 2's does not move.
+   */
+  it('widens its own axis when the conversion runs past the torpedo chart', () => {
+    render(<App />);
+    const label = (): HTMLElement =>
+      section().querySelector('.chart-axis-label') as HTMLElement;
+    expect(label()).toHaveTextContent('drawn out to $150,000');
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Jointly' }));
+    pick(/^Top of the 22% bracket/);
+    expect(readout()).toHaveTextContent('$188,044 fits.');
+    expect(label()).toHaveTextContent('drawn out to $225,000');
+
+    // Step 2's own axis is untouched: its slider still stops where it did.
+    expect(
+      screen.getByRole('slider', { name: /other income \(not social security\)/i }),
+    ).toHaveAttribute('max', '150000');
+  });
+
+  /**
+   * A ceiling is quoted in taxable income, provisional income or MAGI, and the
+   * chart's axis is none of those. What ties them together is the conversion:
+   * measured in other income from where the reader stands, it is the distance
+   * to the line, so drawing it is what puts the line on the chart.
+   */
+  it('names the far edge of the band in other-income terms', () => {
+    render(<App />);
+    expect(section().querySelector('.chart-key')).toHaveTextContent(
+      'runs from your own $30,000 out to $44,069 of other income',
+    );
   });
 });

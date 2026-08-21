@@ -102,7 +102,8 @@ fieldset.filing-status {
   margin: 0;
 }
 
-fieldset.filing-status legend {
+fieldset.filing-status legend,
+fieldset.ceiling-picker legend {
   font-size: 0.875rem;
   font-weight: 500;
   color: #94a3b8;
@@ -404,6 +405,65 @@ h1 {
   height: 0;
   margin-top: 0.55rem;
   border-top: 2px dashed #f43f5e;
+}
+
+/* Step 4's key names a band and the line that closes it, both indigo — the one
+   accent no curve, cliff or marker on the page already owns. The swatch is a
+   filled box rather than a dashed rule because the band is the larger half of
+   what it stands for. */
+.chart-key-conversion strong {
+  color: #a5b4fc;
+}
+
+.chart-key-swatch-conversion {
+  height: 0.75rem;
+  margin-top: 0.2rem;
+  border-top: none;
+  border-right: 2px dashed #818cf8;
+  background: rgba(129, 140, 248, 0.2);
+}
+
+/* The ceiling picker is step 4's slider: six named places rather than a
+   continuum, so it stacks rather than running along a strip. Full width, one
+   line each, because every option carries a caption under it. */
+.segmented-stacked {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: 100%;
+  max-width: 34rem;
+}
+
+.segmented-caption {
+  display: block;
+  margin-top: 0.125rem;
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: #64748b;
+}
+
+.segmented-option input[type='radio']:checked + span .segmented-caption {
+  color: #7dd3fc;
+}
+
+/* The same rule the torpedo's advice gets, in the colour of the band it is
+   about rather than the amber of the marker. */
+.conversion-advice {
+  border-left-color: rgba(129, 140, 248, 0.5);
+}
+
+.conversion-advice strong {
+  color: #a5b4fc;
+}
+
+/* A fieldset standing in for an .input-group. Deliberately not
+   .filing-status, which zeroes the margin an element-plus-class rule that
+   .chart-slider cannot then win back — and the whole point of .chart-slider
+   is the room it puts between a chart and the control that walks it. */
+fieldset.ceiling-picker {
+  border: none;
+  padding: 0;
+  min-width: 0;
 }
 
 .explainer {

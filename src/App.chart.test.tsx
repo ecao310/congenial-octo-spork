@@ -32,9 +32,10 @@ const positionsOf = (root: ParentNode, selector: string): number[] =>
  *
  * Scoped to that chart rather than the whole page: it is the only one drawing
  * cliffs today, but the tabs that did so too are coming back, and an unscoped
- * query would then pick up more than one chart's worth. Scoped away from the
- * "you are here" marker too, which is a reference line on both charts and
- * would otherwise be counted as a fourth cliff.
+ * query would then pick up more than one chart's worth — step 4's ceiling line
+ * included. Scoped away from the "you are here" marker too, which is a
+ * reference line on all three charts and would otherwise be counted as a
+ * fourth cliff.
  */
 const cliffPositions = (container: HTMLElement): number[] => {
   const ordinaryIncomeChart = container.querySelector('.recharts-wrapper');
@@ -45,7 +46,8 @@ const cliffPositions = (container: HTMLElement): number[] => {
   );
 };
 
-/** Where the reader's own marker stands on each chart, torpedo then gains. */
+/** Where the reader's own marker stands on each chart, in page order:
+    torpedo, gains, conversion. */
 const herePositions = (container: HTMLElement): number[] =>
   positionsOf(container, '.recharts-reference-line.here-line');
 
@@ -171,22 +173,25 @@ describe('the “you are here” marker', () => {
       return label;
     });
 
-  it('puts one labelled marker on each of the two charts', () => {
+  it('puts one labelled marker on each of the three charts', () => {
     const { container } = render(<App />);
-    expect(container.querySelectorAll('.recharts-wrapper')).toHaveLength(2);
-    expect(herePositions(container)).toHaveLength(2);
+    expect(container.querySelectorAll('.recharts-wrapper')).toHaveLength(3);
+    expect(herePositions(container)).toHaveLength(3);
     expect(hereLabels(container).map((t) => t.textContent)).toEqual([
       'You are here',
       'You are here',
+      'You are here',
     ]);
-    // Each marker wears the colour of the slider that drives it — amber for
+    // Each marker wears the colour of the control that drives it — amber for
     // other income, emerald for gains — which is what lets the readout under
-    // each slider point at "the dashed amber line" and be understood.
+    // each one point at "the dashed amber line" and be understood. Step 4's is
+    // amber again because it stands on the same axis at the same figure: it is
+    // the near edge of the conversion band, not a place of its own.
     expect(
       Array.from(
         container.querySelectorAll('.recharts-reference-line.here-line line'),
       ).map((line) => line.getAttribute('stroke')),
-    ).toEqual(['#f59e0b', '#34d399']);
+    ).toEqual(['#f59e0b', '#34d399', '#f59e0b']);
   });
 
   it('moves each marker with its own slider, and only its own', () => {
@@ -237,5 +242,100 @@ describe('the “you are here” marker', () => {
     );
     // Near the right edge it runs leftwards instead, or it would be clipped.
     expect(hereLabels(container)[0]).toHaveAttribute('text-anchor', 'end');
+  });
+});
+
+
+/**
+ * Step 4 draws the conversion on step 2's own curve: a shaded band from the
+ * reader's own income out to the ceiling, closed by a dashed line at the far
+ * end. That is what puts a ceiling quoted in taxable income, provisional
+ * income or MAGI onto an axis that is none of the three — the conversion is
+ * the distance between them, measured in other income.
+ *
+ * The clock is not pinned in this file, so nothing below asserts a dollar
+ * figure: the shapes are what matter, and they hold in every year.
+ */
+describe('the conversion band on step 4’s chart', () => {
+  const band = (container: HTMLElement): SVGPathElement | null =>
+    container.querySelector(
+      '.recharts-reference-area.conversion-band .recharts-reference-area-rect',
+    );
+
+  /** The band's left and right pixel edges. */
+  const bandEdges = (container: HTMLElement): [number, number] => {
+    const rect = band(container);
+    if (!rect) throw new Error('no conversion band drawn');
+    const left = Number(rect.getAttribute('x'));
+    return [left, left + Number(rect.getAttribute('width'))];
+  };
+
+  const ceilingPosition = (container: HTMLElement): number[] =>
+    positionsOf(container, '.recharts-reference-line.ceiling-line');
+
+  const pickCeiling = (label: RegExp): void => {
+    fireEvent.click(screen.getByRole('radio', { name: label }));
+  };
+
+  it('runs from the reader’s own marker out to the ceiling line', () => {
+    const { container } = render(<App />);
+    const [left, right] = bandEdges(container);
+    // The near edge is the reader's marker on step 4's chart — the third one,
+    // in page order — and the far edge is the line that closes the band.
+    expect(left).toBeCloseTo(herePositions(container)[2], 1);
+    expect(ceilingPosition(container)).toHaveLength(1);
+    expect(ceilingPosition(container)[0]).toBeCloseTo(right, 1);
+    expect(right).toBeGreaterThan(left);
+  });
+
+  it('labels the line with the conversion it closes', () => {
+    const { container } = render(<App />);
+    const label = Array.from(
+      container.querySelectorAll<SVGTextElement>('text.recharts-label'),
+    ).find((t) => /converted$/.test(t.textContent ?? ''));
+    expect(label?.textContent).toMatch(/^\$[\d,]+ converted$/);
+  });
+
+  it('grows the band when a further-out line is picked', () => {
+    const { container } = render(<App />);
+    const [, near] = bandEdges(container);
+    pickCeiling(/^Top of the 22% bracket/);
+    const [, far] = bandEdges(container);
+    expect(far).toBeGreaterThan(near);
+  });
+
+  /**
+   * The default return is already past the 50% base, so there is no room under
+   * it and nothing to shade. Drawing a zero-width band and a line on top of
+   * the marker would read as a conversion of nothing rather than as no
+   * conversion at all.
+   */
+  it('draws neither band nor line when nothing fits', () => {
+    const { container } = render(<App />);
+    pickCeiling(/^Social Security 50% base/);
+    expect(band(container)).toBeNull();
+    expect(ceilingPosition(container)).toHaveLength(0);
+    // The marker stays: the reader is still standing somewhere.
+    expect(herePositions(container)).toHaveLength(3);
+  });
+
+  /**
+   * Both edges are on the same axis as step 2's chart, so moving the income
+   * that step 2 sets moves the whole band — the near edge because that is
+   * where the reader now stands, the far edge because there is less room left
+   * under the same line.
+   */
+  it('slides the near edge with step 2’s income slider', () => {
+    const { container } = render(<App />);
+    const [left, right] = bandEdges(container);
+    fireEvent.change(
+      screen.getByRole('slider', { name: /other income \(not social security\)/i }),
+      { target: { value: '0' } },
+    );
+    const [movedLeft, movedRight] = bandEdges(container);
+    // Standing further left leaves more room under the same line, so the band
+    // starts earlier and finishes wider.
+    expect(movedLeft).toBeLessThan(left);
+    expect(movedRight - movedLeft).toBeGreaterThan(right - left);
   });
 });

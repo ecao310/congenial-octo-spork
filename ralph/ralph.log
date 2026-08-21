@@ -6977,3 +6977,79 @@ and write the driver to `/tmp` then `cp` it into the root for the bare import
 and `rm` it on the same command line. Did that; root is clean.
 
 Tree opened clean this run — first time in seven.
+
+## 21 Aug 2026 — Look at what shipped and write down what it left behind
+
+Task: "Research and create more action items." — the last unchecked bullet in
+Backlog 4. Wrote Backlog 6: eight items, every one of them verified against
+the tree rather than read off a hunch.
+
+### Opened clean, twice over
+
+`git status --porcelain` empty, `npx vitest run` green at **674 tests in 13
+files**, `tsc -b` clean, `eslint . --max-warnings 0` clean. Two runs clean in
+a row now, after six dirty ones.
+
+### What the research actually turned up
+
+The pattern running through most of it: **Backlog 5 removed three sections
+from the page and the removals left claims behind them.** Capital gains, the
+conversion sizer and the state footnote all came off; the prose, the metadata
+and the model that served them did not all follow.
+
+- **1411 is dead and three places say it is alive.** Proved rather than
+  argued: a throwaway `src/probe.test.ts` (written, run, deleted — root is
+  clean) called `netInvestmentIncomeTax` at $50k, $150k, $300k and $1,000,000
+  of ordinary income against the default benefit. **$0 every time**, and
+  `totalFederalTax` equalled `totalTax` to the dollar at all four. The cause
+  is one line: `netInvestmentIncomeFor` is `max(0, ltcg)` and the page has had
+  no `ltcg` control since the gains step went. Max marginal rate anywhere on
+  the default curve is 35 — there is no third hump and there cannot be one.
+  `marginalRateCurve`'s comment says there is; `totalFederalTax`'s says the
+  close names the surtax on its own line, and the close has six figures and no
+  surtax among them; README.md:79 already says it is always zero. Filed as
+  bullet 1 because it is the largest piece of code in the repo with no reader
+  that is *not* in `src/shelf/`.
+
+- **The front-door link goes to a different app.** `origin/main` is **75
+  commits** behind dev (41 files, +31,097/−5,657) and still serves
+  `<title>Marginal Tax Rate</title>` from `growth-projector`. README.md:12's
+  "**Live:**" URL is main's build. Checked with `git show origin/main:index.html`
+  rather than by loading the site.
+
+- `index.html:17`'s `name="description"` still sells "capital-gains stacking".
+  `meta.test.ts` compares og against twitter and never against the plain
+  description, which is exactly why this drifted and the og copy did not.
+
+- No `<main>`, no `<header>`, no `<nav>`, no skip link — `<footer>` is the
+  page's only landmark. And **one h1, eight h2, zero h3**: the five explainers
+  under step 2's chart are marked up as peers of step 2.
+
+- The close promises "every control on this page rides in the link" and the
+  Lines panel's two checkboxes are `useState(false)` that never reach the
+  query string. The seven keys `scenarioUrl` does carry are exactly the step 1
+  and step 2 inputs, so the claim was true when it was written.
+
+- 2026's max-at-70 is $62,172 against 2025's $61,296 — a **1.43%** raise in a
+  block whose `colaPercent` is 2.8 and whose `source` says "SSA (2.8% COLA)".
+  $61,296 × 1.028 = $63,012. The averages miss the same test the other way
+  (4.8%) but have an innocent explanation the maximum does not.
+
+### Not filed
+
+Considered and dropped: the two-item step nav rendered between step 1 and
+step 2 (real, but cosmetic and the sticky-column layout may already be the
+answer); a light theme (the flat near-black register was a deliberate Backlog
+5 decision); React 18 against React 19 (nothing in the tree is broken by it,
+so it is an upgrade looking for a reason).
+
+### Note for the next run
+
+`vitest` swallows `console.log`. To get numbers out of a probe test, have it
+`writeFileSync` to `/tmp` and `cat` that after the run — and put the probe in
+`src/`, because `include` is `src/**/*.test.{ts,tsx}` and a probe in the root
+is silently "no test files found". Deleted both probes; tree is clean.
+
+The standing browser note is unchanged and untested this run — nothing here
+needed a browser. `playwright-core` is presumably still absent; that bullet
+stands.

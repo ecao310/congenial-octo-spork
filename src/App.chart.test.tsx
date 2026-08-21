@@ -22,15 +22,19 @@ vi.mock('recharts', async () => {
 
 import App from './App';
 import { CHART } from './palette';
+import { FPL_YEAR_PARAMS, PAGE_TAX_YEAR } from './utils/tax';
 
 /**
- * The app opens on `defaultTaxYear()`, which follows the wall calendar. Every
- * dollar figure in the comments below is a 2026 one, and one assertion here
- * turns on the year outright — the 400% poverty-line cliff exists in 2026 and
- * did not exist in 2025 — so the clock is pinned rather than left to drift
- * onto whatever Rev. Proc. the calendar reaches next.
+ * The page prices `PAGE_TAX_YEAR` and has no control that changes it, so every
+ * dollar figure in the comments below is a figure for that year and this is
+ * the one constant to re-point them from when it moves.
+ *
+ * The clock is pinned to it even so. Nothing the page renders reads `Date` any
+ * more, but the engine's own `defaultTaxYear()` still follows the wall
+ * calendar, and a stopped clock is what keeps any figure that reaches it from
+ * making these assertions depend on the day they are run.
  */
-const PINNED_YEAR = 2026;
+const PINNED_YEAR = PAGE_TAX_YEAR;
 
 beforeEach(() => {
   // Date only: React Testing Library needs the real setTimeout.
@@ -240,14 +244,20 @@ describe('the 400% poverty-line cliff on the ordinary-income chart', () => {
     expect(subsidyPositions(container)).toHaveLength(0);
   });
 
-  it('drops the line on a 2025 return, where the law had no cliff', () => {
+  /**
+   * This used to click its way to 2025 and back, because 2025 is a year with
+   * no cliff in it — ARPA 9661, extended through 2025 by the IRA, capped the
+   * household's own share at 8.5% of income at every income level, so there
+   * was no line to draw. The page prices one year now and cannot be sent to
+   * that one, so what is left to assert here is the premise the other four
+   * tests in this describe rest on: the line is drawn because the year the
+   * page prices has a cliff, not because the chart always draws one. The
+   * year-by-year half is `tax.test.ts`'s, where `ptcCliff({ year: 2025 })` is
+   * pinned at null and `fpl400` is pinned out of the ceiling list.
+   */
+  it('draws it because the year the page prices has a cliff', () => {
     const { container } = render(<App />);
-    expect(subsidyPositions(container)).toHaveLength(1);
-    fireEvent.click(screen.getByRole('radio', { name: '2025' }));
-    // ARPA 9661, extended through 2025 by the IRA, capped the household's own
-    // share at 8.5% of income at every income level — so there was no line.
-    expect(subsidyPositions(container)).toHaveLength(0);
-    fireEvent.click(screen.getByRole('radio', { name: '2026' }));
+    expect(FPL_YEAR_PARAMS[PAGE_TAX_YEAR].cliff).toBe(true);
     expect(subsidyPositions(container)).toHaveLength(1);
   });
 });

@@ -34,6 +34,8 @@ import {
   filingParams,
   filingParamsFor,
   defaultTaxYear,
+  hasPublishedParams,
+  PAGE_TAX_YEAR,
   avgAnnualSSBenefit,
   maxAnnualSSBenefit,
   standardDeductionFor,
@@ -2301,8 +2303,8 @@ describe('IRMAA (Medicare income-related monthly adjustment amount)', () => {
 
   it('matches the 2026 CMS premium schedule', () => {
     // 90 FR 52065 (Nov 19 2025), the rule CMS's fact sheet reproduces. The
-    // whole point of the year selector: pick 2026 and this section re-prices
-    // rather than sitting a year stale next to 2026 brackets.
+    // point of carrying IRMAA per year at all: ask for 2026 and this section
+    // re-prices rather than sitting a year stale next to 2026 brackets.
     expect(partBStandardPremium(2026)).toBe(202.9);
     expect(allIrmaaTiers(2026).map((t) => t.partBMonthly)).toEqual([
       202.9, 284.1, 405.8, 527.5, 649.2, 689.9,
@@ -2539,6 +2541,23 @@ describe('IRMAA (Medicare income-related monthly adjustment amount)', () => {
 });
 
 describe('tax year', () => {
+  /**
+   * The year the page prices, and the one figure in this file that is a render
+   * decision rather than a rule. It is pinned here rather than in `App.test.tsx`
+   * because what has to hold is not what the page shows — that is asserted
+   * there — but that whatever this constant names is a year the engine can
+   * actually price. Setting it to a year with no Rev. Proc. behind it would
+   * fail every figure on the page at once, and fail it here first.
+   */
+  it('prices a year that is on file', () => {
+    expect(TAX_YEARS).toContain(PAGE_TAX_YEAR);
+    expect(hasPublishedParams(PAGE_TAX_YEAR)).toBe(true);
+    // Deliberately not `defaultTaxYear()`: a constant is what keeps a link
+    // sent in December meaning the same thing in January. They coincide today
+    // and the point is that nothing requires them to.
+    expect(taxYearParams(PAGE_TAX_YEAR)).toBeDefined();
+  });
+
   it('defaults to the calendar year, clamped to the years on file', () => {
     // The pinned clock is the point: an un-yeared scenario follows the wall
     // calendar, so it moves to next year's figures on its own.

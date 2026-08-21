@@ -1,9 +1,9 @@
 /**
  * The return, written into the address bar and read back out of it.
  *
- * Every figure on the page is derived from ten values, and until now all ten
- * lived only in React state: a refresh threw the return away and there was
- * nothing to send to a spouse or an advisor. Putting them in the query string
+ * Every figure on the page is derived from nine values, and until this file
+ * existed all nine lived only in React state: a refresh threw the return away
+ * and there was nothing to send to a spouse or an advisor. Putting them in the query string
  * fixes both at once, because the address bar is already the share surface
  * every reader knows how to use. Every value it carries prices something: a
  * link is the return, and nothing that changes no figure belongs in it.
@@ -19,11 +19,15 @@
  * in the query string would also make the one control that changes nothing
  * about the return the one control that rewrites the address.
  *
- * **A year this page cannot price loses.** `TAX_YEARS` is what there are
- * published figures for, and a link naming anything else — a 2024 link opened
- * after 2024 fell off the list, a typo, a hand-edited URL — gets
- * `defaultTaxYear()` and a note saying so. The alternative, refusing to render,
- * would trade a page priced for the wrong year against no page at all.
+ * **The year is not in the link either, and it used to be.** The page prices
+ * `PAGE_TAX_YEAR` and offers no way to change it, so a year in the query
+ * string would be a key that reads nothing — and a link that *looked* like it
+ * carried a year while the page ignored it is worse than one that never
+ * mentions it. Old links naming a year still open: `year=2025` is read past in
+ * silence, with no note, because a reader arriving on one has nothing to be
+ * told and no control to be pointed at. Every figure they see is a
+ * `PAGE_TAX_YEAR` figure, which the page says in its own prose in a dozen
+ * places.
  *
  * **Writing is `replaceState`, never `pushState`.** A slider fires a change per
  * notch, so pushing would bury the back button under one entry per $500 of
@@ -38,19 +42,17 @@
  */
 import {
   SS_BASES,
-  defaultTaxYear,
-  hasPublishedParams,
+  PAGE_TAX_YEAR,
   avgAnnualSSBenefit,
   maxAnnualSSBenefit,
   qcdLimitFor,
   conversionCeilings,
 } from './tax';
-import type { FilingStatus, TaxYear, ConversionCeilingId } from './tax';
+import type { FilingStatus, ConversionCeilingId } from './tax';
 import { formatCurrency } from './format';
 
 /** The whole return the page prices, and the whole of what a link carries. */
 export interface PageScenario {
-  year: TaxYear;
   filingStatus: FilingStatus;
   ssBenefit: number;
   ordinaryIncome: number;
@@ -106,12 +108,11 @@ const FILING_STATUS_SHORT: Record<FilingStatus, string> = {
  */
 const CEILING_IDS = conversionCeilings().map((c) => c.id);
 
-/** The page as it opens, for a given tax year. */
-export function defaultScenario(year: TaxYear = defaultTaxYear()): PageScenario {
+/** The page as it opens, before the reader touches anything. */
+export function defaultScenario(): PageScenario {
   return {
-    year,
     filingStatus: 'single',
-    ssBenefit: avgAnnualSSBenefit(year),
+    ssBenefit: avgAnnualSSBenefit(PAGE_TAX_YEAR),
     ordinaryIncome: DEFAULT_ORDINARY_INCOME,
     plannedLtcg: 0,
     isSenior: false,
@@ -125,23 +126,25 @@ export function defaultScenario(year: TaxYear = defaultTaxYear()): PageScenario 
 /**
  * The return as a query string, without its leading `?`.
  *
- * The year is always written and everything else only when it differs from
- * what that year opens with, so an untouched page reads `?year=2025` rather
- * than a wall of zeroes. The year is the exception because it is the one
- * default that moves on its own: `defaultTaxYear()` follows the wall calendar,
- * so a link that left it out would quietly re-price itself the January after
- * it was sent — which is the opposite of what a saved link is for.
+ * A value is written only when it differs from what the page opens with, so an
+ * untouched page reads as the empty string rather than a wall of zeroes and a
+ * year nobody can change. Every key that is present is therefore something the
+ * reader did, which is what makes a link legible at a glance.
  *
- * Leaving the benefit out when it sits at the year's average is deliberate on
- * the same reasoning turned the other way: a reader who never moved that
- * slider has expressed no opinion about the figure, so a link that changes
- * years should hand them the new year's average. It is the rule `changeYear`
- * already applies inside the page.
+ * Nothing here is written unconditionally any more. The year used to be, back
+ * when it was a control and its default followed the wall calendar — a link
+ * that left it out would have re-priced itself in January. `PAGE_TAX_YEAR` is
+ * a constant, so there is no default left that moves on its own and nothing
+ * that has to be pinned against one.
+ *
+ * Leaving the benefit out when it sits at the average is the same rule: a
+ * reader who never moved that slider has expressed no opinion about the
+ * figure, so the link should hand the next reader whatever the page opens
+ * with.
  */
 export function encodeScenario(scenario: PageScenario): string {
-  const opening = defaultScenario(scenario.year);
+  const opening = defaultScenario();
   const params = new URLSearchParams();
-  params.set('year', String(scenario.year));
   if (scenario.filingStatus !== opening.filingStatus) {
     params.set('filing', scenario.filingStatus);
   }
@@ -175,12 +178,18 @@ export function encodeScenario(scenario: PageScenario): string {
  * The hash is carried through rather than dropped, because `replaceState`
  * takes a whole URL and a bare `?query` would silently throw away the
  * `#step-…` the reader clicked to get here.
+ *
+ * The `?` is only written when there is something after it. An untouched page
+ * now encodes to nothing at all — the year was the one key that was always
+ * present — and a trailing `?` on an otherwise bare address is a character the
+ * reader would have to decide whether to keep when they copy it.
  */
 export function scenarioUrl(
   scenario: PageScenario,
   location: { pathname: string; hash: string },
 ): string {
-  return `${location.pathname}?${encodeScenario(scenario)}${location.hash}`;
+  const query = encodeScenario(scenario);
+  return `${location.pathname}${query ? `?${query}` : ''}${location.hash}`;
 }
 
 export interface DecodedScenario {
@@ -248,20 +257,6 @@ export function decodeScenario(search: string): DecodedScenario {
 
   const flag = (key: string): boolean => params.get(key) === '1';
 
-  const fallbackYear = defaultTaxYear();
-  const rawYear = params.get('year');
-  let year = fallbackYear;
-  if (rawYear !== null && rawYear.trim() !== '') {
-    const asked = Number(rawYear);
-    if (hasPublishedParams(asked)) {
-      year = asked;
-    } else {
-      notes.push(
-        `This link is priced for ${rawYear}, which this page has no published figures for. Showing ${fallbackYear} instead — every figure below is a ${fallbackYear} one.`,
-      );
-    }
-  }
-
   const rawFiling = params.get('filing');
   let filingStatus: FilingStatus = 'single';
   if (rawFiling !== null && rawFiling.trim() !== '') {
@@ -275,10 +270,10 @@ export function decodeScenario(search: string): DecodedScenario {
   }
 
   const ssBenefit = dollars('ss', {
-    fallback: avgAnnualSSBenefit(year),
-    max: maxAnnualSSBenefit(year),
+    fallback: avgAnnualSSBenefit(PAGE_TAX_YEAR),
+    max: maxAnnualSSBenefit(PAGE_TAX_YEAR),
     what: 'a Social Security benefit',
-    reason: `the most anyone can collect in ${year}`,
+    reason: `the most anyone can collect in ${PAGE_TAX_YEAR}`,
   });
 
   const ordinaryIncome = dollars('income', {
@@ -304,9 +299,9 @@ export function decodeScenario(search: string): DecodedScenario {
 
   const qcd = dollars('qcd', {
     fallback: 0,
-    max: qcdLimitFor({ filingStatus, year }),
+    max: qcdLimitFor({ filingStatus, year: PAGE_TAX_YEAR }),
     what: 'a charitable distribution',
-    reason: `the ${year} annual limit for this return`,
+    reason: `the ${PAGE_TAX_YEAR} annual limit for this return`,
   });
 
   const rawCeiling = params.get('ceiling');
@@ -323,7 +318,6 @@ export function decodeScenario(search: string): DecodedScenario {
 
   return {
     scenario: {
-      year,
       filingStatus,
       ssBenefit,
       ordinaryIncome,

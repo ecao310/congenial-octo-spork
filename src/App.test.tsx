@@ -1,24 +1,25 @@
 import { render, screen, fireEvent, within, act } from '@testing-library/react';
 import { vi } from 'vitest';
 import App, { CustomTooltip, LTCGTooltip, READING_SETTLE_MS } from './App';
-import { TAX_YEAR_PARAMS, TAX_YEARS, defaultTaxYear } from './utils/tax';
-import type { TaxYear } from './utils/tax';
+import { TAX_YEAR_PARAMS, TAX_YEARS, PAGE_TAX_YEAR } from './utils/tax';
 
 /**
- * The app opens on `defaultTaxYear()`, which follows the wall calendar, and
- * nearly every figure asserted below is a 2025 one. Pinning the clock keeps
- * those assertions meaningful instead of having them re-point at whatever
- * Rev. Proc. the calendar happens to be on. The `tax year selector` describe
- * clicks its way to 2026 rather than relying on the default.
+ * The page prices `PAGE_TAX_YEAR` and offers no way to change it, so every
+ * figure asserted below is a figure for that year and this constant is the one
+ * place to re-point them from when the year moves.
+ *
+ * The clock is still pinned to it. Nothing on the page reads `Date` any more,
+ * but a stopped clock is what keeps a future figure derived from
+ * `defaultTaxYear()` — the engine's own default, which does follow the
+ * calendar — from making these assertions depend on the day they are run.
  */
-const PINNED_YEAR: TaxYear = 2025;
-const AVG_ANNUAL_SS_BENEFIT = TAX_YEAR_PARAMS[PINNED_YEAR].avgAnnualSSBenefit;
-const MAX_ANNUAL_SS_BENEFIT = TAX_YEAR_PARAMS[PINNED_YEAR].maxAnnualSSBenefit;
+const AVG_ANNUAL_SS_BENEFIT = TAX_YEAR_PARAMS[PAGE_TAX_YEAR].avgAnnualSSBenefit;
+const MAX_ANNUAL_SS_BENEFIT = TAX_YEAR_PARAMS[PAGE_TAX_YEAR].maxAnnualSSBenefit;
 
 beforeEach(() => {
   // Date only: React Testing Library needs the real setTimeout.
   vi.useFakeTimers({ toFake: ['Date'] });
-  vi.setSystemTime(new Date(`${PINNED_YEAR}-07-01T00:00:00Z`));
+  vi.setSystemTime(new Date(`${PAGE_TAX_YEAR}-07-01T00:00:00Z`));
 });
 
 afterEach(() => {
@@ -92,32 +93,31 @@ describe('App', () => {
 
     // And it stays put when those controls move.
     fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Jointly' }));
-    fireEvent.click(screen.getByRole('radio', { name: '2026' }));
     expect(subtitle).not.toHaveTextContent(/married|2026/i);
   });
 
-  it('renders the benefit slider defaulting to the 2025 average benefit', () => {
+  it('renders the benefit slider defaulting to the 2026 average benefit', () => {
     render(<App />);
     const slider = screen.getByRole('slider', { name: /social security benefit/i });
     expect(slider).toHaveValue(String(AVG_ANNUAL_SS_BENEFIT));
-    expect(within(benefitGroup()).getByText('$23,712')).toBeInTheDocument();
+    expect(within(benefitGroup()).getByText('$24,852')).toBeInTheDocument();
   });
 
-  it('spans $0 to the 2025 maximum yearly benefit and shows avg/max labels', () => {
+  it('spans $0 to the 2026 maximum yearly benefit and shows avg/max labels', () => {
     render(<App />);
     const slider = screen.getByRole('slider', { name: /social security benefit/i });
     expect(slider).toHaveAttribute('min', '0');
     expect(slider).toHaveAttribute('max', String(MAX_ANNUAL_SS_BENEFIT));
     expect(screen.getAllByText('$0').length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText('$23,712 (2025 avg)')).toBeInTheDocument();
-    expect(screen.getByText('$61,296 (2025 max)')).toBeInTheDocument();
+    expect(screen.getByText('$24,852 (2026 avg)')).toBeInTheDocument();
+    expect(screen.getByText('$62,172 (2026 max)')).toBeInTheDocument();
   });
 
   it('updates the value, readout, and total income formula when moved', () => {
     render(<App />);
     const slider = screen.getByRole('slider', { name: /social security benefit/i });
     expect(
-      screen.getByText(/total income = other income \+ \$23,712 ss/i),
+      screen.getByText(/total income = other income \+ \$24,852 ss/i),
     ).toBeInTheDocument();
     fireEvent.change(slider, { target: { value: '36000' } });
     expect(slider).toHaveValue('36000');
@@ -152,18 +152,46 @@ describe('App', () => {
   it('explains the tax torpedo with thresholds for the selected filing status and defaults to collapsed', () => {
     render(<App />);
     const heading = screen.getByRole('heading', { name: /what is the tax torpedo/i });
-    expect(heading).toBeInTheDocument();
-    const details = heading.closest('details');
+    const details = heading.closest('details') as HTMLElement;
     expect(details).toBeInTheDocument();
     expect(details).not.toHaveAttribute('open');
 
-    expect(screen.getByText(/provisional income passes \$25,000/)).toBeInTheDocument();
-    expect(screen.getByText(/past \$34,000/)).toBeInTheDocument();
+    /**
+     * Scoped to the paragraph that quotes this return's own thresholds. The
+     * last paragraph of the same explainer names all four bases as 86(c) wrote
+     * them, which is the statute's history and does not follow the filing
+     * status — so a page-wide "$25,000 is gone" would be asserting something
+     * else, and would fail on prose that is correct.
+     */
+    const live = (): HTMLElement =>
+      details.querySelector('.explainer-content p') as HTMLElement;
+
+    expect(live()).toHaveTextContent(/provisional income passes \$25,000/);
+    expect(live()).toHaveTextContent(/past \$34,000/);
 
     fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Jointly' }));
-    expect(screen.getByText(/provisional income passes \$32,000/)).toBeInTheDocument();
-    expect(screen.getByText(/past \$44,000/)).toBeInTheDocument();
-    expect(screen.queryByText(/\$25,000/)).not.toBeInTheDocument();
+    expect(live()).toHaveTextContent(/provisional income passes \$32,000/);
+    expect(live()).toHaveTextContent(/past \$44,000/);
+    expect(live()).not.toHaveTextContent('$25,000');
+  });
+
+  /**
+   * The page used to open with a 2025/2026 picker, and clicking it was the only
+   * way to watch the COLA raise the benefit while 86(c)'s bases sat still. That
+   * is the app's own subject, so it is stated where a reader meets it rather
+   * than left to whoever thinks to click twice and compare.
+   */
+  it('says the thresholds are frozen where the picker used to show it', () => {
+    render(<App />);
+    const frozen = screen.getByText(/The thresholds have not moved/).closest('p');
+    expect(frozen).toHaveTextContent('IRC 86(c) set $25,000 and $32,000 in 1983');
+    expect(frozen).toHaveTextContent('$34,000 and $44,000 in 1993');
+    expect(frozen).toHaveTextContent('Neither has ever been indexed');
+    expect(frozen).toHaveTextContent(`This page prices ${PAGE_TAX_YEAR}`);
+    // It is the same explainer the live thresholds are in, not a fifth block.
+    expect(frozen?.closest('details')).toBe(
+      screen.getByRole('heading', { name: /what is the tax torpedo/i }).closest('details'),
+    );
   });
 
   it('lists strategies to mitigate the tax torpedo and defaults to collapsed', () => {
@@ -222,13 +250,13 @@ describe('App', () => {
       screen.getByRole('radio', { name: 'Married Filing Separately' }),
     ).toBeChecked();
     expect(warning).toHaveTextContent('Filing separately zeroes out both thresholds');
-    // 42.5% of the $23,712 average benefit, taxable at $0 of other income,
+    // 42.5% of the $24,852 average benefit, taxable at $0 of other income,
     // and the 85% cap reached at half the benefit.
-    expect(warning).toHaveTextContent('$10,078');
-    expect(warning).toHaveTextContent('$11,856');
+    expect(warning).toHaveTextContent('$10,562');
+    expect(warning).toHaveTextContent('$12,426');
     // And the escape hatch for the other kind of separate filer.
     expect(warning).toHaveTextContent(/lived apart from your spouse for the entire year/i);
-    expect(warning).toHaveTextContent('$375,800');
+    expect(warning).toHaveTextContent('$384,350');
     expect(scenarioRecap()).toHaveTextContent(
       'filing separately who lived with their spouse',
     );
@@ -320,13 +348,13 @@ describe('App', () => {
     const senior = screen.getByRole('checkbox', { name: 'Age 65 or older' });
     expect(senior).not.toBeChecked();
     expect(screen.getByText(/^Standard deduction/)).toHaveTextContent(
-      'Standard deduction $15,750. Turning 65 adds $2,000.',
+      'Standard deduction $16,100. Turning 65 adds $2,050.',
     );
 
     fireEvent.click(senior);
     expect(senior).toBeChecked();
     expect(screen.getByText(/^Standard deduction/)).toHaveTextContent(
-      'Standard deduction $17,750 — $15,750 base plus $2,000 for age 65 or older.',
+      'Standard deduction $18,150 — $16,100 base plus $2,050 for age 65 or older.',
     );
   });
 
@@ -340,18 +368,18 @@ describe('App', () => {
     const spouse = screen.getByRole('checkbox', { name: 'Both spouses are 65 or older' });
     expect(spouse).toBeDisabled();
     expect(screen.getByText(/^Standard deduction/)).toHaveTextContent(
-      'Standard deduction $31,500. Turning 65 adds $1,600 per qualifying spouse.',
+      'Standard deduction $32,200. Turning 65 adds $1,650 per qualifying spouse.',
     );
 
     fireEvent.click(screen.getByRole('checkbox', { name: 'Age 65 or older' }));
     expect(spouse).toBeEnabled();
     expect(screen.getByText(/^Standard deduction/)).toHaveTextContent(
-      'Standard deduction $33,100 — $31,500 base plus $1,600 for age 65 or older.',
+      'Standard deduction $33,850 — $32,200 base plus $1,650 for age 65 or older.',
     );
 
     fireEvent.click(spouse);
     expect(screen.getByText(/^Standard deduction/)).toHaveTextContent(
-      'Standard deduction $34,700 — $31,500 base plus $3,200 for age 65 or older.',
+      'Standard deduction $35,500 — $32,200 base plus $3,300 for age 65 or older.',
     );
   });
 
@@ -425,7 +453,7 @@ describe('App', () => {
 
     expect(
       screen.getByText(
-        /total income = other income \+ \$23,712 SS \+ \$5,000 tax-exempt interest/i,
+        /total income = other income \+ \$24,852 SS \+ \$5,000 tax-exempt interest/i,
       ),
     ).toBeInTheDocument();
   });
@@ -696,7 +724,7 @@ describe('the shape every step shares', () => {
       document
         .getElementById('step-conversion')
         ?.querySelectorAll('input[name="conversion-ceiling"]'),
-    ).toHaveLength(6);
+    ).toHaveLength(7);
   });
 
   /**
@@ -745,7 +773,7 @@ describe('the shape every step shares', () => {
  * same arithmetic all along, but only for whichever point a mouse was over —
  * which is nobody's point in particular, and no point at all on a touchscreen.
  *
- * Figures below are 2025, single, the $23,712 average benefit: the rate rises
+ * Figures below are 2026, single, the $24,852 average benefit: the rate rises
  * 0% to $14,750, 15%, 18.5%, then the hump at 22.2% from $22,750 to $40,500,
  * a 12% valley to $44,000, 22% to $98,750, and 24% past that.
  */
@@ -774,13 +802,13 @@ describe('the advice under the slider', () => {
     // The default $30,000 opens the page mid-hump, which is the whole point.
     expect(advice()).toHaveTextContent('You are standing on the hump');
     expect(advice()).toHaveTextContent(
-      'it holds from $22,750 to $40,500',
+      'it holds from $23,000 to $41,000',
     );
     expect(advice()).toHaveTextContent(
-      'Coming back under $22,750 — $7,250 less income — takes the next dollar down to 18.5%',
+      'Coming back under $23,000 — $7,000 less income — takes the next dollar down to 18.5%',
     );
     expect(advice()).toHaveTextContent(
-      'clearing $40,750 — $10,750 more — takes it to 12%',
+      'clearing $41,250 — $11,250 more — takes it to 12%',
     );
   });
 
@@ -791,7 +819,7 @@ describe('the advice under the slider', () => {
     expect(advice()).toHaveTextContent(
       'every dollar up to $15,000 — $5,000 of room from here',
     );
-    expect(advice()).toHaveTextContent('climbs to 22.2% by $22,750');
+    expect(advice()).toHaveTextContent('climbs to 22.2% by $23,000');
   });
 
   it('measures the distance left when the reader is on the climb', () => {
@@ -799,7 +827,7 @@ describe('the advice under the slider', () => {
     setIncome(20_000);
     expect(advice()).toHaveTextContent('You are on the climb');
     expect(advice()).toHaveTextContent(
-      '$2,750 further on — at $22,750 — the rate reaches 22.2%',
+      '$3,000 further on — at $23,000 — the rate reaches 22.2%',
     );
   });
 
@@ -814,10 +842,10 @@ describe('the advice under the slider', () => {
     setIncome(60_000);
     expect(advice()).toHaveTextContent('The hump is behind you');
     expect(advice()).toHaveTextContent(
-      'against 22.2% back between $22,750 and $40,500',
+      'against 22.2% back between $23,000 and $41,000',
     );
     expect(advice()).toHaveTextContent(
-      'nearest cheaper ground on this chart is 12% between $40,750 and $44,000',
+      'nearest cheaper ground on this chart is 12% between $41,250 and $45,250',
     );
     expect(advice()).toHaveTextContent('costs 12% rather than 22%');
     expect(advice()).not.toHaveTextContent('0% between');
@@ -832,7 +860,7 @@ describe('the advice under the slider', () => {
     setIncome(40_000);
     expect(advice()).toHaveTextContent('This return has no hump');
     expect(advice()).toHaveTextContent(
-      'The next dollar costs 12%, and holds there to $64,250',
+      'The next dollar costs 12%, and holds there to $66,500',
     );
     expect(advice()).not.toHaveTextContent('hump is behind you');
   });
@@ -862,7 +890,7 @@ describe('the advice under the slider', () => {
  * the only place the hump's location is stated without the reader first having
  * to put a slider inside it.
  *
- * Figures below are 2025, single, the $23,712 average benefit, the same return
+ * Figures below are 2026, single, the $24,852 average benefit, the same return
  * the advice tests read.
  */
 describe('the curve in words', () => {
@@ -900,14 +928,14 @@ describe('the curve in words', () => {
   it('names every band of step 2’s curve, left to right', () => {
     render(<App />);
     expect(caption('torpedo')).toHaveTextContent(
-      'Left to right, the rate on the next dollar of other income is 0% up to $14,750, 15% to $22,000, 18.5% to $22,500, 22.2% to $40,500, 12% to $44,000, 22% to $98,750, then 24% out to $150,000.',
+      'Left to right, the rate on the next dollar of other income is 0% up to $14,750, 15% to $21,500, 18.5% to $22,750, 22.2% to $41,000, 12% to $45,250, 22% to $100,500, then 24% out to $150,000.',
     );
   });
 
   it('states where the hump starts and stops without being asked', () => {
     render(<App />);
     expect(caption('torpedo')).toHaveTextContent(
-      'The hump is the 22.2% stretch between $22,750 and $40,500',
+      'The hump is the 22.2% stretch between $23,000 and $41,000',
     );
     expect(caption('torpedo')).toHaveTextContent('the ground just past it is cheaper');
   });
@@ -928,7 +956,7 @@ describe('the curve in words', () => {
     // No benefit to drag into the tax base, so the curve is the bracket
     // schedule and nothing else: it climbs and never comes back down.
     expect(caption('torpedo')).toHaveTextContent(
-      '0% up to $15,500, 10% to $27,500, 12% to $64,000, 22% to $119,000, then 24% out to $150,000.',
+      '0% up to $16,000, 10% to $28,250, 12% to $66,250, 22% to $121,750, then 24% out to $150,000.',
     );
     expect(caption('torpedo')).toHaveTextContent(
       'No stretch of it is a hump: none costs more than the ground on both sides of it.',
@@ -949,17 +977,17 @@ describe('the curve in words', () => {
     // The inclusion phase, then the senior deduction's phaseout: the second
     // hump is the one no reader would guess was there.
     expect(caption('torpedo')).toHaveTextContent(
-      'It humps twice: 22.2% between $44,500 and $60,500, and 26.88% between $202,500 and $209,500 — the ground just past each one is cheaper than the ground on it.',
+      'It humps twice: 22.2% between $45,500 and $60,500, and 26.88% between $207,000 and $209,500 — the ground just past each one is cheaper than the ground on it.',
     );
   });
 
   it('words step 3’s caption about the split rather than the size', () => {
     render(<App />);
     expect(caption('gains')).toHaveTextContent(
-      'Left to right, the rate on the next dollar taken as gain rather than as ordinary income is 10.2% up to $13,500, 8.5% to $25,250, then 0% out to $30,000.',
+      'Left to right, the rate on the next dollar taken as gain rather than as ordinary income is 10.2% up to $13,000, 8.5% to $25,500, then 0% out to $30,000.',
     );
     expect(caption('gains')).toHaveTextContent(
-      'The hump is the 10.2% stretch between $0 and $13,500',
+      'The hump is the 10.2% stretch between $0 and $13,000',
     );
   });
 
@@ -988,14 +1016,14 @@ describe('the curve in words', () => {
       "Step 2's own curve, redrawn out to $150,000:",
     );
     expect(caption('conversion')).toHaveTextContent(
-      '22.2% to $40,500, 12% to $44,000',
+      '22.2% to $41,000, 12% to $45,250',
     );
   });
 
   it('names the shaded conversion in step 4’s label, and its absence', () => {
     render(<App />);
     expect(chart('conversion').getAttribute('aria-label')).toContain(
-      'with the sized conversion shaded from $30,000 to $44,069',
+      'with the sized conversion shaded from $30,000 to $45,375',
     );
     // Nothing fits under the top of the 12% bracket from $90,000 of income.
     setIncome(90_000);
@@ -1078,7 +1106,7 @@ describe('a gain is a share of the income, not an addition to it', () => {
 
     fireEvent.change(gainSlider(), { target: { value: '20000' } });
     expect(readout('gains')).toHaveTextContent(
-      'rather than taking all of it as ordinary income saves $2,270',
+      'rather than taking all of it as ordinary income saves $2,263',
     );
   });
 
@@ -1121,9 +1149,9 @@ describe('the total the return owes', () => {
 
   it('states the bill and the effective rate under the torpedo slider', () => {
     render(<App />);
-    // $30,000 of other income and the $23,712 average benefit.
+    // $30,000 of other income and the $24,852 average benefit.
     expect(readout('torpedo')).toHaveTextContent(
-      'owes $2,813 in federal tax on $53,712 of total income — an effective rate of 5.24%',
+      'owes $2,819 in federal tax on $54,852 of total income — an effective rate of 5.14%',
     );
   });
 
@@ -1139,7 +1167,7 @@ describe('the total the return owes', () => {
   it('quotes the same total under the gains slider, on an income it does not move', () => {
     render(<App />);
     expect(readout('gains')).toHaveTextContent(
-      'owes $2,813 in federal tax on the $53,712 of total income behind this chart, which this slider never moves — an effective rate of 5.24%',
+      'owes $2,819 in federal tax on the $54,852 of total income behind this chart, which this slider never moves — an effective rate of 5.14%',
     );
   });
 
@@ -1154,13 +1182,13 @@ describe('the total the return owes', () => {
     const gainsLabel = (): HTMLElement =>
       document.querySelector('#step-gains .chart-axis-label') as HTMLElement;
     expect(gainsLabel()).toHaveTextContent(
-      'Total income $53,712 at every point on this axis',
+      'Total income $54,852 at every point on this axis',
     );
 
     set(/tax-exempt \(municipal\) interest/i, 10_000);
-    expect(gainsLabel()).toHaveTextContent('Total income $63,712');
-    expect(readout('torpedo')).toHaveTextContent('$63,712 of total income');
-    expect(readout('gains')).toHaveTextContent('$63,712 of total income');
+    expect(gainsLabel()).toHaveTextContent('Total income $64,852');
+    expect(readout('torpedo')).toHaveTextContent('$64,852 of total income');
+    expect(readout('gains')).toHaveTextContent('$64,852 of total income');
   });
 
   /**
@@ -1174,21 +1202,21 @@ describe('the total the return owes', () => {
     const gainsLabel = (): HTMLElement =>
       document.querySelector('#step-gains .chart-axis-label') as HTMLElement;
     set(/qualified charitable distribution/i, 10_000);
-    expect(gainsLabel()).toHaveTextContent('Total income $43,712 where you stand');
+    expect(gainsLabel()).toHaveTextContent('Total income $44,852 where you stand');
     expect(gainsLabel()).not.toHaveTextContent('at every point on this axis');
 
     // $25,000 of the $30,000 taken as gain leaves $5,000 of ordinary income,
     // so only $5,000 of the $10,000 gift can be excluded.
     set(/long-term capital gains inside that income/i, 25_000);
-    expect(gainsLabel()).toHaveTextContent('Total income $48,712 where you stand');
-    expect(readout('torpedo')).toHaveTextContent('$48,712 of total income');
+    expect(gainsLabel()).toHaveTextContent('Total income $49,852 where you stand');
+    expect(readout('torpedo')).toHaveTextContent('$49,852 of total income');
   });
 
   it('quotes the same total again as step 4\u2019s bill before the conversion', () => {
     render(<App />);
     expect(
       document.querySelector('#step-conversion .slider-readout'),
-    ).toHaveTextContent("taking this year's bill from $2,813 to $5,578");
+    ).toHaveTextContent("taking this year's bill from $2,819 to $5,800");
   });
 
   /**
@@ -1199,10 +1227,10 @@ describe('the total the return owes', () => {
     render(<App />);
     set(/long-term capital gains inside that income/i, 20_000);
     expect(readout('gains')).toHaveTextContent(
-      'owes $543 in federal tax on the $53,712 of total income behind this chart, which this slider never moves — an effective rate of 1.01%',
+      'owes $556 in federal tax on the $54,852 of total income behind this chart, which this slider never moves — an effective rate of 1.01%',
     );
     expect(readout('torpedo')).toHaveTextContent(
-      'owes $543 in federal tax on $53,712 of total income — an effective rate of 1.01%',
+      'owes $556 in federal tax on $54,852 of total income — an effective rate of 1.01%',
     );
   });
 
@@ -1210,7 +1238,7 @@ describe('the total the return owes', () => {
     render(<App />);
     set(/other income \(not social security\)/i, 90_000);
     expect(readout('torpedo')).toHaveTextContent(
-      'owes $15,683 in federal tax on $113,712 of total income — an effective rate of 13.79%',
+      'owes $15,617 in federal tax on $114,852 of total income — an effective rate of 13.6%',
     );
   });
 
@@ -1224,7 +1252,7 @@ describe('the total the return owes', () => {
     render(<App />);
     set(/tax-exempt \(municipal\) interest/i, 10_000);
     expect(readout('torpedo')).toHaveTextContent(
-      'owes $3,833 in federal tax on $63,712 of total income',
+      'owes $3,839 in federal tax on $64,852 of total income',
     );
   });
 
@@ -1233,7 +1261,7 @@ describe('the total the return owes', () => {
     set(/other income \(not social security\)/i, 90_000);
     set(/qualified charitable distribution/i, 20_000);
     expect(readout('torpedo')).toHaveTextContent(
-      'owes $11,283 in federal tax on $93,712 of total income',
+      'owes $11,217 in federal tax on $94,852 of total income',
     );
   });
 
@@ -1249,7 +1277,7 @@ describe('the total the return owes', () => {
     set(/long-term capital gains inside that income/i, 80_000);
     // Only $10,000 of ordinary income is left for the gift to come out of.
     expect(readout('torpedo')).toHaveTextContent(
-      'owes $5,849 in federal tax on $103,712 of total income',
+      'owes $5,839 in federal tax on $104,852 of total income',
     );
   });
 
@@ -1329,7 +1357,7 @@ describe('advanced inputs', () => {
     ]) {
       expect(screen.getByLabelText(label).closest('details')).toBeNull();
     }
-    for (const legend of ['Tax Year', 'Filing Status', 'Age']) {
+    for (const legend of ['Filing Status', 'Age']) {
       expect(screen.getByRole('group', { name: legend }).closest('details')).toBeNull();
     }
   });
@@ -1373,7 +1401,7 @@ describe('advanced inputs', () => {
     expect(advancedState()).toHaveTextContent('Charitable $150,000');
 
     fireEvent.click(screen.getByRole('radio', { name: 'Single' }));
-    expect(advancedState()).toHaveTextContent('Charitable $108,000');
+    expect(advancedState()).toHaveTextContent('Charitable $111,000');
   });
 
   /**
@@ -1427,7 +1455,7 @@ describe('Tooltip Recommendations', () => {
         <CustomTooltip
           active={true}
           payload={[{ payload: { income: 20000, marginalRate: 15, totalTax: 768 } }]}
-          ssBenefit={23712}
+          ssBenefit={24852}
           segments={mockOrdinarySegments}
         />,
       );
@@ -1442,7 +1470,7 @@ describe('Tooltip Recommendations', () => {
         <CustomTooltip
           active={true}
           payload={[{ payload: { income: 30000, marginalRate: 22.2, totalTax: 2813 } }]}
-          ssBenefit={23712}
+          ssBenefit={24852}
           segments={mockOrdinarySegments}
         />,
       );
@@ -1458,7 +1486,7 @@ describe('Tooltip Recommendations', () => {
         <CustomTooltip
           active={true}
           payload={[{ payload: { income: 42000, marginalRate: 12, totalTax: 5330 } }]}
-          ssBenefit={23712}
+          ssBenefit={24852}
           segments={mockOrdinarySegments}
         />,
       );
@@ -1472,14 +1500,16 @@ describe('Tooltip Recommendations', () => {
         <CustomTooltip
           active={true}
           payload={[{ payload: { income: 20000, marginalRate: 15, totalTax: 768 } }]}
-          ssBenefit={23712}
+          ssBenefit={24852}
           segments={mockOrdinarySegments}
         />,
       );
-      // MAGI is $20,000 + $3,428 of taxable benefits = $23,428.
+      // Provisional income is $20,000 + half the $24,852 benefit = $32,426,
+      // $7,426 over the $25,000 base, so $3,713 of the benefit is taxable and
+      // MAGI is $23,713 — against a 2026 first cliff of $109,000.
       expect(screen.getByText('$0/yr')).toBeInTheDocument();
       expect(
-        screen.getByText(/\$82,572 of MAGI to the next cliff, then \$1,052\/yr more/),
+        screen.getByText(/\$85,287 of MAGI to the next cliff, then \$1,148\/yr more/),
       ).toBeInTheDocument();
       expect(screen.queryByText(/tier .* of 5/)).not.toBeInTheDocument();
     });
@@ -1489,15 +1519,15 @@ describe('Tooltip Recommendations', () => {
         <CustomTooltip
           active={true}
           payload={[{ payload: { income: 90000, marginalRate: 22, totalTax: 17000 } }]}
-          ssBenefit={23712}
+          ssBenefit={24852}
           segments={mockOrdinarySegments}
         />,
       );
-      // $90,000 + the capped $20,155.20 of benefits clears $106,000 of MAGI.
-      expect(screen.getByText('$1,052/yr')).toBeInTheDocument();
+      // $90,000 + the capped $21,124.20 of benefits clears $109,000 of MAGI.
+      expect(screen.getByText('$1,148/yr')).toBeInTheDocument();
       expect(screen.getByText(/tier 1 of 5/)).toBeInTheDocument();
       expect(
-        screen.getByText(/\$22,845 of MAGI to the next cliff, then \$1,591\/yr more/),
+        screen.getByText(/\$25,876 of MAGI to the next cliff, then \$1,736\/yr more/),
       ).toBeInTheDocument();
     });
 
@@ -1506,18 +1536,18 @@ describe('Tooltip Recommendations', () => {
         <CustomTooltip
           active={true}
           payload={[{ payload: { income: 90000, marginalRate: 22, totalTax: 17000 } }]}
-          ssBenefit={23712}
+          ssBenefit={24852}
           segments={mockOrdinarySegments}
           filingStatus="mfj"
           muniInterest={10000}
           beneficiaries={2}
         />,
       );
-      // A joint return is nowhere near $212,000 here, so nothing is owed - but
+      // A joint return is nowhere near $218,000 here, so nothing is owed - but
       // the tax-exempt interest still counts toward the MAGI that decides it.
       expect(screen.getByText('$0/yr')).toBeInTheDocument();
       expect(
-        screen.getByText(/\$91,845 of MAGI to the next cliff, then \$2,105\/yr more/),
+        screen.getByText(/\$96,876 of MAGI to the next cliff, then \$2,297\/yr more/),
       ).toBeInTheDocument();
     });
   });
@@ -1526,18 +1556,18 @@ describe('Tooltip Recommendations', () => {
    * The bug this pins: the two tooltips and the two axis labels each spelled
    * out "total income" for themselves, and only one of the four spelled it out
    * right. With $10,000 of tax-exempt interest set, the torpedo tooltip said
-   * $53,712 where the sentence under the same chart said $63,712 — for the
+   * $54,852 where the sentence under the same chart said $64,852 — for the
    * same return, a foot apart on the page. Both now read `totalIncomeFor`.
    */
   describe('what the two tooltips call total income', () => {
     const scenario = {
       ordinaryIncome: 40_000,
-      ssBenefit: 23_712,
+      ssBenefit: 24_852,
       ltcg: 15_000,
       muniInterest: 10_000,
       qcd: 5_000,
       filingStatus: 'single' as const,
-      year: PINNED_YEAR,
+      year: PAGE_TAX_YEAR,
     };
 
     it('counts tax-exempt interest and drops the gift, on the torpedo chart', () => {
@@ -1554,9 +1584,9 @@ describe('Tooltip Recommendations', () => {
           year={scenario.year}
         />,
       );
-      // $40,000 of other income - $5,000 given away + $23,712 of benefit +
+      // $40,000 of other income - $5,000 given away + $24,852 of benefit +
       // $10,000 of tax-exempt interest.
-      expect(screen.getByText(/Total income \$68,712/)).toBeInTheDocument();
+      expect(screen.getByText(/Total income \$69,852/)).toBeInTheDocument();
     });
 
     it('says the same number on the gains chart, for the same return', () => {
@@ -1573,7 +1603,7 @@ describe('Tooltip Recommendations', () => {
           year={scenario.year}
         />,
       );
-      expect(screen.getByText(/Total income \$68,712/)).toBeInTheDocument();
+      expect(screen.getByText(/Total income \$69,852/)).toBeInTheDocument();
     });
 
     /**
@@ -1597,7 +1627,7 @@ describe('Tooltip Recommendations', () => {
       );
       // Only $2,000 of ordinary income is left, so $2,000 of the $5,000 gift
       // can be excluded and $3,000 more of the same income reaches the return.
-      expect(screen.getByText(/Total income \$71,712/)).toBeInTheDocument();
+      expect(screen.getByText(/Total income \$72,852/)).toBeInTheDocument();
     });
 
     it('falls back to income plus benefit when nothing else is set', () => {
@@ -1606,11 +1636,11 @@ describe('Tooltip Recommendations', () => {
           active={true}
           payload={[{ payload: { ltcg: 12_000, marginalRate: 0, totalTax: 3_890 } }]}
           ordinaryIncome={30_000}
-          ssBenefit={23_712}
+          ssBenefit={24_852}
           segments={mockLtcgSegments}
         />,
       );
-      expect(screen.getByText(/Total income \$53,712/)).toBeInTheDocument();
+      expect(screen.getByText(/Total income \$54,852/)).toBeInTheDocument();
     });
   });
 
@@ -1621,7 +1651,7 @@ describe('Tooltip Recommendations', () => {
           active={true}
           payload={[{ payload: { ltcg: 4000, marginalRate: 10.2, totalTax: 3221 } }]}
           ordinaryIncome={30000}
-          ssBenefit={23712}
+          ssBenefit={24852}
           segments={mockLtcgSegments}
         />,
       );
@@ -1638,7 +1668,7 @@ describe('Tooltip Recommendations', () => {
           active={true}
           payload={[{ payload: { ltcg: 12000, marginalRate: 0, totalTax: 3890 } }]}
           ordinaryIncome={30000}
-          ssBenefit={23712}
+          ssBenefit={24852}
           segments={mockLtcgSegments}
         />,
       );
@@ -1670,16 +1700,15 @@ describe('scenario recap', () => {
   it('names the return the defaults describe', () => {
     render(<App />);
     expect(scenarioRecap()).toHaveTextContent(
-      'Everything from here on prices one return: 2025 brackets and standard ' +
-        'deduction, a single filer, under 65, collecting $23,712 of Social ' +
+      'Everything from here on prices one return: 2026 brackets and standard ' +
+        'deduction, a single filer, under 65, collecting $24,852 of Social ' +
         'Security a year.',
     );
   });
 
-  it('follows the year, the status and the benefit', () => {
+  it('follows the status and the benefit', () => {
     render(<App />);
     fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Jointly' }));
-    fireEvent.click(screen.getByRole('radio', { name: '2026' }));
     fireEvent.change(
       screen.getByRole('slider', { name: /social security benefit/i }),
       { target: { value: '48000' } },
@@ -1749,76 +1778,54 @@ describe('scenario recap', () => {
   });
 });
 
-describe('tax year selector', () => {
-  const yearRadio = (year: number): HTMLElement =>
-    screen.getByRole('radio', { name: String(year) });
-
-  it('offers every year on file and opens on the calendar year', () => {
+/**
+ * The year used to be a two-button segmented control at the top of step 1, and
+ * clicking it re-priced the whole page. It is a constant now: the comparison it
+ * demonstrated — the COLA raising the benefit while IRC 86(c)'s bases sit still
+ * — is the page's subject rather than one of its inputs, and is made in prose
+ * under step 2 where a reader meets it without having to think to click twice.
+ */
+describe('the year the page prices', () => {
+  it('offers no way to change it', () => {
     render(<App />);
-    expect(screen.getByRole('group', { name: /tax year/i })).toBeInTheDocument();
-    expect(yearRadio(2025)).toBeChecked();
-    expect(yearRadio(2026)).not.toBeChecked();
-    expect(scenarioRecap()).toHaveTextContent('2025 brackets and standard deduction');
+    expect(screen.queryByRole('group', { name: /tax year/i })).toBeNull();
+    for (const year of TAX_YEARS) {
+      expect(screen.queryByRole('radio', { name: String(year) })).toBeNull();
+    }
   });
 
-  it('re-prices the standard deduction for 2026', () => {
+  it('names PAGE_TAX_YEAR in the recap and prices the deduction for it', () => {
     render(<App />);
-    expect(screen.getByText(/^Standard deduction/)).toHaveTextContent(
-      'Standard deduction $15,750. Turning 65 adds $2,000.',
+    expect(scenarioRecap()).toHaveTextContent(
+      `${PAGE_TAX_YEAR} brackets and standard deduction`,
     );
-
-    fireEvent.click(yearRadio(2026));
-    expect(yearRadio(2026)).toBeChecked();
-    expect(yearRadio(2025)).not.toBeChecked();
-
-    expect(scenarioRecap()).toHaveTextContent('2026 brackets and standard deduction');
     expect(screen.getByText(/^Standard deduction/)).toHaveTextContent(
       'Standard deduction $16,100. Turning 65 adds $2,050.',
     );
   });
 
-  it('moves an untouched benefit slider onto the new year’s average and max', () => {
+  it('opens the benefit slider on that year’s average, running to its maximum', () => {
     render(<App />);
     const slider = screen.getByRole('slider', { name: /social security benefit/i });
-    expect(slider).toHaveValue('23712');
-    expect(slider).toHaveAttribute('max', '61296');
-
-    fireEvent.click(yearRadio(2026));
-    // Nobody moved the slider, so it follows the COLA — which is the whole
-    // comparison the selector exists to make.
     expect(slider).toHaveValue('24852');
     expect(slider).toHaveAttribute('max', '62172');
     expect(screen.getByText('$24,852 (2026 avg)')).toBeInTheDocument();
     expect(screen.getByText('$62,172 (2026 max)')).toBeInTheDocument();
   });
 
-  it('keeps a benefit the user chose, clamped to the new year’s maximum', () => {
-    render(<App />);
-    const slider = screen.getByRole('slider', { name: /social security benefit/i });
-
-    fireEvent.change(slider, { target: { value: '40000' } });
-    fireEvent.click(yearRadio(2026));
-    expect(slider).toHaveValue('40000');
-
-    // The 2026 maximum is past the 2025 one, so going back has to clamp or the
-    // slider would sit beyond its own right edge.
-    fireEvent.change(slider, { target: { value: '62172' } });
-    fireEvent.click(yearRadio(2025));
-    expect(slider).toHaveValue('61296');
-  });
-
-  it('opens on a year it actually has figures for, under the real clock', () => {
-    // Every other test here pins the clock to 2025. This one does not: it is
-    // the check that whatever `defaultTaxYear()` returns today is a year the
-    // selector can render, so shipping past the last year on file cannot leave
-    // the app opening on a blank schedule.
+  /**
+   * The point of `PAGE_TAX_YEAR` being a constant rather than `defaultTaxYear()`:
+   * a page built on the wall calendar would re-price itself the January after a
+   * new Rev. Proc. landed, and the link a reader sent in December would mean
+   * something else by then. Every other test here pins the clock; this one does
+   * not, so a drifting figure would fail it wherever the calendar stands.
+   */
+  it('does not follow the wall calendar', () => {
     vi.useRealTimers();
     render(<App />);
-    const opening = defaultTaxYear();
-    expect(TAX_YEARS).toContain(opening);
-    expect(yearRadio(opening)).toBeChecked();
+    expect(TAX_YEARS).toContain(PAGE_TAX_YEAR);
     expect(scenarioRecap()).toHaveTextContent(
-      `${opening} brackets and standard deduction`,
+      `${PAGE_TAX_YEAR} brackets and standard deduction`,
     );
   });
 });
@@ -1839,12 +1846,12 @@ describe('qualified charitable distribution', () => {
     fireEvent.change(screen.getByRole('slider', { name }), { target: { value } });
   };
 
-  it('runs from $0 to the 2025 annual limit', () => {
+  it('runs from $0 to the 2026 annual limit', () => {
     render(<App />);
     expect(qcdSlider()).toHaveValue('0');
     expect(qcdSlider()).toHaveAttribute('min', '0');
-    expect(qcdSlider()).toHaveAttribute('max', '108000');
-    expect(qcdNote()).toHaveTextContent('Capped at $108,000 for 2025');
+    expect(qcdSlider()).toHaveAttribute('max', '111000');
+    expect(qcdNote()).toHaveTextContent('Capped at $111,000 for 2026');
   });
 
   /**
@@ -1855,8 +1862,8 @@ describe('qualified charitable distribution', () => {
   it('doubles the limit on a joint return and runs the slider all the way to it', () => {
     render(<App />);
     fireEvent.click(screen.getByRole('radio', { name: /married filing jointly/i }));
-    expect(qcdSlider()).toHaveAttribute('max', '216000');
-    expect(qcdNote()).toHaveTextContent('Capped at $216,000 for 2025');
+    expect(qcdSlider()).toHaveAttribute('max', '222000');
+    expect(qcdNote()).toHaveTextContent('Capped at $222,000 for 2026');
     expect(qcdNote()).toHaveTextContent(/caps it per individual/);
   });
 
@@ -1897,38 +1904,24 @@ describe('qualified charitable distribution', () => {
     ).toHaveAttribute('max', '250000');
   });
 
-  it('re-prices the limit when the tax year changes', () => {
+  it('clamps a gift parked past the limit when the filing status changes', () => {
     render(<App />);
-    fireEvent.click(screen.getByRole('radio', { name: '2026' }));
-    expect(qcdSlider()).toHaveAttribute('max', '111000');
-    expect(qcdNote()).toHaveTextContent('Capped at $111,000 for 2026');
-  });
-
-  it('clamps a gift parked past the limit when the year or status changes', () => {
-    render(<App />);
-    fireEvent.click(screen.getByRole('radio', { name: '2026' }));
-    setSlider(/qualified charitable distribution/i, '111000');
-    expect(qcdSlider()).toHaveValue('111000');
-    // 2025's limit is $3,000 lower, and the slider must not sit past its edge.
-    fireEvent.click(screen.getByRole('radio', { name: '2025' }));
-    expect(qcdSlider()).toHaveValue('108000');
-
     fireEvent.click(screen.getByRole('radio', { name: /married filing jointly/i }));
     setSlider(/qualified charitable distribution/i, '150000');
     // The limit is per individual, so it halves on the way back to one filer.
     fireEvent.click(screen.getByRole('radio', { name: 'Single' }));
-    expect(qcdSlider()).toHaveValue('108000');
+    expect(qcdSlider()).toHaveValue('111000');
   });
 
   it('takes the gift back out of the axis label', () => {
     render(<App />);
     expect(
-      screen.getByText(/total income = other income \+ \$23,712 ss$/i),
+      screen.getByText(/total income = other income \+ \$24,852 ss$/i),
     ).toBeInTheDocument();
     setSlider(/qualified charitable distribution/i, '10000');
     expect(
       screen.getByText(
-        /total income = other income \+ \$23,712 ss \u2212 \$10,000 given straight to charity/i,
+        /total income = other income \+ \$24,852 ss \u2212 \$10,000 given straight to charity/i,
       ),
     ).toBeInTheDocument();
   });
@@ -1941,7 +1934,7 @@ describe('qualified charitable distribution', () => {
         ssBenefit={AVG_ANNUAL_SS_BENEFIT}
         segments={[]}
         qcd={10_000}
-        year={PINNED_YEAR}
+        year={PAGE_TAX_YEAR}
       />,
     );
     expect(
@@ -1959,7 +1952,7 @@ describe('qualified charitable distribution', () => {
         ssBenefit={AVG_ANNUAL_SS_BENEFIT}
         segments={[]}
         qcd={10_000}
-        year={PINNED_YEAR}
+        year={PAGE_TAX_YEAR}
       />,
     );
     expect(
@@ -1999,16 +1992,9 @@ describe('head of household', () => {
     expect(note).toHaveTextContent(
       /takes the default, \$25,000 and \$34,000, which is exactly what Single uses/,
     );
+    // Read off the year's own bracket table rather than written down here:
+    // both figures are indexed, and both moved when the page did.
     expect(note).toHaveTextContent(
-      /a \$23,625 standard deduction against \$15,750, and a 12% band running to \$64,850 instead of \$48,475/,
-    );
-  });
-
-  it('re-dates the comparison when the tax year changes', () => {
-    render(<App />);
-    selectHoh();
-    fireEvent.click(screen.getByRole('radio', { name: '2026' }));
-    expect(filingSection()).toHaveTextContent(
       /a \$24,150 standard deduction against \$16,100, and a 12% band running to \$67,450 instead of \$50,400/,
     );
   });
@@ -2036,7 +2022,7 @@ describe('head of household', () => {
   it('takes the unmarried age-65 addition with no per-spouse wording', () => {
     render(<App />);
     selectHoh();
-    expect(screen.getByText(/Turning 65 adds \$2,000\./)).toBeInTheDocument();
+    expect(screen.getByText(/Turning 65 adds \$2,050\./)).toBeInTheDocument();
     expect(screen.queryByText(/per qualifying spouse/)).not.toBeInTheDocument();
     expect(
       screen.queryByRole('checkbox', { name: /both spouses are 65 or older/i }),
@@ -2072,7 +2058,7 @@ describe('the IRMAA cliff lines on the torpedo chart', () => {
     // Tier 1 is a $1,052.40 step; tiers 2 and 3 are $1,591 each. Rounded to
     // whole dollars, in the order the lines are drawn.
     expect(key).toHaveTextContent(
-      'IRMAA 1 at $85,845 costs $1,052/yr; IRMAA 2 at $112,845 another $1,591/yr; IRMAA 3 at $146,845 another $1,591/yr.',
+      'IRMAA 1 at $87,876 costs $1,148/yr; IRMAA 2 at $115,876 another $1,736/yr; IRMAA 3 at $149,876 another $1,735/yr.',
     );
     // The surcharge is a premium, not tax, so it is in none of the tax figures.
     expect(key).toHaveTextContent('None of that is tax');
@@ -2087,7 +2073,7 @@ describe('the IRMAA cliff lines on the torpedo chart', () => {
     // Medicare's MAGI adds muni interest straight back, so every cliff arrives
     // $10,000 of other income earlier.
     expect(chartKey(container)).toHaveTextContent(
-      'IRMAA 1 at $75,845 costs $1,052/yr; IRMAA 2 at $102,845 another $1,591/yr; IRMAA 3 at $136,845 another $1,591/yr.',
+      'IRMAA 1 at $77,876 costs $1,148/yr; IRMAA 2 at $105,876 another $1,736/yr; IRMAA 3 at $139,876 another $1,735/yr.',
     );
   });
 
@@ -2097,7 +2083,7 @@ describe('the IRMAA cliff lines on the torpedo chart', () => {
       screen.getByRole('radio', { name: 'Married Filing Separately' }),
     );
     const key = chartKey(container);
-    expect(key).toHaveTextContent('IRMAA 4 at $85,845 costs $5,826/yr.');
+    expect(key).toHaveTextContent('IRMAA 4 at $87,876 costs $6,355/yr.');
     expect(key).not.toHaveTextContent('IRMAA 1');
   });
 
@@ -2109,9 +2095,9 @@ describe('the IRMAA cliff lines on the torpedo chart', () => {
     // $212,000 of MAGI, less the benefits already in AGI, is past the $150,000
     // right edge — so the reader gets the figure instead of a blank margin.
     expect(key).toHaveTextContent(
-      '$212,000 of MAGI — $191,845 of other income, past the right edge of the axis',
+      '$218,000 of MAGI — $196,876 of other income, past the right edge of the axis',
     );
-    expect(key).toHaveTextContent('$1,052/yr in Medicare premiums');
+    expect(key).toHaveTextContent('$1,148/yr in Medicare premiums');
   });
 
   it('doubles the price for a joint return with two enrollees', () => {
@@ -2127,7 +2113,7 @@ describe('the IRMAA cliff lines on the torpedo chart', () => {
     // IRMAA is charged per enrollee off one household MAGI figure, so both
     // steps are twice what a single filer pays.
     expect(chartKey(container)).toHaveTextContent(
-      'IRMAA 1 at $191,845 costs $2,105/yr; IRMAA 2 at $245,845 another $3,182/yr, for the two of you.',
+      'IRMAA 1 at $196,876 costs $2,297/yr, for the two of you.',
     );
   });
 
@@ -2141,9 +2127,9 @@ describe('the IRMAA cliff lines on the torpedo chart', () => {
     expect(details).toHaveTextContent('one dollar over a threshold triggers the whole surcharge');
     // The two-year lag is the caveat that makes the x-axis honest.
     expect(details).toHaveTextContent(
-      /the 2025 premiums these lines are priced from are set by 2023 MAGI/,
+      /the 2026 premiums these lines are priced from are set by 2024 MAGI/,
     );
-    expect(details).toHaveTextContent('setting the premium for 2027');
+    expect(details).toHaveTextContent('setting the premium for 2028');
     expect(details).toHaveTextContent('Form SSA-44');
   });
 
@@ -2168,14 +2154,13 @@ describe('the IRMAA cliff lines on the torpedo chart', () => {
  * is checked here is the key beside it and the explainer under it, which are
  * plain HTML and are the only things that say what a pink dash means.
  *
- * The clock is pinned to 2025, a year with no cliff, so every test that wants
- * one clicks its way to 2026 — and the first one below is about what a reader
- * sees when there is nothing to draw.
+ * `PAGE_TAX_YEAR` has a cliff: ARPA section 9661 suspended the 400% ceiling
+ * from 2021 through 2025 and it came back for tax years beginning after 2025.
+ * These tests used to click a year selector to reach it. The engine still
+ * prices a year without one — `ptcCliffMagi` returns null — so the guard on
+ * the section stays even though the page can no longer land on that branch.
  */
 describe('the 400% poverty-line cliff under the torpedo chart', () => {
-  const yearRadio = (year: number): HTMLElement =>
-    screen.getByRole('radio', { name: String(year) });
-
   const subsidyKey = (container: HTMLElement): HTMLElement | null =>
     container.querySelector<HTMLElement>('.chart-key-subsidy');
 
@@ -2186,22 +2171,12 @@ describe('the 400% poverty-line cliff under the torpedo chart', () => {
     return details;
   };
 
-  it('says on a 2025 return that there is no cliff, and draws no key for one', () => {
+  it('prices the line for this return, and says what the household pays under it', () => {
     const { container } = render(<App />);
-    expect(subsidyKey(container)).toBeNull();
-    // The heading stops pointing at a line the chart is not drawing.
+    // The heading points at the line, because there is always one to point at.
     expect(
       screen.getByRole('heading', { name: /400% poverty-line cliff/ }),
-    ).not.toHaveTextContent('pink dashed line');
-    expect(subsidyExplainer()).toHaveTextContent(
-      'On a 2025 return there is no cliff to draw',
-    );
-    expect(subsidyExplainer()).toHaveTextContent('ARPA section 9661');
-  });
-
-  it('prices the line for a 2026 return, and says what the household pays under it', () => {
-    const { container } = render(<App />);
-    fireEvent.click(yearRadio(2026));
+    ).toHaveTextContent('pink dashed line');
     const key = subsidyKey(container);
     expect(key).not.toBeNull();
     // 4 x the $15,650 one-person line, reached at $62,600 less the $24,852
@@ -2228,7 +2203,6 @@ describe('the 400% poverty-line cliff under the torpedo chart', () => {
 
   it('quotes the reader their own distance from the line', () => {
     render(<App />);
-    fireEvent.click(yearRadio(2026));
     // $30,000 of other income plus the whole $24,852 benefit: $54,852, which
     // is 350% of the $15,650 line with $7,748 of it left to go.
     expect(subsidyExplainer()).toHaveTextContent(
@@ -2246,7 +2220,6 @@ describe('the 400% poverty-line cliff under the torpedo chart', () => {
 
   it('says where the line is even when it is off the right edge', () => {
     const { container } = render(<App />);
-    fireEvent.click(yearRadio(2026));
     fireEvent.change(screen.getByRole('slider', { name: /tax-exempt \(municipal\) interest/i }), {
       target: { value: '40000' },
     });
@@ -2262,7 +2235,6 @@ describe('the 400% poverty-line cliff under the torpedo chart', () => {
 
   it('takes the whole section away once everyone on the return is on Medicare', () => {
     const { container } = render(<App />);
-    fireEvent.click(yearRadio(2026));
     expect(subsidyKey(container)).not.toBeNull();
 
     fireEvent.click(screen.getByRole('checkbox', { name: 'Age 65 or older' }));
@@ -2274,7 +2246,7 @@ describe('the 400% poverty-line cliff under the torpedo chart', () => {
 });
 
 describe('separate-return divergence figure', () => {
-  it('re-dates with the tax year instead of quoting a 2025 constant', () => {
+  it('reads the figure off the bracket table rather than quoting a constant', () => {
     // The separate and single rate schedules part company where the separate
     // 35% band ends, which is indexed like everything else: $375,800 in 2025,
     // $384,350 in 2026. It used to be written into the sentence.
@@ -2282,10 +2254,8 @@ describe('separate-return divergence figure', () => {
     fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Separately' }));
     const fieldset = screen.getByRole('group', { name: /filing status/i });
     expect(fieldset).toHaveTextContent(
-      /identical up to \$375,800 of taxable income; head of household is better than either/,
+      /identical up to \$384,350 of taxable income; head of household is better than either/,
     );
-    fireEvent.click(screen.getByRole('radio', { name: '2026' }));
-    expect(fieldset).toHaveTextContent(/identical up to \$384,350 of taxable income/);
   });
 });
 
@@ -2399,11 +2369,11 @@ describe('the torpedo chart’s right edge', () => {
 /**
  * Step 4 is the one that answers the h1 with a number.
  *
- * Figures below are 2025, single, the $23,712 average benefit, $30,000 of
+ * Figures below are 2026, single, the $24,852 average benefit, $30,000 of
  * other income and no gain — the page's own defaults. Under the top of the 12%
- * bracket ($48,475 of taxable income) $14,069 fits, costing $2,765 and taking
- * the year's tax from $2,813 to $5,578: 19.65% averaged over the block against
- * 22% on the first dollar past the line. The headroom is $23,047, and the
+ * bracket ($50,400 of taxable income) $15,375 fits, costing $2,981 and taking
+ * the year's tax from $2,819 to $5,800: 19.39% averaged over the block against
+ * 22% on the first dollar past the line. The headroom is $23,548, and the
  * conversion is smaller than it because every dollar inside the torpedo raises
  * taxable income by more than a dollar.
  */
@@ -2424,29 +2394,33 @@ describe('sizing the conversion', () => {
       screen.getByRole('heading', { name: /sizing the conversion/i, level: 2 }),
     ).toBeInTheDocument();
 
-    expect(readout()).toHaveTextContent('$14,069 fits.');
+    expect(readout()).toHaveTextContent('$15,375 fits.');
     expect(readout()).toHaveTextContent(
       'On top of your $30,000 of other income',
     );
     expect(readout()).toHaveTextContent(
-      'Top of the 12% bracket, $48,475 of taxable income',
+      'Top of the 12% bracket, $50,400 of taxable income',
     );
-    expect(readout()).toHaveTextContent('costs $2,765 in federal tax');
+    expect(readout()).toHaveTextContent('costs $2,981 in federal tax');
     expect(readout()).toHaveTextContent(
-      "taking this year's bill from $2,813 to $5,578",
+      "taking this year's bill from $2,819 to $5,800",
     );
-    expect(readout()).toHaveTextContent('an average of 19.65% on every dollar');
+    expect(readout()).toHaveTextContent('an average of 19.39% on every dollar');
     expect(readout()).toHaveTextContent(
       'against 22% on the first dollar past the line',
     );
   });
 
   /**
-   * The picker is step 4's slider. Six lines, each captioned with the income
-   * definition it caps — four different definitions across the six, which is
+   * The picker is step 4's slider. Seven lines, each captioned with the income
+   * definition it caps — four different definitions across the seven, which is
    * the trap the caption exists to keep the reader out of.
+   *
+   * The last of them is the only one whose existence turns on the year: 400%
+   * of the poverty line is a ceiling in 2026 and was not one in 2025, because
+   * ARPA suspended it through 2025. The page prices 2026, so it is here.
    */
-  it('offers all six ceilings, each captioned with what it caps', () => {
+  it('offers all seven ceilings, each captioned with what it caps', () => {
     render(<App />);
     const radios = within(section()).getAllByRole('radio');
     expect(radios.map((r) => r.getAttribute('value'))).toEqual([
@@ -2456,18 +2430,23 @@ describe('sizing the conversion', () => {
       'ss85',
       'ltcg0',
       'irmaa1',
+      'fpl400',
     ]);
     expect(radios[0]).toBeChecked();
     for (const [label, caption] of [
-      [/^Top of the 12% bracket/, '$48,475 of taxable income'],
-      [/^Top of the 22% bracket/, '$103,350 of taxable income'],
+      [/^Top of the 12% bracket/, '$50,400 of taxable income'],
+      [/^Top of the 22% bracket/, '$105,700 of taxable income'],
       [/^Social Security 50% base/, '$25,000 of provisional income'],
       [/^Social Security 85% base/, '$34,000 of provisional income'],
       [
         /^Top of the 0% capital-gains bracket/,
-        '$48,350 of total taxable income (ordinary + gains)',
+        '$49,450 of total taxable income (ordinary + gains)',
       ],
-      [/^IRMAA tier 1/, '$106,000 of MAGI'],
+      [/^IRMAA tier 1/, '$109,000 of MAGI'],
+      [
+        /^400% of the federal poverty line/,
+        '$62,600 of household income (36B MAGI)',
+      ],
     ] as const) {
       expect(
         screen
@@ -2477,60 +2456,24 @@ describe('sizing the conversion', () => {
     }
   });
 
-  /**
-   * The seventh line, and the only one whose existence turns on the year: 400%
-   * of the poverty line is a ceiling in 2026 and was not one in 2025. This
-   * file opens on 2025, so the test above is the six-line case and this is the
-   * seven-line one — which is what a reader on the live page sees.
-   */
-  it('adds the poverty-line ceiling in 2026, and drops a reader’s pick back when they leave', () => {
+  it('sizes a conversion against the poverty line like any other ceiling', () => {
     render(<App />);
-    fireEvent.click(screen.getByRole('radio', { name: '2026' }));
-    const ids = (): (string | null)[] =>
-      within(section())
-        .getAllByRole('radio')
-        .map((r) => r.getAttribute('value'));
-    expect(ids()).toEqual([
-      'bracket12',
-      'bracket22',
-      'ss50',
-      'ss85',
-      'ltcg0',
-      'irmaa1',
-      'fpl400',
-    ]);
-    expect(
-      screen
-        .getByRole('radio', { name: /^400% of the federal poverty line/ })
-        .closest('.segmented-option'),
-    ).toHaveTextContent('$62,600 of household income (36B MAGI)');
-
     // $62,600 less the $24,852 benefit, which 36B counts in full, less the
     // $30,000 of other income already on the return.
     pick(/^400% of the federal poverty line/);
     expect(readout()).toHaveTextContent('$7,748 fits.');
-
-    // Back to a year with no such line: the pick is retired rather than
-    // stranded, and picking it again is a matter of returning to 2026.
-    fireEvent.click(screen.getByRole('radio', { name: '2025' }));
-    expect(ids()).not.toContain('fpl400');
-    expect(within(section()).getAllByRole('radio')[0]).toBeChecked();
-    fireEvent.click(screen.getByRole('radio', { name: '2026' }));
-    expect(
-      screen.getByRole('radio', { name: /^400% of the federal poverty line/ }),
-    ).toBeChecked();
   });
 
   it('re-sizes the conversion when a different line is picked', () => {
     render(<App />);
     pick(/^Top of the 22% bracket/);
-    expect(readout()).toHaveTextContent('$68,944 fits.');
-    expect(readout()).toHaveTextContent('costs $14,838 in federal tax');
-    expect(readout()).toHaveTextContent('an average of 21.52%');
+    expect(readout()).toHaveTextContent('$70,675 fits.');
+    expect(readout()).toHaveTextContent('costs $15,147 in federal tax');
+    expect(readout()).toHaveTextContent('an average of 21.43%');
     expect(readout()).toHaveTextContent('against 24% on the first dollar');
 
     pick(/^IRMAA tier 1/);
-    expect(readout()).toHaveTextContent('$55,844 fits.');
+    expect(readout()).toHaveTextContent('$57,875 fits.');
   });
 
   /**
@@ -2543,7 +2486,7 @@ describe('sizing the conversion', () => {
     pick(/^Social Security 50% base/);
     expect(readout()).toHaveTextContent('Nothing fits.');
     expect(readout()).toHaveTextContent(
-      'already $16,856 past the line you picked',
+      'already $17,426 past the line you picked',
     );
     expect(readout()).toHaveTextContent(
       'Social Security 50% base, $25,000 of provisional income',
@@ -2565,7 +2508,7 @@ describe('sizing the conversion', () => {
     const fits = (readout().textContent ?? '').match(/\$([\d,]+) fits/);
     expect(fits).not.toBeNull();
     expect(Number((fits as RegExpMatchArray)[1].replace(/,/g, ''))).toBeGreaterThan(
-      14_069,
+      15_375,
     );
   });
 
@@ -2586,11 +2529,11 @@ describe('sizing the conversion', () => {
     const list = section().querySelector(
       '#conversion-ceilings-heading',
     )?.closest('details')?.querySelector('ul') as HTMLElement;
-    expect(within(list).getAllByRole('listitem')).toHaveLength(6);
+    expect(within(list).getAllByRole('listitem')).toHaveLength(7);
     expect(list).toHaveTextContent(
-      'Top of the 0% capital-gains bracket — $48,350 of total taxable income',
+      'Top of the 0% capital-gains bracket — $49,450 of total taxable income',
     );
-    expect(list).toHaveTextContent('IRMAA tier 1 (Medicare surcharge) — $106,000 of MAGI');
+    expect(list).toHaveTextContent('IRMAA tier 1 (Medicare surcharge) — $109,000 of MAGI');
   });
 
   /**
@@ -2607,7 +2550,7 @@ describe('sizing the conversion', () => {
 
     fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Jointly' }));
     pick(/^Top of the 22% bracket/);
-    expect(readout()).toHaveTextContent('$188,044 fits.');
+    expect(readout()).toHaveTextContent('$192,475 fits.');
     expect(label()).toHaveTextContent('drawn out to $225,000');
 
     // Step 2's own axis is untouched: its slider still stops where it did.
@@ -2625,7 +2568,7 @@ describe('sizing the conversion', () => {
   it('names the far edge of the band in other-income terms', () => {
     render(<App />);
     expect(section().querySelector('.chart-key')).toHaveTextContent(
-      'runs from your own $30,000 out to $44,069 of other income',
+      'runs from your own $30,000 out to $45,375 of other income',
     );
   });
 });
@@ -2686,18 +2629,18 @@ describe('the closing answer', () => {
 
   it('answers with the eight figures the default return produces', () => {
     render(<App />);
-    expect(figure('Total income')).toHaveTextContent('$53,712');
-    expect(figure('Federal tax')).toHaveTextContent('$2,813');
-    expect(figure('Effective rate')).toHaveTextContent('5.24%');
+    expect(figure('Total income')).toHaveTextContent('$54,852');
+    expect(figure('Federal tax')).toHaveTextContent('$2,819');
+    expect(figure('Effective rate')).toHaveTextContent('5.14%');
     expect(figure('The next dollar')).toHaveTextContent('22.2%');
     expect(figure('Benefit in the tax base')).toHaveTextContent(
-      '$11,178 of $23,712',
+      '$11,662 of $24,852',
     );
-    expect(figure('Benefit in the tax base')).toHaveTextContent('47.14% of it');
+    expect(figure('Benefit in the tax base')).toHaveTextContent('46.93% of it');
     expect(figure('Medicare surcharge')).toHaveTextContent(
       'None \u2014 the standard premium',
     );
-    expect(figure('Room to convert')).toHaveTextContent('$14,069 fits');
+    expect(figure('Room to convert')).toHaveTextContent('$15,375 fits');
   });
 
   /**
@@ -2708,13 +2651,13 @@ describe('the closing answer', () => {
   it('restates the return it prices', () => {
     render(<App />);
     expect(intro()).toHaveTextContent(
-      'Priced for 2025: a single filer, under 65, with $23,712 of Social Security and $30,000 of other income.',
+      'Priced for 2026: a single filer, under 65, with $24,852 of Social Security and $30,000 of other income.',
     );
 
     fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Jointly' }));
     fireEvent.click(screen.getByRole('checkbox', { name: 'Age 65 or older' }));
     expect(intro()).toHaveTextContent(
-      'Priced for 2025: a married couple filing jointly, one spouse 65 or older,',
+      'Priced for 2026: a married couple filing jointly, one spouse 65 or older,',
     );
   });
 
@@ -2728,36 +2671,36 @@ describe('the closing answer', () => {
     const torpedoReadout = document.querySelector(
       '#step-torpedo .slider-readout',
     ) as HTMLElement;
-    expect(torpedoReadout).toHaveTextContent('owes $2,813 in federal tax');
-    expect(torpedoReadout).toHaveTextContent('an effective rate of 5.24%');
+    expect(torpedoReadout).toHaveTextContent('owes $2,819 in federal tax');
+    expect(torpedoReadout).toHaveTextContent('an effective rate of 5.14%');
     expect(
       document.querySelector('#step-conversion .slider-readout'),
-    ).toHaveTextContent("taking this year's bill from $2,813");
+    ).toHaveTextContent("taking this year's bill from $2,819");
 
-    expect(figure('Federal tax')).toHaveTextContent('$2,813');
-    expect(figure('Effective rate')).toHaveTextContent('5.24%');
+    expect(figure('Federal tax')).toHaveTextContent('$2,819');
+    expect(figure('Effective rate')).toHaveTextContent('5.14%');
     expect(figure('The next dollar')).toHaveTextContent('22.2%');
   });
 
   it('re-prices every figure when step 2 moves the income', () => {
     render(<App />);
     setIncome(90_000);
-    expect(figure('Total income')).toHaveTextContent('$113,712');
-    expect(figure('Federal tax')).toHaveTextContent('$15,683');
-    expect(figure('Effective rate')).toHaveTextContent('13.79%');
+    expect(figure('Total income')).toHaveTextContent('$114,852');
+    expect(figure('Federal tax')).toHaveTextContent('$15,617');
+    expect(figure('Effective rate')).toHaveTextContent('13.6%');
     // Past the torpedo: the next dollar is back to its own bracket rate.
     expect(figure('The next dollar')).toHaveTextContent('22%');
     // And the 85% cap is binding, which is why it is over.
     expect(figure('Benefit in the tax base')).toHaveTextContent(
-      '$20,155 of $23,712',
+      '$21,124 of $24,852',
     );
     expect(figure('Benefit in the tax base')).toHaveTextContent('85% of it');
     expect(figure('Medicare surcharge')).toHaveTextContent(
-      'Tier 1 of 5 \u2014 $1,052/yr',
+      'Tier 1 of 5 \u2014 $1,148/yr',
     );
     expect(figure('Room to convert')).toHaveTextContent('Nothing fits');
     expect(figure('Room to convert')).toHaveTextContent(
-      'already $45,930 past Top of the 12% bracket, $48,475 of taxable income',
+      'already $44,624 past Top of the 12% bracket, $50,400 of taxable income',
     );
   });
 
@@ -2768,12 +2711,12 @@ describe('the closing answer', () => {
   it('names the tier the MAGI lands in and what the next cliff costs', () => {
     render(<App />);
     const medicare = figure('Medicare surcharge');
-    expect(medicare).toHaveTextContent('On $41,178 of MAGI');
+    expect(medicare).toHaveTextContent('On $41,662 of MAGI');
     expect(medicare).toHaveTextContent(
-      'Another $64,822 of it crosses the next cliff, which costs $1,052 a year on the strength of one dollar.',
+      'Another $67,338 of it crosses the next cliff, which costs $1,148 a year on the strength of one dollar.',
     );
     expect(medicare).toHaveTextContent(
-      'Billed on a 2-year lag, so this is what 2025 income sets for 2027.',
+      'Billed on a 2-year lag, so this is what 2026 income sets for 2028.',
     );
   });
 
@@ -2786,11 +2729,11 @@ describe('the closing answer', () => {
     );
     setIncome(140_000);
     expect(figure('Medicare surcharge')).toHaveTextContent(
-      'On $160,155 of MAGI, charged to each of you.',
+      'On $161,124 of MAGI, charged to each of you.',
     );
     // Two enrollees, so the cliff below costs twice what one filer pays.
     expect(figure('Medicare surcharge')).toHaveTextContent(
-      'costs $2,105 a year',
+      'costs $2,297 a year',
     );
   });
 
@@ -2805,7 +2748,7 @@ describe('the closing answer', () => {
       'Step 1 sets no benefit, so there is nothing for other income to drag in',
     );
     expect(figure('Total income')).toHaveTextContent('$30,000');
-    expect(figure('Effective rate')).toHaveTextContent('4.91%');
+    expect(figure('Effective rate')).toHaveTextContent('4.73%');
   });
 
   /**
@@ -2819,11 +2762,11 @@ describe('the closing answer', () => {
       screen.getByRole('slider', { name: /tax-exempt \(municipal\) interest/i }),
       { target: { value: '10000' } },
     );
-    expect(figure('Total income')).toHaveTextContent('$63,712');
+    expect(figure('Total income')).toHaveTextContent('$64,852');
     expect(figure('Total income')).toHaveTextContent(
       'plus $10,000 of tax-exempt interest',
     );
-    expect(figure('Effective rate')).toHaveTextContent('6.02%');
+    expect(figure('Effective rate')).toHaveTextContent('5.92%');
 
     fireEvent.change(
       screen.getByRole('slider', { name: /tax-exempt \(municipal\) interest/i }),
@@ -2833,20 +2776,20 @@ describe('the closing answer', () => {
       screen.getByRole('slider', { name: /qualified charitable distribution/i }),
       { target: { value: '20000' } },
     );
-    expect(figure('Total income')).toHaveTextContent('$33,712');
+    expect(figure('Total income')).toHaveTextContent('$34,852');
     expect(figure('Total income')).toHaveTextContent(
       'less the $20,000 that went straight to charity',
     );
     // The gift takes provisional income under the 50% base, so none of the
     // benefit is taxable and the return owes nothing.
     expect(figure('Federal tax')).toHaveTextContent('$0');
-    expect(figure('Benefit in the tax base')).toHaveTextContent('$0 of $23,712');
+    expect(figure('Benefit in the tax base')).toHaveTextContent('$0 of $24,852');
   });
 
   it('carries whatever line step 4 is sized against', () => {
     render(<App />);
     expect(figure('Room to convert')).toHaveTextContent(
-      'Sized against Top of the 12% bracket, $48,475 of taxable income. It costs $2,765, taking the bill to $5,578 \u2014 an average of 19.65% on every dollar converted.',
+      'Sized against Top of the 12% bracket, $50,400 of taxable income. It costs $2,981, taking the bill to $5,800 \u2014 an average of 19.39% on every dollar converted.',
     );
 
     fireEvent.click(
@@ -2854,7 +2797,7 @@ describe('the closing answer', () => {
     );
     expect(figure('Room to convert')).toHaveTextContent('Nothing fits');
     expect(figure('Room to convert')).toHaveTextContent(
-      'already $16,856 past Social Security 50% base, $25,000 of provisional income',
+      'already $17,426 past Social Security 50% base, $25,000 of provisional income',
     );
   });
 
@@ -2897,17 +2840,17 @@ describe('the closing answer', () => {
         'set in 2013 and has never been indexed, exactly like the $25,000 and $34,000 bases',
       );
       // Nothing to split, so the tax line stays a single figure.
-      expect(figure('Federal tax')).toHaveTextContent('What the 2025 return owes.');
+      expect(figure('Federal tax')).toHaveTextContent('What the 2026 return owes.');
       expect(figure('Federal tax')).not.toHaveTextContent('of income tax and');
     });
 
     it('measures the distance to the threshold when a gain is set but under it', () => {
-      openAt('?year=2025&ss=23712&income=100000&ltcg=40000');
+      openAt('?ss=24852&income=100000&ltcg=40000');
       render(<App />);
       const line = figure('Net investment income tax');
       expect(line).toHaveTextContent('None — under the threshold');
-      expect(line).toHaveTextContent('$40,000 of gain and $120,155 of MAGI');
-      expect(line).toHaveTextContent('$79,845 short');
+      expect(line).toHaveTextContent('$40,000 of gain and $121,124 of MAGI');
+      expect(line).toHaveTextContent('$78,876 short');
       // The sentence the whole feature exists for.
       expect(line).toHaveTextContent(
         'the dollars that would close that gap need not be investment income at all',
@@ -2915,21 +2858,21 @@ describe('the closing answer', () => {
     });
 
     it('prices it, and splits the tax line, once MAGI clears the threshold', () => {
-      openAt('?year=2025&ss=23712&income=240000&ltcg=60000');
+      openAt('?ss=24852&income=240000&ltcg=60000');
       render(<App />);
 
-      expect(figure('Total income')).toHaveTextContent('$263,712');
-      expect(figure('Federal tax')).toHaveTextContent('$48,384');
-      // $46,104 of income tax and $2,280 of surtax, which add to the figure
+      expect(figure('Total income')).toHaveTextContent('$264,852');
+      expect(figure('Federal tax')).toHaveTextContent('$48,284');
+      // $46,004 of income tax and $2,280 of surtax, which add to the figure
       // above them.
       expect(figure('Federal tax')).toHaveTextContent(
-        'What the 2025 return owes: $46,104 of income tax and $2,280 of the surtax on the next line',
+        'What the 2026 return owes: $46,004 of income tax and $2,280 of the surtax on the next line',
       );
 
       const line = figure('Net investment income tax');
       expect(line).toHaveTextContent('$2,280');
       expect(line).toHaveTextContent(
-        '3.8% of $60,000 — the lesser of the $60,000 gain and the $60,155 by which $260,155 of MAGI clears the $200,000 threshold',
+        '3.8% of $60,000 — the lesser of the $60,000 gain and the $61,124 by which $261,124 of MAGI clears the $200,000 threshold',
       );
       // The whole gain is already in, so ordinary income has stopped dragging.
       expect(line).toHaveTextContent(
@@ -2942,7 +2885,7 @@ describe('the closing answer', () => {
      * 3.8 cents. This is the third stacking effect the page is about.
      */
     it('names what more income would drag in while the gain is only part taxed', () => {
-      openAt('?year=2025&ss=23712&income=200000&ltcg=60000');
+      openAt('?ss=24852&income=200000&ltcg=60000');
       render(<App />);
       const line = figure('Net investment income tax');
       expect(line).toHaveTextContent(
@@ -2952,19 +2895,19 @@ describe('the closing answer', () => {
 
     /** Step 3's readout carries the same figure, since that is where it bites. */
     it('is named in step 3’s readout where it applies', () => {
-      openAt('?year=2025&ss=23712&income=240000&ltcg=60000');
+      openAt('?ss=24852&income=240000&ltcg=60000');
       render(<App />);
       const readout = document.querySelector(
         '#step-gains .slider-readout',
       ) as HTMLElement;
       expect(readout).toHaveTextContent(
-        '$2,280 of that is the 3.8% surtax of section 1411, charged on $60,000 of the gain because $260,155 of MAGI clears the $200,000 threshold',
+        '$2,280 of that is the 3.8% surtax of section 1411, charged on $60,000 of the gain because $261,124 of MAGI clears the $200,000 threshold',
       );
     });
 
     /** And step 2's curve carries the 3.8 points in the rate on the next dollar. */
     it('shows in the rate on the next dollar of ordinary income', () => {
-      openAt('?year=2025&ss=23712&income=220000&ltcg=60000');
+      openAt('?ss=24852&income=220000&ltcg=60000');
       render(<App />);
       // Ordinary income at 22%, plus the 3.8 the extra dollar of MAGI drags in.
       expect(figure('The next dollar')).toHaveTextContent('27.8%');
@@ -3056,7 +2999,7 @@ describe('the closing answer', () => {
       await screen.findByText(/Copied\./);
 
       expect(copied).toEqual([window.location.href]);
-      expect(copied[0]).toContain('?year=2025&income=90000');
+      expect(copied[0]).toContain('?income=90000');
       expect(status()).toHaveTextContent('That link opens this page on this return');
     });
 
@@ -3082,7 +3025,7 @@ describe('the closing answer', () => {
       expect(
         screen.getByRole('radio', { name: 'Married Filing Jointly' }),
       ).toBeChecked();
-      expect(figure('Total income')).toHaveTextContent('$143,712');
+      expect(figure('Total income')).toHaveTextContent('$144,852');
     });
 
     /**
@@ -3150,7 +3093,7 @@ describe('the closing answer', () => {
 /**
  * The return in the address bar.
  *
- * Ten `useState` values used to be the whole of it, so a refresh threw the
+ * Nine `useState` values used to be the whole of it, so a refresh threw the
  * return away and there was nothing to send to anyone. These are the page's
  * half of `scenarioUrl` — that the link is read on mount, written on every
  * change, and never pushed.
@@ -3165,11 +3108,10 @@ describe('the return in the address bar', () => {
 
   it('opens on the return the link names rather than on its own defaults', () => {
     openAt(
-      '?year=2026&filing=mfj&ss=40000&income=120000&ltcg=25000&senior=1&spouse=1&muni=8000&qcd=15000&ceiling=irmaa1',
+      '?filing=mfj&ss=40000&income=120000&ltcg=25000&senior=1&spouse=1&muni=8000&qcd=15000&ceiling=irmaa1',
     );
     render(<App />);
 
-    expect(screen.getByRole('radio', { name: '2026' })).toBeChecked();
     expect(screen.getByRole('radio', { name: 'Married Filing Jointly' })).toBeChecked();
     expect(screen.getByRole('slider', { name: /social security benefit/i })).toHaveValue(
       '40000',
@@ -3193,14 +3135,15 @@ describe('the return in the address bar', () => {
 
   it('writes what the reader moves back into the address', () => {
     render(<App />);
-    // The opening return is the one default that is always written down.
-    expect(window.location.search).toBe('?year=2025');
+    // Nothing is written unconditionally now that the year has gone, so the
+    // opening return leaves the address bare.
+    expect(window.location.search).toBe('');
 
     fireEvent.change(incomeSlider(), { target: { value: '90000' } });
-    expect(window.location.search).toBe('?year=2025&income=90000');
+    expect(window.location.search).toBe('?income=90000');
 
     fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Jointly' }));
-    expect(window.location.search).toBe('?year=2025&filing=mfj&income=90000');
+    expect(window.location.search).toBe('?filing=mfj&income=90000');
 
     fireEvent.click(screen.getByRole('checkbox', { name: 'Age 65 or older' }));
     expect(window.location.search).toContain('senior=1');
@@ -3217,7 +3160,7 @@ describe('the return in the address bar', () => {
     for (const value of ['40000', '50000', '60000', '70000']) {
       fireEvent.change(incomeSlider(), { target: { value } });
     }
-    expect(window.location.search).toBe('?year=2025&income=70000');
+    expect(window.location.search).toBe('?income=70000');
     expect(window.history.length).toBe(before);
   });
 
@@ -3247,7 +3190,7 @@ describe('the return in the address bar', () => {
 
     fireEvent.change(incomeSlider(), { target: { value: '90000' } });
     expect(window.location.hash).toBe('#step-conversion');
-    expect(window.location.search).toBe('?year=2025&income=90000');
+    expect(window.location.search).toBe('?income=90000');
   });
 
   it('ignores a fragment that names no step', () => {
@@ -3258,17 +3201,16 @@ describe('the return in the address bar', () => {
 
   describe('a link this page could not honour', () => {
     it('says what it could not give and what it gave instead', () => {
-      openAt('?year=2024&income=99999999&filing=widow');
+      openAt('?income=99999999&filing=widow&ceiling=bracket24');
       render(<App />);
 
       const note = screen.getByRole('status');
       expect(note).toHaveTextContent('This link asked for something this page could not show');
-      expect(note).toHaveTextContent('priced for 2024');
       expect(note).toHaveTextContent('$1,000,000');
       expect(note).toHaveTextContent('“widow”');
+      expect(note).toHaveTextContent('“bracket24”');
 
       // And the page itself is showing exactly what the note says it is.
-      expect(screen.getByRole('radio', { name: '2025' })).toBeChecked();
       expect(screen.getByRole('radio', { name: 'Single' })).toBeChecked();
       expect(incomeSlider()).toHaveValue('1000000');
     });
@@ -3278,16 +3220,30 @@ describe('the return in the address bar', () => {
      * being true of what is on screen the moment a control moves.
      */
     it('goes away when dismissed and never appears for a link it wrote itself', () => {
-      openAt('?year=2024');
+      openAt('?filing=widow');
       render(<App />);
       fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
       expect(screen.queryByRole('status')).not.toBeInTheDocument();
     });
 
     it('stays out of the way of a link that came through as sent', () => {
-      openAt('?year=2025&income=90000');
+      openAt('?income=90000');
       render(<App />);
       expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    });
+
+    /**
+     * The year was a key for as long as it was a control. Every link this app
+     * produced up to now carries one, and there is no longer anything to say
+     * about it: no year to switch to means nothing to tell the reader.
+     */
+    it('says nothing about the year an older link still names', () => {
+      openAt('?year=2024&income=90000');
+      render(<App />);
+      expect(screen.queryByRole('status')).not.toBeInTheDocument();
+      expect(incomeSlider()).toHaveValue('90000');
+      // The stale key is dropped rather than echoed back.
+      expect(window.location.search).toBe('?income=90000');
     });
   });
 });
@@ -3312,7 +3268,7 @@ describe('the live reading under the controls', () => {
    */
   beforeEach(() => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date(`${PINNED_YEAR}-07-01T00:00:00Z`));
+    vi.setSystemTime(new Date(`${PAGE_TAX_YEAR}-07-01T00:00:00Z`));
   });
 
   const region = (): HTMLElement =>
@@ -3401,7 +3357,7 @@ describe('the live reading under the controls', () => {
     set(benefit, 30_000);
     settle();
     expect(region()).toHaveTextContent(
-      '2025 brackets, a single filer, under 65, collecting $30,000 of Social Security a year.',
+      '2026 brackets, a single filer, under 65, collecting $30,000 of Social Security a year.',
     );
     expect(region()).not.toHaveTextContent('the next dollar is taxed at');
 

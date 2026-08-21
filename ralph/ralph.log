@@ -5939,3 +5939,125 @@ chrome-headless-shell-mac-arm64/chrome-headless-shell`, driving script must sit
 in the project root for the bare import to resolve, and `vite preview` serves
 under `/congenial-octo-spork/`. Ports 4173-4181 have all been used by preview
 servers at some point; read the port off preview's own output.
+
+## 2026-08-21 — Task: Remove tax year selector. always 2026.
+
+### The tree opened two thirds through this task, and red
+
+`1f03ccc` was HEAD, in sync with `origin/dev`, and the working tree held six
+modified files: `PAGE_TAX_YEAR` added to `tax.ts`, the two-button Tax Year strip
+cut out of step 1, `changeYear` deleted, and `year` gone from `PageScenario` and
+the query string. Nobody had run the suite: six tests failed. So the run split
+in two — finish the bullet, then verify it — and the finishing was the smaller
+half.
+
+Fourth run in a row to open dirty, and the first to open red. Logged in
+Discovered Work with what that changes about the guard the last three bullets
+ask for: `git status --porcelain` alone says "dirty", which is the same word for
+a finished pass and a broken one. The pair that distinguishes them is a status
+check *and* a test run, first thing.
+
+### What was already done, and kept
+
+`PAGE_TAX_YEAR` is a constant in `tax.ts`, deliberately not `defaultTaxYear()`.
+That function follows the wall calendar, so a page built on it re-prices itself
+the January after a Rev. Proc. lands and a link sent in December means something
+else in January. A constant moves when someone edits the line, which is the same
+moment they check the figures behind it. Everything below `TAX_YEARS` stays
+parameterized by year — the engine prices any year on file, `tax.test.ts`
+exercises both, the shelved projection module walks across them. This is the
+render layer's choice, not the calculation's.
+
+The year also came out of the link. It was the one key written
+unconditionally, because its default moved on its own; with a constant there is
+nothing left to pin, so an untouched page now encodes to the empty string and
+`scenarioUrl` stops writing a bare `?`. Old links still open: `?year=2025` is
+read past in silence, no note, because a reader arriving on one has nothing to
+be told and no control to be pointed at. Same reading `?state=VT` got last run.
+
+### What this run added
+
+**Six failing tests, fixed.** Five were 2025 dollars the earlier pass missed
+when it re-pointed the rest of `App.test.tsx` at 2026: the tooltip's headroom
+figure (recomputed from scratch — provisional $32,426, $3,713 of benefit
+taxable, MAGI $23,713 against a $109,000 cliff, so $85,287, not the $84,603 that
+had been written in), the ceiling list's IRMAA line, two closing figures and one
+stale `toBeGreaterThan` anchor. The sixth was `Tax Year` still listed among the
+fieldset legends that must not be behind a disclosure.
+
+**`App.chart.test.tsx`'s 2025 test.** It clicked to 2025, checked the pink line
+vanished, and clicked back. The page cannot be sent to 2025 any more, so the
+test is replaced by the premise the other four in that describe rest on — the
+line is drawn because the year the page prices has a cliff, asserted through
+`FPL_YEAR_PARAMS[PAGE_TAX_YEAR].cliff`, not because the chart always draws one.
+The year-by-year half was already `tax.test.ts`'s: `ptcCliff({ year: 2025 })`
+pinned at null, `fpl400` pinned out of the ceiling list. That file's header also
+still claimed the app opens on `defaultTaxYear()`; it now pins to
+`PAGE_TAX_YEAR`, which closes Backlog 4's bullet about it asserting on figures
+it does not name.
+
+**An engine-level test for the constant.** `tax.test.ts` pins that
+`PAGE_TAX_YEAR` is in `TAX_YEARS` and has published params. Not a duplicate of
+the App test: what has to hold here is not what the page shows but that whatever
+the constant names is a year the engine can price. Set it to a year with no Rev.
+Proc. and this fails first, instead of every figure on the page failing at once.
+
+**The prose the selector used to be.** This is the part that was missing, and
+it is the reason the control existed. Clicking 2025 → 2026 was the only way to
+watch the COLA raise the benefit while IRC 86(c)'s bases sat still, and three
+places in the source — `SS_BASES`' own doc comment, the IRMAA test, the README
+— described that as "the whole point of the year selector". A page that deletes
+the control and keeps the claim has deleted the argument. So the last paragraph
+of "What is the tax torpedo?" now says it outright: 86(c) set $25,000/$32,000 in
+1983 and $34,000/$44,000 in 1993, neither has ever been indexed, everything
+around them is, and a retirement unchanged in real terms sits further past the
+same line every year. All three stale comments rewritten to match.
+
+That paragraph names all four statutory bases regardless of filing status, which
+broke a page-wide `queryByText(/\$25,000/)).not.toBeInTheDocument()` asserting
+that switching to MFJ takes the single thresholds off the page. The assertion's
+intent was "the *live* thresholds follow the status", so it is scoped to the
+paragraph that quotes them — the second time a page-wide `getByText` on shared
+prose has broken on unrelated correct prose, which is the bullet already in
+Discovered Work about `scenarioRecap()` having no sibling helpers.
+
+**README.** Step 1 no longer lists the tax year among what it asks for; the
+frozen-threshold section names `PAGE_TAX_YEAR` and says moving the page to a new
+year is one line; the sharing section drops `year` from the key list and
+replaces "only the year is always written" with the rule that now holds —
+nothing is written unconditionally, so an untouched page has no query string at
+all and every key present is something the reader did.
+
+**One CSS comment.** `.segmented`'s `align-self` rule was justified by the Tax
+Year strip stretching 700px of empty tray. Kept as history, marked as a control
+that has gone, and re-pointed at the Age fieldset as the shortest strip left.
+
+### Verified
+
+- `npx tsc -b`, `npx eslint src --max-warnings 0`, `npx vitest run`
+  (11 files, 678 tests — 676 before this run's two additions), `npm run build`.
+- Rendered rather than reasoned about. Built, `vite preview`, drove Chromium
+  through `playwright-core`, opened every `<details>` so the whole prose was in
+  the DOM. Zero radios matching `^20\d\d$`, zero `<select>`, legends are
+  `Filing Status` / `Age` / `The line you would rather not cross`. The recap
+  reads "2026 brackets and standard deduction". The frozen-threshold paragraph
+  renders whole. The five remaining "2025" strings on the page are all ARPA and
+  poverty-guideline prose about the law.
+- Link behaviour in the browser, not just in jsdom: `?year=2025&income=90000`
+  loads and the address bar comes back `?income=90000` with no note and the
+  income applied; an untouched page's address is the bare path with no `?`.
+- No horizontal scroll at 1440 or 420, zero page errors.
+
+### Note for the next run
+
+Deleted three untracked Playwright scratch scripts from the repo root
+(`probe.mjs`, `shot.mjs`, and this run's `verify-year.mjs`) and killed the
+preview servers squatting on 4173-4177. Both are logged in Discovered Work,
+because both come back every run that needs a browser: the script has to sit in
+the project root for the bare `playwright-core` import to resolve, and nothing
+tells the next run to clean up after it.
+
+`playwright-core` note otherwise unchanged: cached Chromium build 1228,
+`executablePath` at `~/Library/Caches/ms-playwright/chromium_headless_shell-1228/
+chrome-headless-shell-mac-arm64/chrome-headless-shell`, and `vite preview`
+serves under `/congenial-octo-spork/` — read the port off preview's own output.

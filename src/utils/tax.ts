@@ -216,8 +216,9 @@ export interface TaxYearParams {
  * itself — is adjusted annually. So each COLA pushes the same real income
  * further past a threshold that has not moved in decades, and the share of
  * beneficiaries paying tax on benefits ratchets up year after year by design.
- * That contrast is the whole point of the tax-year selector, so these live
- * outside `TAX_YEAR_PARAMS` rather than being repeated identically in it.
+ * That contrast is the page's whole subject, and these live outside
+ * `TAX_YEAR_PARAMS` to say so in the shape of the code rather than being
+ * repeated identically under every year in it.
  */
 export const SS_BASES: Record<FilingStatus, { ssBase50: number; ssBase85: number }> = {
   single: { ssBase50: 25_000, ssBase85: 34_000 },
@@ -470,6 +471,30 @@ export const TAX_YEAR_PARAMS: Record<TaxYear, TaxYearParams> = {
 export const TAX_YEARS: TaxYear[] = [2025, 2026];
 
 /**
+ * The one year the page prices.
+ *
+ * The page used to open with a two-button year picker, and switching it was
+ * the app's own comparison made live: the COLA raises the benefit every year
+ * while IRC 86(c)'s $25,000 and $34,000 bases never move, so the same real
+ * retirement is taxed harder each year. That contrast is worth stating and it
+ * is not worth a control. It is stated in prose instead — see `SS_BASES` — and
+ * every figure on the page now names one year rather than whichever of two the
+ * reader last clicked.
+ *
+ * This is deliberately not `defaultTaxYear()`. That function follows the wall
+ * calendar, so a page built on it would silently re-price itself the January
+ * after a new year's Rev. Proc. landed, and a link sent in December would mean
+ * something different in January. A constant means the year moves when someone
+ * changes this line, which is the same moment they check the figures.
+ *
+ * Everything below `TAX_YEARS` stays parameterized by year regardless: the
+ * engine prices any year on file, the tests exercise all of them, and the
+ * shelved projection module walks across them. This constant is the render
+ * layer's choice, not the calculation's.
+ */
+export const PAGE_TAX_YEAR: TaxYear = 2026;
+
+/**
  * The year to start on: the calendar year, when there are figures for it.
  *
  * Clamped into `TAX_YEARS` rather than left to fail, so the app keeps working
@@ -503,8 +528,8 @@ export function hasPublishedParams(year: number): year is TaxYear {
  * anchors on 2025 for 2026 instead of on a year with no parameters behind it.
  *
  * Falls back to the earliest year on file for anything below it — unreachable
- * from the app, whose year selector only offers `TAX_YEARS`, but it keeps the
- * return type honest.
+ * from the page, which prices `PAGE_TAX_YEAR` and nothing else, but it keeps
+ * the return type honest.
  */
 export function publishedAnchorYear(year: number): TaxYear {
   let anchor = TAX_YEARS[0];

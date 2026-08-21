@@ -9,78 +9,69 @@ import {
   MAX_OTHER_INCOME,
 } from './scenarioUrl';
 import type { PageScenario } from './scenarioUrl';
-import { avgAnnualSSBenefit, maxAnnualSSBenefit } from './tax';
+import { PAGE_TAX_YEAR, avgAnnualSSBenefit, qcdLimitFor } from './tax';
+import { formatCurrency } from './format';
 
 /**
- * `defaultScenario()` and every "the link left it out" case below run through
- * `defaultTaxYear()`, which follows the wall calendar. Pinning the clock is
- * what lets those cases assert on 2025 figures — the same pin `App.test.tsx`
- * uses, and for the same reason.
+ * Nothing in this file reads the clock any more — `PAGE_TAX_YEAR` is a
+ * constant and the year is no longer a key in the query string — but the pin
+ * stays so that a future figure derived from `defaultTaxYear()` cannot make
+ * these assertions depend on the day they are run.
  */
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] });
-  vi.setSystemTime(new Date('2025-07-01T00:00:00Z'));
+  vi.setSystemTime(new Date('2026-07-01T00:00:00Z'));
 });
 
 afterEach(() => {
   vi.useRealTimers();
 });
 
-const opening = defaultScenario(2025);
+const opening = defaultScenario();
 
-const with2025 = (over: Partial<PageScenario> = {}): PageScenario => ({
+const moved = (over: Partial<PageScenario> = {}): PageScenario => ({
   ...opening,
   ...over,
 });
 
 describe('encodeScenario', () => {
   /**
-   * The year is the one default that moves on its own — `defaultTaxYear()`
-   * follows the calendar — so a link that left it out would re-price itself
-   * the January after it was sent.
+   * The year used to be written unconditionally, because its default followed
+   * the calendar and a link without it would have re-priced itself in January.
+   * `PAGE_TAX_YEAR` is a constant, so the page it opens is the page it was
+   * sent from and there is nothing left that has to be pinned in the link.
    */
-  it('always writes the year and nothing else the page opens with', () => {
-    expect(encodeScenario(with2025())).toBe('year=2025');
+  it('writes nothing at all for the return the page opens with', () => {
+    expect(encodeScenario(moved())).toBe('');
   });
 
   it('writes only what the reader moved', () => {
-    expect(encodeScenario(with2025({ ordinaryIncome: 90_000 }))).toBe(
-      'year=2025&income=90000',
-    );
-    expect(encodeScenario(with2025({ filingStatus: 'mfj' }))).toBe(
-      'year=2025&filing=mfj',
-    );
-    expect(encodeScenario(with2025({ ceilingId: 'irmaa1' }))).toBe(
-      'year=2025&ceiling=irmaa1',
-    );
+    expect(encodeScenario(moved({ ordinaryIncome: 90_000 }))).toBe('income=90000');
+    expect(encodeScenario(moved({ filingStatus: 'mfj' }))).toBe('filing=mfj');
+    expect(encodeScenario(moved({ ceilingId: 'irmaa1' }))).toBe('ceiling=irmaa1');
   });
 
   /**
-   * A benefit sitting on the year's average is an opinion nobody expressed, so
-   * it is left out and re-read as whatever the decoded year averages. That is
-   * the rule `changeYear` already applies inside the page.
+   * A benefit sitting on the average is an opinion nobody expressed, so it is
+   * left out and re-read as whatever the page opens with.
    */
-  it('leaves the benefit out at the year average and writes it anywhere else', () => {
-    expect(encodeScenario(with2025())).not.toContain('ss=');
-    expect(encodeScenario(with2025({ ssBenefit: 40_000 }))).toContain('ss=40000');
-    expect(
-      encodeScenario({ ...defaultScenario(2026), year: 2026 }),
-    ).toBe('year=2026');
+  it('leaves the benefit out at the average and writes it anywhere else', () => {
+    expect(encodeScenario(moved())).not.toContain('ss=');
+    expect(encodeScenario(moved({ ssBenefit: 40_000 }))).toContain('ss=40000');
   });
 
   it('writes the age toggles as flags, and only when they are on', () => {
-    expect(encodeScenario(with2025())).not.toContain('senior');
-    expect(encodeScenario(with2025({ isSenior: true }))).toBe('year=2025&senior=1');
+    expect(encodeScenario(moved())).not.toContain('senior');
+    expect(encodeScenario(moved({ isSenior: true }))).toBe('senior=1');
     expect(
       encodeScenario(
-        with2025({ filingStatus: 'mfj', isSenior: true, spouseIsSenior: true }),
+        moved({ filingStatus: 'mfj', isSenior: true, spouseIsSenior: true }),
       ),
-    ).toBe('year=2025&filing=mfj&senior=1&spouse=1');
+    ).toBe('filing=mfj&senior=1&spouse=1');
   });
 
   it('round-trips a return that moved every control', () => {
-    const moved = with2025({
-      year: 2026,
+    const everything = moved({
       filingStatus: 'hoh',
       ssBenefit: 31_000,
       ordinaryIncome: 120_000,
@@ -91,13 +82,13 @@ describe('encodeScenario', () => {
       qcd: 25_000,
       ceilingId: 'ltcg0',
     });
-    expect(decodeScenario(encodeScenario(moved)).scenario).toEqual(moved);
-    expect(decodeScenario(encodeScenario(moved)).notes).toEqual([]);
+    expect(decodeScenario(encodeScenario(everything)).scenario).toEqual(everything);
+    expect(decodeScenario(encodeScenario(everything)).notes).toEqual([]);
   });
 
   it('round-trips through a leading question mark, the way a location gives it', () => {
-    const moved = with2025({ ordinaryIncome: 75_000, muniInterest: 5_000 });
-    expect(decodeScenario(`?${encodeScenario(moved)}`).scenario).toEqual(moved);
+    const some = moved({ ordinaryIncome: 75_000, muniInterest: 5_000 });
+    expect(decodeScenario(`?${encodeScenario(some)}`).scenario).toEqual(some);
   });
 });
 
@@ -108,15 +99,28 @@ describe('scenarioUrl', () => {
    */
   it('keeps the path and the step fragment around the return', () => {
     expect(
-      scenarioUrl(with2025({ ordinaryIncome: 90_000 }), {
+      scenarioUrl(moved({ ordinaryIncome: 90_000 }), {
         pathname: '/congenial-octo-spork/',
         hash: '#step-conversion',
       }),
-    ).toBe('/congenial-octo-spork/?year=2025&income=90000#step-conversion');
+    ).toBe('/congenial-octo-spork/?income=90000#step-conversion');
   });
 
   it('writes no fragment when there is none', () => {
-    expect(scenarioUrl(with2025(), { pathname: '/', hash: '' })).toBe('/?year=2025');
+    expect(scenarioUrl(moved({ ordinaryIncome: 90_000 }), { pathname: '/', hash: '' }))
+      .toBe('/?income=90000');
+  });
+
+  /**
+   * An untouched page encodes to nothing now that the year has gone, so there
+   * is no `?` to write. A bare trailing question mark is a character the
+   * reader would have to decide whether to keep when they copy the address.
+   */
+  it('writes no question mark when the return is the one the page opens with', () => {
+    expect(scenarioUrl(moved(), { pathname: '/', hash: '' })).toBe('/');
+    expect(scenarioUrl(moved(), { pathname: '/', hash: '#step-torpedo' })).toBe(
+      '/#step-torpedo',
+    );
   });
 });
 
@@ -128,12 +132,12 @@ describe('decodeScenario', () => {
     expect(scenario.ordinaryIncome).toBe(DEFAULT_ORDINARY_INCOME);
   });
 
-  it('reads a benefit the link left out as that year’s average', () => {
-    expect(decodeScenario('year=2026').scenario.ssBenefit).toBe(
-      avgAnnualSSBenefit(2026),
+  it('reads a benefit the link left out as the page’s own average', () => {
+    expect(decodeScenario('').scenario.ssBenefit).toBe(
+      avgAnnualSSBenefit(PAGE_TAX_YEAR),
     );
-    expect(decodeScenario('year=2025').scenario.ssBenefit).toBe(
-      avgAnnualSSBenefit(2025),
+    expect(decodeScenario('income=90000').scenario.ssBenefit).toBe(
+      avgAnnualSSBenefit(PAGE_TAX_YEAR),
     );
   });
 
@@ -144,46 +148,40 @@ describe('decodeScenario', () => {
   });
 
   /**
-   * The decision the bullet asked for: a year with no published figures loses
-   * to the year the page can actually price, out loud. Refusing to render
-   * would trade a page priced for the wrong year against no page at all.
+   * The year was a key for as long as it was a control, so every link this app
+   * produced up to now carries one. It is read past in silence: there is no
+   * year to switch to, so there is nothing to tell the reader and nothing to
+   * point them at. Same reading as `?state=VT` below.
    */
-  describe('a year this page cannot price', () => {
-    it('falls back to the default year and says which one it is showing', () => {
-      const { scenario, notes } = decodeScenario('year=2024');
-      expect(scenario.year).toBe(defaultScenario().year);
-      expect(notes).toHaveLength(1);
-      expect(notes[0]).toContain('priced for 2024');
-      expect(notes[0]).toContain('no published figures');
-      expect(notes[0]).toContain(String(defaultScenario().year));
+  describe('a year in the link', () => {
+    it('changes nothing and says nothing, whichever year it names', () => {
+      for (const search of ['year=2025', 'year=2026', 'year=2024', 'year=lots']) {
+        const { scenario, notes } = decodeScenario(search);
+        expect(scenario).toEqual(defaultScenario());
+        expect(notes).toEqual([]);
+      }
     });
 
-    it('re-prices the year-dependent figures against the year it fell back to', () => {
-      // $62,172 is the 2026 maximum; the fallback year is 2025, whose maximum
-      // is $61,296, so the benefit is cut back and both notes are raised.
-      const { scenario, notes } = decodeScenario('year=2027&ss=62172');
-      expect(scenario.year).toBe(defaultScenario().year);
-      expect(scenario.ssBenefit).toBe(maxAnnualSSBenefit(defaultScenario().year));
-      expect(notes).toHaveLength(2);
-      expect(notes[1]).toContain('$61,296');
-    });
-
-    it('says nothing about a year that is simply absent', () => {
-      expect(decodeScenario('income=40000').notes).toEqual([]);
+    it('leaves the year-dependent bounds priced for the year the page shows', () => {
+      // $62,172 is the 2026 maximum and 2026 is what the page prices, so a
+      // 2025 link asking for the whole of it is not cut back to $61,296.
+      const { scenario, notes } = decodeScenario('year=2025&ss=62172');
+      expect(scenario.ssBenefit).toBe(62_172);
+      expect(notes).toEqual([]);
     });
   });
 
   describe('a figure past the bound the page would have held it inside', () => {
     it('names the year’s maximum benefit', () => {
-      const { scenario, notes } = decodeScenario('year=2025&ss=200000');
-      expect(scenario.ssBenefit).toBe(61_296);
+      const { scenario, notes } = decodeScenario('ss=200000');
+      expect(scenario.ssBenefit).toBe(62_172);
       expect(notes[0]).toBe(
-        'This link asked for $200,000 of a Social Security benefit. The most this return can carry is $61,296 — the most anyone can collect in 2025, so that is what is set.',
+        'This link asked for $200,000 of a Social Security benefit. The most this return can carry is $62,172 — the most anyone can collect in 2026, so that is what is set.',
       );
     });
 
     it('holds a gain to the income it is a share of', () => {
-      const { scenario, notes } = decodeScenario('year=2025&income=50000&ltcg=80000');
+      const { scenario, notes } = decodeScenario('income=50000&ltcg=80000');
       expect(scenario.plannedLtcg).toBe(50_000);
       expect(notes[0]).toContain('$50,000');
       expect(notes[0]).toContain('a share of the other income');
@@ -197,12 +195,14 @@ describe('decodeScenario', () => {
 
     /** The charitable limit is per individual, so it doubles on a joint return. */
     it('holds a gift to this return’s own statutory limit', () => {
-      const single = decodeScenario('year=2025&qcd=200000');
-      expect(single.scenario.qcd).toBe(108_000);
-      expect(single.notes[0]).toContain('$108,000');
-      expect(single.notes[0]).toContain('2025 annual limit');
+      const single = decodeScenario('qcd=300000');
+      expect(single.scenario.qcd).toBe(qcdLimitFor({ year: PAGE_TAX_YEAR }));
+      expect(single.notes[0]).toContain(
+        formatCurrency(qcdLimitFor({ year: PAGE_TAX_YEAR })),
+      );
+      expect(single.notes[0]).toContain(`${PAGE_TAX_YEAR} annual limit`);
 
-      const joint = decodeScenario('year=2025&filing=mfj&qcd=200000');
+      const joint = decodeScenario('filing=mfj&qcd=200000');
       expect(joint.scenario.qcd).toBe(200_000);
       expect(joint.notes).toEqual([]);
     });
@@ -265,7 +265,7 @@ describe('decodeScenario', () => {
    */
   it('ignores a key from a page that had more inputs than this one', () => {
     const { scenario, notes } = decodeScenario('year=2025&income=90000&state=VT');
-    expect(scenario).toEqual({ ...defaultScenario(2025), ordinaryIncome: 90_000 });
+    expect(scenario).toEqual({ ...defaultScenario(), ordinaryIncome: 90_000 });
     expect(notes).toEqual([]);
   });
 });

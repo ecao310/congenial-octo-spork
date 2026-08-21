@@ -19,8 +19,8 @@ Every step has the same shape: the chart first, then the one control that moves
 the reader along it, then collapsed explainers, then a box to the next step.
 
 1. **Your Social Security benefit** — the return everything after it prices:
-   the tax year, who files it, who on it has reached 65, and how much Social
-   Security it collects.
+   who files it, who on it has reached 65, and how much Social Security it
+   collects.
 2. **The tax torpedo** — marginal rate against every dollar that is not Social
    Security, with the IRMAA cliffs, the 400% poverty-line cliff and the
    senior-deduction phaseout drawn on the same axis. Every figure under it is
@@ -74,20 +74,27 @@ the income and the MAGI, even while it is moving provisional income.
 
 The Social Security thresholds — $25,000/$34,000 and $32,000/$44,000 — are not
 indexed and stay frozen across both years while everything around them moves,
-and neither are 1411's $200,000/$250,000/$125,000, fixed since 2013.
-That contrast is the point of the year selector, so the page states it rather
-than hiding it.
+and neither are 1411's $200,000/$250,000/$125,000, fixed since 2013. That
+contrast used to be a two-button year selector, and clicking it was the only
+way to see the point being made. The page states it in prose instead and
+prices one year: `PAGE_TAX_YEAR` in `src/utils/tax.ts`. Everything below that
+constant stays parameterized by year — the engine prices any year on file, the
+tests exercise all of them — so moving the page to a new year is one line, in
+the same place a reader would go to check the figures behind it.
 
 ## Sharing a return
 
 The whole scenario lives in the query string, so a link survives a refresh and
-can be sent to a spouse or an advisor: `year`, `filing`, `ss`, `income`,
-`ltcg`, `muni`, `qcd`, `senior`, `spouse`, `ceiling`. Only the year is
-always written; everything else appears only when it differs from what that
-year opens with. A link asking for something the page cannot show — a year
-with no published figures, an income past the slider's bound — is clamped to
-what it can, and the page says on load what it changed. The step is a fragment
-(`#step-conversion`), not a query parameter: it is where the reader is
+can be sent to a spouse or an advisor: `filing`, `ss`, `income`, `ltcg`,
+`muni`, `qcd`, `senior`, `spouse`, `ceiling`. Nothing is written
+unconditionally — a key appears only when it differs from what the page opens
+with, so an untouched page has no query string at all and every key present is
+something the reader did. A link asking for something the page cannot show —
+an income past the slider's bound, a gift past the statutory limit — is
+clamped to what it can, and the page says on load what it changed. A `year` in
+an older link is read past in silence: there is no year to switch to, so there
+is nothing to tell the reader and nothing to point them at. The step is a
+fragment (`#step-conversion`), not a query parameter: it is where the reader is
 standing, not what the return holds.
 
 ## Development

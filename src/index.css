@@ -356,9 +356,11 @@ fieldset.ceiling-picker legend {
    corner matched its contents' would draw a visible gap at each end.
    `inline-flex` was being overruled: every one of these sits inside an
    `.input-group`, which is a flex column, so the tray was stretching to the
-   full 900px and the two-option Tax Year strip ran 700px of empty tray to the
-   right of "2026". `align-self` is what an inline-level box needs to shrink
-   to fit inside a flex parent. `.segmented-stacked` sets `width: 100%` and so
+   full 900px and a two-option strip ran 700px of empty tray to the right of
+   its last option. Found on the Tax Year strip, which has since gone — the
+   Age fieldset is the shortest one left and it would come back there.
+   `align-self` is what an inline-level box needs to shrink to fit inside a
+   flex parent. `.segmented-stacked` sets `width: 100%` and so
    is unaffected — it is a column of full-width options, not a strip. */
 .segmented {
   display: inline-flex;

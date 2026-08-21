@@ -16,7 +16,9 @@ import {
   maxAnnualSSBenefit,
   avgAnnualSSBenefit,
   SS_BASES,
-  TAX_YEARS,
+  SS_BASE50_ENACTED,
+  SS_BASE85_ENACTED,
+  PAGE_TAX_YEAR,
   defaultTaxYear,
   filingParams,
   FilingStatus,
@@ -295,6 +297,33 @@ const HUMP_COUNTS: Record<number, string> = {
   2: 'twice',
   3: 'three times',
   4: 'four times',
+};
+
+/**
+ * A small count as a word, because "The 7 lines" reads as one more figure on a
+ * page that is nothing but figures. Past ten it gives up and hands back the
+ * numeral, which is the point at which a reader would want one anyway.
+ */
+const COUNT_WORDS = [
+  'no',
+  'one',
+  'two',
+  'three',
+  'four',
+  'five',
+  'six',
+  'seven',
+  'eight',
+  'nine',
+  'ten',
+];
+
+const spellCount = (n: number): string => COUNT_WORDS[n] ?? String(n);
+
+/** The same word, where it opens a sentence. */
+const spellCountCap = (n: number): string => {
+  const word = spellCount(n);
+  return word.charAt(0).toUpperCase() + word.slice(1);
 };
 
 /**
@@ -879,7 +908,18 @@ const App: React.FC = () => {
   const [step, setStep] = useState<StepId>(
     () => stepFromHash(window.location.hash) ?? 'benefit',
   );
-  const [year, setYear] = useState<TaxYear>(opening.year);
+  /**
+   * The year every figure below is priced for.
+   *
+   * A constant rather than state: the page used to open with a 2025/2026
+   * picker, and it was the only control on it that re-priced everything at
+   * once without telling the reader anything they came for. What the picker
+   * demonstrated — that the COLA raises the benefit while 86(c)'s thresholds
+   * sit still — is the page's own subject and is said in prose under step 2,
+   * where it does not depend on the reader thinking to click twice and compare.
+   * See `PAGE_TAX_YEAR` for why it is not `defaultTaxYear()`.
+   */
+  const year = PAGE_TAX_YEAR;
   const [ssBenefit, setSsBenefit] = useState<number>(opening.ssBenefit);
   const [filingStatus, setFilingStatus] = useState<FilingStatus>(opening.filingStatus);
   const [ordinaryIncome, setOrdinaryIncome] = useState<number>(opening.ordinaryIncome);
@@ -973,7 +1013,6 @@ const App: React.FC = () => {
    */
   useEffect(() => {
     const scenario = {
-      year,
       filingStatus,
       ssBenefit,
       ordinaryIncome,
@@ -995,7 +1034,6 @@ const App: React.FC = () => {
        arrival cannot be kept current, so it goes when the return moves. */
     setCopyState('idle');
   }, [
-    year,
     filingStatus,
     ssBenefit,
     ordinaryIncome,
@@ -1026,27 +1064,6 @@ const App: React.FC = () => {
    */
   const mfsBrackets = filingParams(year, 'mfs').brackets;
   const mfsSingleDivergence = mfsBrackets[mfsBrackets.length - 2].upTo;
-
-  /**
-   * Switching years re-prices the benefit as well as the brackets. Someone who
-   * has not moved the slider gets the new year's average, because watching the
-   * COLA raise the benefit while the thresholds sit still is the entire point
-   * of the comparison. Someone who picked a figure keeps it, clamped to the new
-   * year's maximum so the slider can never sit past its own right edge.
-   */
-  const changeYear = (next: TaxYear): void => {
-    setSsBenefit((current) =>
-      current === avgAnnualSSBenefit(year)
-        ? avgAnnualSSBenefit(next)
-        : Math.min(current, maxAnnualSSBenefit(next)),
-    );
-    // The charitable limit is indexed too, and it can fall when the year does.
-    setQcd((current) =>
-      Math.min(current, qcdLimitFor({ filingStatus, year: next })),
-    );
-    setYear(next);
-    announce('benefit');
-  };
 
   /**
    * The gain is a share of the other income, so it can never be more than
@@ -1463,19 +1480,30 @@ const App: React.FC = () => {
   /**
    * The lines a conversion can be sized against, for this return.
    *
-   * Only the year and the filing status move them — a ceiling is a fixed line,
-   * not a position relative to one — so the list is rebuilt when either
-   * changes. Every status offers the same ids, but not every year does: 400%
-   * of the poverty line was not a ceiling at all in 2025, when the credit
-   * tapered past it rather than stopping. So `?? ceilings[0]` is what a reader
-   * who picked that line and then switched to 2025 lands on, and `ceilingId`
-   * is deliberately left alone so switching back restores their pick.
+   * Only the filing status moves them now that the year is fixed — a ceiling
+   * is a line, not a position relative to one — so the list is rebuilt when
+   * that changes. The length is not a constant even so: every status offers
+   * the same ids, but the year decides whether 400% of the poverty line is a
+   * ceiling at all, and in 2025 it was not, because the credit tapered past it
+   * rather than stopping. `?? ceilings[0]` covers a link that names a ceiling
+   * this list does not hold.
    */
   const ceilings = useMemo(
     () => conversionCeilings({ filingStatus, year }),
     [filingStatus, year],
   );
   const ceiling = ceilings.find((c) => c.id === ceilingId) ?? ceilings[0];
+
+  /**
+   * How many income definitions the list above spans, which is the point the
+   * explainer under it is making. Counted rather than written down for the
+   * same reason the list's own length is: four of them in a year without the
+   * poverty line, five in a year with it.
+   */
+  const ceilingMeasures = useMemo(
+    () => new Set(ceilings.map((c) => c.measure)).size,
+    [ceilings],
+  );
 
   /**
    * The answer the h1 asks for: the largest conversion that stays under the
@@ -1828,24 +1856,6 @@ const App: React.FC = () => {
             Everything below is priced off one return. Set it here and it stays
             set for the rest of the page.
           </p>
-
-          <fieldset className="input-group filing-status">
-            <legend>Tax Year</legend>
-            <div className="segmented">
-              {TAX_YEARS.map((value) => (
-                <label key={value} className="segmented-option">
-                  <input
-                    type="radio"
-                    name="tax-year"
-                    value={value}
-                    checked={year === value}
-                    onChange={() => changeYear(value)}
-                  />
-                  <span>{value}</span>
-                </label>
-              ))}
-            </div>
-          </fieldset>
 
           <fieldset className="input-group filing-status">
             <legend>Filing Status</legend>
@@ -2493,6 +2503,25 @@ const App: React.FC = () => {
                   law rather than indexed for inflation, more retirees sail into it
                   every year.
                 </p>
+                <p>
+                  {/* What the two-button year selector used to demonstrate, said
+                      once instead of shown to whoever thought to click twice and
+                      compare. It is the reason this page exists, so it does not
+                      belong behind a control. */}
+                  <strong>The thresholds have not moved since they were
+                  written.</strong> IRC 86(c) set{' '}
+                  {formatCurrency(SS_BASES.single.ssBase50)} and{' '}
+                  {formatCurrency(SS_BASES.mfj.ssBase50)} in {SS_BASE50_ENACTED},
+                  and {formatCurrency(SS_BASES.single.ssBase85)} and{' '}
+                  {formatCurrency(SS_BASES.mfj.ssBase85)} in {SS_BASE85_ENACTED}.
+                  Neither has ever been indexed. Everything around them is: the
+                  brackets, the standard deduction, the capital-gain bands, and the
+                  benefit itself, which takes a cost-of-living raise every January.
+                  So a retirement that has not changed at all in real terms sits
+                  further past the same line every year. This page prices {year};
+                  the same return priced a decade from now has more of its benefit
+                  in the tax base for no other reason than that.
+                </p>
               </div>
             </details>
 
@@ -2595,121 +2624,111 @@ const App: React.FC = () => {
               </div>
             </details>
 
-            {preMedicare ? (
+            {/* Both halves of the condition, the same pair step 2's chart key
+                uses. `preMedicare` is the reader: nobody enrolled in Medicare
+                can claim the credit. `subsidyCliff` is the statute: the 400%
+                ceiling was suspended from 2021 through 2025 and there is no
+                cliff to explain in a year without one. `PAGE_TAX_YEAR` has
+                one — but the engine still prices both, so the guard stays. */}
+            {preMedicare && subsidyCliff ? (
               <details className="explainer">
                 <summary>
-                  {/* The line is only drawn in a year that has one, so the
-                      heading only points at it in a year that has one. */}
                   <h2 id="subsidy-cliff-heading">
-                    The {PTC_CLIFF_PERCENT * 100}% poverty-line cliff
-                    {subsidyCliff ? <> &mdash; the pink dashed line</> : null}
+                    The {PTC_CLIFF_PERCENT * 100}% poverty-line cliff &mdash; the
+                    pink dashed line
                   </h2>
                 </summary>
                 <div className="explainer-content">
-                  {subsidyCliff ? (
-                    <>
-                      <p>
-                        Health coverage bought on the Marketplace comes with a{' '}
-                        <strong>premium tax credit</strong> that pays whatever the
-                        benchmark silver plan costs above a set share of household
-                        income. IRC 36B(c)(1)(A) allows it to a household whose
-                        income is &ldquo;at least 100 percent but not more than 400
-                        percent&rdquo; of the federal poverty line. There is no row
-                        in the table past 400%, so past 400% the credit is not
-                        smaller &mdash; it is nothing. For this household that line
-                        is {formatCurrency(subsidyCliff.magi)}:{' '}
-                        {PTC_CLIFF_PERCENT * 100}% of the{' '}
-                        {formatCurrency(subsidyCliff.povertyLine)} poverty line for{' '}
-                        {subsidyCliff.householdSize === 1
-                          ? 'one person'
-                          : `${subsidyCliff.householdSize} people`}
-                        .
-                      </p>
-                      <p>
-                        <strong>What it costs is not on this page.</strong> Just
-                        under the line the household pays at most{' '}
-                        {(subsidyCliff.topApplicablePercentage * 100).toFixed(2)}% of
-                        its income &mdash;{' '}
-                        {formatCurrency(subsidyCliff.cappedContribution)} &mdash; for
-                        the benchmark plan, and the credit covers the rest. One
-                        dollar over, it pays the full premium, which depends on ages
-                        and county and which this page has no way to know. So the
-                        line is drawn where it falls and the loss is left blank: for
-                        a couple in their early sixties it is routinely five figures.
-                      </p>
-                      <p>
-                        <strong>It is not Medicare&apos;s line, or the tax
-                        code&apos;s.</strong> 36B(d)(2)(B) counts AGI plus
-                        tax-exempt interest plus{' '}
-                        <em>the untaxed part of the Social Security benefit</em>.
-                        That last term undoes the torpedo: whatever share of the{' '}
-                        {formatCurrency(ssBenefit)} benefit stays out of the tax
-                        base, this adds straight back, so the whole benefit counts
-                        at every income level. The practical difference shows in
-                        where the lines sit: raise the benefit by a dollar and the
-                        pink line moves a full dollar left, while the red ones move
-                        at most 85 cents, because 85 cents is all of that dollar
-                        that can ever reach the tax base. Two cliffs, two MAGIs, and
-                        no reading one off the other.
-                      </p>
-                      <p>
-                        <strong>You are here.</strong> This return&apos;s household
-                        income is {formatCurrency(Math.round(hereSubsidy.magi))},{' '}
-                        {(hereSubsidy.fplMultiple * 100).toFixed(0)}% of the poverty
-                        line.{' '}
-                        {hereSubsidy.overCliff
-                          ? 'That is past the cliff: there is no premium tax credit for this year, and coming back under it takes ' +
-                            formatCurrency(
-                              Math.round(hereSubsidy.magi - (hereSubsidy.cliffMagi ?? 0)),
-                            ) +
-                            ' less income.'
-                          : `Another ${formatCurrency(
-                              Math.round(hereSubsidy.headroom ?? 0),
-                            )} of it reaches the line, and the dollar after that is the one that costs.`}
-                      </p>
-                      <p>
-                        <strong>The cliff is back, and it was gone.</strong> From
-                        2021 through 2025 there was no 400% ceiling at all: ARPA
-                        section 9661, extended by the Inflation Reduction Act,
-                        replaced the table with one that ran past 400% and capped
-                        the household&apos;s own share at 8.5% of income however
-                        high income went. That expired for tax years beginning after
-                        2025. The poverty line itself runs{' '}
-                        {FPL_GUIDELINE_LOOKBACK_YEARS} year behind, where
-                        Medicare&apos;s MAGI runs {IRMAA_LOOKBACK_YEARS}: 26 CFR
-                        1.36B-1(h) fixes it at the guidelines in effect when open
-                        enrolment began, which is the previous 1 November, so {year}{' '}
-                        coverage is priced off the {fplGuidelineYear(year)}{' '}
-                        guidelines &mdash; already a year old when the year starts.
-                      </p>
-                      <p>
-                        <strong>Who this is not for.</strong> Nobody enrolled in
-                        Medicare is eligible for the credit, which is why the line
-                        disappears from this chart once everyone on the return has
-                        turned 65 &mdash; and why a couple with one spouse on either
-                        side of 65 is standing in front of both cliffs at once.
-                        Coverage from an employer, a retiree plan or a spouse&apos;s
-                        plan takes the credit away too, so a reader with any of
-                        those can read this line as decoration. The poverty line
-                        used here is the one for the lower 48 and DC; Alaska and
-                        Hawaii have their own, higher, so the line falls further
-                        right there than it is drawn.{' '}
-                        {subsidyCliff.householdSize === 1
-                          ? 'A dependent would move it right by about $5,500 of income, and this page has no field for one.'
-                          : 'A dependent past the two people this filing status implies would move it right by about $5,500 of income, and this page has no field for one.'}
-                      </p>
-                    </>
-                  ) : (
-                    <p>
-                      On a {year} return there is no cliff to draw. ARPA section
-                      9661, extended through 2025 by the Inflation Reduction Act,
-                      took the 400% ceiling out of IRC 36B(c)(1)(A) and capped a
-                      household&apos;s own share of the benchmark premium at 8.5% of
-                      income at every income level, so the Marketplace credit tapers
-                      away instead of stopping. It returns for tax years beginning
-                      after 2025: switch the year above to see where it falls.
-                    </p>
-                  )}
+                  <p>
+                    Health coverage bought on the Marketplace comes with a{' '}
+                    <strong>premium tax credit</strong> that pays whatever the
+                    benchmark silver plan costs above a set share of household
+                    income. IRC 36B(c)(1)(A) allows it to a household whose
+                    income is &ldquo;at least 100 percent but not more than 400
+                    percent&rdquo; of the federal poverty line. There is no row
+                    in the table past 400%, so past 400% the credit is not
+                    smaller &mdash; it is nothing. For this household that line
+                    is {formatCurrency(subsidyCliff.magi)}:{' '}
+                    {PTC_CLIFF_PERCENT * 100}% of the{' '}
+                    {formatCurrency(subsidyCliff.povertyLine)} poverty line for{' '}
+                    {subsidyCliff.householdSize === 1
+                      ? 'one person'
+                      : `${subsidyCliff.householdSize} people`}
+                    .
+                  </p>
+                  <p>
+                    <strong>What it costs is not on this page.</strong> Just
+                    under the line the household pays at most{' '}
+                    {(subsidyCliff.topApplicablePercentage * 100).toFixed(2)}% of
+                    its income &mdash;{' '}
+                    {formatCurrency(subsidyCliff.cappedContribution)} &mdash; for
+                    the benchmark plan, and the credit covers the rest. One
+                    dollar over, it pays the full premium, which depends on ages
+                    and county and which this page has no way to know. So the
+                    line is drawn where it falls and the loss is left blank: for
+                    a couple in their early sixties it is routinely five figures.
+                  </p>
+                  <p>
+                    <strong>It is not Medicare&apos;s line, or the tax
+                    code&apos;s.</strong> 36B(d)(2)(B) counts AGI plus
+                    tax-exempt interest plus{' '}
+                    <em>the untaxed part of the Social Security benefit</em>.
+                    That last term undoes the torpedo: whatever share of the{' '}
+                    {formatCurrency(ssBenefit)} benefit stays out of the tax
+                    base, this adds straight back, so the whole benefit counts
+                    at every income level. The practical difference shows in
+                    where the lines sit: raise the benefit by a dollar and the
+                    pink line moves a full dollar left, while the red ones move
+                    at most 85 cents, because 85 cents is all of that dollar
+                    that can ever reach the tax base. Two cliffs, two MAGIs, and
+                    no reading one off the other.
+                  </p>
+                  <p>
+                    <strong>You are here.</strong> This return&apos;s household
+                    income is {formatCurrency(Math.round(hereSubsidy.magi))},{' '}
+                    {(hereSubsidy.fplMultiple * 100).toFixed(0)}% of the poverty
+                    line.{' '}
+                    {hereSubsidy.overCliff
+                      ? 'That is past the cliff: there is no premium tax credit for this year, and coming back under it takes ' +
+                        formatCurrency(
+                          Math.round(hereSubsidy.magi - (hereSubsidy.cliffMagi ?? 0)),
+                        ) +
+                        ' less income.'
+                      : `Another ${formatCurrency(
+                          Math.round(hereSubsidy.headroom ?? 0),
+                        )} of it reaches the line, and the dollar after that is the one that costs.`}
+                  </p>
+                  <p>
+                    <strong>The cliff is back, and it was gone.</strong> From
+                    2021 through 2025 there was no 400% ceiling at all: ARPA
+                    section 9661, extended by the Inflation Reduction Act,
+                    replaced the table with one that ran past 400% and capped
+                    the household&apos;s own share at 8.5% of income however
+                    high income went. That expired for tax years beginning after
+                    2025. The poverty line itself runs{' '}
+                    {FPL_GUIDELINE_LOOKBACK_YEARS} year behind, where
+                    Medicare&apos;s MAGI runs {IRMAA_LOOKBACK_YEARS}: 26 CFR
+                    1.36B-1(h) fixes it at the guidelines in effect when open
+                    enrolment began, which is the previous 1 November, so {year}{' '}
+                    coverage is priced off the {fplGuidelineYear(year)}{' '}
+                    guidelines &mdash; already a year old when the year starts.
+                  </p>
+                  <p>
+                    <strong>Who this is not for.</strong> Nobody enrolled in
+                    Medicare is eligible for the credit, which is why the line
+                    disappears from this chart once everyone on the return has
+                    turned 65 &mdash; and why a couple with one spouse on either
+                    side of 65 is standing in front of both cliffs at once.
+                    Coverage from an employer, a retiree plan or a spouse&apos;s
+                    plan takes the credit away too, so a reader with any of
+                    those can read this line as decoration. The poverty line
+                    used here is the one for the lower 48 and DC; Alaska and
+                    Hawaii have their own, higher, so the line falls further
+                    right there than it is drawn.{' '}
+                    {subsidyCliff.householdSize === 1
+                      ? 'A dependent would move it right by about $5,500 of income, and this page has no field for one.'
+                      : 'A dependent past the two people this filing status implies would move it right by about $5,500 of income, and this page has no field for one.'}
+                  </p>
                 </div>
               </details>
             ) : null}
@@ -3404,8 +3423,12 @@ const App: React.FC = () => {
 
             <details className="explainer">
               <summary>
+                {/* Counted rather than written down. The list is not a fixed
+                    length: 400% of the poverty line is a ceiling only in a year
+                    that has the cliff, so a heading that said "six" was wrong
+                    on every 2026 return before the year became a constant. */}
                 <h2 id="conversion-ceilings-heading">
-                  The six lines, and what each one is
+                  The {spellCount(ceilings.length)} lines, and what each one is
                 </h2>
               </summary>
               <div className="explainer-content">
@@ -3426,8 +3449,9 @@ const App: React.FC = () => {
                   ))}
                 </ul>
                 <p>
-                  Four different income definitions are in that list, which is the
-                  trap it exists to spring. Taxable income is after the standard
+                  {spellCountCap(ceilingMeasures)} different income definitions
+                  are in that list, which is the trap it exists to spring.
+                  Taxable income is after the standard
                   deduction; provisional income is before it and counts tax-exempt
                   interest and half the benefit; Medicare&apos;s MAGI is adjusted
                   gross income with tax-exempt interest added back. A conversion

@@ -549,13 +549,14 @@ const widths = (
  * looks like nothing at all.
  *
  * The second is about the other thing this shape brought with it. Two columns
- * only work while there are two, and both of them pin: the configuration
- * sticks to the top of the window and the nav sticks to the head of the
- * reading column. On a phone there is one column and nothing may pin — a
- * pinned configuration panel there is the whole screen, and a nav that wraps
- * to two rows takes a third of what is left. So every `position: sticky` on
- * this page has to be taken back off in the collapse, and a new one that
- * forgets to is a bug nobody sees on the machine they wrote it on.
+ * only work while there are two, and the configuration column pins: it sticks
+ * to the top of the window while the reading column scrolls past it. The step
+ * nav pinned to the head of that reading column until the nav came off the
+ * page, which is why the count below is a floor rather than a pair. On a
+ * phone there is one column and nothing may pin — a pinned configuration
+ * panel there is the whole screen. So every `position: sticky` on this page
+ * has to be taken back off in the collapse, and a new one that forgets to is
+ * a bug nobody sees on the machine they wrote it on.
  */
 describe('the shell', () => {
   const MEASURES = ['--measure', '--column', '--gutter'];
@@ -578,12 +579,12 @@ describe('the shell', () => {
     expect(MEASURES.filter((name) => !spent.includes(`var(${name})`))).toEqual([]);
   });
 
-  it('unpins both columns where the grid collapses to one', () => {
+  it('unpins everything that pins where the grid collapses to one', () => {
     const pinned = leafRules(screenBlock(stylesheet))
       .filter((rule) => /position:\s*sticky/.test(rule.body))
       .flatMap((rule) => rule.selectors);
     // Guards the extractor: no sticky found would make the check vacuous.
-    expect(pinned.length).toBeGreaterThan(1);
+    expect(pinned.length).toBeGreaterThan(0);
 
     const released = leafRules(collapseBlock(stylesheet))
       .filter((rule) => /position:\s*static/.test(rule.body))
@@ -663,12 +664,13 @@ const corners = (css: string): string[] =>
  * a stray `10px` would not look wrong from inside its own rule, and there is
  * nothing else that would catch it.
  *
- * `50%` is allowed and is not a fourth step — it is a circle, which is a
- * shape rather than a corner, and the step nav's numbers are the only things
- * that take it.
+ * `50%` was allowed and was never a fourth step — it is a circle, which is a
+ * shape rather than a corner. The step nav's numbered discs were the only
+ * things that took it, so it left the page with them; a new circle is welcome
+ * back on the list, but not by being absent from it.
  */
 describe('the corners', () => {
-  const STEPS = ['var(--radius-lg)', 'var(--radius-md)', 'var(--radius-sm)', '50%', '0'];
+  const STEPS = ['var(--radius-lg)', 'var(--radius-md)', 'var(--radius-sm)', '0'];
 
   it('rounds every box from one closed list of steps', () => {
     const drawn = corners(screenBlock(stylesheet));

@@ -77,8 +77,11 @@ import type {
  * have to click into existence reads as optional, and these are not; step 2
  * quotes figures the reader set in step 1, which only works if scrolling back
  * to them is possible; and printing or Ctrl-F now reaches the whole page
- * rather than the open panel. What it costs is length, which is what the step
- * nav and the next-step box are for.
+ * rather than the open panel. What it costs is length, which a step nav and a
+ * next-step box used to pay for. Both came off with the four sections that
+ * made the walk long enough to need them: two steps on one scroll are not a
+ * flow a reader can be lost in, and a nav offering to carry them past one
+ * heading is furniture charging rent.
  *
  * Six more sections have stood here and are coming back. Four were tabs —
  * Medicare, Strategies, Over Time and State Taxes — and two were steps 3 and
@@ -91,8 +94,8 @@ import type {
  * every one of them still exported.
  *
  * Both steps have the same shape: the chart, then the one control that says
- * where on that chart the reader is standing, then the collapsed explainers,
- * then the box to the next step. Step 1 is the exception that sets the rule —
+ * where on that chart the reader is standing, then the collapsed explainers.
+ * Step 1 is the exception that sets the rule —
  * it has no curve of its own, so the return itself (filing status, age)
  * stands where the chart stands on the step below it, and the benefit slider
  * follows it in the control's place.
@@ -103,25 +106,17 @@ import type {
  * distribution belong to no axis and sit in a collapsed `advanced-inputs`
  * block at the end of step 1, because each starts at $0 and at $0 leaves the
  * chart on the page identical.
+ *
+ * Nothing renders off the list itself any more. It carried a nav label, a
+ * heading and a blurb per step until the nav and the next-step box went, and
+ * each of the three had exactly one reader; the headings the page still shows
+ * are written where they are shown. What is left is the pair of facts nothing
+ * else can supply — `StepId`, which the live region is keyed to, and the count
+ * the step kickers number themselves out of.
  */
-const STEPS = [
-  {
-    id: 'benefit',
-    navLabel: 'Your benefit',
-    heading: 'Your Social Security benefit',
-    blurb:
-      'Set the return the whole page prices \u2014 who files it, and how much Social Security it collects.',
-  },
-  {
-    id: 'torpedo',
-    navLabel: 'The tax torpedo',
-    heading: 'The tax torpedo',
-    blurb:
-      'Add everything that is not Social Security, and see what the next dollar of it really costs.',
-  },
-] as const;
+const STEPS = ['benefit', 'torpedo'] as const;
 
-type StepId = (typeof STEPS)[number]['id'];
+type StepId = (typeof STEPS)[number];
 
 const FILING_STATUS_OPTIONS: { value: FilingStatus; label: string }[] = [
   { value: 'single', label: 'Single' },
@@ -629,25 +624,6 @@ const curveStepFor = (axisMax: number): number =>
   axisMax > 600_000 ? 2000 : axisMax > 300_000 ? 1000 : axisMax > 150_000 ? 500 : 250;
 
 /**
- * The step the fragment names, for a reader who followed `#step-torpedo`
- * rather than the nav.
- *
- * The query string carries the return and the fragment carries the place — see
- * `scenarioUrl`. The browser does the scrolling on its own; all this does is
- * mark the right nav button current, which it otherwise would not, leaving a
- * reader looking at step 2 under a nav insisting they are on step 1.
- *
- * A fragment naming a step that is no longer on the page — `#step-gains`,
- * `#step-conversion` — matches nothing and lands the reader on step 1, which
- * is where the browser leaves them anyway when there is no such element to
- * scroll to.
- */
-const stepFromHash = (hash: string): StepId | null => {
-  const id = hash.replace(/^#step-/, '');
-  return STEPS.some((s) => s.id === id) ? (id as StepId) : null;
-};
-
-/**
  * How long a control has to sit still before the live region takes its new
  * reading, in milliseconds.
  *
@@ -706,9 +682,6 @@ const App: React.FC = () => {
    */
   const [linkNotes, setLinkNotes] = useState<string[]>(() => openedWith.notes);
 
-  const [step, setStep] = useState<StepId>(
-    () => stepFromHash(window.location.hash) ?? 'benefit',
-  );
   /**
    * The year every figure below is priced for.
    *
@@ -798,9 +771,10 @@ const App: React.FC = () => {
    * worse than the silence they replaced. So the region carries exactly one
    * step's reading: the step whose control was last touched.
    *
-   * Keyed to the control rather than to the step the nav marks current,
-   * because every step is mounted at once and a reader can be working step 2's
-   * slider with the nav still on step 1. And one region rather than two,
+   * Keyed to the control the reader last touched rather than to whichever
+   * step is on screen, because every step is mounted at once and a reader can
+   * be working step 2's slider with step 1 still in view. And one rather than
+   * two regions,
    * because step 1's benefit moves both readings — two regions would queue
    * two announcements for one drag, which is the noise this is trying to
    * avoid.
@@ -1321,9 +1295,9 @@ const App: React.FC = () => {
   /** The 400% line when it is this return's to meet and the axis can show it. */
   const subsidyCliffOnChart: PtcCliff | null =
     preMedicare &&
-    subsidyCliff &&
-    subsidyCliff.otherIncome > 0 &&
-    subsidyCliff.otherIncome <= axisMax
+      subsidyCliff &&
+      subsidyCliff.otherIncome > 0 &&
+      subsidyCliff.otherIncome <= axisMax
       ? subsidyCliff
       : null;
 
@@ -1343,23 +1317,23 @@ const App: React.FC = () => {
       ? `${cliffPriceList}${beneficiaries > 1 ? ', for the two of you' : ''}.`
       : firstCliffPastAxis
         ? `None falls on this chart. The first one this return could reach needs ` +
-          `${formatCurrency(Math.round(firstCliffPastAxis.otherIncome))} of other ` +
-          `income, past the right edge, and would cost ` +
-          `${formatCurrency(firstCliffPastAxis.step)}/yr.`
+        `${formatCurrency(Math.round(firstCliffPastAxis.otherIncome))} of other ` +
+        `income, past the right edge, and would cost ` +
+        `${formatCurrency(firstCliffPastAxis.step)}/yr.`
         : null;
 
   const subsidyLineNote = !subsidyCliff
     ? null
     : subsidyCliffOnChart
       ? `${formatCurrency(subsidyCliff.magi)} of household income, reached at ` +
-        `${formatCurrency(Math.round(subsidyCliff.otherIncome))} of other income.`
+      `${formatCurrency(Math.round(subsidyCliff.otherIncome))} of other income.`
       : subsidyCliff.otherIncome <= 0
         ? `Already past it. The benefit and tax-exempt interest set above come ` +
-          `to more than ${formatCurrency(subsidyCliff.magi)} on their own, so ` +
-          `there is no credit to lose at any point on this chart.`
+        `to more than ${formatCurrency(subsidyCliff.magi)} on their own, so ` +
+        `there is no credit to lose at any point on this chart.`
         : `Off the right edge. It needs ${formatCurrency(subsidyCliff.magi)} of ` +
-          `household income — ` +
-          `${formatCurrency(Math.round(subsidyCliff.otherIncome))} of other income.`;
+        `household income — ` +
+        `${formatCurrency(Math.round(subsidyCliff.otherIncome))} of other income.`;
 
   /**
    * How many lines the plot is actually drawing, for the button that opens the
@@ -1398,19 +1372,17 @@ const App: React.FC = () => {
         const extras = advancedSet
           .map(({ label, value }) => `${label} ${formatCurrency(value)}`)
           .join(', ');
-        return `${year} brackets, ${FILING_STATUS_PROSE[filingStatus]}, ${ageProse}, ${collecting}.${
-          extras ? ` ${extras}.` : ''
-        }`;
+        return `${year} brackets, ${FILING_STATUS_PROSE[filingStatus]}, ${ageProse}, ${collecting}.${extras ? ` ${extras}.` : ''
+          }`;
       }
       case 'torpedo':
         return herePoint
-          ? `At ${formatCurrency(ordinaryIncome)} of other income the next dollar is taxed at ${
-              herePoint.marginalRate
-            }%. Federal tax ${formatCurrency(herePoint.totalTax)} on ${formatCurrency(
-              totalIncome,
-            )} of total income, an effective rate of ${formatPercent(
-              effectiveRateOn(herePoint.totalTax),
-            )}. ${standingHeadline(standing)}`
+          ? `At ${formatCurrency(ordinaryIncome)} of other income the next dollar is taxed at ${herePoint.marginalRate
+          }%. Federal tax ${formatCurrency(herePoint.totalTax)} on ${formatCurrency(
+            totalIncome,
+          )} of total income, an effective rate of ${formatPercent(
+            effectiveRateOn(herePoint.totalTax),
+          )}. ${standingHeadline(standing)}`
           : '';
       default:
         return '';
@@ -1464,82 +1436,11 @@ const App: React.FC = () => {
    */
   const hereTax = herePoint?.totalTax ?? Math.round(totalFederalTax(hereScenario));
 
-  /**
-   * Where the step nav and the next-step boxes both land.
-   *
-   * Focus moves into the section, not just the scroll position: a reader who
-   * pressed the next-step box with the keyboard has to arrive inside the step
-   * they asked for, or the next Tab press takes them back to the top of the
-   * page. That is what the section's `tabIndex={-1}` is for. `scrollIntoView`
-   * is optional-called because jsdom does not implement it.
-   */
-  const goToStep = (id: StepId): void => {
-    setStep(id);
-    const section = document.getElementById(`step-${id}`);
-    section?.focus({ preventScroll: true });
-    section?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
-  };
-
-  /**
-   * Roving tabindex: only the current step's nav button is in the tab order,
-   * and the arrow keys move between them — the same handling the tab strip
-   * had, under the ARIA toolbar pattern rather than the tabs one, because
-   * every step is now mounted and a nav button no longer controls whether its
-   * section exists. Focus stays on the nav here where the click path moves it
-   * into the section: arrowing is how a reader browses the nav, and losing the
-   * nav after one press would make the second press impossible.
-   */
-  const stepNavRef = useRef<HTMLDivElement>(null);
-  const onStepKeyDown = (e: React.KeyboardEvent<HTMLDivElement>): void => {
-    const delta = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
-    if (delta === 0) return;
-    e.preventDefault();
-    const current = STEPS.findIndex((s) => s.id === step);
-    const next = STEPS[(current + delta + STEPS.length) % STEPS.length];
-    setStep(next.id);
-    stepNavRef.current
-      ?.querySelector<HTMLButtonElement>(`#step-nav-${next.id}`)
-      ?.focus();
-    document
-      .getElementById(`step-${next.id}`)
-      ?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
-  };
-
-  /**
-   * The box that ends every step but the last. It is the only way through the
-   * flow that does not require finding the nav again, so it names where it
-   * goes rather than saying "next".
-   */
-  const nextStepBox = (fromIndex: number): React.ReactElement | null => {
-    const next = STEPS[fromIndex + 1];
-    if (!next) return null;
-    return (
-      <button
-        type="button"
-        className="next-step"
-        onClick={() => goToStep(next.id)}
-      >
-        <span className="next-step-kicker">
-          Next &middot; Step {fromIndex + 2} of {STEPS.length}
-        </span>
-        <span className="next-step-title">{next.heading}</span>
-        <span className="next-step-blurb">{next.blurb}</span>
-        <span className="next-step-arrow" aria-hidden="true">
-          &rarr;
-        </span>
-      </button>
-    );
-  };
-
   return (
     <div className="card">
       <h1>How Much Can You Take Out This Year?</h1>
       <p className="subtitle">
-        One more dollar out of an IRA — a withdrawal, a Roth conversion, a
-        realized gain — can drag Social Security into the tax base with it, so
-        what the next dollar actually costs is often nothing like your bracket.
-        This draws that cost across every income level for your own return, and
-        marks the stretches worth filling and the ones worth stepping around.
+        Because of how Social Security is taxed, your marginal tax rate is often very different than what you might expect.
       </p>
 
       {linkNotes.length > 0 && (
@@ -1702,9 +1603,8 @@ const App: React.FC = () => {
                   <strong>{formatCurrency(standardDeduction)}</strong>
                   {seniorAddition > 0
                     ? ` — ${formatCurrency(baseDeduction)} base plus ${formatCurrency(seniorAddition)} for age 65 or older.`
-                    : `. Turning 65 adds ${formatCurrency(yearFiling.additionalStdDeduction65)}${
-                        filingStatus === 'mfj' ? ' per qualifying spouse' : ''
-                      }.`}{' '}
+                    : `. Turning 65 adds ${formatCurrency(yearFiling.additionalStdDeduction65)}${filingStatus === 'mfj' ? ' per qualifying spouse' : ''
+                    }.`}{' '}
                   The addition widens the 0%-rate valley to the left of the
                   torpedo: taxable income stays at zero for that much longer, so
                   the whole curve shifts right.
@@ -1907,39 +1807,9 @@ const App: React.FC = () => {
               ? ' Plus whatever is set under Advanced inputs above.'
               : ''}
           </p>
-
-          {nextStepBox(0)}
         </section>
 
         <div className="flow">
-          <div
-            className="step-nav"
-            role="toolbar"
-            aria-label="Steps"
-            ref={stepNavRef}
-            onKeyDown={onStepKeyDown}
-          >
-            {STEPS.map(({ id, navLabel }, i) => (
-              <button
-                key={id}
-                type="button"
-                id={`step-nav-${id}`}
-                className={
-                  step === id ? 'step-nav-item step-nav-current' : 'step-nav-item'
-                }
-                aria-current={step === id ? 'step' : undefined}
-                aria-controls={`step-${id}`}
-                tabIndex={step === id ? 0 : -1}
-                onClick={() => goToStep(id)}
-              >
-                <span className="step-nav-number" aria-hidden="true">
-                  {i + 1}
-                </span>
-                {navLabel}
-              </button>
-            ))}
-          </div>
-
           {/* ───── Step 2: what other income does to that benefit ───── */}
           <section
             className="step"
@@ -2241,7 +2111,7 @@ const App: React.FC = () => {
                       compare. It is the reason this page exists, so it does not
                       belong behind a control. */}
                   <strong>The thresholds have not moved since they were
-                  written.</strong> IRC 86(c) set{' '}
+                    written.</strong> IRC 86(c) set{' '}
                   {formatCurrency(SS_BASES.single.ssBase50)} and{' '}
                   {formatCurrency(SS_BASES.mfj.ssBase50)} in {SS_BASE50_ENACTED},
                   and {formatCurrency(SS_BASES.single.ssBase85)} and{' '}
@@ -2406,7 +2276,7 @@ const App: React.FC = () => {
                   </p>
                   <p>
                     <strong>It is not Medicare&apos;s line, or the tax
-                    code&apos;s.</strong> 36B(d)(2)(B) counts AGI plus
+                      code&apos;s.</strong> 36B(d)(2)(B) counts AGI plus
                     tax-exempt interest plus{' '}
                     <em>the untaxed part of the Social Security benefit</em>.
                     That last term undoes the torpedo: whatever share of the{' '}
@@ -2426,13 +2296,13 @@ const App: React.FC = () => {
                     line.{' '}
                     {hereSubsidy.overCliff
                       ? 'That is past the cliff: there is no premium tax credit for this year, and coming back under it takes ' +
-                        formatCurrency(
-                          Math.round(hereSubsidy.magi - (hereSubsidy.cliffMagi ?? 0)),
-                        ) +
-                        ' less income.'
+                      formatCurrency(
+                        Math.round(hereSubsidy.magi - (hereSubsidy.cliffMagi ?? 0)),
+                      ) +
+                      ' less income.'
                       : `Another ${formatCurrency(
-                          Math.round(hereSubsidy.headroom ?? 0),
-                        )} of it reaches the line, and the dollar after that is the one that costs.`}
+                        Math.round(hereSubsidy.headroom ?? 0),
+                      )} of it reaches the line, and the dollar after that is the one that costs.`}
                   </p>
                   <p>
                     <strong>The cliff is back, and it was gone.</strong> From
@@ -2478,70 +2348,70 @@ const App: React.FC = () => {
               </summary>
               <div className="explainer-content">
                 {phaseoutStart === null || phaseoutEnd === null ? (
-                <p>
-                  Not on this return. Section 151(d)(5)(C)(v) makes the temporary{' '}
-                  {formatCurrency(SENIOR_DEDUCTION)} deduction conditional on a married
-                  taxpayer filing jointly, so a separate filer gets none of it — no
-                  halved amount, no halved {formatCurrency(75_000)} threshold, nothing.
-                  Between that and the $0 Social Security bases, filing separately
-                  while living together costs a retired couple the deduction and the
-                  thresholds at once. Switch to Married Filing Jointly above to see
-                  what the phaseout looks like when it applies.
-                </p>
+                  <p>
+                    Not on this return. Section 151(d)(5)(C)(v) makes the temporary{' '}
+                    {formatCurrency(SENIOR_DEDUCTION)} deduction conditional on a married
+                    taxpayer filing jointly, so a separate filer gets none of it — no
+                    halved amount, no halved {formatCurrency(75_000)} threshold, nothing.
+                    Between that and the $0 Social Security bases, filing separately
+                    while living together costs a retired couple the deduction and the
+                    thresholds at once. Switch to Married Filing Jointly above to see
+                    what the phaseout looks like when it applies.
+                  </p>
                 ) : (
-                <>
-                <p>
-                  For tax years {SENIOR_DEDUCTION_FIRST_YEAR} through{' '}
-                  {SENIOR_DEDUCTION_LAST_YEAR} only, anyone who reaches age 65 gets an
-                  extra <strong>{formatCurrency(SENIOR_DEDUCTION)}</strong> deduction —
-                  on top of the standard deduction, on top of the age-65 addition to
-                  it, and whether or not they itemize. A couple filing jointly with
-                  both spouses over 65 gets {formatCurrency(2 * SENIOR_DEDUCTION)}.
-                </p>
-                <p>
-                  The catch is the phaseout. Each qualifying person&apos;s{' '}
-                  {formatCurrency(SENIOR_DEDUCTION)} shrinks by{' '}
-                  {formatCents(SENIOR_DEDUCTION_PHASEOUT_RATE)} for every dollar of
-                  MAGI above {formatCurrency(phaseoutStart)}, so it is gone at{' '}
-                  {formatCurrency(phaseoutEnd)} — exactly $100,000 later, for every
-                  status that has one, because a couple where both spouses qualify has
-                  twice as much deduction to lose and loses it twice as fast.
-                </p>
-                <p>
-                  Inside that range every extra dollar of income does double duty: it
-                  is taxed, and it destroys {formatCents(phaseoutRate)} of deduction.
-                  Taxable income therefore rises by{' '}
-                  <strong>${taxableIncomePerDollar.toFixed(2)}</strong> per dollar
-                  earned, and the 22% bracket bites at{' '}
-                  <strong>{formatPercent(0.22 * taxableIncomePerDollar)}</strong>. That
-                  is a surtax that appears nowhere on the rate schedule.
-                </p>
-                <p>
-                  Worse, the two humps multiply. MAGI is AGI, which already includes
-                  whatever share of your benefits the torpedo has dragged into taxable
-                  income — so where the torpedo and the phaseout overlap, one extra
-                  dollar raises taxable income by 1.85 &times;{' '}
-                  {taxableIncomePerDollar.toFixed(2)} ={' '}
-                  <strong>${(1.85 * taxableIncomePerDollar).toFixed(2)}</strong>, and
-                  22% becomes{' '}
-                  <strong>
-                    {formatPercent(0.22 * 1.85 * taxableIncomePerDollar)}
-                  </strong>
-                  .
-                </p>
-                <p>
-                  On the chart above, the second hump starts where MAGI clears{' '}
-                  {formatCurrency(phaseoutStart)} — at less of your own income than
-                  that, since the taxable part of your benefits counts toward MAGI too.
-                  The rate falls back once the deduction is fully gone at{' '}
-                  {formatCurrency(phaseoutEnd)} of MAGI, which{' '}
-                  {phaseoutEndsOnChart
-                    ? 'is inside the chart at the benefit selected above'
-                    : 'sits past the right edge of the chart at the benefit selected above'}
-                  . Note that tax-exempt interest is <em>not</em> added back for this
-                  phaseout, unlike the MAGI Medicare uses for IRMAA.
-                </p>
-                </>
+                  <>
+                    <p>
+                      For tax years {SENIOR_DEDUCTION_FIRST_YEAR} through{' '}
+                      {SENIOR_DEDUCTION_LAST_YEAR} only, anyone who reaches age 65 gets an
+                      extra <strong>{formatCurrency(SENIOR_DEDUCTION)}</strong> deduction —
+                      on top of the standard deduction, on top of the age-65 addition to
+                      it, and whether or not they itemize. A couple filing jointly with
+                      both spouses over 65 gets {formatCurrency(2 * SENIOR_DEDUCTION)}.
+                    </p>
+                    <p>
+                      The catch is the phaseout. Each qualifying person&apos;s{' '}
+                      {formatCurrency(SENIOR_DEDUCTION)} shrinks by{' '}
+                      {formatCents(SENIOR_DEDUCTION_PHASEOUT_RATE)} for every dollar of
+                      MAGI above {formatCurrency(phaseoutStart)}, so it is gone at{' '}
+                      {formatCurrency(phaseoutEnd)} — exactly $100,000 later, for every
+                      status that has one, because a couple where both spouses qualify has
+                      twice as much deduction to lose and loses it twice as fast.
+                    </p>
+                    <p>
+                      Inside that range every extra dollar of income does double duty: it
+                      is taxed, and it destroys {formatCents(phaseoutRate)} of deduction.
+                      Taxable income therefore rises by{' '}
+                      <strong>${taxableIncomePerDollar.toFixed(2)}</strong> per dollar
+                      earned, and the 22% bracket bites at{' '}
+                      <strong>{formatPercent(0.22 * taxableIncomePerDollar)}</strong>. That
+                      is a surtax that appears nowhere on the rate schedule.
+                    </p>
+                    <p>
+                      Worse, the two humps multiply. MAGI is AGI, which already includes
+                      whatever share of your benefits the torpedo has dragged into taxable
+                      income — so where the torpedo and the phaseout overlap, one extra
+                      dollar raises taxable income by 1.85 &times;{' '}
+                      {taxableIncomePerDollar.toFixed(2)} ={' '}
+                      <strong>${(1.85 * taxableIncomePerDollar).toFixed(2)}</strong>, and
+                      22% becomes{' '}
+                      <strong>
+                        {formatPercent(0.22 * 1.85 * taxableIncomePerDollar)}
+                      </strong>
+                      .
+                    </p>
+                    <p>
+                      On the chart above, the second hump starts where MAGI clears{' '}
+                      {formatCurrency(phaseoutStart)} — at less of your own income than
+                      that, since the taxable part of your benefits counts toward MAGI too.
+                      The rate falls back once the deduction is fully gone at{' '}
+                      {formatCurrency(phaseoutEnd)} of MAGI, which{' '}
+                      {phaseoutEndsOnChart
+                        ? 'is inside the chart at the benefit selected above'
+                        : 'sits past the right edge of the chart at the benefit selected above'}
+                      . Note that tax-exempt interest is <em>not</em> added back for this
+                      phaseout, unlike the MAGI Medicare uses for IRMAA.
+                    </p>
+                  </>
                 )}
               </div>
             </details>

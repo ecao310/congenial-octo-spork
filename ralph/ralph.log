@@ -7329,3 +7329,145 @@ decision is answered by removal, not by me. This run had already finished and
 verified the meta-description bullet when they arrived, so it committed that
 rather than throwing verified work away. **The next run's topmost unchecked
 item is the "next — step 2 of 2" link removal**, not this one.
+
+---
+
+## Backlog 6 · bullet 1 — the nav and the next-step box came off
+
+`role="toolbar"` with two buttons — *Your benefit*, *The tax torpedo* — pinned
+to the head of the reading column, and a full-width box at the foot of step 1
+reading **Next · Step 2 of 2 / The tax torpedo** with a blurb and a chevron.
+Both are gone. They were sized for a four-section walk; on a two-section page
+the box spends a screen's width and four lines of prose moving a reader past a
+single heading they can already see.
+
+### What went with them
+
+Removing the two renderers stranded everything that fed them, and the whole
+chain came out rather than being left as unread code:
+
+| gone | its only reader was |
+| --- | --- |
+| `goToStep` | the nav's click path and the box |
+| `onStepKeyDown`, `stepNavRef` | the roving-tabindex arrow handling |
+| `nextStepBox` | itself |
+| `step` / `setStep` state | the nav's `aria-current` and `tabIndex` |
+| `stepFromHash` | the initialiser of that state |
+| `STEPS[].navLabel` / `.heading` / `.blurb` | the nav, the box, the box |
+
+`STEPS` is now `['benefit', 'torpedo'] as const`. Two things still need it and
+nothing else can supply them: `StepId`, which `announceFrom` is keyed to, and
+`STEPS.length`, which the two step kickers number themselves out of.
+
+**`stepFromHash` is not a loss.** It never scrolled anything — the browser
+does that off the `id` — it only marked the right nav button current so a
+reader who followed `#step-torpedo` was not shown a nav insisting they were on
+step 1. With no nav there is nothing to mark, and `#step-torpedo` still works
+because `<section id>` is what the browser was ever reading.
+
+### The stylesheet
+
+`.step-nav` and its five descendants, `.next-step` and its five, the
+`.step-config .next-step` footer sizing, both narrow-window overrides, and two
+of the five entries in the print sheet's "what a sheet of paper cannot be"
+list. Two knock-on edits that are not deletions:
+
+- **`.step { scroll-margin-top }` 4.25rem → 1rem.** The 4.25 was clearance for
+  the sticky nav. Nothing sticks above a step now, but a step is still a scroll
+  target, so it keeps breathing room rather than losing the property. The
+  narrow-window override that already said 1rem is now redundant and went.
+- **The close's comment.** It said `.answer` "takes `.next-step`'s treatment
+  exactly … they are the same object at different scales" — a comment pointing
+  at a rule that no longer exists. The reasoning it was borrowing (hairline on
+  a raised surface, accent on the kicker not the box) is now written out at
+  `.answer` itself.
+
+### Two tests that fell over on second-order facts
+
+Neither mentions the nav; both were counting things the nav was one of.
+
+- **`the shell > unpins both columns`** guards itself with
+  `expect(pinned.length).toBeGreaterThan(1)` so that finding no `position:
+  sticky` cannot pass vacuously. The page had exactly two — `.step-config` and
+  `.step-nav`. Now one, so the floor is `toBeGreaterThan(0)` and the name is
+  "unpins everything that pins".
+- **`the corners > spends every step it declares`** holds the radius list
+  closed from both directions. `50%` was on it, and `.step-nav-number`'s
+  numbered discs were the only rule in the file that drew a circle. `50%` came
+  off the list; the comment now says it is welcome back by being drawn, not by
+  being listed.
+
+### The new tests
+
+Replacing eight nav tests (numbering, current marking, focus-into-section,
+`aria-controls`, walk-forward, arrow keys with wraparound, roving tabindex,
+non-arrow keys) with two that hold the removal:
+
+- **`offers nothing that navigates between the steps`** — no `toolbar`, no
+  `navigation`, no `[aria-current]`, and no button whose label matches
+  `/step \d+ of/i`. Written as a shape rather than by class name so that
+  putting either back under a new name still fails.
+- **`still numbers both steps where each one starts`** — the two `.step-kicker`
+  texts are exactly `Step 1 of 2` and `Step 2 of 2`. The numbering was the only
+  thing the nav actually told anyone, and the kickers say it without asking to
+  be clicked.
+
+Three existing tests were rewritten rather than deleted, because each had a
+claim underneath the nav it was using as a lever: `keeps every input mounted`
+(now asserts mounting directly instead of clicking through the nav to prove
+it), `advanced inputs keeps its values` (now works step 2's slider), and the
+fragment test, which split into "keeps the fragment through a change" and
+"renders normally under a fragment that names no step" — the second being the
+claim that a `#step-gains` link is inert rather than an error, which is what it
+has to be now that nothing reads the fragment.
+
+### Mutation-checked four ways, each reverted
+
+| mutation | result |
+| --- | --- |
+| a `role="toolbar"` div with an `aria-current` button | red: `expected <div role="toolbar" …> to be null` |
+| `Step 2 of {STEPS.length}` → `Step 2` | red: `expected [ 'Step 1 of 2', 'Step 2' ] to deeply equal […]` |
+| a `.next-step` button after the recap | red: `expected <button …> to be null` |
+| a dead `.step-nav-item` rule left in the stylesheet | **green — see below** |
+
+### The one guard that did not fire
+
+`the stylesheet > scopes no rule to a nesting the page never renders` is built
+on `nestedClassSelectors`, so it only reads selectors with a descendant
+combinator in them. A flat `.step-nav-item { … }` left behind after its markup
+goes is invisible to it. That is the test's stated scope rather than a
+regression, and I left it alone — a flat-class version would flag every rule
+for a state the default render does not reach (`.link-note`, `.warning-note`,
+the copy button's `Copied`). Noted here rather than in PLAN.md because the fix
+is a new test with a real false-positive problem, not a chore.
+
+### Verification
+
+`npx vitest run` **674 passed in 13 files** (682 before: −10 nav tests, +2).
+`tsc -b` clean, `eslint . --max-warnings 0` clean, `npm run build` clean.
+
+### Note for the next run — the tree changed under me again
+
+`src/App.tsx` was **edited by a human mid-run**, after I had already typechecked
+my own edits against it. Two things arrived:
+
+1. **The subtitle was rewritten.** "One more dollar out of an IRA — a
+   withdrawal, a Roth conversion, a realized gain — …" became "Because of how
+   Social Security is taxed, your marginal tax rate is often very different
+   than what you might expect." This broke `App > leads with what the page is
+   for`, which asserted on two phrases of the old copy. I kept the new copy and
+   repointed the assertions at it — the test's real claims (subtitle carries
+   the *why*, names no filing status, names no year, does not move when
+   controls move) all still hold.
+2. **The file was reindented by an editor's formatter**, not Prettier — it
+   produces trailing `}` on its own line inside template literals and
+   re-indents JSX children in `.explainer` blocks. Roughly 200 lines of pure
+   whitespace across eight hunks I did not write. It typechecks and lints, so I
+   committed it as it stands rather than reverting someone's in-flight work,
+   but **it is in this commit and it is not mine** — if a later run bisects
+   through here, that is what those hunks are.
+
+The next run's topmost unchecked item is the **filing-status dropdown**: single
+and MFJ as the first two options, with head of household and filing separately
+behind a menu. `FILING_STATUS_OPTIONS` (App.tsx:121) currently lists all four in
+the order single / hoh / mfj / mfs and renders them as one `.segmented` strip.

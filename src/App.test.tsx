@@ -27,32 +27,12 @@ afterEach(() => {
 });
 
 /**
- * Every step is mounted at once — the flow scrolls where the tab strip it
- * replaced swapped panels — so a test that asserts on a section no longer has
- * to open anything first. What the nav changes is which step is marked current
- * and where focus lands, and that is what the `step flow` describe covers.
- */
-const stepNames = ['Your benefit', 'The tax torpedo'] as const;
-
-const stepNav = (): HTMLElement => screen.getByRole('toolbar', { name: 'Steps' });
-
-const navItem = (name: (typeof stepNames)[number]): HTMLElement =>
-  within(stepNav()).getByRole('button', { name });
-
-/**
  * The line that closes step 1 by naming the return every later step prices.
  * The year, the status, the ages and the benefit are each in their own
  * element, so these tests read the whole sentence rather than one text node.
  */
 const scenarioRecap = (): HTMLElement =>
   screen.getByText(/Everything from here on prices one return/);
-
-/** The nav button carrying `aria-current="step"`, by its visible label. */
-const currentStep = (): string | undefined =>
-  within(stepNav())
-    .getAllByRole('button')
-    .find((b) => b.getAttribute('aria-current') === 'step')
-    ?.textContent?.replace(/^\d/, '');
 
 describe('App', () => {
   /**
@@ -78,11 +58,12 @@ describe('App', () => {
 
     // The subtitle used to name the filing status and the tax year, which made
     // the first thing on the page a readout of two controls the reader had not
-    // reached yet. It now says what the next dollar costs and why.
+    // reached yet. It now says why the next dollar is not priced at the rate
+    // the reader came expecting, which is the whole page in one line.
     const subtitle = hero.nextElementSibling as HTMLElement;
     expect(subtitle).toHaveClass('subtitle');
-    expect(subtitle).toHaveTextContent(/a withdrawal, a Roth conversion, a realized gain/);
-    expect(subtitle).toHaveTextContent(/nothing like your bracket/);
+    expect(subtitle).toHaveTextContent(/how Social Security is taxed/);
+    expect(subtitle).toHaveTextContent(/different than what you might expect/);
     expect(subtitle).not.toHaveTextContent(/single filer/i);
     expect(subtitle).not.toHaveTextContent(/2025|2026/);
 
@@ -534,15 +515,6 @@ describe('App', () => {
 });
 
 describe('the step flow', () => {
-  it('numbers both steps in the nav, in reading order', () => {
-    render(<App />);
-    expect(
-      within(stepNav())
-        .getAllByRole('button')
-        .map((b) => b.textContent),
-    ).toEqual(['1Your benefit', '2The tax torpedo']);
-  });
-
   /**
    * The whole point of the rewrite: the steps scroll rather than swap, so
    * every one of them is on the page at once. A reader on step 2 can scroll
@@ -574,123 +546,58 @@ describe('the step flow', () => {
     expect(screen.queryByRole('radio', { name: /bracket/i })).toBeNull();
   });
 
-  it('opens with the first step marked current', () => {
-    render(<App />);
-    expect(currentStep()).toBe('Your benefit');
-    expect(navItem('The tax torpedo')).not.toHaveAttribute('aria-current');
-  });
-
   /**
-   * Focus follows the scroll. Landing a keyboard reader at the top of the
-   * page after they asked for step 2 would make the nav unusable — the next
-   * Tab press has to continue inside the step they picked.
+   * The nav and the next-step box, both gone.
+   *
+   * They were the price of length: a sticky strip marking which of four
+   * sections you were in, and a box at the foot of each one naming the next.
+   * Two sections on one scroll are not a walk anyone can be lost in, so both
+   * were furniture — and the box was the worse of the two, because it took a
+   * screen's width and four lines of prose to move the reader past a single
+   * heading they could see from where they stood.
+   *
+   * Asserted as a shape rather than by class name: no toolbar anywhere, and
+   * no button whose label counts steps. Putting either back under a different
+   * name fails here.
    */
-  it('marks a step current and moves focus into it when the nav is clicked', () => {
+  it('offers nothing that navigates between the steps', () => {
     render(<App />);
-    fireEvent.click(navItem('The tax torpedo'));
-    expect(currentStep()).toBe('The tax torpedo');
-    expect(document.activeElement).toBe(document.getElementById('step-torpedo'));
-  });
-
-  it('wires each nav button to the section it moves to', () => {
-    render(<App />);
-    for (const [name, id] of [
-      ['Your benefit', 'step-benefit'],
-      ['The tax torpedo', 'step-torpedo'],
-    ] as const) {
-      const section = document.getElementById(id) as HTMLElement;
-      expect(navItem(name)).toHaveAttribute('aria-controls', id);
-      expect(
-        document.getElementById(section.getAttribute('aria-labelledby') ?? ''),
-      ).toHaveTextContent(/\S/);
-    }
-  });
-
-  /**
-   * The box at the foot of each step is the path through the flow for a reader
-   * who never looks at the nav, so it has to do everything the nav does.
-   */
-  it('walks forward through the next-step box', () => {
-    render(<App />);
-    fireEvent.click(screen.getByRole('button', { name: /Step 2 of 2/ }));
-    expect(currentStep()).toBe('The tax torpedo');
-    expect(document.activeElement).toBe(document.getElementById('step-torpedo'));
-  });
-
-  it('names where the box goes, and stops at the last step', () => {
-    render(<App />);
+    expect(screen.queryByRole('toolbar')).toBeNull();
+    expect(screen.queryByRole('navigation')).toBeNull();
     expect(
-      screen.getByRole('button', { name: /Step 2 of 2/ }),
-    ).toHaveTextContent('The tax torpedo');
-    expect(screen.queryByRole('button', { name: /Step 3 of 2/ })).toBeNull();
-  });
-
-  it('moves between steps with the arrow keys and wraps at both ends', () => {
-    render(<App />);
-
-    fireEvent.keyDown(stepNav(), { key: 'ArrowRight' });
-    expect(currentStep()).toBe('The tax torpedo');
-
-    fireEvent.keyDown(stepNav(), { key: 'ArrowRight' });
-    expect(currentStep()).toBe('Your benefit');
-
-    fireEvent.keyDown(stepNav(), { key: 'ArrowLeft' });
-    expect(currentStep()).toBe('The tax torpedo');
+      screen.queryAllByRole('button').filter((b) => /step \d+ of/i.test(b.textContent ?? '')),
+    ).toEqual([]);
+    expect(document.querySelector('[aria-current]')).toBeNull();
   });
 
   /**
-   * Arrowing keeps focus on the nav where clicking moves it into the section:
-   * a second arrow press has to reach the same handler as the first.
+   * The steps still number themselves, which is the whole of what the nav was
+   * telling anyone: two of them, in this order. A kicker over each heading
+   * says it without asking to be clicked.
    */
-  it('keeps focus on the nav while arrowing', () => {
-    render(<App />);
-    fireEvent.keyDown(stepNav(), { key: 'ArrowRight' });
-    expect(document.activeElement).toBe(navItem('The tax torpedo'));
-  });
-
-  /**
-   * Roving tabindex: arrowing through the nav must not leave a trail of tab
-   * stops behind it, or a keyboard user pays a press per step to leave the nav
-   * on the way to the sliders.
-   */
-  it('keeps only the current step in the tab order', () => {
-    render(<App />);
-    fireEvent.click(navItem('The tax torpedo'));
-    for (const name of stepNames) {
-      expect(navItem(name)).toHaveAttribute(
-        'tabindex',
-        name === 'The tax torpedo' ? '0' : '-1',
-      );
-    }
-  });
-
-  it('ignores keys that are not arrows', () => {
-    render(<App />);
-    fireEvent.keyDown(stepNav(), { key: 'a' });
-    expect(currentStep()).toBe('Your benefit');
+  it('still numbers both steps where each one starts', () => {
+    const { container } = render(<App />);
+    expect(
+      Array.from(container.querySelectorAll('.step-kicker')).map((el) => el.textContent),
+    ).toEqual(['Step 1 of 2', 'Step 2 of 2']);
   });
 
   /**
    * Both steps price the same return, and the inputs that set it are spread
-   * across the flow — the benefit in step 1, other income in step 2. Stepping
-   * around must never unmount one, or a figure set in step 1 would be gone by
-   * the time the close quoted it.
+   * across the page — the benefit in step 1, other income in step 2. Nothing
+   * unmounts either, or a figure set in step 1 would be gone by the time the
+   * close quoted it.
    */
-  it('keeps every input mounted as the reader steps through', () => {
+  it('keeps every input mounted at once', () => {
     render(<App />);
     const income = screen.getByRole('slider', { name: /other income \(not social security\)/i });
     fireEvent.change(income, { target: { value: '90000' } });
 
-    for (const name of stepNames) {
-      fireEvent.click(navItem(name));
-      expect(
-        screen.getByRole('slider', { name: /social security benefit/i }),
-      ).toBeInTheDocument();
-      expect(
-        screen.getByRole('slider', { name: /other income \(not social security\)/i }),
-      ).toHaveValue('90000');
-      expect(screen.getByRole('radio', { name: 'Single' })).toBeChecked();
-    }
+    expect(
+      screen.getByRole('slider', { name: /social security benefit/i }),
+    ).toBeInTheDocument();
+    expect(income).toHaveValue('90000');
+    expect(screen.getByRole('radio', { name: 'Single' })).toBeChecked();
   });
 });
 
@@ -698,9 +605,8 @@ describe('the step flow', () => {
  * Every step is laid out the same way, and this is the test of it.
  *
  * chart \u2192 the one control that says where on that chart you are \u2192 the
- * collapsed explainers \u2192 the box to the next step. Step 1 has no curve of
- * its own, so it starts at the control; step 2 is last, so it ends at the
- * explainer. A control above its chart reads as an input to the chart, which
+ * collapsed explainers. Step 1 has no curve of its own, so it starts at the
+ * control. A control above its chart reads as an input to the chart, which
  * is exactly what it is not \u2014 the chart already prices every value the
  * control can take.
  */
@@ -709,9 +615,7 @@ describe('the shape every step shares', () => {
   const landmarks = (id: string): string[] => {
     const section = document.getElementById(id) as HTMLElement;
     const kinds = Array.from(
-      section.querySelectorAll(
-        '.chart-container, input[type="range"], details, .next-step',
-      ),
+      section.querySelectorAll('.chart-container, input[type="range"], details'),
     )
       // A control inside a disclosure is that disclosure's business, not the
       // step's: the shape is about what the reader meets on the way down.
@@ -719,11 +623,9 @@ describe('the shape every step shares', () => {
       .map((el) =>
         el.classList.contains('chart-container')
           ? 'chart'
-          : el.classList.contains('next-step')
-            ? 'next'
-            : el.tagName === 'DETAILS'
-              ? 'details'
-              : 'control',
+          : el.tagName === 'DETAILS'
+            ? 'details'
+            : 'control',
       );
     return kinds.filter((kind, i) => kind !== kinds[i - 1]);
   };
@@ -736,11 +638,11 @@ describe('the shape every step shares', () => {
   /**
    * Step 1 draws nothing, so the return it sets stands where a chart stands.
    * What it still owes the shape is the ordering of the rest: one control on
-   * screen, the disclosure after it, the next-step box last.
+   * screen, the disclosure after it.
    */
   it('gives the uncharted step the same tail', () => {
     render(<App />);
-    expect(landmarks('step-benefit')).toEqual(['control', 'details', 'next']);
+    expect(landmarks('step-benefit')).toEqual(['control', 'details']);
   });
 
   it('puts the step\u2019s control on the axis its own chart sweeps', () => {
@@ -1128,23 +1030,25 @@ describe('advanced inputs', () => {
   });
 
   /**
-   * The disclosure sits at the foot of step 1, and both of the steps below it
-   * price off what is in there, so a value set once has to survive the whole
-   * walk down the page.
+   * The disclosure sits at the foot of step 1 and the step below it prices off
+   * what is in there, so a value set once has to survive everything the reader
+   * does further down the page — which used to mean stepping through the nav
+   * and now means working step 2's own slider.
    */
-  it('keeps its values across every step', () => {
+  it('keeps its values while the reader works the step below', () => {
     render(<App />);
     fireEvent.change(
       screen.getByLabelText('Tax-Exempt (Municipal) Interest'),
       { target: { value: '9000' } },
     );
-    for (const name of stepNames) {
-      fireEvent.click(navItem(name));
-      expect(
-        screen.getByLabelText('Tax-Exempt (Municipal) Interest'),
-      ).toHaveValue('9000');
-      expect(advancedState()).toHaveTextContent('Muni interest $9,000');
-    }
+    fireEvent.change(
+      screen.getByRole('slider', { name: /other income \(not social security\)/i }),
+      { target: { value: '90000' } },
+    );
+    expect(
+      screen.getByLabelText('Tax-Exempt (Municipal) Interest'),
+    ).toHaveValue('9000');
+    expect(advancedState()).toHaveTextContent('Muni interest $9,000');
   });
 });
 
@@ -1384,8 +1288,8 @@ describe('scenario recap', () => {
     render(<App />);
     const recap = scenarioRecap();
     expect(recap.closest('section')).toHaveAttribute('id', 'step-benefit');
-    // Last thing before the box that hands the reader on.
-    expect(recap.nextElementSibling).toHaveClass('next-step');
+    // The last thing in the step, now that the box that followed it is gone.
+    expect(recap.nextElementSibling).toBeNull();
   });
 
   it('names the return the defaults describe', () => {
@@ -2638,24 +2542,34 @@ describe('the return in the address bar', () => {
   /**
    * The step is a place on the page, not part of the return, so it rides in
    * the fragment the browser already scrolls to — and the rewritten address
-   * has to keep it, because `replaceState` takes a whole URL.
+   * has to keep it, because `replaceState` takes a whole URL. Every link this
+   * page has ever copied off a step carries one, so dropping it on the first
+   * slider move would quietly unshare the place while keeping the return.
    */
-  it('marks the step the fragment names and keeps the fragment through a change', () => {
+  it('keeps the fragment through a change to the return', () => {
     openAt('#step-torpedo');
     render(<App />);
-    expect(currentStep()).toBe('The tax torpedo');
 
     fireEvent.change(incomeSlider(), { target: { value: '90000' } });
     expect(window.location.hash).toBe('#step-torpedo');
     expect(window.location.search).toBe('?income=90000');
   });
 
-  /** Including one that named a step until this page had two. */
-  it('ignores a fragment that names no step', () => {
+  /**
+   * The page reads no fragment itself any more — the nav that used to mark
+   * the named step current is gone, and scrolling to an `id` is the browser's
+   * own job. So a fragment naming a section this page never had, or one it
+   * stopped having, has to be inert rather than an error: same page, same
+   * return, and the browser leaves the reader at the top.
+   */
+  it('renders normally under a fragment that names no step', () => {
     for (const fragment of ['#step-medicare', '#step-gains', '#step-conversion']) {
       openAt(fragment);
       const { unmount } = render(<App />);
-      expect(currentStep()).toBe('Your benefit');
+      expect(
+        screen.getByRole('heading', { name: /your social security benefit/i }),
+      ).toBeInTheDocument();
+      expect(screen.queryByRole('status')).toBeNull();
       unmount();
     }
   });

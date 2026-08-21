@@ -150,7 +150,7 @@
  * under them at 1.125rem. Nothing in the running app is larger than that h1.
  *
  *   1.75    the page title              FI Calc `.results_headerH1`
- *   1.5     that title on a narrow screen, and the next-step chevron
+ *   1.5     that title on a narrow screen
  *   1.35    a step heading, and the close's                `.results_h2`
  *   1.25    a closing figure, a panel title          `.configuration_title`
  *   1.125   an explainer heading, a slider readout      `.modalForm_h2`
@@ -213,16 +213,16 @@ body {
  * without scrolling a screen and a half back and losing their place. The
  * inputs are now beside the chart at every point in the walk.
  *
- * Step 1 keeps its number, its heading and its next-step box. It is still the
- * first step of four and the nav still points at it; what changed is where it
- * stands, not what it is. On a narrow window the grid collapses to one column
- * and the page is exactly the walk it was, in the same order.
+ * Step 1 keeps its number and its heading. It is still the first step; what
+ * changed is where it stands, not what it is. On a narrow window the grid
+ * collapses to one column and the page is exactly the walk it was, in the
+ * same order.
  *
- * The sliders in steps 2, 3 and 4 stay where they are on purpose. They are not
- * only inputs — each one is the cursor on the chart directly above it, and the
+ * The slider in step 2 stays where it is on purpose. It is not
+ * only an input — it is the cursor on the chart directly above it, and the
  * shape every step has kept since the flow replaced the tab strip is chart,
- * then the one control that moves you along it. Moving them here would take
- * the cursor away from the plot it marks.
+ * then the one control that moves you along it. Moving it here would take the
+ * cursor away from the plot it marks.
  */
 .shell {
   display: grid;
@@ -239,8 +239,8 @@ body {
    the column from carrying on into the page behind it.
    
    An outline is painted outside the border box and is not clipped by the
-   element's own overflow, so the focus ring this section gets when the nav
-   lands on it survives the scroll container. */
+   element's own overflow, so the focus ring this section gets when a
+   `#step-benefit` link lands on it survives the scroll container. */
 .step-config {
   position: sticky;
   top: 0;
@@ -249,14 +249,6 @@ body {
   overscroll-behavior: contain;
   padding: 1rem 0.75rem 1.5rem 0;
   margin-top: 0;
-}
-
-/* The box that hands the reader to step 2 is the end of a section when the
-   flow is one column and a footer to the configuration when it is two, so it
-   is sized as the smaller thing here. */
-.step-config .next-step {
-  margin-top: 1.5rem;
-  padding: 0.875rem 1rem;
 }
 
 .flow {
@@ -1147,98 +1139,23 @@ footer p {
   accent-color: var(--lime-deep) !important;
 }
 
-/* ───── Tab strip ─────
-   The tab list scrolls rather than wraps on a narrow viewport, so the strip
-   stays one row and the panel below it never jumps as the selection moves. */
 /* ───── The step flow ────────────────────────────────────────────────────────
  *
- * Three sections, all mounted, read top to bottom. The nav scrolls to them and
- * marks the one the reader last asked for; the next-step box at the foot of
- * each section is the way through for anyone who never looks at the nav. The
- * tab strip this replaced styled the nav and the panel as one object — a strip
- * with a rule under it that the panel hung from — which is why the rule now
- * belongs to each step instead.
+ * Two sections, both mounted, read top to bottom, and nothing between them but
+ * a rule. A sticky nav marking the section last asked for and a box at the
+ * foot of each one handing the reader to the next both stood here while the
+ * page had four sections and a tab strip before that; two steps on one scroll
+ * need neither. What the tab strip left behind is the rule — it styled the
+ * strip and the panel as one object, a strip with a line under it that the
+ * panel hung from, which is why the line belongs to each step instead.
  */
-/* A header rather than a strip at the top of a page: it sits at the head of
-   the reading column and stays there, which is the other half of what the two
-   columns are for — the configuration is always in reach on the left, and
-   where you are in the walk is always legible on the right. Opaque because
-   steps scroll underneath it, and it only sticks in the two-column layout:
-   four items wrap to two rows on a phone, and two rows of pinned nav is more
-   of a small window than they are worth. */
-.step-nav {
-  position: sticky;
-  top: 0;
-  z-index: 20;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.25rem;
-  margin-top: 0;
-  padding-top: 0.75rem;
-  padding-bottom: 0.25rem;
-  background: var(--surface);
-  border-bottom: 1px solid var(--edge);
-}
-
-/* Tightened to fit the reading column in one row. It sat at .9375rem in 1rem
-   of padding, which fitted the 900px the whole page used to run at and wraps
-   to two rows in the 44rem the column runs at now — and a header that is two
-   rows on a wide window and one on a narrow one is a header whose height
-   nothing below it can be positioned against. */
-.step-nav-item {
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4375rem;
-  appearance: none;
-  background: transparent;
-  border: none;
-  border-bottom: 2px solid transparent;
-  border-radius: var(--radius-md) var(--radius-md) 0 0;
-  padding: 0.5rem 0.6875rem;
-  margin-bottom: -0.375rem;
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: var(--ink-muted);
-  cursor: pointer;
-  white-space: nowrap;
-  transition: color 0.2s ease, background 0.2s ease, border-color 0.2s ease;
-}
-
-/* Numbered because the order is the point: these are steps, not subjects. */
-.step-nav-number {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.25rem;
-  height: 1.25rem;
-  border-radius: 50%;
-  border: 1px solid currentColor;
-  font-size: 0.75rem;
-  font-variant-numeric: tabular-nums;
-}
-
-.step-nav-item:hover {
-  color: var(--ink);
-  background: var(--surface-hover);
-}
-
-.step-nav-current,
-.step-nav-current:hover {
-  color: var(--accent);
-  border-bottom-color: var(--accent);
-  background: rgba(var(--accent-rgb), 0.1);
-}
-
-.step-nav-item:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
-}
-
 .step {
   margin-top: 2rem;
-  /* Clears the sticky nav, or arriving at a step puts its heading behind it. */
-  scroll-margin-top: 4.25rem;
+  /* A step is still a scroll target — `#step-torpedo` is in the address bar
+     and in every link this page copies — so it keeps a margin off the top of
+     the window. Nothing sticks above it now, so this is breathing room rather
+     than the clearance a header used to need. */
+  scroll-margin-top: 1rem;
 }
 
 /* The heaviest rule on the page, and the only one drawn in the stronger edge.
@@ -1308,92 +1225,17 @@ footer p {
   font-weight: 600;
 }
 
-/* The one control that carries a reader forward without the nav, so it is
-   sized as the end of a step rather than as a widget inside one.
- *
- * A hairline on a raised surface, which is the register every other box on
- * this page came down to in the ground pass. It was an accent wash inside an
- * accent border at 25% alpha — a tint, which is the old card's idiom and the
- * one thing the flat near-black ground has no other example of. What carries
- * the accent instead is the kicker and the arrow, which is where FI Calc
- * spends it: on the words that say what the box is for, not on the box.
- */
-.next-step {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  grid-template-areas:
-    'kicker arrow'
-    'title arrow'
-    'blurb arrow';
-  align-items: center;
-  gap: 0.25rem 1rem;
-  width: 100%;
-  margin-top: 2.5rem;
-  padding: 1.25rem 1.5rem;
-  text-align: left;
-  font: inherit;
-  background: var(--surface-raised);
-  border: 1px solid var(--edge);
-  border-radius: var(--radius-lg);
-  cursor: pointer;
-  transition: background 0.2s ease, border-color 0.2s ease;
-}
-
-.next-step:hover {
-  background: var(--surface-hover);
-  border-color: var(--edge-strong);
-}
-
-.next-step:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-.next-step-kicker {
-  grid-area: kicker;
-  font-size: 0.75rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--accent);
-}
-
-.next-step-title {
-  grid-area: title;
-  font-size: 1.125rem;
-  font-weight: 700;
-  color: var(--ink-bright);
-}
-
-.next-step-blurb {
-  grid-area: blurb;
-  font-size: 0.9375rem;
-  color: var(--ink-muted);
-}
-
-.next-step-arrow {
-  grid-area: arrow;
-  font-size: 1.5rem;
-  line-height: 1;
-  color: var(--accent);
-  transition: transform 0.2s ease;
-}
-
-.next-step:hover .next-step-arrow {
-  transform: translateX(0.25rem);
-}
-
 /* ───── The close ───────────────────────────────────────────────────────────
  *
  * The mirror of `.scenario-recap`, which is a quiet rule in the margin
  * because it summarises inputs already on screen. This one is a card, because
- * it is the page's answer and the thing a reader would screenshot — and it
- * takes `.next-step`'s treatment exactly, since that is the shape the flow has
- * taught for "this is the end of a section, and here is where it goes". Which
- * now means a hairline on a raised surface rather than a wash of the accent:
- * the two came off the tint together, because the whole reason the close
- * takes the next-step box's treatment is that they are the same object at
- * different scales.
+ * it is the page's answer and the thing a reader would screenshot: a hairline
+ * on a raised surface, which is what every box on this page came down to in
+ * the ground pass. It was an accent wash inside an accent border at 25% alpha
+ * — a tint, the old card's idiom and the one thing the flat near-black ground
+ * has no other example of. What carries the accent instead is the kicker,
+ * which is where FI Calc spends it: on the words that say what the box is
+ * for, not on the box.
  */
 .answer {
   margin-top: 2.5rem;
@@ -1708,21 +1550,6 @@ footer p {
     overflow: visible;
     padding: 0;
   }
-
-  .step-config .next-step {
-    margin-top: 2.5rem;
-    padding: 1.25rem 1.5rem;
-  }
-
-  .step-nav {
-    position: static;
-    margin-top: 2rem;
-    padding-top: 0;
-  }
-
-  .step {
-    scroll-margin-top: 1rem;
-  }
 }
 
 /* ───── Print ───────────────────────────────────────────────────────────────
@@ -1916,8 +1743,6 @@ footer p {
      Controls that only do something when clicked, and the disclosure
      chevrons that promise something will open. */
 
-  .step-nav,
-  .next-step,
   .answer-share-button,
   .link-note button,
   .chart-lines,

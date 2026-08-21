@@ -1,5 +1,5 @@
 Backlog 6 (21 Aug 2026)
-[ ] remove "next - step 2 of 2" link. remove tab links for your benefit and tax torpedo since there's only 1 thing now. 
+[x] remove "next - step 2 of 2" link. remove tab links for your benefit and tax torpedo since there's only 1 thing now. 
 [ ] filing status should have single and MFJ as the first 2 options. then a dropdown menu reveals head of household and filing separately. 
 [ ] remove "You are here label" on graph. x-label should say total income ($) including $z social security.
 [ ] remove these sentences:  where the dashed amber line crosses the curve above — that point on the curve, not the curve itself, is what the slider moves. That is the average across every dollar of it; the figure before it is the price of the next one.

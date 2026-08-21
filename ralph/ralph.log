@@ -4463,3 +4463,69 @@ allowed one (`− {qcd}`, not `− {given}`). That is the next bullet in Discove
 Work, it is a prose defect rather than an arithmetic one, and every *number* on
 the page now comes from `totalIncomeFor`, which caps correctly. Struck nothing
 that was not mine to strike.
+
+## 2026-08-21 — Task: Research and create more action items
+
+Topmost unchecked bullet, and the only one in Backlog 3 left standing. Backlog 4
+is eight items above it. HEAD was clean and green before and after — this
+iteration touched `ralph/PLAN.md` only.
+
+### What the survey found
+
+Verified at HEAD: `npx tsc -b`, `npx eslint src --max-warnings 0`,
+`npx vitest run` (9 files, 592 tests, 10.25s — no flake this run), `npm run build`.
+
+The one substantive gap in the tax model is **IRC 1411**. `grep -ni
+'niit\|1411\|3\.8'` over `tax.ts` and `App.tsx` returns nothing, so the net
+investment income tax is absent from `totalTax`, from both rate curves and from
+the closing "Federal income tax" figure. It earns the top of the backlog on
+theme, not just on completeness: an IRA distribution is not net investment
+income, but it raises MAGI, so it drags 3.8% more of an already-realized gain
+into the surtax — a third stacking effect on the axis step 2 already draws. And
+its thresholds ($200k/$250k/$125k) have been frozen since 2013, which is the
+same sentence this page already makes about the 1983 and 1993 bases.
+
+Worth knowing before that bullet is picked: a single filer's $200,000 threshold
+is past `MIN_INCOME_AXIS` ($150,000, tax.ts:1048), so on today's default chart
+the surtax would begin off the right edge. It has to become an
+`incomeAxisFeatures` entry or it draws nowhere.
+
+The other seven are the seams the last five iterations opened and did not close:
+
+- The query-string feature (d5bcf75) shipped without ever telling a reader the
+  link is the return — the page mentions the address bar only when a link
+  *fails* (`link-note`, App.tsx:1464).
+- The close is written to be screenshotted and cannot be printed: `color-scheme:
+  dark` at index.css:12 over a gradient body, every explainer a collapsed
+  `<details>`. Checked before writing the bullet: print CSS cannot open a
+  `<details>` in Chrome, so that half needs a `beforeprint` listener, not a
+  media query.
+- `aria-live` appears nowhere in App.tsx; the single `role="status"` is the link
+  warning. The figcaptions from 8b6c60e made the charts readable but static.
+- The close says "no state" (App.tsx:2974) while step 1 asks for one and step 2
+  answers it in a footnote 900 lines up (App.tsx:2059).
+- `index.html` has no `og:*`/`twitter:*` at all, and the favicon is still
+  `/vite.svg`.
+- The build reports 601.87 kB / 180.06 kB gzipped in one chunk and trips Vite's
+  500 kB warning every time.
+- `vitest run` opens with an esbuild-vs-oxc warning on every run and so on every
+  CI test step.
+
+### Checked and deliberately not logged
+
+- The nav is *not* `position: sticky` (no such rule in index.css), so the print
+  bullet does not claim it is — the open sticky-nav question in Discovered Work
+  is about whether it should become one.
+- `agiFor`/`irmaaMagi`/`totalIncomeFor`/`includedUnder86a` all read correctly on
+  muni interest: absent from AGI, added back for IRMAA, in provisional income,
+  spent by the filer. Nothing to log.
+- Vite's base rewriting handles `/vite.svg` → `/congenial-octo-spork/vite.svg`
+  in `dist/index.html`, so the favicon is a taste bullet, not a 404.
+- Qualified dividends are already inside the `ltcg` field by documented intent
+  (tax.ts:31), not a gap.
+
+### The 2027 question
+
+Left to the existing bullet rather than duplicated. Rev. Proc. figures for 2027
+are not published in August, so `TAX_YEARS` stays at [2025, 2026] and the
+existing state-figures bullet already carries the re-check.

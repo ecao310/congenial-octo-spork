@@ -6729,3 +6729,114 @@ Deleted the previous run's untracked `drive.mjs` from the root. It was scratch
 — a hardcoded port and a screenshot to `/tmp` — and two runs in a row have now
 opened, diagnosed it, and left it. The pattern is documented in the paragraph
 above, which is cheaper to keep than the file.
+
+---
+
+## Cut the bundle where it is reused, not where it is scrolled past
+
+**Task:** "Every build trips Vite's chunk warning" (Backlog 4).
+
+The bullet framed it as a choice between a dynamic `import()` of the chart
+subtree and raising `chunkSizeWarningLimit` with an apology. Took neither.
+Vite's warning lists three remedies and the middle one — `manualChunks` — is
+the right one here, so the build now emits three static chunks instead of one.
+
+### Why not the dynamic import
+
+Two of the bullet's premises had gone stale under Backlog 5. There are no
+longer "four charts"; there is one, because the capital-gains and
+Roth-conversion steps came off the page. And it is not below the fold: with
+step 1's inputs now a persistent left column, the chart is the *top* of the
+main column — measured at y=578 in a 1000px viewport, so it is on screen on
+arrival.
+
+The decisive fact is the waterfall. A chunk behind `import()` cannot be
+requested until React has mounted the component that asks for it, so deferring
+would buy a faster first paint of an empty box and pay for it by putting a
+round trip in front of the one thing the reader came for. A *static* split
+does not have that problem — Vite writes a `modulepreload` for each vendor
+chunk into `index.html`, so all three still arrive in parallel off one HTML
+parse. Confirmed in the built `dist/index.html` and in the browser: three JS
+requests, all 200.
+
+And the cost of deferring would have been real: recharts is imported at the
+top of `App.tsx` and used by `hereLine`, `AXIS_PROPS` and the tooltip, so
+lazy-loading means extracting a chart subtree out of a 2,745-line file and then
+teaching every `render(<App />)` in ~3,400 lines of test to await a Suspense
+boundary.
+
+### What the split is actually for
+
+What is wrong with one 576 kB chunk is its granularity, not its size. This
+repo ships app-code changes daily and nothing else, and every one of those
+deploys was invalidating recharts and React along with it.
+
+Measured the per-package weights first with a throwaway config that gave every
+`node_modules` package its own chunk. app 66 kB · react-dom 130 · react +
+scheduler 12 · recharts 244 · everything under recharts (redux-toolkit, immer,
+es-toolkit, decimal.js-light, victory-vendor and eight d3-\*) 125. That is the
+whole 576.
+
+Result — 65.56 / 142.20 / 367.69 kB (21.27 / 45.55 / 107.39 gzipped). Total is
+575.45 against 576.00, so the split costs 0.3 kB gzipped and nothing else. No
+warning, because all three are genuinely under 500 kB rather than under a limit
+that was moved.
+
+### The rule, and the invariant under it
+
+    if (!id.includes('node_modules')) return undefined
+    return /node_modules\/(react|react-dom|react-is|scheduler)\//.test(id)
+      ? 'react' : 'charts'
+
+"Everything in node_modules that is not React is the chart library" is only
+true while recharts is the sole other runtime dependency. That is an
+invariant, not an observation, so `src/build.test.ts` asserts
+`Object.keys(pkg.dependencies)` is exactly `react, react-dom, recharts`. Add a
+fourth and the test fails, which is the moment to decide whether a chunk called
+`charts` still describes its contents.
+
+### Verified
+
+- `tsc -b`, `eslint . --max-warnings 0`, `vite build` (no warning),
+  `vitest run`: 13 files, **670 tests** (665 + 5).
+- **Mutation-checked all four load-bearing assertions**, restoring between
+  each: delete the `build` block so the rule is defined but unwired → 1 fail;
+  widen the regex to `react[a-z-]*` so it swallows `react-redux` → 1 fail; drop
+  the `node_modules` guard so app source gets chunked → 1 fail; add a fourth
+  entry to `dependencies` → 1 fail; restored → 5 pass.
+- Real Chromium against `vite preview` on the built `dist`: zero page errors,
+  zero console errors, zero 4xx; all three chunks 200; 10 axis ticks and 1 area
+  curve drawn; dragging `#ordinary-income` to $60,000 moved the "you are here"
+  label with it. Cross-chunk init order was the one real risk of `manualChunks`
+  and this is what rules it out.
+
+### Two things that had to move
+
+`src/setupTests.ts` now guards its `window.history.replaceState` with a
+`typeof window !== 'undefined'`. Importing `vite.config.ts` into a test drags
+in `@vitejs/plugin-react` and therefore esbuild, which dies under jsdom
+("`new TextEncoder().encode("") instanceof Uint8Array` is incorrectly false" —
+jsdom's `TextEncoder` is not Node's). So `build.test.ts` carries
+`// @vitest-environment node`, and the shared setup file had to stop assuming a
+DOM. First non-jsdom test file in the repo.
+
+`vite.config.ts` now has a named `export function manualChunks`. That is what
+lets the test call the rule with fabricated module ids instead of asserting on
+the config file's text. `tsconfig.app.json` includes only `src`, and importing
+`../vite.config` across that boundary turned out to be fine — `tsc -b` passes.
+
+### Note for the next run
+
+The standing browser note in the previous entry has the *shape* right and the
+*paths* wrong, so replacing it: on this machine the cache holds
+`chromium-1228` and `chromium_headless_shell-1228`, and the binaries are at
+`chrome-headless-shell-mac-arm64/chrome-headless-shell` and
+`chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome
+for Testing` — neither of which is the `chrome-mac/Chromium.app/...` the old
+note said to look for. Don't hardcode the layout: read the cache dir, sort
+builds by number descending, then for each platform subdirectory try a list of
+known binary relative paths and take the first that `existsSync`. That version
+is in the log because it survives both a playwright bump and an arch change.
+Otherwise unchanged: `pkill -f "vite preview"` first, serve under
+`/congenial-octo-spork/`, write the driver to `/tmp` then `cp` it into the root
+for the bare `playwright-core` import and `rm` it in the same command line.

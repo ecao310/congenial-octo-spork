@@ -763,3 +763,23 @@ footer p {
 .stat-value.lime {
   color: #a3e635;
 }
+
+/* Fuchsia accent for the retroactive-award / lump-sum-election section */
+.section-heading-fuchsia {
+  background: linear-gradient(to right, #c026d3, #e879f9);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.slider-value.fuchsia {
+  color: #e879f9;
+}
+
+.slider-fuchsia {
+  accent-color: #c026d3 !important;
+}
+
+.stat-value.fuchsia {
+  color: #e879f9;
+}

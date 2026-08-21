@@ -1967,3 +1967,71 @@ from 342.
 
 npx tsc -b, npm run lint, npx vitest run (365 passed), npm run build — all
 clean; only the pre-existing >500kB chunk warning.
+
+## Lump-sum election for retroactive SS awards (IRC 86(e))
+
+Picked up an iteration that had already written the feature and then stopped
+before running anything. ~2,000 uncommitted lines across a new `lumpSum.ts`,
+its tests, a UI section and a 26-line change to `tax.ts`. Nothing had been
+typechecked, linted, built or run. This iteration finished it: four defects,
+three of them real.
+
+### What the previous iteration got right, and it is the load-bearing part
+
+`taxableSSCap` on `Scenario`, applied as a `Math.min` at the end of
+`taxableSocialSecurity`. 86(e)(1) caps *gross income*, not tax — so the earlier
+years contribute an inclusion and the year of receipt taxes it at its own
+rates. Because the cap lands inside the one function everything else reads
+through, AGI, the senior deduction's 6% phaseout, the gain stacking and
+Medicare's MAGI two years out all follow it without knowing it exists. No
+call site outside `lumpSumElection` sets it and none needed changing.
+
+### Four defects
+
+1. `.at(-1)` in a test against the project's ES2020 `lib` — tsc error. Fixed the
+   one line rather than widening `lib`; it was the only `.at(` in `src/`.
+2. Two DOM assertions written with a curly apostrophe (`year’s`) where App.tsx
+   emits `&apos;`, which renders straight. Repo convention, already visible in
+   the committed tests: curly in `it(...)` names, straight in assertions.
+3. **The knife-edge test asserted a figure the scenario does not produce.** At
+   $60,000 of other income the no-election figure is $57,200, not the $61,200
+   its own comment calls "85% here" — provisional income of $96,000 leaves it a
+   tier-2 slice, $4,000 short of the ceiling. The engine was right. The contrast
+   the test is built on (aggregate at 85%, per-year not) only exists above
+   $64,706 of other income, so the scenario moved to $65,000 rather than the
+   expectation moving to $57,200 — otherwise the test keeps its name and loses
+   its point.
+4. **A statutory claim that contradicted itself two paragraphs later.** The
+   "do not elect" branch said the election "is irrevocable once made"; the field
+   note below said 86(e)(2)(B) makes it "revocable only with the consent of the
+   Secretary". Both were asserted by tests, so the suite was pinning a
+   contradiction. Checked the statute rather than picking the nicer sentence:
+   26 U.S.C. 86(e)(2)(B) reads "Such election, once made, may be revoked only
+   with the consent of the Secretary." The field note was right; the branch is
+   now derived from the same wording.
+
+### The thing worth knowing about this feature
+
+The election runs entirely on frozen numbers. 86(c) has never been indexed, so a
+2019 back-pay year is figured against the same $25,000 and $34,000 as a 2025
+one — which is why the worksheet can reach back into years the app has no
+brackets, no standard deduction and no benefit figures for. It needs none of
+them: no rate schedule is ever consulted for a prior year, because 86(e)(1) caps
+an amount of income and not an amount of tax. That is also why the section is
+the only one on the page immune to the year selector.
+
+Consequence for the default scenario: 24 months of back pay at the average
+benefit saves $13,299 of taxable benefit and $1,595 of federal tax, because two
+waiting years hand back two unused sets of thresholds while the no-election
+figure is already deep in the 85% tier. Past the point where every waiting year
+is *itself* in the 85% tier the two lines climb in parallel — the election locks
+in what it saved rather than saving more, which is the shape the chart shows.
+
+`capBindsEveryYear` deserves its name: it is a claim about each year's own
+benefit, and reading it off the aggregate would be wrong in both directions.
+Defect 3 was exactly that mistake made by the test author.
+
+### Verification
+
+npx tsc -b, npm run lint, npx vitest run (417 passed, up from 365),
+npm run build — all clean; only the pre-existing >500kB chunk warning.

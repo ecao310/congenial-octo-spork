@@ -1,6 +1,12 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import { vi } from 'vitest';
-import App, { CustomTooltip, LTCGTooltip, SequencingTooltip } from './App';
+import App, {
+  BackPayTooltip,
+  CustomTooltip,
+  LTCGTooltip,
+  SequencingTooltip,
+} from './App';
+import type { BackPayCurvePoint } from './utils/lumpSum';
 import { TAX_YEAR_PARAMS, TAX_YEARS, defaultTaxYear } from './utils/tax';
 import type { TaxYear } from './utils/tax';
 import { compareSequencing } from './utils/sequencing';
@@ -27,6 +33,19 @@ afterEach(() => {
 });
 
 describe('App', () => {
+  /**
+   * The benefit slider's own input group.
+   *
+   * The retroactive-award section quotes the same benefit figure in its
+   * worksheet rows — a 12-month back-pay year is one annual benefit — so an
+   * unscoped `getByText` on the benefit now matches four elements. Asserting
+   * inside the slider's group says what these tests actually mean.
+   */
+  const benefitGroup = (): HTMLElement =>
+    screen
+      .getByRole('slider', { name: /social security benefit/i })
+      .closest('.input-group') as HTMLElement;
+
   /** The tax-exempt interest section, so figures can be asserted in context. */
   const muniSection = (): HTMLElement | null =>
     screen
@@ -42,7 +61,7 @@ describe('App', () => {
     render(<App />);
     const slider = screen.getByRole('slider', { name: /social security benefit/i });
     expect(slider).toHaveValue(String(AVG_ANNUAL_SS_BENEFIT));
-    expect(screen.getByText('$23,712')).toBeInTheDocument();
+    expect(within(benefitGroup()).getByText('$23,712')).toBeInTheDocument();
   });
 
   it('spans $0 to the 2025 maximum yearly benefit and shows avg/max labels', () => {
@@ -63,7 +82,7 @@ describe('App', () => {
     ).toBeInTheDocument();
     fireEvent.change(slider, { target: { value: '36000' } });
     expect(slider).toHaveValue('36000');
-    expect(screen.getByText('$36,000')).toBeInTheDocument();
+    expect(within(benefitGroup()).getByText('$36,000')).toBeInTheDocument();
     expect(
       screen.getByText(/total income = other income \+ \$36,000 ss/i),
     ).toBeInTheDocument();
@@ -134,18 +153,30 @@ describe('App', () => {
 
   /* ───── Married filing separately (lived with spouse) ───── */
 
+  /**
+   * The note the filing-status fieldset is currently showing, or null.
+   *
+   * Scoped to the fieldset rather than the page: `role="note"` is no longer
+   * unique now that the retroactive-award section carries a standing one, and
+   * these tests were only ever asking what the status picker had to say.
+   */
+  const filingStatusNote = (): HTMLElement | null =>
+    within(
+      screen.getByRole('group', { name: /filing status/i }),
+    ).queryByRole('note');
+
   /** Selects the separate-return status and returns its warning banner. */
   const selectMfs = (): HTMLElement => {
     fireEvent.click(
       screen.getByRole('radio', { name: 'Married Filing Separately' }),
     );
-    return screen.getByRole('note');
+    return filingStatusNote() as HTMLElement;
   };
 
   it('warns loudly when Married Filing Separately is selected', () => {
     render(<App />);
     // Nothing shouts until the status is picked.
-    expect(screen.queryByRole('note')).not.toBeInTheDocument();
+    expect(filingStatusNote()).not.toBeInTheDocument();
 
     const warning = selectMfs();
     expect(
@@ -171,16 +202,16 @@ describe('App', () => {
       target: { value: '40000' },
     });
     // 42.5% of $40,000, capped at half of it.
-    expect(screen.getByRole('note')).toHaveTextContent('$17,000');
-    expect(screen.getByRole('note')).toHaveTextContent('$20,000');
+    expect(filingStatusNote()).toHaveTextContent('$17,000');
+    expect(filingStatusNote()).toHaveTextContent('$20,000');
 
     // Tax-exempt interest is in provisional income, so it brings the cap
     // forward dollar for dollar and pulls more benefits in at zero income.
     fireEvent.change(screen.getByRole('slider', { name: /tax-exempt/i }), {
       target: { value: '5000' },
     });
-    expect(screen.getByRole('note')).toHaveTextContent('$15,000');
-    expect(screen.getByRole('note')).toHaveTextContent('$21,250');
+    expect(filingStatusNote()).toHaveTextContent('$15,000');
+    expect(filingStatusNote()).toHaveTextContent('$21,250');
   });
 
   it('tells the torpedo explainer there are no thresholds to pass', () => {
@@ -1807,5 +1838,296 @@ describe('separate-return divergence figure', () => {
     );
     fireEvent.click(screen.getByRole('radio', { name: '2026' }));
     expect(fieldset).toHaveTextContent(/identical up to \$384,350 of taxable income/);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/*  Retroactive awards and the lump-sum election                      */
+/* ------------------------------------------------------------------ */
+
+describe('retroactive awards and the lump-sum election', () => {
+  /** The section, so a figure quoted elsewhere on the page cannot satisfy it. */
+  const section = (): HTMLElement =>
+    screen
+      .getByRole('heading', { name: /when years of benefit arrive in one cheque/i })
+      .closest('section')!;
+
+  const setSlider = (name: RegExp, value: string): void => {
+    fireEvent.change(screen.getByRole('slider', { name }), { target: { value } });
+  };
+
+  /** The worksheet table's rows, as `[year, months, benefit, taxable, share]`. */
+  const worksheetRows = (): string[][] =>
+    Array.from(section().querySelectorAll('tbody tr')).map((row) =>
+      Array.from(row.querySelectorAll('th, td')).map((cell) => cell.textContent!),
+    );
+
+  it('opens on two years of back pay at the benefit slider’s monthly rate', () => {
+    render(<App />);
+    expect(screen.getByRole('slider', { name: /months of back pay/i })).toHaveValue(
+      '24',
+    );
+    // $23,712 a year is $1,976 a month, and 24 of those is $47,424.
+    expect(section()).toHaveTextContent('24 months · $47,424');
+    expect(section()).toHaveTextContent('$1,976 a month');
+    expect(section()).toHaveTextContent('24 months across 2 earlier years, 2023–2024');
+  });
+
+  it('runs from no back pay to five years of it', () => {
+    render(<App />);
+    const slider = screen.getByRole('slider', { name: /months of back pay/i });
+    expect(slider).toHaveAttribute('min', '0');
+    expect(slider).toHaveAttribute('max', '60');
+    setSlider(/months of back pay/i, '60');
+    expect(section()).toHaveTextContent('60 months · $118,560');
+    expect(section()).toHaveTextContent('60 months across 5 earlier years, 2020–2024');
+  });
+
+  it('prices the election against taxing the whole award in one year', () => {
+    render(<App />);
+    // Default scenario: $30,000 of other income, the average benefit, and two
+    // years of back pay. Taxed all at once, provisional income is $53,712 and
+    // the 85% tier takes $31,333; refigured, each waiting year sits in the 50%
+    // tier on $20,000 of income and contributes $3,428.
+    expect(section()).toHaveTextContent('$18,034 taxable, down from $31,333');
+    expect(section()).toHaveTextContent('$3,636 total, down from $5,231');
+    expect(section()).toHaveTextContent(
+      /keeps \$13,299 out of the tax base, 28\.04% of the award itself/,
+    );
+    expect(section()).toHaveTextContent(
+      /\$1,595 of federal tax on a cheque that has already been cashed/,
+    );
+  });
+
+  it('shows each waiting year its own row, and this year’s beside them', () => {
+    render(<App />);
+    expect(worksheetRows()).toEqual([
+      ['2023', '12', '$23,712', '$3,428', '14.46%'],
+      ['2024', '12', '$23,712', '$3,428', '14.46%'],
+      ['2025 (this year)', '12', '$23,712', '$11,178', '47.14%'],
+    ]);
+    // The caption is where the frozen thresholds get named as the reason.
+    expect(section()).toHaveTextContent(
+      /Every row is figured on the same \$25,000 and \$34,000 thresholds, because they have not been touched since 1993/,
+    );
+  });
+
+  it('re-dates the waiting years and the premium year with the tax year', () => {
+    render(<App />);
+    expect(section()).toHaveTextContent("set by this year's MAGI for 2027");
+    fireEvent.click(screen.getByRole('radio', { name: '2026' }));
+    expect(section()).toHaveTextContent('24 months across 2 earlier years, 2024–2025');
+    expect(section()).toHaveTextContent("set by this year's MAGI for 2028");
+    const rows = worksheetRows();
+    expect(rows[rows.length - 1][0]).toBe('2026 (this year)');
+  });
+
+  it('drops the worksheet and says so when there is no back pay', () => {
+    render(<App />);
+    setSlider(/months of back pay/i, '0');
+    expect(section().querySelector('table')).toBeNull();
+    expect(section()).toHaveTextContent(
+      /There is no back pay on this scenario, so there is nothing to elect/,
+    );
+    expect(section()).toHaveTextContent('no back pay on this scenario');
+  });
+
+  it('names the Form 1040 checkbox rather than sending you looking for a form', () => {
+    render(<App />);
+    expect(section()).toHaveTextContent(
+      /There is no form: you check box 6c on the 1040 and keep the worksheets/,
+    );
+  });
+
+  it('tells you not to elect when the waiting years were the richer ones', () => {
+    render(<App />);
+    // Nothing now, $80,000 through each waiting year: this year has a whole
+    // unused base and the waiting years have none, so the election is backwards.
+    setSlider(/other ordinary income/i, '0');
+    setSlider(/other income during each waiting year/i, '80000');
+    setSlider(/months of back pay/i, '12');
+    expect(section()).toHaveTextContent(/Do not make this election\./);
+    expect(section()).toHaveTextContent(
+      /would report \$20,155 of taxable benefit where taxing the whole thing in 2025 reports \$0 — none of it is taxable this year at all/,
+    );
+    // 86(e)(2)(B): revocable only with the Secretary's consent — not, as an
+    // earlier draft of this sentence had it, irrevocable.
+    expect(section()).toHaveTextContent(
+      /86\(e\)\(2\)\(B\) lets you take it back only with the consent of the Secretary/,
+    );
+    // 86(e) is a ceiling, so declining to elect costs nothing.
+    expect(section()).toHaveTextContent('Federal tax saved$0');
+  });
+
+  it('separates the benefit it removes from the tax it saves', () => {
+    render(<App />);
+    // No income anywhere: the election takes $5,833 out of the base and the
+    // standard deduction had already covered it, so the bill does not move.
+    setSlider(/other ordinary income/i, '0');
+    setSlider(/other income during each waiting year/i, '0');
+    expect(section()).toHaveTextContent(
+      /takes \$5,833 of benefit out of 2025's tax base and it changes the bill by nothing/,
+    );
+    expect(section()).toHaveTextContent(
+      /The \$15,750 of deductions covered the whole \$5,833 of AGI either way/,
+    );
+  });
+
+  it('counts the Medicare cliff the award would have crossed', () => {
+    render(<App />);
+    setSlider(/other ordinary income/i, '150000');
+    setSlider(/months of back pay/i, '48');
+    expect(section()).toHaveTextContent('tier 3, down from tier 4');
+    expect(section()).toHaveTextContent(
+      /plus \$1,591\.20 of Medicare surcharge in 2027/,
+    );
+    // Four waiting years of unused thresholds against one year that has none.
+    expect(section()).toHaveTextContent(/70\.54% of the award itself/);
+  });
+
+  it('blames the 85% cap when every year involved is actually at it', () => {
+    render(<App />);
+    setSlider(/other ordinary income/i, '150000');
+    setSlider(/other income during each waiting year/i, '150000');
+    expect(section()).toHaveTextContent(/The election changes nothing here\./);
+    expect(section()).toHaveTextContent(
+      /is already past the \$34,000 adjusted base by more than its own benefit, so the 85% cap binds in all of them/,
+    );
+  });
+
+  it('does not blame the 85% cap for a knife edge in the 50% tier', () => {
+    render(<App />);
+    // $15,000 now and exactly the $25,000 base through the waiting year make
+    // the two treatments agree to the dollar with nothing anywhere near 85%:
+    // this year alone includes $928, the waiting year adds $1,482, and taxing
+    // all $29,640 of benefit in 2025 comes to the same $2,410.
+    setSlider(/other ordinary income/i, '15000');
+    setSlider(/other income during each waiting year/i, '25000');
+    setSlider(/months of back pay/i, '3');
+    expect(section()).toHaveTextContent(/The election changes nothing here\./);
+    expect(section()).toHaveTextContent(
+      /No year here is at the 85% cap, so this is a coincidence rather than a ceiling/,
+    );
+    expect(section()).not.toHaveTextContent(/85% cap binds/);
+    expect(worksheetRows()).toEqual([
+      ['2024', '3', '$5,928', '$1,482', '25%'],
+      ['2025 (this year)', '12', '$23,712', '$928', '3.91%'],
+    ]);
+  });
+
+  it('says nothing is taxable rather than blaming a cap when nothing is', () => {
+    render(<App />);
+    setSlider(/annual social security benefit/i, '6000');
+    setSlider(/other ordinary income/i, '0');
+    setSlider(/other income during each waiting year/i, '0');
+    expect(section()).toHaveTextContent(
+      /provisional income stays under \$25,000 whether the award is counted in one year or spread over 3/,
+    );
+    expect(section()).not.toHaveTextContent(/85% cap/);
+  });
+
+  it('says a separate return has no unused base to go and find', () => {
+    render(<App />);
+    fireEvent.click(
+      screen.getByRole('radio', { name: 'Married Filing Separately' }),
+    );
+    // The intro drops its $34,000 sentence, because there is no adjusted base.
+    expect(section()).toHaveTextContent(
+      /on this separate return is already the worst case, since both bases are \$0/,
+    );
+    expect(section()).toHaveTextContent(
+      /Every row is figured on the same \$0 thresholds, so every row is 85%/,
+    );
+    expect(worksheetRows()).toEqual([
+      ['2023', '12', '$23,712', '$20,155', '85%'],
+      ['2024', '12', '$23,712', '$20,155', '85%'],
+      ['2025 (this year)', '12', '$23,712', '$20,155', '85%'],
+    ]);
+
+    // At $36,000 the year of receipt is capped too, so the two treatments meet
+    // and the reason is the filing status rather than an accident.
+    setSlider(/other ordinary income/i, '36000');
+    expect(section()).toHaveTextContent(
+      /Both bases are \$0 on a separate return that lived with the spouse/,
+    );
+    expect(section()).toHaveTextContent(/There is no unused threshold anywhere/);
+  });
+
+  it('keeps the standing caveats about the earlier years’ returns', () => {
+    render(<App />);
+    expect(section()).toHaveTextContent(
+      /You need the earlier years' returns to do this\./,
+    );
+    expect(section()).toHaveTextContent(
+      /86\(e\)\(2\)\(B\) makes the election revocable only with the consent of the Secretary/,
+    );
+    expect(section()).toHaveTextContent(
+      /would need Pub 915's Worksheet 3 rather than Worksheet 2, since the 85% tier did not exist until 1994/,
+    );
+    expect(section()).toHaveTextContent(
+      /Nothing here feeds the charts above or the projections below/,
+    );
+  });
+});
+
+describe('BackPayTooltip', () => {
+  const point = (over: Partial<BackPayCurvePoint> = {}): BackPayCurvePoint => ({
+    months: 24,
+    lumpSum: 47_424,
+    yearsCovered: 2,
+    taxableWithout: 31_333,
+    taxableWith: 18_034,
+    taxWithout: 5_231,
+    taxWith: 3_636,
+    taxSaved: 1_595,
+    ...over,
+  });
+
+  it('renders nothing when inactive', () => {
+    const { container } = render(<BackPayTooltip awardYear={2025} />);
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it('names the years the award reaches back to, and both treatments', () => {
+    render(
+      <BackPayTooltip active payload={[{ payload: point() }]} awardYear={2025} />,
+    );
+    expect(screen.getByText(/24 months of back pay/)).toHaveTextContent(
+      '24 months of back pay · $47,424 · 2023–2024',
+    );
+    expect(screen.getByText(/All taxed this year:/)).toHaveTextContent(
+      'All taxed this year: $5,231 on $31,333 of benefit',
+    );
+    expect(screen.getByText(/With the election:/)).toHaveTextContent(
+      'With the election: $3,636 on $18,034 of benefit',
+    );
+    expect(screen.getByText('The election saves $1,595 here')).toBeInTheDocument();
+  });
+
+  it('distinguishes no award at all from an award not worth electing on', () => {
+    const { unmount } = render(
+      <BackPayTooltip
+        active
+        payload={[{ payload: point({ months: 0, lumpSum: 0, yearsCovered: 0, taxSaved: 0 }) }]}
+        awardYear={2025}
+      />,
+    );
+    expect(
+      screen.getByText('No back pay, so there is nothing to elect'),
+    ).toBeInTheDocument();
+    // No year range to name when the award reaches back to nothing.
+    expect(screen.getByText(/0 months of back pay/)).not.toHaveTextContent('–');
+    unmount();
+
+    render(
+      <BackPayTooltip
+        active
+        payload={[{ payload: point({ taxSaved: 0 }) }]}
+        awardYear={2025}
+      />,
+    );
+    expect(
+      screen.getByText('The election is worth nothing here — do not make it'),
+    ).toBeInTheDocument();
   });
 });

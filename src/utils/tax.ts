@@ -66,6 +66,22 @@ export interface Scenario {
    * which is exactly what the projection exists to show.
    */
   projected?: ProjectedYear | null;
+  /**
+   * A ceiling on how much benefit 86(a) may include in gross income — the
+   * lump-sum election of IRC 86(e) — or null, which is every ordinary year.
+   *
+   * A cap rather than a substitution because that is what the statute is:
+   * "the amount included in gross income under this section ... shall not
+   * exceed the sum of the increases in gross income ... for prior taxable
+   * years". Electing can therefore never raise the bill, which is why Pub 915
+   * Worksheet 4 ends by telling you to use the smaller of the two figures.
+   *
+   * Set by `lumpSumElection` and by nothing else. Because it lands inside
+   * `taxableSocialSecurity`, everything downstream — AGI, the senior
+   * deduction's phaseout, the gain stacking, Medicare's MAGI two years later —
+   * follows it without knowing it exists.
+   */
+  taxableSSCap?: number | null;
 }
 
 /** One tax year's figures, for a year `TAX_YEAR_PARAMS` does not cover. */
@@ -94,6 +110,7 @@ export function resolveScenario(scenario: Scenario = {}): Required<Scenario> {
     beneficiaries: scenario.beneficiaries ?? 1,
     year: scenario.year ?? defaultTaxYear(),
     projected: scenario.projected ?? null,
+    taxableSSCap: scenario.taxableSSCap ?? null,
   };
 }
 
@@ -742,6 +759,15 @@ export function ordinaryIncomeAfterQcd(scenario: Scenario = {}): number {
  * `muniInterestEffect` for what that costs.
  */
 export function taxableSocialSecurity(scenario: Scenario = {}): number {
+  const included = includedUnder86a(scenario);
+  const { taxableSSCap } = resolveScenario(scenario);
+  // IRC 86(e) caps the inclusion; it never raises it. See `Scenario.taxableSSCap`.
+  return taxableSSCap === null ? included : Math.min(included, taxableSSCap);
+}
+
+/** 86(a) on its own, before the 86(e) ceiling. Split out only so the cap has
+ * one place to apply rather than three early returns to chase. */
+function includedUnder86a(scenario: Scenario = {}): number {
   const { ssBenefit, ltcg, muniInterest, filingStatus } = resolveScenario(scenario);
   // Deliberately not read off the tax year: IRC 86(c) has never been indexed.
   const { ssBase50, ssBase85 } = SS_BASES[filingStatus];

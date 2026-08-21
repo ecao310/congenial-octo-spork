@@ -73,6 +73,13 @@ import type {
   SequencingStrategy,
   SequencingStrategyId,
 } from './utils/sequencing';
+import {
+  LUMP_SUM_ELECTION_BOX,
+  backPayCurve,
+  lumpSumElection,
+  splitBackPay,
+} from './utils/lumpSum';
+import type { BackPayCurvePoint, LumpSumElection } from './utils/lumpSum';
 import { statesTaxingSocialSecurity } from './utils/stateTax';
 import type {
   TaxYear,
@@ -106,6 +113,30 @@ const MAX_BALANCE_GROWTH = 10;
 
 const MAX_SPENDING = 250_000;
 const MAX_ACCOUNT_BALANCE = 3_000_000;
+
+/**
+ * The longest retroactive award the back-pay chart will draw, in months of
+ * benefit attributable to *earlier* years.
+ *
+ * Not a statutory limit, because there is not one. Section 202(j)(1) pays a
+ * retirement claim up to six months back and 223(b) a disability claim up to
+ * twelve, but neither caps how long the agency may take to decide: a claim
+ * denied, reconsidered, heard by an administrative law judge and then appealed
+ * can be four or five years old by the time it is paid, and every month of it
+ * arrives in one cheque. Five years is the far end of realistic.
+ */
+const MAX_BACK_PAY_MONTHS = 60;
+/** Two years: a denial, a hearing, and the wait for a decision. */
+const DEFAULT_BACK_PAY_MONTHS = 24;
+/**
+ * Other income during the wait. Lower than the app's other default on purpose —
+ * the years spent waiting on a disability award are the lean ones, and that is
+ * exactly what leaves each of them a set of thresholds nobody used.
+ */
+const DEFAULT_BACK_PAY_INCOME = 20_000;
+
+/** Slate for the default treatment, fuchsia for the election that undoes it. */
+const BACK_PAY_COLORS = { without: '#94a3b8', with: '#e879f9' } as const;
 
 /**
  * One colour per withdrawal order, keyed by the same `chartKey` the data uses.
@@ -420,6 +451,61 @@ export const SequencingTooltip: React.FC<SequencingTooltipProps> = ({
   );
 };
 
+interface BackPayTooltipProps {
+  active?: boolean;
+  payload?: Array<{ payload: BackPayCurvePoint }>;
+  /** The year the award lands, so the earlier years can be named. */
+  awardYear: number;
+}
+
+export const BackPayTooltip: React.FC<BackPayTooltipProps> = ({
+  active,
+  payload,
+  awardYear,
+}) => {
+  if (!active || !payload || !payload.length) return null;
+  const point = payload[0].payload;
+  return (
+    <div style={TOOLTIP_STYLE}>
+      <div style={{ fontWeight: 600, marginBottom: '0.25rem' }}>
+        {point.months} months of back pay &middot;{' '}
+        {formatCurrency(point.lumpSum)}
+        {point.yearsCovered > 0 &&
+          ` · ${awardYear - point.yearsCovered}–${awardYear - 1}`}
+      </div>
+      <div>
+        All taxed this year:{' '}
+        <strong style={{ color: BACK_PAY_COLORS.without }}>
+          {formatCurrency(point.taxWithout)}
+        </strong>{' '}
+        on {formatCurrency(point.taxableWithout)} of benefit
+      </div>
+      <div>
+        With the election:{' '}
+        <strong style={{ color: BACK_PAY_COLORS.with }}>
+          {formatCurrency(point.taxWith)}
+        </strong>{' '}
+        on {formatCurrency(point.taxableWith)} of benefit
+      </div>
+      <div
+        style={{
+          marginTop: '0.5rem',
+          borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+          paddingTop: '0.5rem',
+          fontSize: '0.875rem',
+          color: '#94a3b8',
+        }}
+      >
+        {point.taxSaved > 0
+          ? `The election saves ${formatCurrency(point.taxSaved)} here`
+          : point.months === 0
+            ? 'No back pay, so there is nothing to elect'
+            : 'The election is worth nothing here — do not make it'}
+      </div>
+    </div>
+  );
+};
+
 const App: React.FC = () => {
   const [year, setYear] = useState<TaxYear>(() => defaultTaxYear());
   const [ssBenefit, setSsBenefit] = useState<number>(() =>
@@ -443,6 +529,8 @@ const App: React.FC = () => {
   const [taxableBasisPercent, setTaxableBasisPercent] = useState<number>(60);
   const [rothBalance, setRothBalance] = useState<number>(150_000);
   const [fillCeilingId, setFillCeilingId] = useState<ConversionCeilingId>('bracket12');
+  const [backPayMonths, setBackPayMonths] = useState<number>(DEFAULT_BACK_PAY_MONTHS);
+  const [backPayIncome, setBackPayIncome] = useState<number>(DEFAULT_BACK_PAY_INCOME);
 
   const statesTaxing = statesTaxingSocialSecurity(year);
   const yearParams = taxYearParams(year);
@@ -728,6 +816,60 @@ const App: React.FC = () => {
    */
   const ssCapPercent =
     qcdSwing.taxableSSWith >= Math.round(0.85 * ssBenefit) ? 85 : 50;
+
+  /**
+   * The year of receipt, exactly as the rest of the page has it. The benefit
+   * here is the *ongoing* annual one — the months attributable to this year —
+   * and the award is stacked on top of it inside `lumpSumElection`.
+   */
+  const awardScenario = useMemo(
+    () => ({
+      ordinaryIncome,
+      ssBenefit,
+      ltcg: plannedLtcg,
+      filingStatus,
+      seniors,
+      muniInterest,
+      qcd,
+      year,
+    }),
+    [ordinaryIncome, ssBenefit, plannedLtcg, filingStatus, seniors, muniInterest, qcd, year],
+  );
+
+  /**
+   * The earlier years, as they were. The monthly rate is this year's benefit
+   * divided by twelve — see `splitBackPay` on why a flat rate rather than one
+   * COLA per year — and the filing status and tax-exempt interest are carried
+   * back unchanged, which is the assumption the note under the chart states.
+   */
+  const backPayPlan = useMemo(
+    () => ({
+      awardYear: year,
+      monthlyBenefit: ssBenefit / 12,
+      otherIncome: backPayIncome,
+      muniInterest,
+      filingStatus,
+    }),
+    [year, ssBenefit, backPayIncome, muniInterest, filingStatus],
+  );
+
+  const backPay: LumpSumElection = useMemo(
+    () =>
+      lumpSumElection(
+        awardScenario,
+        splitBackPay({ ...backPayPlan, months: backPayMonths }),
+      ),
+    [awardScenario, backPayPlan, backPayMonths],
+  );
+
+  const backPayChart = useMemo(
+    () =>
+      backPayCurve(awardScenario, backPayPlan, {
+        maxMonths: MAX_BACK_PAY_MONTHS,
+        step: 1,
+      }),
+    [awardScenario, backPayPlan],
+  );
 
   /**
    * Everything the projection needs, and nothing it does not: the planned
@@ -2137,6 +2279,414 @@ const App: React.FC = () => {
         )}
 
         <p>{sizing.ceiling.note}</p>
+      </section>
+
+      {/* ───── Retroactive awards and the lump-sum election ───── */}
+      <section className="explainer" aria-labelledby="lump-sum-heading">
+        <h2 id="lump-sum-heading" className="section-heading-fuchsia">
+          When years of benefit arrive in one cheque
+        </h2>
+        <p>
+          A claim that took three years to win is paid in a single cheque, and
+          IRC 86(a) taxes every dollar of it in the year it was received. It
+          knows nothing about the years it was earned in. So one year&apos;s set
+          of thresholds has to absorb several years of benefit at once
+          {ssBase85 > 0 ? (
+            <>
+              , the whole award lands above the{' '}
+              {formatCurrency(ssBase85)} adjusted base, and 85 cents of every
+              dollar of it is taxable — at rates set by the size of the pile,
+              not by the years it accrued over
+            </>
+          ) : (
+            <>
+              {' '}
+              — which on this separate return is already the worst case, since
+              both bases are $0 and 85% of everything is taxable from the first
+              dollar either way
+            </>
+          )}
+          .
+        </p>
+        <p>
+          <strong>IRC 86(e) lets you refuse that.</strong> Elect it and the
+          award&apos;s taxable share is refigured year by year, each earlier year
+          against <em>its own</em> income and its own set of thresholds, and the
+          increases are added up. The earlier years&apos; returns are not
+          reopened and nothing is amended — the total is still reported and taxed
+          this year, at this year&apos;s rates. Only the amount changes. There is
+          no form: you check box {LUMP_SUM_ELECTION_BOX} on the 1040 and keep the
+          worksheets.
+        </p>
+
+        <div className="input-group">
+          <div className="slider-header">
+            <label htmlFor="back-pay-months">Months of Back Pay</label>
+            <span className="slider-value fuchsia">
+              {backPayMonths} months &middot;{' '}
+              {formatCurrency(backPay.lumpSum)}
+            </span>
+          </div>
+          <input
+            id="back-pay-months"
+            type="range"
+            min={0}
+            max={MAX_BACK_PAY_MONTHS}
+            step={1}
+            value={backPayMonths}
+            onChange={(e) => setBackPayMonths(Number(e.target.value))}
+            className="slider-fuchsia"
+          />
+          <div className="slider-range-labels">
+            <span>none</span>
+            <span>{MAX_BACK_PAY_MONTHS / 12} years</span>
+          </div>
+          <p className="field-note">
+            Months attributable to years <em>before</em> {year}, at the{' '}
+            {formatCurrency(ssBenefit / 12)} a month the benefit slider implies.
+            The months of {year} itself are already in the annual benefit, and
+            the election has nothing to say about them. Your SSA-1099 breaks the
+            award down by year in the &ldquo;Description of Amount in Box
+            3&rdquo; panel; that panel is the input this slider stands in for.
+          </p>
+        </div>
+
+        <div className="input-group">
+          <div className="slider-header">
+            <label htmlFor="back-pay-income">
+              Other Income During Each Waiting Year
+            </label>
+            <span className="slider-value fuchsia">
+              {formatCurrency(backPayIncome)}
+            </span>
+          </div>
+          <input
+            id="back-pay-income"
+            type="range"
+            min={0}
+            max={MAX_INCOME}
+            step={500}
+            value={backPayIncome}
+            onChange={(e) => setBackPayIncome(Number(e.target.value))}
+            className="slider-fuchsia"
+          />
+          <div className="slider-range-labels">
+            <span>$0</span>
+            <span>{formatCurrency(MAX_INCOME)}</span>
+          </div>
+          <p className="field-note">
+            The whole election turns on this number. Each waiting year is
+            refigured against its own income, so a year lived on almost nothing
+            has a full {ssBase50 > 0 ? formatCurrency(ssBase50) : 'set of'}{' '}
+            {ssBase50 > 0 ? 'base' : 'thresholds'} nobody used — and that is the
+            usual shape of a long disability claim. Set it high enough and the
+            election stops being worth making.
+          </p>
+        </div>
+
+        <dl className="stat-grid">
+          <div className="stat">
+            <dt>Back pay landing in {year}</dt>
+            <dd className="stat-value fuchsia">
+              {formatCurrency(backPay.lumpSum)}
+            </dd>
+            <dd className="stat-note">
+              {backPay.years.length > 0
+                ? `${backPayMonths} months across ${backPay.years.length} earlier ${
+                    backPay.years.length === 1
+                      ? `year, ${year - 1}`
+                      : `years, ${backPay.years[0].year}–${year - 1}`
+                  }`
+                : 'no back pay on this scenario'}
+            </dd>
+          </div>
+          <div className="stat">
+            <dt>Benefits kept out of the tax base</dt>
+            <dd className="stat-value fuchsia">
+              {formatCurrency(backPay.taxableSaved)}
+            </dd>
+            <dd className="stat-note">
+              {formatCurrency(backPay.taxableElected)} taxable, down from{' '}
+              {formatCurrency(backPay.taxableWithout)}
+            </dd>
+          </div>
+          <div className="stat">
+            <dt>Federal tax saved</dt>
+            <dd className="stat-value">{formatCurrency(backPay.taxSaved)}</dd>
+            <dd className="stat-note">
+              {formatCurrency(backPay.taxWith)} total, down from{' '}
+              {formatCurrency(backPay.taxWithout)}
+            </dd>
+          </div>
+          <div className="stat">
+            <dt>Medicare surcharge saved</dt>
+            <dd className="stat-value rose">
+              {formatCurrencyCents(backPay.irmaaSurchargeSaved)}
+            </dd>
+            <dd className="stat-note">
+              {backPay.irmaaTierWithout === backPay.irmaaTierWith
+                ? backPay.irmaaTierWith === 0
+                  ? `no surcharge either way at ${formatCurrency(backPay.irmaaMagiWith)} of MAGI`
+                  : `tier ${backPay.irmaaTierWith} either way`
+                : `tier ${backPay.irmaaTierWith}, down from tier ${backPay.irmaaTierWithout}`}
+              , set by this year&apos;s MAGI for {year + IRMAA_LOOKBACK_YEARS}
+            </dd>
+          </div>
+        </dl>
+
+        <div className="chart-container">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart
+              data={backPayChart}
+              margin={{ top: 10, right: 10, left: 10, bottom: 0 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255, 255, 255, 0.1)" />
+              <XAxis
+                dataKey="months"
+                type="number"
+                domain={[0, MAX_BACK_PAY_MONTHS]}
+                ticks={[0, 12, 24, 36, 48, 60]}
+                allowDecimals={false}
+                stroke="#94a3b8"
+              />
+              <YAxis
+                stroke="#94a3b8"
+                tickFormatter={(value) => `$${formatCompact(value)}`}
+                width={70}
+              />
+              <Tooltip content={<BackPayTooltip awardYear={year} />} />
+              <Legend />
+              {backPayMonths > 0 && (
+                <ReferenceLine
+                  x={backPayMonths}
+                  stroke="#e879f9"
+                  strokeDasharray="4 4"
+                  label={{
+                    value: 'your award',
+                    position: 'top',
+                    fill: '#e879f9',
+                    fontSize: 11,
+                  }}
+                />
+              )}
+              <Line
+                type="monotone"
+                dataKey="taxWithout"
+                name="All taxed in the year received"
+                stroke={BACK_PAY_COLORS.without}
+                strokeWidth={2}
+                dot={false}
+              />
+              <Line
+                type="monotone"
+                dataKey="taxWith"
+                name="Lump-sum election"
+                stroke={BACK_PAY_COLORS.with}
+                strokeWidth={2}
+                dot={false}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+        <p className="chart-axis-label">
+          Federal tax in {year} &middot; the gap between the lines is what
+          checking one box is worth
+        </p>
+
+        {backPay.years.length > 0 && (
+          <table className="tier-table">
+            <caption>
+              What the election reports:{' '}
+              <strong>{formatCurrency(backPay.taxableWithElection)}</strong> of
+              taxable benefit against{' '}
+              <strong>{formatCurrency(backPay.taxableWithout)}</strong> with the
+              whole award taxed in {year}.{' '}
+              {ssBase50 > 0 ? (
+                <>
+                  Every row is figured on the same {formatCurrency(ssBase50)}{' '}
+                  and {formatCurrency(ssBase85)} thresholds, because they have
+                  not been touched since {SS_BASE85_ENACTED} — which is the
+                  entire reason spreading the award across years is worth
+                  anything.
+                </>
+              ) : (
+                <>
+                  Every row is figured on the same $0 thresholds, so every row
+                  is 85%. A separate return that lived with its spouse has no
+                  unused base for an earlier year to hand back, and spreading
+                  the award reaches for room that was never there.
+                </>
+              )}
+            </caption>
+            <thead>
+              <tr>
+                <th scope="col">Year</th>
+                <th scope="col">Months</th>
+                <th scope="col">Benefit for it</th>
+                <th scope="col">Taxable</th>
+                <th scope="col">Share</th>
+              </tr>
+            </thead>
+            <tbody>
+              {backPay.years.map((y) => (
+                <tr key={y.year}>
+                  <th scope="row">{y.year}</th>
+                  <td>{y.months}</td>
+                  <td>{formatCurrency(y.portion)}</td>
+                  <td>{formatCurrency(y.additional)}</td>
+                  <td>
+                    {y.portion > 0
+                      ? formatPercent(y.additional / y.portion)
+                      : '—'}
+                  </td>
+                </tr>
+              ))}
+              <tr>
+                <th scope="row">{year} (this year)</th>
+                <td>12</td>
+                <td>{formatCurrency(ssBenefit)}</td>
+                <td>{formatCurrency(backPay.currentYearOnly)}</td>
+                <td>
+                  {ssBenefit > 0
+                    ? formatPercent(backPay.currentYearOnly / ssBenefit)
+                    : '—'}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        )}
+
+        {backPayMonths === 0 ? (
+          <p>
+            There is no back pay on this scenario, so there is nothing to elect.
+            Move the months slider and the two lines above separate: the slate
+            one is the whole award taxed in {year}, the fuchsia one is the same
+            award refigured year by year.
+          </p>
+        ) : backPay.taxableWithElection === backPay.taxableWithout ? (
+          <p>
+            <strong>The election changes nothing here.</strong> Refiguring the
+            award year by year reports the same{' '}
+            {formatCurrency(backPay.taxableWithout)} of taxable benefit that
+            taxing all of it in {year} does.{' '}
+            {ssBase85 === 0 ? (
+              <>
+                Both bases are $0 on a separate return that lived with the
+                spouse, so 85% of every benefit dollar is taxable in every year
+                there has ever been. There is no unused threshold anywhere to go
+                and find — which is the same reason this filing status has no
+                torpedo on the chart at the top, only the ceiling.
+              </>
+            ) : backPay.taxableWithout === 0 ? (
+              <>
+                None of the benefit is taxable in any of these years: provisional
+                income stays under {formatCurrency(ssBase50)} whether the award
+                is counted in one year or spread over{' '}
+                {backPay.years.length + 1}. There is nothing here for the
+                election to reach.
+              </>
+            ) : backPay.capBindsEveryYear ? (
+              <>
+                Every year involved — {year} and each waiting year — is already
+                past the {formatCurrency(ssBase85)} adjusted base by more than
+                its own benefit, so the 85% cap binds in all of them. The award
+                is 85% taxable however it is sliced.
+              </>
+            ) : (
+              <>
+                No year here is at the 85% cap, so this is a coincidence rather
+                than a ceiling: at {formatCurrency(backPayIncome)} of income in
+                each waiting year, the benefit those years pull into their own
+                tax base comes to exactly what the award adds to {year}&apos;s.
+                Move either income slider and the two figures separate.
+              </>
+            )}
+          </p>
+        ) : !backPay.worthElecting ? (
+          <p>
+            <strong>Do not make this election.</strong> Refiguring the award
+            against the waiting years would report{' '}
+            {formatCurrency(backPay.taxableWithElection)} of taxable benefit
+            where taxing the whole thing in {year} reports{' '}
+            {formatCurrency(backPay.taxableWithout)}
+            {backPay.taxableWithout === 0
+              ? ' — none of it is taxable this year at all'
+              : ''}
+            . At {formatCurrency(backPayIncome)} of income in each waiting year,
+            the earlier years have less room than {year} does, so spreading the
+            award over them costs rather than saves. 86(e) is a ceiling and not a
+            substitution, so nothing is lost by asking — but the answer here is
+            no, and 86(e)(2)(B) lets you take it back only with the consent of
+            the Secretary.
+          </p>
+        ) : backPay.taxSaved === 0 ? (
+          <p>
+            The election takes{' '}
+            <strong>{formatCurrency(backPay.taxableSaved)}</strong> of benefit
+            out of {year}&apos;s tax base and it changes the bill by nothing.{' '}
+            {backPay.agiWithout <= deductionTotal
+              ? `The ${formatCurrency(deductionTotal)} of deductions covered the whole ${formatCurrency(backPay.agiWithout)} of AGI either way, so there was no tax on those dollars to save.`
+              : `Past the ${formatCurrency(deductionTotal)} of deductions everything left in the base is long-term gain sitting in the 0% bracket, with or without the election.`}{' '}
+            Raise the other-income slider above and this figure starts moving —
+            the election is worth its bracket rate, and the bracket rate is zero
+            here.
+          </p>
+        ) : (
+          <p>
+            Refiguring the award year by year reports{' '}
+            <strong>{formatCurrency(backPay.taxableWithElection)}</strong> of
+            taxable benefit instead of{' '}
+            {formatCurrency(backPay.taxableWithout)} — it keeps{' '}
+            <strong>{formatCurrency(backPay.taxableSaved)}</strong> out of the
+            tax base, {backPay.taxableSavedPercent}% of the award itself. That is{' '}
+            <strong>{formatCurrency(backPay.taxSaved)}</strong> of federal tax on
+            a cheque that has already been cashed
+            {backPay.irmaaSurchargeSaved > 0 ? (
+              <>
+                , plus{' '}
+                <strong>
+                  {formatCurrencyCents(backPay.irmaaSurchargeSaved)}
+                </strong>{' '}
+                of Medicare surcharge in {year + IRMAA_LOOKBACK_YEARS}, because
+                the award was about to spend a whole year of premiums pushing
+                MAGI past a cliff it will be nowhere near by the time the
+                premium is charged
+              </>
+            ) : (
+              ''
+            )}
+            .
+          </p>
+        )}
+
+        <p className="warning-note" role="note">
+          <strong>You need the earlier years&apos; returns to do this.</strong>{' '}
+          Each waiting year is refigured against the income actually reported for
+          it, so the worksheet asks for that year&apos;s AGI, its tax-exempt
+          interest and any benefits it already reported — and 86(e)(2)(B) makes
+          the election revocable only with the consent of the Secretary. The
+          single slider above stands in for all of that by assuming every waiting
+          year looked the same, which is the one thing a real award never quite
+          does.
+        </p>
+
+        <p className="field-note">
+          Three details this section holds fixed. The back pay accrues at a flat
+          monthly rate, where a real award is figured at each year&apos;s own
+          COLA, so the earliest slices here are a few percent larger than they
+          would really be. The filing status and tax-exempt interest selected
+          above are carried back to every waiting year unchanged. And a waiting
+          year of 1993 or earlier would need Pub 915&apos;s Worksheet 3 rather
+          than Worksheet 2, since the 85% tier did not exist until{' '}
+          {SS_BASE85_ENACTED + 1} — five years of back pay from {year} does not
+          reach anywhere near it.
+        </p>
+
+        <p className="field-note">
+          Nothing here feeds the charts above or the projections below. A
+          retroactive award is a single event in a single year; the rest of this
+          page is about a year that repeats.
+        </p>
       </section>
 
       {/* ───── Multi-year projection ───── */}

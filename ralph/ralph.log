@@ -2920,3 +2920,104 @@ beginning `IRMAA 1 at …`.
 `npx tsc -b`, `npx eslint src --max-warnings 0`, `npx vitest run` (7 files, 402
 tests, green in 3.5s — no flake this run), `npm run build`. CSS bundle 9.13 kB →
 9.41 kB.
+
+## 2026-08-21 — Task: Replace the tab strip with a linear step-by-step flow
+
+Two tabs became three steps: **1 Your benefit**, **2 The tax torpedo**,
+**3 Capital gains**.
+
+### The decision the task asked for: mounted, not swapped
+
+The steps stay mounted and the page scrolls. Three reasons, all written into
+the `STEPS` doc comment so the next iteration does not re-litigate it:
+
+- A step that has to be clicked into existence reads as optional. These are
+  numbered 1-2-3; a reader who never clicks tab 2 has not skipped a subject,
+  they have stopped halfway through the argument.
+- Steps 2 and 3 quote figures set in step 1 ("Ordinary income $30,000 +
+  $23,712 SS" under the LTCG chart, the benefit in the torpedo axis label).
+  That only works if scrolling back to the input is possible.
+- Printing and Ctrl-F now reach the whole page rather than the open panel.
+
+What it costs is a long page, which is what the nav and the next-step boxes
+are for — and it is the reason the next backlog item ("give every step the
+same shape") matters more now than it did under tabs.
+
+### Keyboard handling: kept, re-based on the toolbar pattern
+
+`role="tablist"`/`role="tab"` was wrong the moment the panels stopped
+swapping — a tab implies it controls whether its panel is showing. The nav is
+now `role="toolbar"` with `aria-label="Steps"`, buttons carrying
+`aria-current="step"`, and the same roving tabindex + ArrowLeft/ArrowRight +
+wrap-at-both-ends handler the strip had (`onStepKeyDown`).
+
+One deliberate split between the two paths:
+
+- **Click** (nav item or next-step box) → `goToStep`: sets the current step,
+  focuses the `<section tabIndex={-1}>`, then `scrollIntoView({behavior:
+  'smooth'})`. Focus has to land *inside* the step or the next Tab press sends
+  a keyboard reader back to the top of the page.
+- **Arrow** → focus stays on the nav button and only the scroll moves. Moving
+  focus into the section on the first arrow press would make the second press
+  impossible.
+
+`scrollIntoView` is optional-called (`?.scrollIntoView?.(…)`) because jsdom
+does not implement it and every test would otherwise throw.
+
+### The next-step box
+
+`nextStepBox(fromIndex)` renders the box for `STEPS[fromIndex + 1]`, so the
+last step gets `null` and the flow ends rather than looping. It names its
+destination — "Next · Step 2 of 3 / The tax torpedo / Add the income that is
+not Social Security…" — because a bare "Next" is worth nothing to a reader
+deciding whether to keep going. The arrow is `aria-hidden`, so the accessible
+name is the three spans of prose.
+
+### What moved
+
+- The **Other Ordinary Income** slider moved out of the shared scenario block
+  and into step 2, above the chart whose x-axis it is. Everything else in the
+  shared block (year, filing status, age, benefit, and the collapsed
+  `advanced-inputs`) is step 1.
+- The Capital Gains `<section className="explainer">` became step 3 itself:
+  its `<h2>` is the step heading (keeping `section-heading-amber`), and its
+  two loose `<p>`s picked up `step-prose`, which carries what `.explainer p`
+  used to give them.
+- The LTCG slider is still in step 1's advanced disclosure, two steps above
+  the chart it drives. Deliberate: the "re-do capital gains as a share of
+  income already entered" item three bullets down the backlog takes it out of
+  there, and moving it twice is worse than moving it once.
+
+### CSS
+
+`.tabs`/`.tab`/`.tab-active`/`.tab-panel` are gone, replaced by `.step-nav`,
+`.step-nav-item` (+ `.step-nav-number`, a numbered circle — the order is the
+point), `.step-nav-current`, `.step`, `.step-kicker`, `.step-heading`,
+`.step-intro`/`.step-prose` and the `.next-step` grid. The separating rule
+moved from "under the strip" to `.step + .step`, since there is no strip
+hanging a panel off itself any more. `.step:focus-visible` gets an offset ring
+so a keyboard reader can see where `goToStep` put them; `.step:focus` is bare.
+
+### Tests
+
+`describe('tabs')` became `describe('the step flow')` — 12 cases: the numbered
+nav in order, all three headings on screen at once (plus no `tabpanel`
+anywhere), step 1 current at load, click → current + focus inside the section,
+`aria-controls` wiring, walking forward through both boxes, the boxes naming
+their destination and stopping at step 3, arrow keys wrapping both ways, focus
+staying on the nav while arrowing, roving tabindex, non-arrow keys ignored,
+and every input staying mounted across the walk. The `renderTab` helper is
+gone — nothing needs opening any more — and the advanced-inputs
+"keeps its values across tabs" case now walks the nav instead.
+
+### Verified
+
+`npx tsc -b`, `npx eslint src --max-warnings 0`, `npx vitest run` (7 files,
+407 tests, green in 4.0s), `npm run build`. CSS bundle 9.41 kB → 11.15 kB.
+
+### Logged, not fixed
+
+The nav marks the step the reader last *asked* for, not the one they are
+looking at — with everything mounted, scrolling past a step with the mouse
+leaves `aria-current` behind. Added to Discovered Work with the scroll-spy
+sketch and the open question of whether the nav should also be sticky.

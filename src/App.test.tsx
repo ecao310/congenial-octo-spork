@@ -26,23 +26,24 @@ afterEach(() => {
 });
 
 /**
- * The page is tabbed and only the selected panel is mounted, so a test that
- * asserts on a section has to open that section's tab first. The shared
- * scenario inputs — tax year, filing status, age, and the five sliders — sit
- * above the strip and are on both tabs, which is why the tests that only touch
- * those still render the app directly.
+ * Every step is mounted at once — the flow scrolls where the tab strip it
+ * replaced swapped panels — so a test that asserts on a section no longer has
+ * to open anything first. What the nav changes is which step is marked current
+ * and where focus lands, and that is what the `step flow` describe covers.
  */
-type TabName = 'Tax Torpedo' | 'Capital Gains';
+const stepNames = ['Your benefit', 'The tax torpedo', 'Capital gains'] as const;
 
-const renderTab = (name: TabName): ReturnType<typeof render> => {
-  const utils = render(<App />);
-  fireEvent.click(screen.getByRole('tab', { name }));
-  return utils;
-};
+const stepNav = (): HTMLElement => screen.getByRole('toolbar', { name: 'Steps' });
 
-/** Every tab, in strip order — both the strip's own tests and the shared
- * scenario's "survives every tab" tests walk this list. */
-const tabNames: TabName[] = ['Tax Torpedo', 'Capital Gains'];
+const navItem = (name: (typeof stepNames)[number]): HTMLElement =>
+  within(stepNav()).getByRole('button', { name });
+
+/** The nav button carrying `aria-current="step"`, by its visible label. */
+const currentStep = (): string | undefined =>
+  within(stepNav())
+    .getAllByRole('button')
+    .find((b) => b.getAttribute('aria-current') === 'step')
+    ?.textContent?.replace(/^\d/, '');
 
 describe('App', () => {
   /**
@@ -266,7 +267,7 @@ describe('App', () => {
   });
 
   it('renders the Capital Gains Stacking section heading', () => {
-    renderTab('Capital Gains');
+    render(<App />);
     expect(
       screen.getByRole('heading', { name: /capital gains stacking/i }),
     ).toBeInTheDocument();
@@ -407,47 +408,151 @@ describe('App', () => {
   });
 });
 
-describe('tabs', () => {
-  it('opens on the tax torpedo, with every other panel unmounted', () => {
+describe('the step flow', () => {
+  it('numbers all three steps in the nav, in reading order', () => {
     render(<App />);
-    expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual(tabNames);
-    expect(screen.getByRole('tab', { name: 'Tax Torpedo' })).toHaveAttribute(
-      'aria-selected',
-      'true',
-    );
-    expect(screen.getAllByRole('tabpanel')).toHaveLength(1);
     expect(
-      screen.getByRole('heading', { name: /what is the tax torpedo/i }),
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByRole('heading', { name: /capital gains stacking/i }),
-    ).not.toBeInTheDocument();
-  });
-
-  it('swaps the panel when another tab is picked', () => {
-    render(<App />);
-    fireEvent.click(screen.getByRole('tab', { name: 'Capital Gains' }));
-    expect(
-      screen.getByRole('heading', { name: /capital gains stacking/i }),
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByRole('heading', { name: /what is the tax torpedo/i }),
-    ).not.toBeInTheDocument();
+      within(stepNav())
+        .getAllByRole('button')
+        .map((b) => b.textContent),
+    ).toEqual(['1Your benefit', '2The tax torpedo', '3Capital gains']);
   });
 
   /**
-   * Every section prices off the same scenario, so the inputs live above the
-   * strip rather than inside a panel. A slider that vanished with its tab
-   * would make the whole split unusable — set an income on one tab and it has
-   * to still be set on the next.
+   * The whole point of the rewrite: the steps scroll rather than swap, so
+   * every one of them is on the page at once. A reader on step 3 can scroll
+   * back to the benefit they set in step 1, and Ctrl-F reaches all of it.
    */
-  it('keeps the shared scenario inputs mounted on every tab', () => {
+  it('renders every step at once', () => {
+    render(<App />);
+    for (const name of [
+      /your social security benefit/i,
+      /^the tax torpedo$/i,
+      /capital gains stacking/i,
+    ]) {
+      expect(screen.getByRole('heading', { name })).toBeInTheDocument();
+    }
+    expect(screen.queryByRole('tabpanel')).not.toBeInTheDocument();
+  });
+
+  it('opens with the first step marked current', () => {
+    render(<App />);
+    expect(currentStep()).toBe('Your benefit');
+    expect(navItem('Capital gains')).not.toHaveAttribute('aria-current');
+  });
+
+  /**
+   * Focus follows the scroll. Landing a keyboard reader at the top of the
+   * page after they asked for step 3 would make the nav unusable — the next
+   * Tab press has to continue inside the step they picked.
+   */
+  it('marks a step current and moves focus into it when the nav is clicked', () => {
+    render(<App />);
+    fireEvent.click(navItem('Capital gains'));
+    expect(currentStep()).toBe('Capital gains');
+    expect(document.activeElement).toBe(document.getElementById('step-gains'));
+  });
+
+  it('wires each nav button to the section it moves to', () => {
+    render(<App />);
+    for (const [name, id] of [
+      ['Your benefit', 'step-benefit'],
+      ['The tax torpedo', 'step-torpedo'],
+      ['Capital gains', 'step-gains'],
+    ] as const) {
+      const section = document.getElementById(id) as HTMLElement;
+      expect(navItem(name)).toHaveAttribute('aria-controls', id);
+      expect(
+        document.getElementById(section.getAttribute('aria-labelledby') ?? ''),
+      ).toHaveTextContent(/\S/);
+    }
+  });
+
+  /**
+   * The box at the foot of each step is the path through the flow for a reader
+   * who never looks at the nav, so it has to do everything the nav does.
+   */
+  it('walks forward through the next-step boxes', () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: /Step 2 of 3/ }));
+    expect(currentStep()).toBe('The tax torpedo');
+    expect(document.activeElement).toBe(document.getElementById('step-torpedo'));
+
+    fireEvent.click(screen.getByRole('button', { name: /Step 3 of 3/ }));
+    expect(currentStep()).toBe('Capital gains');
+    expect(document.activeElement).toBe(document.getElementById('step-gains'));
+  });
+
+  it('names where each box goes, and stops at the last step', () => {
+    render(<App />);
+    expect(
+      screen.getByRole('button', { name: /Step 2 of 3/ }),
+    ).toHaveTextContent('The tax torpedo');
+    expect(
+      screen.getByRole('button', { name: /Step 3 of 3/ }),
+    ).toHaveTextContent('Capital Gains Stacking');
+    expect(screen.queryByRole('button', { name: /Step 4 of 3/ })).toBeNull();
+  });
+
+  it('moves between steps with the arrow keys and wraps at both ends', () => {
+    render(<App />);
+
+    fireEvent.keyDown(stepNav(), { key: 'ArrowRight' });
+    expect(currentStep()).toBe('The tax torpedo');
+
+    fireEvent.keyDown(stepNav(), { key: 'ArrowLeft' });
+    fireEvent.keyDown(stepNav(), { key: 'ArrowLeft' });
+    expect(currentStep()).toBe('Capital gains');
+
+    fireEvent.keyDown(stepNav(), { key: 'ArrowRight' });
+    expect(currentStep()).toBe('Your benefit');
+  });
+
+  /**
+   * Arrowing keeps focus on the nav where clicking moves it into the section:
+   * a second arrow press has to reach the same handler as the first.
+   */
+  it('keeps focus on the nav while arrowing', () => {
+    render(<App />);
+    fireEvent.keyDown(stepNav(), { key: 'ArrowRight' });
+    expect(document.activeElement).toBe(navItem('The tax torpedo'));
+  });
+
+  /**
+   * Roving tabindex: arrowing through the nav must not leave a trail of tab
+   * stops behind it, or a keyboard user pays a press per step to leave the nav
+   * on the way to the sliders.
+   */
+  it('keeps only the current step in the tab order', () => {
+    render(<App />);
+    fireEvent.click(navItem('Capital gains'));
+    for (const name of stepNames) {
+      expect(navItem(name)).toHaveAttribute(
+        'tabindex',
+        name === 'Capital gains' ? '0' : '-1',
+      );
+    }
+  });
+
+  it('ignores keys that are not arrows', () => {
+    render(<App />);
+    fireEvent.keyDown(stepNav(), { key: 'a' });
+    expect(currentStep()).toBe('Your benefit');
+  });
+
+  /**
+   * Every step prices the same return, and the inputs that set it are spread
+   * across the flow — the benefit in step 1, other income in step 2. Stepping
+   * around must never unmount one, or a figure set in step 1 would be gone by
+   * the time step 3 quoted it.
+   */
+  it('keeps every input mounted as the reader steps through', () => {
     render(<App />);
     const income = screen.getByRole('slider', { name: /other ordinary income/i });
     fireEvent.change(income, { target: { value: '90000' } });
 
-    for (const name of tabNames) {
-      fireEvent.click(screen.getByRole('tab', { name }));
+    for (const name of stepNames) {
+      fireEvent.click(navItem(name));
       expect(
         screen.getByRole('slider', { name: /social security benefit/i }),
       ).toBeInTheDocument();
@@ -456,56 +561,6 @@ describe('tabs', () => {
       ).toHaveValue('90000');
       expect(screen.getByRole('radio', { name: 'Single' })).toBeChecked();
     }
-  });
-
-  it('wires each tab to the panel it controls', () => {
-    render(<App />);
-    fireEvent.click(screen.getByRole('tab', { name: 'Capital Gains' }));
-    const tab = screen.getByRole('tab', { name: 'Capital Gains' });
-    const panel = screen.getByRole('tabpanel');
-    expect(tab).toHaveAttribute('aria-controls', panel.id);
-    expect(panel).toHaveAttribute('aria-labelledby', tab.id);
-  });
-
-  it('moves between tabs with the arrow keys and wraps at both ends', () => {
-    render(<App />);
-    const tablist = screen.getByRole('tablist');
-    const selected = (): string | null =>
-      screen.getByRole('tab', { selected: true }).textContent;
-
-    fireEvent.keyDown(tablist, { key: 'ArrowRight' });
-    expect(selected()).toBe('Capital Gains');
-
-    fireEvent.keyDown(tablist, { key: 'ArrowLeft' });
-    fireEvent.keyDown(tablist, { key: 'ArrowLeft' });
-    expect(selected()).toBe('Capital Gains');
-
-    fireEvent.keyDown(tablist, { key: 'ArrowRight' });
-    expect(selected()).toBe('Tax Torpedo');
-  });
-
-  /**
-   * Roving tabindex: arrowing through the strip must not leave a trail of
-   * tab stops behind it, or a keyboard user pays a press per tab to leave the
-   * strip on the way to the sliders.
-   */
-  it('keeps only the selected tab in the tab order', () => {
-    render(<App />);
-    fireEvent.click(screen.getByRole('tab', { name: 'Capital Gains' }));
-    for (const name of tabNames) {
-      expect(screen.getByRole('tab', { name })).toHaveAttribute(
-        'tabindex',
-        name === 'Capital Gains' ? '0' : '-1',
-      );
-    }
-  });
-
-  it('ignores keys that are not arrows', () => {
-    render(<App />);
-    fireEvent.keyDown(screen.getByRole('tablist'), { key: 'a' });
-    expect(screen.getByRole('tab', { selected: true })).toHaveTextContent(
-      'Tax Torpedo',
-    );
   });
 });
 
@@ -627,17 +682,18 @@ describe('advanced inputs', () => {
   });
 
   /**
-   * The disclosure sits above the tab strip with the rest of the scenario, so
-   * a value set on one tab has to survive every other one.
+   * The disclosure sits at the foot of step 1, and both of the steps below it
+   * price off what is in there, so a value set once has to survive the whole
+   * walk down the page.
    */
-  it('keeps its values across tabs', () => {
+  it('keeps its values across every step', () => {
     render(<App />);
     fireEvent.change(
       screen.getByLabelText('Tax-Exempt (Municipal) Interest'),
       { target: { value: '9000' } },
     );
-    for (const name of tabNames) {
-      fireEvent.click(screen.getByRole('tab', { name }));
+    for (const name of stepNames) {
+      fireEvent.click(navItem(name));
       expect(
         screen.getByLabelText('Tax-Exempt (Municipal) Interest'),
       ).toHaveValue('9000');

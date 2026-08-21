@@ -530,18 +530,29 @@ footer p {
 /* ───── Tab strip ─────
    The tab list scrolls rather than wraps on a narrow viewport, so the strip
    stays one row and the panel below it never jumps as the selection moves. */
-.tabs {
+/* ───── The step flow ────────────────────────────────────────────────────────
+ *
+ * Three sections, all mounted, read top to bottom. The nav scrolls to them and
+ * marks the one the reader last asked for; the next-step box at the foot of
+ * each section is the way through for anyone who never looks at the nav. The
+ * tab strip this replaced styled the nav and the panel as one object — a strip
+ * with a rule under it that the panel hung from — which is why the rule now
+ * belongs to each step instead.
+ */
+.step-nav {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.25rem;
   margin-top: 2rem;
   padding-bottom: 0.25rem;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  overflow-x: auto;
-  scrollbar-width: thin;
 }
 
-.tab {
+.step-nav-item {
   flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
   appearance: none;
   background: transparent;
   border: none;
@@ -557,29 +568,152 @@ footer p {
   transition: color 0.2s ease, background 0.2s ease, border-color 0.2s ease;
 }
 
-.tab:hover {
+/* Numbered because the order is the point: these are steps, not subjects. */
+.step-nav-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.375rem;
+  height: 1.375rem;
+  border-radius: 50%;
+  border: 1px solid currentColor;
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.step-nav-item:hover {
   color: #e2e8f0;
   background: rgba(255, 255, 255, 0.04);
 }
 
-.tab-active,
-.tab-active:hover {
+.step-nav-current,
+.step-nav-current:hover {
   color: #38bdf8;
   border-bottom-color: #38bdf8;
   background: rgba(56, 189, 248, 0.1);
 }
 
-.tab:focus-visible {
+.step-nav-item:focus-visible {
   outline: 2px solid rgba(56, 189, 248, 0.6);
   outline-offset: -2px;
 }
 
-/* The strip already draws the rule that separates it from the panel, so the
-   panel's own leading section must not draw a second one on top of it. */
-.tab-panel > .explainer:first-child {
+.step {
   margin-top: 2rem;
-  padding-top: 0;
-  border-top: none;
+  scroll-margin-top: 1rem;
+}
+
+.step + .step {
+  margin-top: 3rem;
+  padding-top: 2.5rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Arriving at a step focuses it, so it has to show where it landed — but only
+   for the keyboard, which is exactly what :focus-visible means on a section
+   that is only ever focused programmatically. */
+.step:focus {
+  outline: none;
+}
+
+.step:focus-visible {
+  outline: 2px solid rgba(56, 189, 248, 0.6);
+  outline-offset: 0.75rem;
+  border-radius: 0.5rem;
+}
+
+.step-kicker {
+  margin: 0 0 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+.step-heading {
+  font-size: 1.75rem;
+  font-weight: 700;
+  margin: 0 0 0.5rem;
+  color: #f8fafc;
+}
+
+.step-intro,
+.step-prose {
+  color: #94a3b8;
+  margin: 0 0 1.5rem;
+}
+
+.step-prose strong {
+  color: #e2e8f0;
+  font-weight: 600;
+}
+
+/* The one control that carries a reader forward without the nav, so it is
+   sized as the end of a step rather than as a widget inside one. */
+.next-step {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas:
+    'kicker arrow'
+    'title arrow'
+    'blurb arrow';
+  align-items: center;
+  gap: 0.25rem 1rem;
+  width: 100%;
+  margin-top: 2.5rem;
+  padding: 1.25rem 1.5rem;
+  text-align: left;
+  font: inherit;
+  background: rgba(56, 189, 248, 0.06);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  border-radius: 0.75rem;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.next-step:hover {
+  background: rgba(56, 189, 248, 0.12);
+  border-color: rgba(56, 189, 248, 0.5);
+}
+
+.next-step:focus-visible {
+  outline: 2px solid rgba(56, 189, 248, 0.6);
+  outline-offset: 2px;
+}
+
+.next-step-kicker {
+  grid-area: kicker;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #38bdf8;
+}
+
+.next-step-title {
+  grid-area: title;
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: #f8fafc;
+}
+
+.next-step-blurb {
+  grid-area: blurb;
+  font-size: 0.9375rem;
+  color: #94a3b8;
+}
+
+.next-step-arrow {
+  grid-area: arrow;
+  font-size: 1.5rem;
+  line-height: 1;
+  color: #38bdf8;
+  transition: transform 0.2s ease;
+}
+
+.next-step:hover .next-step-arrow {
+  transform: translateX(0.25rem);
 }
 
 /* ───── Advanced inputs ─────────────────────────────────────────────────────

@@ -1139,8 +1139,49 @@ describe('the total the return owes', () => {
   it('quotes the same total under the gains slider, on an income it does not move', () => {
     render(<App />);
     expect(readout('gains')).toHaveTextContent(
-      'owes $2,813 in federal tax on the $53,712 of total income this slider never moves — an effective rate of 5.24%',
+      'owes $2,813 in federal tax on the $53,712 of total income behind this chart, which this slider never moves — an effective rate of 5.24%',
     );
+  });
+
+  /**
+   * The four places this figure appears used to spell it out four times, and
+   * two of them left out tax-exempt interest and the charitable gift. Step 3's
+   * axis label was one of the two: it read `ordinaryIncome + ssBenefit`, so a
+   * reader with muni bonds saw two different totals a foot apart on the page.
+   */
+  it('quotes the same total under step 3\u2019s own chart', () => {
+    render(<App />);
+    const gainsLabel = (): HTMLElement =>
+      document.querySelector('#step-gains .chart-axis-label') as HTMLElement;
+    expect(gainsLabel()).toHaveTextContent(
+      'Total income $53,712 at every point on this axis',
+    );
+
+    set(/tax-exempt \(municipal\) interest/i, 10_000);
+    expect(gainsLabel()).toHaveTextContent('Total income $63,712');
+    expect(readout('torpedo')).toHaveTextContent('$63,712 of total income');
+    expect(readout('gains')).toHaveTextContent('$63,712 of total income');
+  });
+
+  /**
+   * The gains sweep holds total income still, with one exception it now says
+   * out loud: a gift comes out of the ordinary half alone, so a gain big
+   * enough to crowd that half below the gift leaves more of the same income on
+   * the return.
+   */
+  it('stops calling the total fixed once the gain crowds out the gift', () => {
+    render(<App />);
+    const gainsLabel = (): HTMLElement =>
+      document.querySelector('#step-gains .chart-axis-label') as HTMLElement;
+    set(/qualified charitable distribution/i, 10_000);
+    expect(gainsLabel()).toHaveTextContent('Total income $43,712 where you stand');
+    expect(gainsLabel()).not.toHaveTextContent('at every point on this axis');
+
+    // $25,000 of the $30,000 taken as gain leaves $5,000 of ordinary income,
+    // so only $5,000 of the $10,000 gift can be excluded.
+    set(/long-term capital gains inside that income/i, 25_000);
+    expect(gainsLabel()).toHaveTextContent('Total income $48,712 where you stand');
+    expect(readout('torpedo')).toHaveTextContent('$48,712 of total income');
   });
 
   it('quotes the same total again as step 4\u2019s bill before the conversion', () => {
@@ -1158,7 +1199,7 @@ describe('the total the return owes', () => {
     render(<App />);
     set(/long-term capital gains inside that income/i, 20_000);
     expect(readout('gains')).toHaveTextContent(
-      'owes $543 in federal tax on the $53,712 of total income this slider never moves — an effective rate of 1.01%',
+      'owes $543 in federal tax on the $53,712 of total income behind this chart, which this slider never moves — an effective rate of 1.01%',
     );
     expect(readout('torpedo')).toHaveTextContent(
       'owes $543 in federal tax on $53,712 of total income — an effective rate of 1.01%',
@@ -1478,6 +1519,98 @@ describe('Tooltip Recommendations', () => {
       expect(
         screen.getByText(/\$91,845 of MAGI to the next cliff, then \$2,105\/yr more/),
       ).toBeInTheDocument();
+    });
+  });
+
+  /**
+   * The bug this pins: the two tooltips and the two axis labels each spelled
+   * out "total income" for themselves, and only one of the four spelled it out
+   * right. With $10,000 of tax-exempt interest set, the torpedo tooltip said
+   * $53,712 where the sentence under the same chart said $63,712 — for the
+   * same return, a foot apart on the page. Both now read `totalIncomeFor`.
+   */
+  describe('what the two tooltips call total income', () => {
+    const scenario = {
+      ordinaryIncome: 40_000,
+      ssBenefit: 23_712,
+      ltcg: 15_000,
+      muniInterest: 10_000,
+      qcd: 5_000,
+      filingStatus: 'single' as const,
+      year: PINNED_YEAR,
+    };
+
+    it('counts tax-exempt interest and drops the gift, on the torpedo chart', () => {
+      render(
+        <CustomTooltip
+          active={true}
+          payload={[{ payload: { income: 40_000, marginalRate: 22.2, totalTax: 3_000 } }]}
+          ssBenefit={scenario.ssBenefit}
+          segments={mockOrdinarySegments}
+          filingStatus={scenario.filingStatus}
+          muniInterest={scenario.muniInterest}
+          qcd={scenario.qcd}
+          ltcg={scenario.ltcg}
+          year={scenario.year}
+        />,
+      );
+      // $40,000 of other income - $5,000 given away + $23,712 of benefit +
+      // $10,000 of tax-exempt interest.
+      expect(screen.getByText(/Total income \$68,712/)).toBeInTheDocument();
+    });
+
+    it('says the same number on the gains chart, for the same return', () => {
+      render(
+        <LTCGTooltip
+          active={true}
+          payload={[{ payload: { ltcg: 15_000, marginalRate: 27.2, totalTax: 3_000 } }]}
+          ordinaryIncome={scenario.ordinaryIncome}
+          ssBenefit={scenario.ssBenefit}
+          segments={mockLtcgSegments}
+          muniInterest={scenario.muniInterest}
+          qcd={scenario.qcd}
+          filingStatus={scenario.filingStatus}
+          year={scenario.year}
+        />,
+      );
+      expect(screen.getByText(/Total income \$68,712/)).toBeInTheDocument();
+    });
+
+    /**
+     * The gains sweep holds total income still — except here. A gift comes out
+     * of the ordinary half alone, so once the gain crowds the ordinary half
+     * below the gift, less of it stays off the return and the total rises.
+     */
+    it('rises on the gains chart once the gain crowds out the gift', () => {
+      render(
+        <LTCGTooltip
+          active={true}
+          payload={[{ payload: { ltcg: 38_000, marginalRate: 0, totalTax: 3_000 } }]}
+          ordinaryIncome={scenario.ordinaryIncome}
+          ssBenefit={scenario.ssBenefit}
+          segments={mockLtcgSegments}
+          muniInterest={scenario.muniInterest}
+          qcd={scenario.qcd}
+          filingStatus={scenario.filingStatus}
+          year={scenario.year}
+        />,
+      );
+      // Only $2,000 of ordinary income is left, so $2,000 of the $5,000 gift
+      // can be excluded and $3,000 more of the same income reaches the return.
+      expect(screen.getByText(/Total income \$71,712/)).toBeInTheDocument();
+    });
+
+    it('falls back to income plus benefit when nothing else is set', () => {
+      render(
+        <LTCGTooltip
+          active={true}
+          payload={[{ payload: { ltcg: 12_000, marginalRate: 0, totalTax: 3_890 } }]}
+          ordinaryIncome={30_000}
+          ssBenefit={23_712}
+          segments={mockLtcgSegments}
+        />,
+      );
+      expect(screen.getByText(/Total income \$53,712/)).toBeInTheDocument();
     });
   });
 

@@ -30,6 +30,7 @@ import {
   taxableSocialSecurity,
   qcdLimitFor,
   qcdFor,
+  totalIncomeFor,
   SENIOR_DEDUCTION,
   SENIOR_DEDUCTION_FIRST_YEAR,
   SENIOR_DEDUCTION_LAST_YEAR,
@@ -407,21 +408,29 @@ export const CustomTooltip: React.FC<CustomTooltipProps> = ({
   // The axis is every dollar that is not Social Security, gains included, so
   // the hovered income has to be split before anything is priced off it.
   const split = splitOtherIncome(point.income, ltcg);
+  // The hovered point, as a whole return, so that every figure below is priced
+  // off one object rather than off a different subset of the props each time.
+  const scenario = { ...split, ssBenefit, filingStatus, muniInterest, qcd, year };
   // Medicare reads a wider MAGI than the tax chain does — tax-exempt interest
   // is added back — so it has to be recomputed here rather than read off the
   // curve, which only carries taxable figures.
-  const irmaa = irmaaFor(
-    irmaaMagi({ ...split, ssBenefit, filingStatus, muniInterest, qcd }),
-    { filingStatus, beneficiaries, year },
-  );
+  const irmaa = irmaaFor(irmaaMagi(scenario), {
+    filingStatus,
+    beneficiaries,
+    year,
+  });
   // The x-axis is income before the gift, so the charitable exclusion has to
   // come back out of the total the header quotes. A gift can only be excluded
   // from the ordinary half — the gain is a sale, not a distribution.
-  const given = Math.min(qcd, split.ordinaryIncome);
+  const given = qcdFor(scenario);
+  // Not `point.income + ssBenefit`: tax-exempt interest is spent like any
+  // other dollar and the gift never reaches the filer, so both belong in what
+  // this return takes in. See `totalIncomeFor`.
+  const totalIncome = totalIncomeFor(scenario);
   return (
     <div style={TOOLTIP_STYLE}>
       <div style={{ fontWeight: 600, marginBottom: '0.25rem' }}>
-        Other income {formatCurrency(point.income)} · Total income {formatCurrency(point.income + ssBenefit)}
+        Other income {formatCurrency(point.income)} · Total income {formatCurrency(totalIncome)}
       </div>
       {split.ltcg > 0 && (
         <div style={{ fontSize: '0.8125rem', color: '#34d399' }}>
@@ -479,6 +488,14 @@ interface LTCGTooltipProps {
   ordinaryIncome: number;
   ssBenefit: number;
   segments: CurveSegment<LTCGMarginalRatePoint>[];
+  /** Tax-exempt interest, which the return takes in without reporting it. */
+  muniInterest?: number;
+  /** Charitable distribution asked for, before the ordinary-income cap. */
+  qcd?: number;
+  /** Needed only to price the gift against the right annual limit. */
+  filingStatus?: FilingStatus;
+  /** Needed only to price the gift against the right annual limit. */
+  year?: TaxYear;
 }
 
 export const LTCGTooltip: React.FC<LTCGTooltipProps> = ({
@@ -487,16 +504,37 @@ export const LTCGTooltip: React.FC<LTCGTooltipProps> = ({
   ordinaryIncome,
   ssBenefit,
   segments,
+  muniInterest = 0,
+  qcd = 0,
+  filingStatus = 'single',
+  year = defaultTaxYear(),
 }) => {
   if (!active || !payload || !payload.length) return null;
   const point = payload[0].payload;
   const segment = segments.find(
     (seg) => point.ltcg >= seg.start && point.ltcg <= seg.end,
   );
+  // Same total as the torpedo tooltip quotes, from the same definition — the
+  // two used to say different numbers about the same return, because this one
+  // left out tax-exempt interest and the charitable gift. See `totalIncomeFor`.
+  //
+  // It is not quite fixed across this axis, despite what the sweep holds
+  // still: a gift can only come out of the ordinary half, so once the gain
+  // grows past what is left beside it, less of the gift is excludable and more
+  // of the same income reaches the return.
+  const scenario = {
+    ...splitOtherIncome(ordinaryIncome, point.ltcg),
+    ssBenefit,
+    muniInterest,
+    qcd,
+    filingStatus,
+    year,
+  };
+  const totalIncome = totalIncomeFor(scenario);
   return (
     <div style={TOOLTIP_STYLE}>
       <div style={{ fontWeight: 600, marginBottom: '0.25rem' }}>
-        {formatCurrency(point.ltcg)} of {formatCurrency(ordinaryIncome)} is gain · Total income {formatCurrency(ordinaryIncome + ssBenefit)}
+        {formatCurrency(point.ltcg)} of {formatCurrency(ordinaryIncome)} is gain · Total income {formatCurrency(totalIncome)}
       </div>
       <div>
         Marginal Rate: <strong style={{ color: '#f59e0b' }}>{point.marginalRate}%</strong>
@@ -1048,6 +1086,11 @@ const App: React.FC = () => {
    * across the whole axis. What is left varying is which rate schedule each
    * dollar is charged under, and where the gain stack sits against the
    * 0%/15%/20% bands.
+   *
+   * One exception, which the axis label under the chart names: a charitable
+   * distribution can only come out of the ordinary half, so a gain big enough
+   * to crowd that half below the gift shrinks what `qcdFor` allows and does
+   * move the income after all.
    */
   const ltcgCurve = useMemo(
     () =>
@@ -1136,20 +1179,13 @@ const App: React.FC = () => {
 
   /**
    * Everything this return takes in, which is the denominator an effective
-   * rate needs and the page had nowhere until now.
+   * rate needs and the reader's own answer at the foot of the page quotes.
    *
-   * It is the total the axis label under step 2's chart already defines, and
-   * for the same reasons: other income, plus the *whole* benefit rather than
-   * the share of it 86(a) makes taxable, plus tax-exempt interest, less
-   * anything handed straight to charity — money that leaves the IRA without
-   * ever reaching the filer. Taxable income would be the wrong denominator
-   * here: measured against it, the untaxed benefit disappears from the
-   * comparison, and the untaxed benefit is the thing the whole page is about.
+   * `totalIncomeFor` is the one definition — both axis labels and both
+   * tooltips now read it rather than each restating it — and its own comment
+   * says why the whole benefit counts and the charitable gift does not.
    */
-  const totalIncome = Math.max(
-    0,
-    ordinaryIncome - given + ssBenefit + muniInterest,
-  );
+  const totalIncome = totalIncomeFor(hereScenario);
 
   /**
    * The average rate, for reading next to the marginal one.
@@ -2376,6 +2412,10 @@ const App: React.FC = () => {
                         ordinaryIncome={ordinaryIncome}
                         ssBenefit={ssBenefit}
                         segments={ltcgSegments}
+                        muniInterest={muniInterest}
+                        qcd={qcd}
+                        filingStatus={filingStatus}
+                        year={year}
                       />
                     }
                   />
@@ -2390,11 +2430,20 @@ const App: React.FC = () => {
                 </AreaChart>
               </ResponsiveContainer>
             </div>
+            {/* The same total the tooltip above quotes, from the same
+                definition — this line used to leave out tax-exempt interest
+                and the charitable gift, so it disagreed with the sentence
+                under step 2's chart about the very same return. And the sweep
+                holds it still only when nothing is being given away: a gift
+                comes out of the ordinary half alone, so past a point the gain
+                crowds it out. */}
             <p className="chart-axis-label">
               Long-Term Capital Gains, out of {formatCurrency(ordinaryIncome)} of
               other income ($) &middot; Total income{' '}
-              {formatCurrency(ordinaryIncome + ssBenefit)} at every point on this
-              axis
+              {formatCurrency(totalIncome)}
+              {given > 0
+                ? ' where you stand \u2014 the further right you go, the less of the gift has ordinary income to come out of, so the more of this income reaches the return'
+                : ' at every point on this axis'}
             </p>
 
             <CurveCaption
@@ -2459,12 +2508,16 @@ const App: React.FC = () => {
                   All told the return owes{' '}
                   <strong>{formatCurrency(hereGainPoint.totalTax)}</strong> in
                   federal tax on the {formatCurrency(totalIncome)} of total
-                  income this slider never moves &mdash; an effective rate of{' '}
+                  income behind this chart
+                  {given > 0 ? '' : ', which this slider never moves'} &mdash;
+                  an effective rate of{' '}
                   <strong>
                     {formatPercent(effectiveRateOn(hereGainPoint.totalTax))}
                   </strong>
-                  . The same dollars, taxed differently: what the slider moves
-                  is the bill, not the income.
+                  .{' '}
+                  {given > 0
+                    ? 'Mostly the same dollars, taxed differently: the slider moves the bill, and it moves the income only where the gain has crowded the gift out of the ordinary half.'
+                    : 'The same dollars, taxed differently: what the slider moves is the bill, not the income.'}
                 </>
               ) : null}
             </p>

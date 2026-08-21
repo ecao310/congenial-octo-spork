@@ -49,6 +49,7 @@ import {
   ordinaryIncomeAfterQcd,
   qcdEffect,
   agiFor,
+  totalIncomeFor,
   QCD_MIN_AGE,
   SENIOR_DEDUCTION,
   SENIOR_DEDUCTION_PHASEOUT_RATE,
@@ -593,6 +594,51 @@ describe('ltcgMarginalRateCurve', () => {
  * ordinary income and gains are separate line items — which is why the sweeps
  * keep it as their default and `gainsWithinIncome` is what opts out.
  */
+/* ------------------------------------------------------------------ */
+/*  What the return takes in                                           */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The page quotes this figure in four places — both charts' axis labels and
+ * both charts' tooltips — and before `totalIncomeFor` existed each of them
+ * spelled it out separately and two of them got it wrong. These tests pin the
+ * three things that make it neither AGI nor taxable income.
+ */
+describe('totalIncomeFor', () => {
+  const base = { ordinaryIncome: 40_000, ssBenefit: 24_000, year: PINNED_YEAR };
+
+  it('counts the whole benefit, not the share the torpedo drags in', () => {
+    expect(totalIncomeFor(base)).toBe(64_000);
+    // AGI sees only part of the benefit, and that gap is the page's subject.
+    expect(agiFor(base)).toBeLessThan(totalIncomeFor(base));
+  });
+
+  it('counts tax-exempt interest, which AGI never does', () => {
+    expect(totalIncomeFor({ ...base, muniInterest: 10_000 })).toBe(74_000);
+  });
+
+  it('leaves the gain where it is: a share of the income, not an addition', () => {
+    // $40,000 of other income, $15,000 of it a gain, is still $40,000.
+    expect(
+      totalIncomeFor({ ...base, ordinaryIncome: 25_000, ltcg: 15_000 }),
+    ).toBe(64_000);
+  });
+
+  it('takes off the charitable gift the law allows, not the one asked for', () => {
+    expect(totalIncomeFor({ ...base, qcd: 10_000 })).toBe(54_000);
+    // Only $25,000 of ordinary income is left beside the gain to take a gift
+    // from, so a $40,000 gift removes $25,000 and the rest is not a gift at all.
+    expect(
+      totalIncomeFor({ ...base, ordinaryIncome: 25_000, ltcg: 15_000, qcd: 40_000 }),
+    ).toBe(39_000);
+  });
+
+  it('never reports a negative total', () => {
+    expect(totalIncomeFor({ ordinaryIncome: -5_000 })).toBe(0);
+    expect(totalIncomeFor()).toBe(0);
+  });
+});
+
 describe('gains carved out of income rather than stacked on top', () => {
   describe('splitOtherIncome', () => {
     it('takes the gain out of the income rather than adding to it', () => {

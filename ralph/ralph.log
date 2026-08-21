@@ -4393,3 +4393,73 @@ runs `npm install` and would prune them anyway.
 `npx tsc -b`, `npx eslint src --max-warnings 0`, `npx vitest run` (9 files, 581
 tests, green — unchanged, this iteration touched no source), `npm run build`,
 and `npm install` clean against the renamed lockfile.
+
+## 2026-08-21 — Task: One definition of "total income" for the whole page
+
+Discovered-work bullet, topmost unchecked item: the two tooltips and the chart
+axis labels each spelled out what a return "takes in", and they disagreed. With
+$10,000 of tax-exempt interest set, step 2's tooltip said $53,712 and the
+sentence a few inches below it said $63,712 — same return, same screen.
+
+### The count was four, not three
+
+The bullet named three sites. There were four, and the fourth is the one that
+made the bug visible on a touchscreen where no tooltip ever opens:
+
+1. `CustomTooltip` — `point.income + ssBenefit`. Wrong: no muni, no gift.
+2. `LTCGTooltip` — `ordinaryIncome + ssBenefit`. Same, and it had neither
+   `muniInterest` nor `qcd` threaded to it at all.
+3. Step 2's axis label — right (modulo the raw-`qcd` overstatement, which is
+   its own unstruck bullet and stays unstruck).
+4. Step 3's axis label — `ordinaryIncome + ssBenefit` again, rendered
+   permanently under the chart rather than only on hover.
+
+Fixed by giving the definition one home: `totalIncomeFor(scenario)` in
+`tax.ts`, beside `agiFor` and for the same reason `agiFor` is there — it is an
+income definition, and this app has four of them (provisional, AGI, IRMAA's
+MAGI, and now this). All four sites read it. App.tsx's `totalIncome` collapsed
+from three lines of arithmetic to a call.
+
+Why it is neither AGI nor taxable income, since that keeps coming up: the
+*whole* benefit counts, not the 86(a) share. Measured against taxable income
+the untaxed benefit vanishes from the comparison, and the untaxed benefit is
+what the page is about.
+
+### The thing I did not expect
+
+Step 3's label claimed the total is fixed "at every point on this axis", and
+the `ltcgCurve` doc comment made the same claim about provisional income. Both
+are false once a charitable gift is set. `qcdFor` caps the gift by the ordinary
+income there is to exclude it from — so as the gain slider moves right, the
+ordinary half shrinks, less of the gift is excludable, and *more* of the same
+income lands on the return. At $30,000 of income with a $10,000 gift: total is
+$43,712 at no gain and $48,712 at $25,000 of gain.
+
+So the sweep is not composition-only after all. Three places now say so: the
+axis label ("where you stand — the further right you go..."), the slider
+readout under it (which used to end "what the slider moves is the bill, not the
+income" — flatly wrong in this case), and the `ltcgCurve` comment.
+
+Worth knowing for whoever touches step 3 next: `gainsWithinIncome: true` holds
+*gross* income still, not the income the return sees.
+
+### Verified
+
+- `totalIncomeFor` unit tests: whole benefit vs `agiFor`, muni counted, gain
+  not additive, gift capped by ordinary income, no negative total.
+- Both tooltips asserted to print the same `$68,712` for one scenario carrying
+  muni *and* a gift — the regression the bullet describes, pinned from both
+  ends.
+- Step 3's axis label asserted against the step 2 and step 3 readouts at
+  $63,712 with muni set, and through the crowding-out case at $43,712 →
+  $48,712.
+- `npx tsc -b`, `npx eslint src --max-warnings 0`, `npx vitest run` (9 files,
+  592 tests, up from 581), `npm run build`.
+
+### Left alone deliberately
+
+Step 2's axis label still subtracts the *asked-for* gift rather than the
+allowed one (`− {qcd}`, not `− {given}`). That is the next bullet in Discovered
+Work, it is a prose defect rather than an arithmetic one, and every *number* on
+the page now comes from `totalIncomeFor`, which caps correctly. Struck nothing
+that was not mine to strike.

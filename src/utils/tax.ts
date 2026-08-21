@@ -848,6 +848,34 @@ export function agiFor(scenario: Scenario = {}): number {
 }
 
 /**
+ * Everything the return takes in, before the tax code decides how much of it
+ * to look at.
+ *
+ * The denominator an effective rate needs, and the figure both charts' axis
+ * labels and both charts' tooltips quote. It lives here rather than being
+ * spelled out at each of those four sites, because it was spelled out at each
+ * of those four sites and they disagreed: with $10,000 of tax-exempt interest
+ * set, the torpedo tooltip said $53,712 where the sentence below the same
+ * chart said $63,712, for the same return.
+ *
+ * Deliberately neither AGI nor taxable income. The *whole* benefit counts, not
+ * the share 86(a) drags in, because a page about the untaxed portion of Social
+ * Security cannot leave that portion out of the income it measures against —
+ * against taxable income the torpedo's own subject disappears. Tax-exempt
+ * interest counts because the filer spends it, whatever 103 says about it. And
+ * the charitable distribution comes off, because that money leaves the IRA
+ * without ever reaching the filer — but only as much of it as `qcdFor` allows,
+ * which is the gift capped by the ordinary income there is to take it from.
+ */
+export function totalIncomeFor(scenario: Scenario = {}): number {
+  const { ltcg, ssBenefit, muniInterest } = resolveScenario(scenario);
+  return Math.max(
+    0,
+    ordinaryIncomeAfterQcd(scenario) + ltcg + ssBenefit + muniInterest,
+  );
+}
+
+/**
  * Split a point on an other-income axis into the two halves the tax chain
  * wants: what is charged under the ordinary rate schedule, and what is charged
  * under the capital-gain one.

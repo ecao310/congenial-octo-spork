@@ -4624,3 +4624,72 @@ rather than 1411(d)'s plain AGI — it needs a seventh `ConversionMeasure`. And
 the three shelved modules still call `totalTax` at nine sites, so they score
 lifetime tax at chapter 1; not visible, but an inconsistency to settle when
 they come off the shelf rather than before.
+
+## 2026-08-21 — Task: Say on the page that the link is the return
+
+Topmost unchecked bullet of Backlog 4. HEAD clean and green before; 623 tests
+green after, up from 616. No existing test touched.
+
+### What went in
+
+A `.answer-share` block at the close, between the eight figures and the
+caveat: one sentence — "The address bar is this return. Every control on this
+page rides in the link…" — a **Copy link to this return** button, and a live
+region for what the copy did.
+
+### The three decisions
+
+**What gets copied: `location.href`, verbatim.** Not a URL rebuilt with
+`#answer` on it, which was tempting since the button sits at the close and the
+close is what is worth sending. Two things killed it. `stepFromHash` only
+knows the four `#step-…` ids, so `#answer` would land a reader at the close
+under a nav insisting they are on step 1 — the exact mismatch that function
+exists to prevent — and the close belongs to no step, so there is no right
+marking for it. The deciding argument is the fallback: the failure message
+tells the reader to select the address bar instead, and that is only honest if
+the button copies the address bar character for character.
+
+**The fallback: no text field.** The bullet suspected it was more code than
+the feature it backs up, and it is worse than that — a second copy of the
+address on the page is a second thing to keep in step with the return, stale
+the moment a slider moves, where the address bar never is. So: no clipboard at
+mount (plain http, Safari before 13.1) draws no button at all, because a copy
+button that cannot copy is worse than none and the sentence beside it is the
+whole feature. A write that *rejects* at click time gets a message pointing at
+the address bar. One thing to say, one place to look.
+
+**`aria-live="polite"` rather than `role="status"`.** The link note at the top
+of the page is already the page's one status region, and a second would make
+`getByRole('status')` ambiguous for a screen reader and for the three existing
+tests that query it. `role=status` is defined as polite + atomic, so writing
+those two attributes directly gets the same announcement without the
+collision. The region is mounted always and empty when idle — a message has to
+land *in* a live region rather than arrive with it — and `:empty { display:
+none }` keeps it out of the layout meanwhile.
+
+### One thing the copy has to be told about
+
+"Copied" is a claim about the clipboard, and it stops being true of what is on
+screen the moment a slider moves. The reset lives in the existing
+address-bar-sync effect, which already knows the return changed and has the
+eleven-value dependency array; duplicating that array for a second effect
+would have been the only alternative. Same reasoning as the link note's
+Dismiss button, and the comment says so.
+
+### Verified
+
+- 7 new tests: placement between `.answer-figures` and `.answer-note`, the
+  exact `location.href` on the clipboard, a round trip (copy at $120,000 MFJ →
+  unmount → open the copied link → the sliders and the $143,712 total come
+  back), the message clearing on the next slider move, the rejection path, no
+  button under jsdom's absent clipboard, and the live-region attributes plus
+  no second `role="status"`.
+- `npx tsc -b`, `npx eslint src --max-warnings 0`, `npx vitest run` (9 files,
+  623 tests), `npm run build`.
+- No browser tooling in this repo, so the flex layout is read rather than
+  seen; jsdom covers structure and text only.
+
+### Not filed as discovered work
+
+Nothing broken turned up. The chunk warning and the oxc/esbuild banner are
+both already bullets further down Backlog 4.

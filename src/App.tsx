@@ -809,6 +809,44 @@ const App: React.FC = () => {
   const [homeState, setHomeState] = useState<string>(opening.homeState);
 
   /**
+   * Whether this browser will hand a page the clipboard.
+   *
+   * `navigator.clipboard` is undefined over plain http and in Safari before
+   * 13.1 — the DOM types declare it non-optional, which is why the check is
+   * written against `typeof` rather than a truthiness test the compiler would
+   * consider dead. Read once at mount because the answer cannot change
+   * mid-session, and because the tests mount many pages under many browsers.
+   *
+   * When it is false the button is not drawn at all. A copy button that cannot
+   * copy is worse than no button, and the sentence beside it — the address bar
+   * *is* the link — is the whole feature; the button only saves a reader the
+   * trip to the top of the window.
+   */
+  const [canCopyLink] = useState(
+    () => typeof navigator.clipboard?.writeText === 'function',
+  );
+
+  /**
+   * What to say about the last copy, or nothing.
+   *
+   * Deliberately not a fallback text field. A second copy of the address on
+   * the page is a second thing to keep in step with the return, and it would
+   * be stale the moment a slider moved — where the address bar never is. So
+   * the failure case points at the address bar, which is the same link the
+   * button would have put on the clipboard, character for character. That is
+   * only true because the button copies `location.href` verbatim rather than
+   * building its own URL.
+   */
+  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle');
+
+  const copyLink = (): void => {
+    void navigator.clipboard
+      .writeText(window.location.href)
+      .then(() => setCopyState('copied'))
+      .catch(() => setCopyState('failed'));
+  };
+
+  /**
    * The address bar, kept in step with the return.
    *
    * `replaceState`, not `pushState`: a slider fires a change per notch, so
@@ -839,6 +877,11 @@ const App: React.FC = () => {
       '',
       scenarioUrl(scenario, window.location),
     );
+    /* The address just changed, so whatever is on the clipboard is a different
+       return from the one on screen and "Copied" has stopped being true of
+       it. Same reasoning as the link note's Dismiss: a message about an
+       arrival cannot be kept current, so it goes when the return moves. */
+    setCopyState('idle');
   }, [
     year,
     filingStatus,
@@ -3226,6 +3269,49 @@ const App: React.FC = () => {
             </dd>
           </div>
         </dl>
+
+        {/* ───── The link is the return ─────
+
+            The address bar has carried the whole return since the query
+            string went in, and until now the only place the page mentioned it
+            was the failure case: the note that appears when a link asked for
+            something this page could not show. So a reader who wanted to send
+            this to a spouse or an advisor had to work out on their own that
+            the URL was the thing to send.
+
+            It belongs here rather than in the header, because what is worth
+            sending is the answer, and this is the one place the answer sits
+            together. The sentence is the feature and the button is the
+            convenience — see `canCopyLink`. */}
+        <div className="answer-share">
+          <p className="answer-share-line">
+            <strong>The address bar is this return.</strong> Every control on
+            this page rides in the link, so sending it sends the figures above
+            exactly as they stand &mdash; and whoever opens it can move the
+            sliders themselves without disturbing yours.
+          </p>
+          {canCopyLink && (
+            <button
+              type="button"
+              className="answer-share-button"
+              onClick={copyLink}
+            >
+              Copy link to this return
+            </button>
+          )}
+          {/* `aria-live` rather than `role="status"`: the same announcement,
+              without becoming the second status region on a page whose first
+              one is the link note. Rendered empty rather than conditionally,
+              because a live region has to be on the page before the message
+              lands in it to be read out reliably; CSS hides it while it is. */}
+          <p className="answer-share-status" aria-live="polite" aria-atomic="true">
+            {copyState === 'copied'
+              ? 'Copied. That link opens this page on this return.'
+              : copyState === 'failed'
+                ? 'This browser would not take the copy. Select the address bar and copy it — it is the same link.'
+                : ''}
+          </p>
+        </div>
 
         <p className="answer-note">
           Every figure here moves the moment any slider does, and none of them

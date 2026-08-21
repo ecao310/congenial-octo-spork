@@ -2836,6 +2836,152 @@ describe('the closing answer', () => {
       );
     });
   });
+  /**
+   * The link is the return, said on the page.
+   *
+   * The query string has carried every control since d5bcf75, and the only
+   * place the page mentioned the address bar was the failure case — the note
+   * that appears when a link asked for something this page could not show. So
+   * a reader who wanted to send this to a spouse or an advisor had to work it
+   * out for themselves.
+   */
+  describe('sending the answer', () => {
+    const share = (): HTMLElement =>
+      answer().querySelector('.answer-share') as HTMLElement;
+
+    const copyButton = (): HTMLElement =>
+      within(share()).getByRole('button', { name: 'Copy link to this return' });
+
+    const status = (): HTMLElement =>
+      share().querySelector('.answer-share-status') as HTMLElement;
+
+    /**
+     * jsdom implements no clipboard at all, which is exactly the browser the
+     * fallback is for — so the button only exists in tests that ask for one.
+     */
+    const withClipboard = (writeText: (text: string) => Promise<void>): void => {
+      Object.defineProperty(navigator, 'clipboard', {
+        value: { writeText },
+        configurable: true,
+      });
+    };
+
+    afterEach(() => {
+      Reflect.deleteProperty(navigator, 'clipboard');
+    });
+
+    it('says the address bar is the return, between the figures and the caveat', () => {
+      render(<App />);
+      expect(share()).toHaveTextContent('The address bar is this return.');
+      expect(share()).toHaveTextContent(
+        'Every control on this page rides in the link',
+      );
+      expect(share().previousElementSibling).toHaveClass('answer-figures');
+      expect(share().nextElementSibling).toHaveClass('answer-note');
+    });
+
+    it('puts the address itself on the clipboard, character for character', async () => {
+      const copied: string[] = [];
+      withClipboard((text) => {
+        copied.push(text);
+        return Promise.resolve();
+      });
+      render(<App />);
+      setIncome(90_000);
+
+      fireEvent.click(copyButton());
+      await screen.findByText(/Copied\./);
+
+      expect(copied).toEqual([window.location.href]);
+      expect(copied[0]).toContain('?year=2025&income=90000');
+      expect(status()).toHaveTextContent('That link opens this page on this return');
+    });
+
+    /** The point of the feature: what is copied opens the same return. */
+    it('hands over a link that reopens the return it was copied from', async () => {
+      let copied = '';
+      withClipboard((text) => {
+        copied = text;
+        return Promise.resolve();
+      });
+      const first = render(<App />);
+      setIncome(120_000);
+      fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Jointly' }));
+      fireEvent.click(copyButton());
+      await screen.findByText(/Copied\./);
+      first.unmount();
+
+      window.history.replaceState(null, '', copied);
+      render(<App />);
+      expect(
+        screen.getByRole('slider', { name: /other income \(not social security\)/i }),
+      ).toHaveValue('120000');
+      expect(
+        screen.getByRole('radio', { name: 'Married Filing Jointly' }),
+      ).toBeChecked();
+      expect(figure('Total income')).toHaveTextContent('$143,712');
+    });
+
+    /**
+     * "Copied" is a claim about what is on the clipboard, and the moment a
+     * slider moves that is a different return from the one on screen.
+     */
+    it('stops saying Copied once the return has moved on', async () => {
+      withClipboard(() => Promise.resolve());
+      render(<App />);
+      fireEvent.click(copyButton());
+      await screen.findByText(/Copied\./);
+
+      setIncome(70_000);
+      expect(status()).toBeEmptyDOMElement();
+    });
+
+    /**
+     * Clipboard access can be refused at the moment of the click even where
+     * the API exists. There is no text field to fall back to on purpose — a
+     * second copy of the address on the page would go stale against the real
+     * one — so the message points at the address bar, which holds the same
+     * link the button would have copied.
+     */
+    it('points at the address bar when the browser refuses the copy', async () => {
+      withClipboard(() => Promise.reject(new Error('denied')));
+      render(<App />);
+      fireEvent.click(copyButton());
+
+      await screen.findByText(/would not take the copy/);
+      expect(status()).toHaveTextContent(
+        'Select the address bar and copy it — it is the same link.',
+      );
+    });
+
+    /**
+     * Over plain http, and in Safari before 13.1, there is no clipboard to
+     * write to. A button that cannot copy is worse than no button, and the
+     * sentence beside it already tells the reader what to send.
+     */
+    it('draws no button at all where there is no clipboard', () => {
+      render(<App />);
+      expect(navigator.clipboard).toBeUndefined();
+      expect(
+        within(share()).queryByRole('button', { name: /copy link/i }),
+      ).not.toBeInTheDocument();
+      expect(share()).toHaveTextContent('The address bar is this return.');
+      expect(status()).toBeEmptyDOMElement();
+    });
+
+    /**
+     * A live region rather than a second `role="status"`: the link note at the
+     * top of the page is the page's status, and two of them would make
+     * `getByRole('status')` ambiguous for a screen reader and a test alike.
+     */
+    it('announces the result without becoming a second status region', () => {
+      withClipboard(() => Promise.resolve());
+      render(<App />);
+      expect(status()).toHaveAttribute('aria-live', 'polite');
+      expect(status()).toHaveAttribute('aria-atomic', 'true');
+      expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    });
+  });
 });
 
 /**

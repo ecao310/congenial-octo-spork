@@ -1,4 +1,4 @@
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { marginalRateCurve, incomeAxisMax } from './utils/tax';
 import { defaultScenario } from './utils/scenarioUrl';
@@ -170,5 +170,84 @@ describe('the cover', () => {
     expect(metaTags['og:description']).toContain(`${hump}%`);
     expect(metaTags['og:description']).toContain(`${valley}%`);
     expect(metaTags['og:image:alt']).toContain(`${hump}%`);
+  });
+});
+
+/**
+ * The repo's own front door, which is a different surface from the page's.
+ *
+ * `README.md:12` named the bare Pages URL as **Live:** for the whole rewrite.
+ * That URL serves `main`, which is seventy-odd commits behind `dev` and still
+ * opens as *Marginal Tax Rate* out of a package called `growth-projector`, so
+ * every reader who followed the front-door link landed on the app this one was
+ * rewritten out of. Nothing caught it because nothing here reads `README.md`
+ * and no build breaks: both URLs are live, both return 200, and the wrong one
+ * is a perfectly good page.
+ *
+ * The fix is a link, and a link rots the moment the branch under it moves. So
+ * this reads the working branch out of the README's own prose rather than
+ * hardcoding it, finds the workflow that deploys on push to that branch, and
+ * derives the URL that workflow actually publishes to — `--base=` if the job
+ * overrides it, `vite.config.ts`'s `base` if it does not. Merging `dev` into
+ * `main` therefore turns red here until the README says so too.
+ */
+describe('the front door', () => {
+  const readme = readFileSync(root('README.md'), 'utf8');
+  const ORIGIN = 'https://ecao310.github.io';
+
+  /** The URL under **Live:**, and the branch the sentence below it names. */
+  const liveUrl = /^\*\*Live:\*\*\s+(\S+)/m.exec(readme)?.[1];
+  const workingBranch = /`([\w.-]+)` is the working branch/.exec(readme)?.[1];
+
+  /**
+   * Every deploy workflow, as the branch it fires on and the base path it
+   * hands the build. `deploy-preview.yml` passes `--base=` on the command
+   * line; `deploy.yml` runs `npm run build` and takes vite.config's.
+   */
+  const configBase = /^\s*base:\s*'([^']+)'/m.exec(
+    readFileSync(root('vite.config.ts'), 'utf8'),
+  )?.[1];
+
+  const workflows = readdirSync(root('.github/workflows')).map((file) => {
+    const yaml = readFileSync(root(`.github/workflows/${file}`), 'utf8');
+    return {
+      file,
+      branches: (/branches:\s*\[([^\]]*)\]/.exec(yaml)?.[1] ?? '')
+        .split(',')
+        .map((b) => b.trim())
+        .filter(Boolean),
+      base: /--base=(\S+)/.exec(yaml)?.[1] ?? configBase,
+    };
+  });
+
+  it('says which branch it is describing', () => {
+    expect(liveUrl).toBeDefined();
+    expect(workingBranch).toBeDefined();
+    expect(configBase).toBe('/congenial-octo-spork/');
+    expect(workflows.length).toBeGreaterThan(1);
+  });
+
+  it('points at the URL the working branch publishes', () => {
+    // Named by workflow file rather than counted, so a failure says which
+    // ones fired on the branch instead of only how many did.
+    const deploying = workflows.filter((w) => w.branches.includes(workingBranch!));
+    expect(deploying.map((w) => w.file)).toHaveLength(1);
+
+    // Compared as paths: the origin is asserted on its own, and a whole-URL
+    // diff is long enough that vitest elides the half that differs.
+    expect(liveUrl?.startsWith(`${ORIGIN}/`)).toBe(true);
+    expect(liveUrl?.slice(ORIGIN.length)).toBe(deploying[0].base);
+  });
+
+  it('names no Pages URL that no workflow publishes', () => {
+    const published = new Set(workflows.map((w) => `${ORIGIN}${w.base}`));
+    const named = new Set(
+      (readme.match(new RegExp(`${ORIGIN}/[\\w./-]*`, 'g')) ?? []).map((u) =>
+        u.endsWith('/') ? u : `${u}/`,
+      ),
+    );
+
+    expect([...named].filter((u) => !published.has(u))).toEqual([]);
+    expect(named).toEqual(published);
   });
 });

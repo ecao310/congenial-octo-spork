@@ -9,7 +9,14 @@ This is one page that draws that cost across every income level for one
 reader's own return, and marks the stretches worth filling and the ones worth
 stepping around.
 
-**Live:** https://ecao310.github.io/congenial-octo-spork/
+**Live:** https://ecao310.github.io/congenial-octo-spork/preview/
+
+`dev` is the working branch, and that URL is where it publishes. The bare
+https://ecao310.github.io/congenial-octo-spork/ is the same Pages site's other
+build: it serves `main`, which has none of this rewrite on it and still opens
+as *Marginal Tax Rate*. Nothing here has been merged there yet, and until it
+is, the preview path is the page this README describes — see
+[Deployment](#deployment) for why one repo publishes two apps.
 
 ## The two steps
 
@@ -134,7 +141,7 @@ longer the rate the arithmetic reaches.
 ```bash
 npm install
 npm run dev      # start dev server
-npm run test     # vitest, 665 tests
+npm run test     # vitest, 680 tests
 npm run lint     # eslint
 npm run build    # tsc -b && vite build
 ```
@@ -163,7 +170,15 @@ Every push to `dev` publishes a preview alongside it, at
 https://ecao310.github.io/congenial-octo-spork/preview/ . The repo has one
 Pages site, so `.github/workflows/deploy-preview.yml` rebuilds main's site
 verbatim from `main` and nests the dev build underneath it. The production URL
-therefore always serves `main`; `dev` never needs to be merged to be seen.
+therefore always serves `main`; `dev` never needs to be merged to be seen —
+and, for as long as `main` is the pre-rewrite app, the production URL is not
+this page. That is why the link at the top of this file is the preview one.
+
+`the front door` in `src/meta.test.ts` holds the two together: it reads the
+working branch out of the sentence under that link, finds the workflow that
+triggers on that branch, derives the base that workflow builds with, and fails
+if the link and the workflow stop agreeing. Merging `dev` into `main` is
+therefore a README edit the test will ask for rather than one to remember.
 
 ---
 

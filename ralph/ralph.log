@@ -7143,3 +7143,93 @@ suite for iterating on one block.
 The standing browser note is unchanged and untested this run; nothing here
 needed a browser. `playwright-core` is presumably still absent — that bullet
 stands, and it is now the topmost unchecked item under Discovered Work.
+
+---
+
+## The README's front door sends readers to a different application
+
+The bullet was one defect and one decision, and it said so. Fixed the defect,
+recorded the decision as its own bullet, and did not make it.
+
+### The defect, confirmed live
+
+Both URLs answer 200 and both are this repo:
+
+```
+https://ecao310.github.io/congenial-octo-spork/         <title>Marginal Tax Rate</title>
+https://ecao310.github.io/congenial-octo-spork/preview/ <title>How Much Can You Take Out This Year? — Retirement Tax Torpedo</title>
+```
+
+`origin/main` is `74a8dea`, package `growth-projector`; `origin/dev` is
+`66b19c2`, package `tax-torpedo`. `git rev-list --left-right --count` now says
+**0 / 77**, not the 75 the bullet was written against. README.md:12 named the
+first one as **Live:**, so the front door sent every reader to the app this one
+was rewritten out of. Nothing failed, because nothing failing is the whole
+shape of it: two live URLs, two valid pages, and the wrong one is a good page.
+
+### What changed
+
+**README.md** — the link moves to `/preview/` and gains the sentence that
+makes it checkable: `` `dev` is the working branch, and that URL is where it
+publishes ``, then what the bare URL is instead and why one repo publishes two
+apps. The Deployment section already described the mechanism correctly, so it
+only gained the consequence it had left unsaid — while `main` is the
+pre-rewrite app, the production URL is not this page — and a pointer to the
+test below.
+
+Also corrected `npm run test # vitest, 665 tests` to 680. It was stale by 15
+and sits in a file this run was already editing.
+
+### The part that is not prose
+
+A link rots the moment the branch under it moves, so `the front door` in
+`src/meta.test.ts` derives the right answer instead of restating it:
+
+1. reads the **Live:** URL and the working branch out of README.md's own prose;
+2. reads every `.github/workflows/*.yml`, pairing each with the branch it
+   fires on and the base it builds with — `--base=` when the job overrides it
+   (`deploy-preview.yml`), `vite.config.ts`'s `base` when it does not
+   (`deploy.yml`);
+3. asserts exactly one workflow deploys the working branch, and that the
+   **Live:** path is that workflow's base;
+4. asserts the set of `ecao310.github.io` URLs the README names is exactly the
+   set the workflows publish — no typo'd path, no URL nothing serves.
+
+It went into `meta.test.ts` rather than a new file because that file's stated
+job is already the outward-facing surfaces no other test reads.
+
+**Mutation-checked three ways**, each restored after:
+
+| mutation | result |
+| --- | --- |
+| **Live:** back at the bare URL | red: `expected '/congenial-octo-spork/' to be '/congenial-octo-spork/preview/'` |
+| working-branch sentence says `main`, link left at `/preview/` | red, the same diff inverted |
+| a `…/staging/` URL added to the prose | red on the third case |
+
+First draft used vitest's `expect(actual, message)` form. It runs — the
+messages printed — but the installed types are single-argument, so `tsc -b`
+failed on both call sites. Rewrote to compare *paths* rather than whole URLs:
+no message needed, and the diff is short enough that vitest stops eliding the
+half that differs, which the full-URL version did (`'https://ecao310.github.io/congenial-o…'`
+against itself).
+
+### The decision I did not make
+
+Merging 77 commits to `main` replaces what the production URL serves for
+everyone already holding it, and retires `deploy-preview.yml` — whose entire
+reason to exist is rebuilding main's site verbatim so that URL never changes
+under it. The bullet itself called it "a real decision rather than a chore".
+It is now bullet 10 of Backlog 6, marked as needing a human, with the four
+things one commit would have to carry. The test is built so that half of them
+cannot be forgotten: change the working-branch sentence and the link has to
+follow, or the suite goes red.
+
+### Verification
+
+`npx vitest run` **680 passed in 13 files** (677 before, +3). `tsc -b` clean,
+`eslint . --max-warnings 0` clean. Live URLs checked with `curl`, not assumed.
+
+Tree opened **clean** — first time in seven runs, after six consecutive
+"opened dirty" entries in this log. Nothing to salvage, nothing to reconstruct.
+The four stray driving scripts were absent too. Worth noting because the
+Discovered Work list has five bullets about the opposite.

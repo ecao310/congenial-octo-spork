@@ -11,11 +11,14 @@
  *     node scripts/og-cover.mjs
  *
  * Two things it leans on are present in `node_modules` without being named in
- * `package.json` — `esbuild`, which vite brings, and `playwright-core`, which
+ * `package.json` — `rolldown`, which vite brings, and `playwright-core`, which
  * the browser checks bring. Neither is a runtime or a test dependency and
  * neither belongs in the manifest for the sake of a script nothing in CI
  * runs; if a future install drops one, the fix is `npx` rather than a new
- * dependency.
+ * dependency. It was `esbuild` until Vite 8, which bundles with rolldown and
+ * no longer installs esbuild at all — so this is the second thing that has to
+ * be re-pointed when the toolchain moves, and the failure is a clean
+ * ERR_MODULE_NOT_FOUND rather than a wrong card.
  *
  * The curve on the card is the real one. `marginalRateCurve` is bundled out
  * of `src/utils` and sampled for the scenario the page opens on, so the shape
@@ -24,7 +27,7 @@
  * A drawn-by-hand hump would go on claiming 22.2% long after the statute
  * stopped saying so.
  */
-import { build } from 'esbuild';
+import { build } from 'rolldown';
 import { chromium } from 'playwright-core';
 import { existsSync, readdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
@@ -50,7 +53,7 @@ async function loadTaxModule() {
     `export * from ${JSON.stringify(join(ROOT, 'src/utils/tax'))};\n` +
       `export * from ${JSON.stringify(join(ROOT, 'src/utils/scenarioUrl'))};\n`,
   );
-  await build({ entryPoints: [entry], bundle: true, format: 'esm', outfile: out, logLevel: 'error' });
+  await build({ input: entry, output: { file: out, format: 'esm' }, platform: 'node', logLevel: 'silent' });
   const mod = await import(pathToFileURL(out).href);
   rmSync(dir, { recursive: true, force: true });
   return mod;

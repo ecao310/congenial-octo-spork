@@ -6840,3 +6840,140 @@ is in the log because it survives both a playwright bump and an arch change.
 Otherwise unchanged: `pkill -f "vite preview"` first, serve under
 `/congenial-octo-spork/`, write the driver to `/tmp` then `cp` it into the root
 for the bare `playwright-core` import and `rm` it in the same command line.
+
+---
+
+## Move the toolchain to the pipeline it was already running on
+
+**Task:** the oxc/esbuild warning at the head of every `vitest run` (Backlog 4).
+
+The bullet offered two candidate fixes — "a plugin version that speaks to the
+oxc pipeline, or an explicit override in the `test` block". It is the first,
+and the reason the second could never have worked is the thing worth writing
+down: **there were two Vites installed.**
+
+    vite@5.4.21                      <- package.json, and what `vite build` ran
+    vitest@4.1.11
+      └── vite@8.2.1                 <- nested, and what `vitest run` ran
+
+Vitest 4 peers on `^6 || ^7 || ^8`, so npm gave it its own copy and left the
+project's Vite 5 alone. Vite 8 transforms with oxc; `@vitejs/plugin-react` 4
+was still writing `esbuild: { jsx: 'automatic', jsxImportSource: undefined }`
+and `optimizeDeps.esbuildOptions` into whatever config it was handed. Hence
+the warning, and hence its exact wording.
+
+So the warning was never cosmetic. It was the app announcing that it is
+**tested through one compiler and shipped through another**. `vite@^8` and
+`@vitejs/plugin-react@^6` collapse that to one deduped Vite 8.2.2, and the
+plugin's `config` hook now returns `oxc` and `optimizeDeps.rolldownOptions` —
+the two keys the deprecation notices were asking for. Test log opens on ` RUN
+v4.1.11` and nothing else.
+
+### The part that nearly shipped broken
+
+Vite 8 bundles with rolldown, and `build.rollupOptions.output.manualChunks`
+survives as a compatibility shim that **silently does not work**. The build was
+green, warning-free, and wrong:
+
+    react-BxBacqWC.js     0.80 kB   <- react-dom's ESM wrapper, and nothing else
+    charts-BpSx4cVe.js  496.78 kB   <- react-dom, scheduler and recharts together
+
+Every id reaching the rule was the id it expected — verified by logging them —
+and the rule returned `'react'` for all four React packages. Rolldown took the
+answer and put them in `charts` anyway. Ported to `output.codeSplitting` and
+the split comes back: 139.83 / 357.37. (`advancedChunks` also works and is
+itself already deprecated in favour of `codeSplitting`; skipped it.)
+
+One spelling to avoid, now documented at the definition: `codeSplitting` accepts
+a **name function**, `(id) => 'react' | 'charts' | undefined`, which is nearly
+the old `manualChunks` signature and reproduces the broken split exactly. Two
+groups with mutually-exclusive predicates is the form that separates them.
+
+### What that says about the old test
+
+`src/build.test.ts` asserted the classifier: react-dom in, `'react'` out, plus
+an identity check that the config's `manualChunks` was that same function. All
+five assertions passed against the broken build. They were true and they were
+useless, because a chunking rule is worth exactly what the bundler does with
+it.
+
+So the file now asserts the **output**. `build({ build: { write: false } })`
+runs the real production build in memory in ~115 ms and hands back each chunk's
+module list, and the assertions read react-dom's *home* rather than the rule's
+*opinion*. The rule-level cases are kept but re-pointed through
+`config.build.rollupOptions.output.codeSplitting.groups`, so "the rule is wired
+to the build" is no longer a separate assertion — it is the only way the other
+cases can run at all.
+
+Two findings inside that:
+
+- **`NODE_ENV` decides what gets built.** Vitest sets it to `test`, and Vite
+  reads it over `mode`, so an unforced in-test build ships React's development
+  copy behind the dev JSX transform — 318 kB of react chunk and 87 kB of app
+  against the 140 and 67 that deploy. Forced to `production` in a `try/finally`,
+  all four chunks come out byte-identical to `npx vite build`. Logged as
+  discovered work; a global mutated mid-suite is fine for one file and not for
+  two.
+- **Size alone cannot see this bug.** Under the broken split `charts` is
+  496.78 kB — under Vite's own 500 kB line, so no warning fired. The
+  `< 500 kB` case is worth keeping because it is what the config comment
+  promises, but the module-membership cases are the ones that caught it.
+
+### The warning has a guard now
+
+`resolveConfig` takes a `customLogger`, so a logger that records instead of
+printing turns "the log opens clean" into an assertion — for both `build` and
+`serve`. It catches the family rather than one string: any plugin or option
+that addresses the retired half of the pipeline warns through the same channel.
+
+### Verified
+
+- `tsc -b`, `eslint . --max-warnings 0`, `vite build` (no chunk warning),
+  `vitest run`: 13 files, **674 tests** (670 + 4), and the first line of the
+  run is now ` RUN  v4.1.11`.
+- **Mutation-checked all nine assertions in the file**, restoring between each:
+  name-function group form → 4 fail; `esbuild: { jsx: 'automatic' }` in the
+  config → both pipeline cases fail; regex widened to `react[a-z-]*` so it
+  swallows react-redux → 1 fail; `node_modules` guard dropped → 2 fail; a
+  fourth entry in `dependencies` → 1 fail; the whole `build` block deleted →
+  6 fail; restored → 9 pass.
+- **The warning guard is mutation-checked against the real message.** With
+  `esbuild`/`optimizeDeps.esbuildOptions` set, the recording logger captures
+  "Both esbuild and oxc options were set… `{ jsx: 'automatic', jsxImportSource:
+  undefined }`" verbatim — the bullet's own text.
+- Real Chromium against `vite preview` on the built `dist`: all four JS chunks
+  200, zero non-2xx, zero page errors, zero console errors, 10 axis ticks and
+  1 area curve drawn, and 12 ArrowRights on `#ordinary-income` moved the
+  closing answer. Cross-chunk init order was the one real risk of re-grouping
+  and this rules it out. Same driver against `vite dev` on 8.2.2: identical,
+  zero errors.
+- `dist/index.html` carries a `modulepreload` for all three vendor chunks.
+
+### `scripts/og-cover.mjs`
+
+Vite 8 does not install esbuild at all, so the script's `import { build } from
+'esbuild'` was dead. Swapped to `rolldown`, which Vite now brings instead —
+`{ input, output: { file, format }, platform: 'node' }`. Ran the whole script:
+both PNGs come out **byte-identical** to the committed ones (same md5), which
+is the strongest available statement that the new bundler feeds the card the
+same arithmetic.
+
+### Note for the next run
+
+**`playwright-core` is gone and it is not coming back on its own.** It was
+never in `package.json` — it has been sitting in `node_modules` as an
+extraneous package left by some earlier run, and this run's `npm install`
+pruned it. Every browser check the last four runs did, and `og-cover.mjs`
+itself, now fail with a bare `ERR_MODULE_NOT_FOUND` until:
+
+    npm install --no-save playwright-core
+
+which touches neither `package.json` nor `package-lock.json` (verified by diff).
+Filed as discovered work. Everything else in the standing browser note holds
+and is unchanged: `pkill -f "vite preview"` first, serve under
+`/congenial-octo-spork/`, read the cache dir for the newest `chromium*-<n>`
+and try known binary leaves rather than trusting `chromium.executablePath()`,
+and write the driver to `/tmp` then `cp` it into the root for the bare import
+and `rm` it on the same command line. Did that; root is clean.
+
+Tree opened clean this run — first time in seven.

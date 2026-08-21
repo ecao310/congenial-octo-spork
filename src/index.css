@@ -974,3 +974,36 @@ footer p {
 .advanced-inputs > .input-group:last-child {
   margin-bottom: 1rem;
 }
+
+/* ───── Tab-level inputs ─────────────────────────────────────────────────────
+ *
+ * Two sections on the Over Time tab read the same nine sliders, so the sliders
+ * belong to the tab and not to either section — otherwise half of them sit
+ * below a chart they move, and the other section has to say "set above". The
+ * legends keep nine of them reading as two short lists rather than one wall.
+ */
+.tab-inputs > fieldset {
+  border: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 1.25rem 0 0;
+  margin: 0 0 1.5rem;
+}
+
+.tab-inputs > fieldset:last-of-type {
+  margin-bottom: 0;
+}
+
+.tab-inputs > fieldset > legend {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #64748b;
+  padding: 0 0.5rem 0 0;
+}
+
+/* The fieldset's own bottom margin is the gap; the last group must not add a
+ * second one. */
+.tab-inputs > fieldset > .input-group:last-child {
+  margin-bottom: 0;
+}

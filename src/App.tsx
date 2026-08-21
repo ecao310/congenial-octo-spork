@@ -2807,6 +2807,280 @@ const App: React.FC = () => {
           id="panel-horizon"
           aria-labelledby="tab-horizon"
         >
+          {/* ───── Inputs both charts on this tab run off ───── */}
+          <section className="explainer tab-inputs" aria-labelledby="horizon-inputs-heading">
+            <h2 id="horizon-inputs-heading">Your accounts and your horizon</h2>
+            <p>
+              Both charts below read this one set, so they cannot disagree about
+              when you turn {applicableAge} or how big the IRA is by then. The
+              projection uses the horizon, the COLA, your birth year and the IRA
+              balance and its growth; the withdrawal comparison uses those and
+              the rest besides, because it has to spend the accounts down and pay
+              the tax out of them. Filing status, the benefit and your other
+              income are set above the tab strip and apply here too.
+            </p>
+
+            <fieldset className="input-group">
+              <legend>The horizon</legend>
+              <div className="input-group">
+                <div className="slider-header">
+                  <label htmlFor="projection-horizon">Years to project</label>
+                  <span className="slider-value teal">{horizonYears} years</span>
+                </div>
+                <input
+                  id="projection-horizon"
+                  type="range"
+                  min={MIN_HORIZON}
+                  max={MAX_HORIZON}
+                  step={1}
+                  value={horizonYears}
+                  onChange={(e) => setHorizonYears(Number(e.target.value))}
+                  className="slider-teal"
+                />
+                <div className="slider-range-labels">
+                  <span>{MIN_HORIZON} years</span>
+                  <span>{MAX_HORIZON} years</span>
+                </div>
+              </div>
+
+              <div className="input-group">
+                <div className="slider-header">
+                  <label htmlFor="projection-cola">Annual COLA and inflation</label>
+                  <span className="slider-value teal">{colaAssumption}%</span>
+                </div>
+                <input
+                  id="projection-cola"
+                  type="range"
+                  min={0}
+                  max={MAX_COLA}
+                  step={0.1}
+                  value={colaAssumption}
+                  onChange={(e) => setColaAssumption(Number(e.target.value))}
+                  className="slider-teal"
+                />
+                <div className="slider-range-labels">
+                  <span>0%</span>
+                  <span>{MAX_COLA}%</span>
+                </div>
+                <p className="field-note">
+                  One slider drives both, so real income never changes and the frozen
+                  thresholds are the only thing left moving. In practice the two
+                  differ: benefits follow CPI-W and the brackets follow chained CPI-U,
+                  which runs a little lower — so the real ratchet is slightly steeper
+                  than this shows, not shallower.
+                </p>
+                {projection.publishedThroughYear > projection.startYear && (
+                  <p className="field-note">
+                    The slider does not reach{' '}
+                    {projection.publishedThroughYear === projection.startYear + 1
+                      ? projection.publishedThroughYear
+                      : `${projection.startYear + 1}–${projection.publishedThroughYear}`}
+                    : those brackets, standard deductions and capital-gain bands are
+                    already published, so the projection reads them instead of
+                    guessing at them. Expect a bend at{' '}
+                    {projection.publishedThroughYear + 1}, where the assumption takes
+                    over from the law. The benefit does follow the slider throughout —
+                    it is your figure, and holding it to the same rate as your other
+                    income is what keeps real income flat.
+                  </p>
+                )}
+              </div>
+
+              <div className="input-group">
+                <div className="slider-header">
+                  <label htmlFor="projection-birth-year">Year you were born</label>
+                  <span className="slider-value teal">{birthYear}</span>
+                </div>
+                <input
+                  id="projection-birth-year"
+                  type="range"
+                  min={MIN_BIRTH_YEAR}
+                  max={MAX_BIRTH_YEAR}
+                  step={1}
+                  value={birthYear}
+                  onChange={(e) => setBirthYear(Number(e.target.value))}
+                  className="slider-teal"
+                />
+                <div className="slider-range-labels">
+                  <span>{MIN_BIRTH_YEAR}</span>
+                  <span>{MAX_BIRTH_YEAR}</span>
+                </div>
+                <p className="field-note">
+                  Age {ageAtStart} in {year}. Distributions become required at{' '}
+                  <strong>{applicableAge}</strong>
+                  {birthYear === RMD_RESERVED_BIRTH_YEAR
+                    ? ' — the one birth year the regulations have not settled. SECURE 2.0 gives someone born in 1959 both 73 and 75; the final rules left that paragraph reserved and the proposed ones say 73, which is what this uses.'
+                    : birthYear < 1951
+                      ? ', which for anyone born this early began years ago.'
+                      : '.'}
+                </p>
+              </div>
+            </fieldset>
+
+            <fieldset className="input-group">
+              <legend>Your accounts</legend>
+              <div className="input-group">
+                <div className="slider-header">
+                  <label htmlFor="projection-balance">
+                    Traditional IRA and 401(k) balance
+                  </label>
+                  <span className="slider-value teal">
+                    {formatCurrency(traditionalBalance)}
+                  </span>
+                </div>
+                <input
+                  id="projection-balance"
+                  type="range"
+                  min={0}
+                  max={MAX_TRADITIONAL_BALANCE}
+                  step={25_000}
+                  value={traditionalBalance}
+                  onChange={(e) => setTraditionalBalance(Number(e.target.value))}
+                  className="slider-teal"
+                />
+                <div className="slider-range-labels">
+                  <span>$0</span>
+                  <span>{formatCurrency(MAX_TRADITIONAL_BALANCE)}</span>
+                </div>
+              </div>
+
+              <div className="input-group">
+                <div className="slider-header">
+                  <label htmlFor="projection-growth">
+                    Annual growth on those balances
+                  </label>
+                  <span className="slider-value teal">{balanceGrowth}%</span>
+                </div>
+                <input
+                  id="projection-growth"
+                  type="range"
+                  min={0}
+                  max={MAX_BALANCE_GROWTH}
+                  step={0.5}
+                  value={balanceGrowth}
+                  onChange={(e) => setBalanceGrowth(Number(e.target.value))}
+                  className="slider-teal"
+                />
+                <div className="slider-range-labels">
+                  <span>0%</span>
+                  <span>{MAX_BALANCE_GROWTH}%</span>
+                </div>
+                <p className="field-note">
+                  Nominal, and applied to every balance here. The projection only
+                  carries the IRA — that is the account with a required
+                  distribution — while the withdrawal comparison grows all three
+                  and spends them down.
+                </p>
+              </div>
+
+              <div className="input-group">
+                <div className="slider-header">
+                  <label htmlFor="sequencing-taxable">Taxable brokerage account</label>
+                  <span className="slider-value indigo">{formatCurrency(taxableBalance)}</span>
+                </div>
+                <input
+                  id="sequencing-taxable"
+                  type="range"
+                  min={0}
+                  max={MAX_ACCOUNT_BALANCE}
+                  step={25_000}
+                  value={taxableBalance}
+                  onChange={(e) => setTaxableBalance(Number(e.target.value))}
+                  className="slider-indigo"
+                />
+                <div className="slider-range-labels">
+                  <span>$0</span>
+                  <span>{formatCurrency(MAX_ACCOUNT_BALANCE)}</span>
+                </div>
+              </div>
+
+              <div className="input-group">
+                <div className="slider-header">
+                  <label htmlFor="sequencing-basis">Of that, cost basis</label>
+                  <span className="slider-value indigo">{taxableBasisPercent}%</span>
+                </div>
+                <input
+                  id="sequencing-basis"
+                  type="range"
+                  min={0}
+                  max={100}
+                  step={5}
+                  value={taxableBasisPercent}
+                  onChange={(e) => setTaxableBasisPercent(Number(e.target.value))}
+                  className="slider-indigo"
+                />
+                <div className="slider-range-labels">
+                  <span>0% — all gain</span>
+                  <span>100% — all basis</span>
+                </div>
+                <p className="field-note">
+                  A sale recovers basis in the same proportion the account holds it, so
+                  at {taxableBasisPercent}% basis,{' '}
+                  {formatCents(1 - taxableBasisPercent / 100)} of every dollar sold is
+                  a realised gain. Gains are taxed in their own brackets but counted in
+                  full toward provisional income, so the &ldquo;tax-efficient&rdquo;
+                  account is not free either — spending it can push benefits into the
+                  tax base just as an IRA withdrawal does.
+                </p>
+              </div>
+
+              <div className="input-group">
+                <div className="slider-header">
+                  <label htmlFor="sequencing-roth">Roth IRA</label>
+                  <span className="slider-value indigo">{formatCurrency(rothBalance)}</span>
+                </div>
+                <input
+                  id="sequencing-roth"
+                  type="range"
+                  min={0}
+                  max={MAX_ACCOUNT_BALANCE}
+                  step={25_000}
+                  value={rothBalance}
+                  onChange={(e) => setRothBalance(Number(e.target.value))}
+                  className="slider-indigo"
+                />
+                <div className="slider-range-labels">
+                  <span>$0</span>
+                  <span>{formatCurrency(MAX_ACCOUNT_BALANCE)}</span>
+                </div>
+                <p className="field-note">
+                  Qualified distributions are tax-free, stay out of provisional income
+                  entirely, and are never required — the one account that can fund a
+                  year without moving a single line on the return.
+                </p>
+              </div>
+
+              <div className="input-group">
+                <div className="slider-header">
+                  <label htmlFor="sequencing-spending">After-tax spending each year</label>
+                  <span className="slider-value indigo">{formatCurrency(spendingNeed)}</span>
+                </div>
+                <input
+                  id="sequencing-spending"
+                  type="range"
+                  min={0}
+                  max={MAX_SPENDING}
+                  step={1_000}
+                  value={spendingNeed}
+                  onChange={(e) => setSpendingNeed(Number(e.target.value))}
+                  className="slider-indigo"
+                />
+                <div className="slider-range-labels">
+                  <span>$0</span>
+                  <span>{formatCurrency(MAX_SPENDING)}</span>
+                </div>
+                <p className="field-note">
+                  What the household spends, with federal tax paid on top of it rather
+                  than out of it. The benefit, the {formatCurrency(ordinaryIncome)} of
+                  other income and any tax-exempt interest cover the first part;
+                  withdrawals cover the rest, and the tax on those withdrawals, which
+                  is why the withdrawal needed to fund a year depends on the tax and
+                  the tax depends on the withdrawal.
+                </p>
+              </div>
+            </fieldset>
+          </section>
+
           {/* ───── Multi-year projection ───── */}
           <section className="explainer" aria-labelledby="projection-heading">
             <h2 id="projection-heading" className="section-heading-teal">
@@ -2836,146 +3110,6 @@ const App: React.FC = () => {
               climbs every year, with nothing about your circumstances changing at
               all.
             </p>
-
-            <div className="input-group">
-              <div className="slider-header">
-                <label htmlFor="projection-horizon">Years to project</label>
-                <span className="slider-value teal">{horizonYears} years</span>
-              </div>
-              <input
-                id="projection-horizon"
-                type="range"
-                min={MIN_HORIZON}
-                max={MAX_HORIZON}
-                step={1}
-                value={horizonYears}
-                onChange={(e) => setHorizonYears(Number(e.target.value))}
-                className="slider-teal"
-              />
-              <div className="slider-range-labels">
-                <span>{MIN_HORIZON} years</span>
-                <span>{MAX_HORIZON} years</span>
-              </div>
-            </div>
-
-            <div className="input-group">
-              <div className="slider-header">
-                <label htmlFor="projection-cola">Annual COLA and inflation</label>
-                <span className="slider-value teal">{colaAssumption}%</span>
-              </div>
-              <input
-                id="projection-cola"
-                type="range"
-                min={0}
-                max={MAX_COLA}
-                step={0.1}
-                value={colaAssumption}
-                onChange={(e) => setColaAssumption(Number(e.target.value))}
-                className="slider-teal"
-              />
-              <div className="slider-range-labels">
-                <span>0%</span>
-                <span>{MAX_COLA}%</span>
-              </div>
-              <p className="field-note">
-                One slider drives both, so real income never changes and the frozen
-                thresholds are the only thing left moving. In practice the two
-                differ: benefits follow CPI-W and the brackets follow chained CPI-U,
-                which runs a little lower — so the real ratchet is slightly steeper
-                than this shows, not shallower.
-              </p>
-              {projection.publishedThroughYear > projection.startYear && (
-                <p className="field-note">
-                  The slider does not reach{' '}
-                  {projection.publishedThroughYear === projection.startYear + 1
-                    ? projection.publishedThroughYear
-                    : `${projection.startYear + 1}–${projection.publishedThroughYear}`}
-                  : those brackets, standard deductions and capital-gain bands are
-                  already published, so the projection reads them instead of
-                  guessing at them. Expect a bend at{' '}
-                  {projection.publishedThroughYear + 1}, where the assumption takes
-                  over from the law. The benefit does follow the slider throughout —
-                  it is your figure, and holding it to the same rate as your other
-                  income is what keeps real income flat.
-                </p>
-              )}
-            </div>
-
-            <div className="input-group">
-              <div className="slider-header">
-                <label htmlFor="projection-birth-year">Year you were born</label>
-                <span className="slider-value teal">{birthYear}</span>
-              </div>
-              <input
-                id="projection-birth-year"
-                type="range"
-                min={MIN_BIRTH_YEAR}
-                max={MAX_BIRTH_YEAR}
-                step={1}
-                value={birthYear}
-                onChange={(e) => setBirthYear(Number(e.target.value))}
-                className="slider-teal"
-              />
-              <div className="slider-range-labels">
-                <span>{MIN_BIRTH_YEAR}</span>
-                <span>{MAX_BIRTH_YEAR}</span>
-              </div>
-              <p className="field-note">
-                Age {ageAtStart} in {year}. Distributions become required at{' '}
-                <strong>{applicableAge}</strong>
-                {birthYear === RMD_RESERVED_BIRTH_YEAR
-                  ? ' — the one birth year the regulations have not settled. SECURE 2.0 gives someone born in 1959 both 73 and 75; the final rules left that paragraph reserved and the proposed ones say 73, which is what this uses.'
-                  : birthYear < 1951
-                    ? ', which for anyone born this early began years ago.'
-                    : '.'}
-              </p>
-            </div>
-
-            <div className="input-group">
-              <div className="slider-header">
-                <label htmlFor="projection-balance">
-                  Traditional IRA and 401(k) balance
-                </label>
-                <span className="slider-value teal">
-                  {formatCurrency(traditionalBalance)}
-                </span>
-              </div>
-              <input
-                id="projection-balance"
-                type="range"
-                min={0}
-                max={MAX_TRADITIONAL_BALANCE}
-                step={25_000}
-                value={traditionalBalance}
-                onChange={(e) => setTraditionalBalance(Number(e.target.value))}
-                className="slider-teal"
-              />
-              <div className="slider-range-labels">
-                <span>$0</span>
-                <span>{formatCurrency(MAX_TRADITIONAL_BALANCE)}</span>
-              </div>
-            </div>
-
-            <div className="input-group">
-              <div className="slider-header">
-                <label htmlFor="projection-growth">Annual growth on that balance</label>
-                <span className="slider-value teal">{balanceGrowth}%</span>
-              </div>
-              <input
-                id="projection-growth"
-                type="range"
-                min={0}
-                max={MAX_BALANCE_GROWTH}
-                step={0.5}
-                value={balanceGrowth}
-                onChange={(e) => setBalanceGrowth(Number(e.target.value))}
-                className="slider-teal"
-              />
-              <div className="slider-range-labels">
-                <span>0%</span>
-                <span>{MAX_BALANCE_GROWTH}%</span>
-              </div>
-            </div>
 
             <dl className="stat-grid">
               <div className="stat">
@@ -3255,116 +3389,12 @@ const App: React.FC = () => {
               retiree arrives at {applicableAge} holding an IRA large enough that the
               required distribution alone drags the whole benefit past the{' '}
               {formatCurrency(ssBase85)} base, in a year when there is no longer any
-              choice about it. These three orders fund the same retirement — the same
-              horizon, COLA, birth year, IRA balance and growth rate set above — and
-              the score is every year of federal tax, added up in {year} dollars.
+              choice about it. These three orders fund the same retirement — the
+              same horizon, COLA, birth year, account balances and spending set at
+              the top of this tab — and the score is every year of federal tax,
+              added up in {year} dollars. Only the ceiling below is theirs alone,
+              and only one of the three reads it.
             </p>
-
-            <div className="input-group">
-              <div className="slider-header">
-                <label htmlFor="sequencing-spending">After-tax spending each year</label>
-                <span className="slider-value indigo">{formatCurrency(spendingNeed)}</span>
-              </div>
-              <input
-                id="sequencing-spending"
-                type="range"
-                min={0}
-                max={MAX_SPENDING}
-                step={1_000}
-                value={spendingNeed}
-                onChange={(e) => setSpendingNeed(Number(e.target.value))}
-                className="slider-indigo"
-              />
-              <div className="slider-range-labels">
-                <span>$0</span>
-                <span>{formatCurrency(MAX_SPENDING)}</span>
-              </div>
-              <p className="field-note">
-                What the household spends, with federal tax paid on top of it rather
-                than out of it. The benefit, the {formatCurrency(ordinaryIncome)} of
-                other income and any tax-exempt interest cover the first part;
-                withdrawals cover the rest, and the tax on those withdrawals, which
-                is why the withdrawal needed to fund a year depends on the tax and
-                the tax depends on the withdrawal.
-              </p>
-            </div>
-
-            <div className="input-group">
-              <div className="slider-header">
-                <label htmlFor="sequencing-taxable">Taxable brokerage account</label>
-                <span className="slider-value indigo">{formatCurrency(taxableBalance)}</span>
-              </div>
-              <input
-                id="sequencing-taxable"
-                type="range"
-                min={0}
-                max={MAX_ACCOUNT_BALANCE}
-                step={25_000}
-                value={taxableBalance}
-                onChange={(e) => setTaxableBalance(Number(e.target.value))}
-                className="slider-indigo"
-              />
-              <div className="slider-range-labels">
-                <span>$0</span>
-                <span>{formatCurrency(MAX_ACCOUNT_BALANCE)}</span>
-              </div>
-            </div>
-
-            <div className="input-group">
-              <div className="slider-header">
-                <label htmlFor="sequencing-basis">Of that, cost basis</label>
-                <span className="slider-value indigo">{taxableBasisPercent}%</span>
-              </div>
-              <input
-                id="sequencing-basis"
-                type="range"
-                min={0}
-                max={100}
-                step={5}
-                value={taxableBasisPercent}
-                onChange={(e) => setTaxableBasisPercent(Number(e.target.value))}
-                className="slider-indigo"
-              />
-              <div className="slider-range-labels">
-                <span>0% — all gain</span>
-                <span>100% — all basis</span>
-              </div>
-              <p className="field-note">
-                A sale recovers basis in the same proportion the account holds it, so
-                at {taxableBasisPercent}% basis,{' '}
-                {formatCents(1 - taxableBasisPercent / 100)} of every dollar sold is
-                a realised gain. Gains are taxed in their own brackets but counted in
-                full toward provisional income, so the &ldquo;tax-efficient&rdquo;
-                account is not free either — spending it can push benefits into the
-                tax base just as an IRA withdrawal does.
-              </p>
-            </div>
-
-            <div className="input-group">
-              <div className="slider-header">
-                <label htmlFor="sequencing-roth">Roth IRA</label>
-                <span className="slider-value indigo">{formatCurrency(rothBalance)}</span>
-              </div>
-              <input
-                id="sequencing-roth"
-                type="range"
-                min={0}
-                max={MAX_ACCOUNT_BALANCE}
-                step={25_000}
-                value={rothBalance}
-                onChange={(e) => setRothBalance(Number(e.target.value))}
-                className="slider-indigo"
-              />
-              <div className="slider-range-labels">
-                <span>$0</span>
-                <span>{formatCurrency(MAX_ACCOUNT_BALANCE)}</span>
-              </div>
-              <p className="field-note">
-                Qualified distributions are tax-free, stay out of provisional income
-                entirely, and are never required — the one account that can fund a
-                year without moving a single line on the return.
-              </p>
-            </div>
 
             <div className="input-group">
               <label htmlFor="sequencing-ceiling">Fill the IRA up to</label>
@@ -3384,10 +3414,10 @@ const App: React.FC = () => {
               <p className="field-note">
                 Only the bracket-filling order uses this. Medicare&apos;s first IRMAA
                 tier is on the Roth conversion menu under Strategies but not on
-            this one: its
-                thresholds are indexed and this projection carries a single published
-                premium schedule forward unchanged, so an IRMAA ceiling would appear
-                to tighten every year for no reason in the statute.
+                this one: its thresholds are indexed and this projection carries a
+                single published premium schedule forward unchanged, so an IRMAA
+                ceiling would appear to tighten every year for no reason in the
+                statute.
               </p>
             </div>
 

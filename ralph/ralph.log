@@ -2464,3 +2464,77 @@ Every branch was rendered and read before it was asserted on, which is how the
 `totalShortfall` adds nominal dollars across the horizon while the table beside
 it is captioned "both figures are in 2025 dollars" and the chart plots real
 ones. One year of shortfall makes that invisible; ten would not.
+
+---
+
+## Nine sliders above the two charts they move
+## 2026-08-20
+
+Found the working tree dirty at start: App.tsx, App.test.tsx and index.css
+carried an unfinished implementation of the section-local-slider decision from
+a previous iteration that never reached a commit. Verified it rather than
+redoing it — `npx tsc -b`, `npm run lint`, `npx vitest run src/App.test.tsx`
+(168 passed, up from 163) and `npm run build` are all clean — so this iteration
+finished and shipped it.
+
+### What the change decides
+
+The Over Time tab stacks two sections that price the same retirement. Between
+them they carried nine sliders — five in the projection, four in the sequencing
+comparison — and both sets sat *below* the charts they move. Worse, the two
+sections had to describe the same scenario twice, and the sequencing prose had
+to say "set above" and point two screens up.
+
+They are now one `.tab-inputs` block above both, under two legends: "The
+horizon" (years, COLA, birth year) and "Your accounts" (IRA balance, growth,
+brokerage, basis, Roth, spending). Every field note came with its slider, which
+is why the RMD-age note and the published-figures note moved too — four of the
+projection tests now read them off the input block rather than the section.
+
+### What stayed put, and why that is the point
+
+The backlog had this task queued behind an unresolved question: the lump-sum
+section's two sliders sit *with* the section that reads them and it reads
+better that way, which was an argument for moving the other sections' inputs
+down rather than up. The change settles it on a different axis than "up or
+down" — **shared inputs get hoisted, single-reader inputs stay local**. Nine
+sliders that two sections both read go to the tab; the fill-to ceiling that
+exactly one of three strategies reads stays in the sequencing section; the two
+back-pay sliders that nothing outside the lump-sum section reads stay with it.
+Hoisting those to a block above six tabs would have put two inputs in front of
+five tabs that never look at them.
+
+Three backlog bullets were the same decision seen from three sections, so all
+three are marked: the sequencing five, the lump-sum two, and the decision
+itself.
+
+### One edit of my own
+
+Reflowed the sequencing ceiling's field note. The WIP had corrected a bad
+indent there and left a 98-column line behind; the prose in that file wraps
+near 88.
+
+### Flaky suite, and it is not this change
+
+`npx vitest run` across all seven files failed three times out of four, always
+the same way: one App.test.tsx test at random blows the default 5s timeout and
+takes 17s, 96s or 296s while every other test in the run finishes under 700ms.
+Different test each time — the tab-mounting one once, a head-of-household one
+the next.
+
+Stashed the working tree and ran the full suite twice at HEAD: one clean pass
+at 19s, one 202s failure. So it predates this change and is not a regression.
+`npx vitest run src/App.test.tsx` alone is clean and takes 20s every time,
+which points at the seven parallel forks — 168 App renders each building a full
+recharts tree on a 10-core box — rather than at any one test. Logged as
+discovered work with the candidate fixes (raise `testTimeout`, cap
+`maxWorkers`, or find what the stalled test waits on). CI runs deploy only, so
+nothing is red today.
+
+### Not verified
+
+No visual check. The repo has no browser tooling and the change is a DOM move
+plus 33 lines of CSS, so the fieldset/legend rendering is argued rather than
+seen. `display: flex` on a fieldset does change how browsers lay out the
+legend; the border is removed anyway, so the legend should fall in as the
+column's first item.

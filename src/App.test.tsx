@@ -1404,6 +1404,17 @@ describe('multi-year projection', () => {
       .getByRole('heading', { name: /the thresholds never move/i })
       .closest('section')!;
 
+  /**
+   * The tab-level input block. Both sections on the Over Time tab read the
+   * same horizon, COLA, birth year and balances, so the sliders and the notes
+   * hanging off them live above both rather than inside either — which is why
+   * these assertions target this block and not `projectionSection()`.
+   */
+  const inputsSection = (): HTMLElement =>
+    screen
+      .getByRole('heading', { name: /your accounts and your horizon/i })
+      .closest('section')!;
+
   const slider = (name: RegExp): HTMLElement =>
     screen.getByRole('slider', { name });
 
@@ -1419,7 +1430,7 @@ describe('multi-year projection', () => {
     expect(slider(/annual cola and inflation/i)).toHaveValue('2.5');
     expect(slider(/year you were born/i)).toHaveValue('1955');
     expect(slider(/traditional ira and 401\(k\) balance/i)).toHaveValue('100000');
-    expect(slider(/annual growth on that balance/i)).toHaveValue('5');
+    expect(slider(/annual growth on those balances/i)).toHaveValue('5');
     // 2025 + 20 years, less the first, is 2044.
     expect(projectionSection()).toHaveTextContent('in 2044');
   });
@@ -1445,11 +1456,11 @@ describe('multi-year projection', () => {
   it('says which years the assumption does not reach, and drops it when none', () => {
     // Pinned to 2025, so 2026 sits inside the horizon and is already published.
     renderTab('Over Time');
-    expect(projectionSection()).toHaveTextContent(
+    expect(inputsSection()).toHaveTextContent(
       'The slider does not reach 2026: those brackets, standard deductions and ' +
         'capital-gain bands are already published',
     );
-    expect(projectionSection()).toHaveTextContent('Expect a bend at 2027');
+    expect(inputsSection()).toHaveTextContent('Expect a bend at 2027');
     expect(projectionSection()).toHaveTextContent(
       'against published figures through 2026',
     );
@@ -1457,7 +1468,7 @@ describe('multi-year projection', () => {
     // Move the whole scenario to the newest year on file and the run is the
     // first year alone, so there is nothing to warn about.
     fireEvent.click(screen.getByRole('radio', { name: '2026' }));
-    expect(projectionSection()).not.toHaveTextContent('The slider does not reach');
+    expect(inputsSection()).not.toHaveTextContent('The slider does not reach');
     expect(projectionSection()).not.toHaveTextContent('against published figures');
   });
 
@@ -1472,7 +1483,7 @@ describe('multi-year projection', () => {
     // 47.14% of the benefit is taxable in every year — provisional income has
     // not moved — so the bill falling is the deduction and only the deduction.
     expect(projectionSection()).toHaveTextContent('47.14% → 47.14%');
-    expect(projectionSection()).toHaveTextContent('The slider does not reach 2026');
+    expect(inputsSection()).toHaveTextContent('The slider does not reach 2026');
   });
 
   it('quotes the last year’s tax in first-year dollars, not nominal ones', () => {
@@ -1487,7 +1498,7 @@ describe('multi-year projection', () => {
     const section = projectionSection();
     // Born 1955, so 73 in 2028; $100,000 grown at 5% for three years, over the
     // Uniform Lifetime Table divisor for 73.
-    expect(section).toHaveTextContent('Distributions become required at 73');
+    expect(inputsSection()).toHaveTextContent('Distributions become required at 73');
     expect(section).toHaveTextContent('2028 · $4,368');
     expect(section).toHaveTextContent('At 73, off a $115,763 balance divided by 26.5');
     expect(section).toHaveTextContent('The step at 2028 is the first required');
@@ -1498,7 +1509,9 @@ describe('multi-year projection', () => {
     renderTab('Over Time');
     setSlider(/year you were born/i, '1965');
     const section = projectionSection();
-    expect(section).toHaveTextContent('Age 60 in 2025. Distributions become required at 75');
+    expect(inputsSection()).toHaveTextContent(
+      'Age 60 in 2025. Distributions become required at 75',
+    );
     expect(section).toHaveTextContent('The step at 2040 is the first required');
     expect(section).toHaveTextContent('SECURE 2.0 pushed that age from 72 to 75');
     expect(section).toHaveTextContent('3 more years of compounding');
@@ -1507,10 +1520,10 @@ describe('multi-year projection', () => {
   it('flags 1959 as the birth year the regulations left reserved', () => {
     renderTab('Over Time');
     setSlider(/year you were born/i, '1959');
-    expect(projectionSection()).toHaveTextContent(
+    expect(inputsSection()).toHaveTextContent(
       'the one birth year the regulations have not settled',
     );
-    expect(projectionSection()).toHaveTextContent('both 73 and 75');
+    expect(inputsSection()).toHaveTextContent('both 73 and 75');
   });
 
   it('says there is no step when the filer is already past the applicable age', () => {
@@ -1609,7 +1622,7 @@ describe('multi-year projection', () => {
     renderTab('Over Time');
     fireEvent.click(screen.getByRole('radio', { name: '2026' }));
     const section = projectionSection();
-    expect(section).toHaveTextContent('Age 71 in 2026');
+    expect(inputsSection()).toHaveTextContent('Age 71 in 2026');
     expect(section).toHaveTextContent('Federal tax in 2026 dollars');
     expect(section).toHaveTextContent('in 2045');
   });
@@ -1631,13 +1644,19 @@ describe('withdrawal sequencing', () => {
       .getByRole('heading', { name: /which account you spend first/i })
       .closest('section')!;
 
+  /** The tab-level input block this section shares with the projection. */
+  const inputsSection = (): HTMLElement =>
+    screen
+      .getByRole('heading', { name: /your accounts and your horizon/i })
+      .closest('section')!;
+
   const slider = (name: RegExp): HTMLElement => screen.getByRole('slider', { name });
 
   const setSlider = (name: RegExp, value: string): void => {
     fireEvent.change(slider(name), { target: { value } });
   };
 
-  it('opens on three orders and its own account balances', () => {
+  it('opens on three orders scored over the tab\u2019s shared accounts', () => {
     renderTab('Over Time');
     expect(slider(/after-tax spending each year/i)).toHaveValue('60000');
     expect(slider(/taxable brokerage account/i)).toHaveValue('300000');
@@ -1656,7 +1675,7 @@ describe('withdrawal sequencing', () => {
   it('prices the basis slider in cents of realised gain per dollar sold', () => {
     renderTab('Over Time');
     setSlider(/of that, cost basis/i, '25');
-    expect(seqSection()).toHaveTextContent('at 25% basis, 75¢ of every dollar sold');
+    expect(inputsSection()).toHaveTextContent('at 25% basis, 75¢ of every dollar sold');
   });
 
   it('offers no IRMAA ceiling, because the projection cannot index one', () => {
@@ -2595,5 +2614,89 @@ describe('BackPayTooltip', () => {
     expect(
       screen.getByText('The election is worth nothing here — do not make it'),
     ).toBeInTheDocument();
+  });
+});
+
+/**
+ * Where the Over Time tab's inputs live.
+ *
+ * Both sections on that tab price the same retirement, so both read the same
+ * horizon, COLA, birth year, balances and spending. Those used to be split
+ * between the two sections — five in the projection, four in the sequencing
+ * comparison further down — which meant half of them sat below a chart they
+ * moved and the section that did not own them had to say "set above". They are
+ * now one block above both. What is genuinely local stays local: the fill-to
+ * ceiling only the bracket-filling order reads, and the lump-sum tab's two
+ * back-pay sliders.
+ */
+describe('Over Time tab inputs', () => {
+  const inputsSection = (): HTMLElement =>
+    screen
+      .getByRole('heading', { name: /your accounts and your horizon/i })
+      .closest('section')!;
+
+  /** Every slider either section on the tab reads. */
+  const sharedSliders = [
+    /years to project/i,
+    /annual cola and inflation/i,
+    /year you were born/i,
+    /traditional ira and 401\(k\) balance/i,
+    /annual growth on those balances/i,
+    /taxable brokerage account/i,
+    /of that, cost basis/i,
+    /roth ira/i,
+    /after-tax spending each year/i,
+  ];
+
+  it('holds every slider both sections read', () => {
+    renderTab('Over Time');
+    const block = inputsSection();
+    for (const name of sharedSliders) {
+      expect(block).toContainElement(screen.getByRole('slider', { name }));
+    }
+  });
+
+  it('leaves neither section carrying a slider of its own', () => {
+    renderTab('Over Time');
+    const projection = screen
+      .getByRole('heading', { name: /the thresholds never move/i })
+      .closest('section')!;
+    const sequencing = screen
+      .getByRole('heading', { name: /which account you spend first/i })
+      .closest('section')!;
+    expect(projection.querySelectorAll('input[type="range"]')).toHaveLength(0);
+    expect(sequencing.querySelectorAll('input[type="range"]')).toHaveLength(0);
+    // The one input that is genuinely one section's — and one strategy's —
+    // stays with it.
+    expect(sequencing).toContainElement(screen.getByLabelText(/fill the ira up to/i));
+  });
+
+  it('sits above both of the sections it feeds', () => {
+    renderTab('Over Time');
+    const block = inputsSection();
+    for (const heading of [/the thresholds never move/i, /which account you spend first/i]) {
+      const section = screen.getByRole('heading', { name: heading }).closest('section')!;
+      expect(block.compareDocumentPosition(section) & Node.DOCUMENT_POSITION_FOLLOWING)
+        .toBeTruthy();
+    }
+  });
+
+  it('groups the nine under two legends rather than one list', () => {
+    renderTab('Over Time');
+    const legends = Array.from(inputsSection().querySelectorAll('legend')).map(
+      (l) => l.textContent,
+    );
+    expect(legends).toEqual(['The horizon', 'Your accounts']);
+  });
+
+  it('keeps the lump-sum election\u2019s own two sliders with it', () => {
+    // The counter-case: back-pay months and the income during each waiting year
+    // are read by nothing else on the page, so hoisting them would put two
+    // sliders above five tabs that never look at them.
+    renderTab('Strategies');
+    const section = screen
+      .getByRole('heading', { name: /when years of benefit arrive in one cheque/i })
+      .closest('section')!;
+    expect(section).toContainElement(screen.getByRole('slider', { name: /months of back pay/i }));
   });
 });

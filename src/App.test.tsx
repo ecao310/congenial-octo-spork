@@ -1066,6 +1066,113 @@ describe('head of household', () => {
   });
 });
 
+describe('the IRMAA cliff lines on the torpedo chart', () => {
+  /**
+   * The lines themselves are asserted on in App.chart.test.tsx, which mocks
+   * ResponsiveContainer so recharts actually draws. What is checked here is the
+   * key underneath: plain HTML, always rendered, and the only thing on the page
+   * that says what a red dash means now that the Medicare tab is gone.
+   */
+  const chartKey = (container: HTMLElement): HTMLElement => {
+    const key = container.querySelector<HTMLElement>('.chart-key');
+    if (!key) throw new Error('no chart key rendered');
+    return key;
+  };
+
+  it('names the lines and prices every one it draws', () => {
+    const { container } = render(<App />);
+    const key = chartKey(container);
+    expect(key).toHaveTextContent("Medicare's IRMAA cliffs.");
+    expect(key).toHaveTextContent('a cliff, not a phase-in');
+    // Tier 1 is a $1,052.40 step; tiers 2 and 3 are $1,591 each. Rounded to
+    // whole dollars, in the order the lines are drawn.
+    expect(key).toHaveTextContent(
+      'IRMAA 1 at $85,845 costs $1,052/yr; IRMAA 2 at $112,845 another $1,591/yr; IRMAA 3 at $146,845 another $1,591/yr.',
+    );
+    // The surcharge is a premium, not tax, so it is in none of the tax figures.
+    expect(key).toHaveTextContent('None of that is tax');
+  });
+
+  it('re-prices the key when tax-exempt interest moves the lines left', () => {
+    const { container } = render(<App />);
+    fireEvent.change(
+      screen.getByRole('slider', { name: /tax-exempt \(municipal\) interest/i }),
+      { target: { value: '10000' } },
+    );
+    // Medicare's MAGI adds muni interest straight back, so every cliff arrives
+    // $10,000 of other income earlier.
+    expect(chartKey(container)).toHaveTextContent(
+      'IRMAA 1 at $75,845 costs $1,052/yr; IRMAA 2 at $102,845 another $1,591/yr; IRMAA 3 at $136,845 another $1,591/yr.',
+    );
+  });
+
+  it('quotes the separate return its own first tier rather than tier 1', () => {
+    const { container } = render(<App />);
+    fireEvent.click(
+      screen.getByRole('radio', { name: 'Married Filing Separately' }),
+    );
+    const key = chartKey(container);
+    expect(key).toHaveTextContent('IRMAA 4 at $85,845 costs $5,826/yr.');
+    expect(key).not.toHaveTextContent('IRMAA 1');
+  });
+
+  it('says where the nearest cliff is when none fits on the axis', () => {
+    const { container } = render(<App />);
+    fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Jointly' }));
+    const key = chartKey(container);
+    expect(key).toHaveTextContent('No Medicare IRMAA cliff falls on this chart.');
+    // $212,000 of MAGI, less the benefits already in AGI, is past the $150,000
+    // right edge — so the reader gets the figure instead of a blank margin.
+    expect(key).toHaveTextContent(
+      '$212,000 of MAGI — $191,845 of other income, past the right edge of the axis',
+    );
+    expect(key).toHaveTextContent('$1,052/yr in Medicare premiums');
+  });
+
+  it('doubles the price for a joint return with two enrollees', () => {
+    const { container } = render(<App />);
+    fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Jointly' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: /age 65 or older/i }));
+    fireEvent.click(
+      screen.getByRole('checkbox', { name: /both spouses are 65 or older/i }),
+    );
+    // IRMAA is charged per enrollee off one household MAGI figure.
+    expect(chartKey(container)).toHaveTextContent(
+      '$2,105/yr in Medicare premiums for the two of you',
+    );
+  });
+
+  it('explains what a cliff is, collapsed, without the Medicare tab', () => {
+    render(<App />);
+    const heading = screen.getByRole('heading', { name: /medicare's irmaa cliffs/i });
+    const details = heading.closest('details');
+    expect(details).toBeInTheDocument();
+    expect(details).not.toHaveAttribute('open');
+    expect(details).toHaveTextContent('income-related monthly adjustment amount');
+    expect(details).toHaveTextContent('one dollar over a threshold triggers the whole surcharge');
+    // The two-year lag is the caveat that makes the x-axis honest.
+    expect(details).toHaveTextContent(
+      /the 2025 premiums these lines are priced from are set by 2023 MAGI/,
+    );
+    expect(details).toHaveTextContent('setting the premium for 2027');
+    expect(details).toHaveTextContent('Form SSA-44');
+  });
+
+  it('tells a separate filer its schedule skips tiers 1 through 3', () => {
+    render(<App />);
+    const details = () =>
+      screen.getByRole('heading', { name: /medicare's irmaa cliffs/i }).closest('details');
+    expect(details()).not.toHaveTextContent('tiers 1 through 3');
+    fireEvent.click(
+      screen.getByRole('radio', { name: 'Married Filing Separately' }),
+    );
+    expect(details()).toHaveTextContent(
+      'A separate return has no access to tiers 1 through 3',
+    );
+    expect(details()).toHaveTextContent('its first cliff is tier 4');
+  });
+});
+
 describe('separate-return divergence figure', () => {
   it('re-dates with the tax year instead of quoting a 2025 constant', () => {
     // The separate and single rate schedules part company where the separate

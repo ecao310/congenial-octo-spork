@@ -2836,3 +2836,87 @@ down from 3,895.
 A human added `[ ] Update title and hero text to be what the tool is useful for,
 instead of what the current parameters are set to.` to Backlog 2 while this
 iteration was running. Left where it was put.
+
+## 2026-08-21 — Task: Re-add the IRMAA cliff vertical lines to the tax torpedo graph
+
+Third of the ten items the step-by-step rebuild bullet was cut into.
+
+### The lines were never removed
+
+Last iteration's write-up already said so, and `git show 5fe9854 -- src/App.tsx`
+confirms it: the four `ReferenceLine`s and their `IRMAA {tier}` labels survived
+the tab deletion untouched, along with `cliffsOnChart` and the four
+`App.chart.test.tsx` cases that assert on them. So the first half of the bullet
+was a no-op and the second half — "the lines need enough label on the torpedo
+chart to stand alone" — was the whole task.
+
+### Why the price did not go into the on-chart label
+
+The obvious fix is `IRMAA 1 · +$1,052/yr` on the line itself. It does not fit.
+At the default single scenario the three cliffs land at $85,845 / $112,845 /
+$146,845 of other income on a $150,000 axis — the third is 98% of the way
+across, and at 2026 figures it is $149,876, $124 from the right edge. A
+centred label there already reaches past the 28px right margin at
+`IRMAA 3` (~50px wide); at ~110px it would be half-clipped by the SVG. The gap
+between lines 1 and 2 is ~125px of an ~692px plot area, so the wider labels
+would also touch each other. Rotating them along the lines would give room but
+puts vertical text over the area curve.
+
+So the label stays the short tier badge, and the price goes in a key directly
+under the chart, tied to the lines by a red dashed swatch.
+
+### What was added, src/App.tsx
+
+- `firstCliffPastAxis` — `cliffs.find(c => c.otherIncome > MAX_INCOME)`. A joint
+  return draws no lines at all (its tier-1 threshold is $212,000 of MAGI), and
+  a blank right margin is not an answer.
+- `cliffPriceList` — `"IRMAA 1 at $85,845 costs $1,052/yr; IRMAA 2 at $112,845
+  another $1,591/yr; …"`, in draw order, off `cliff.step` rather than
+  `cliff.annualSurcharge`: what the reader is deciding is whether to cross *this*
+  line, and the step is that price.
+- A `.chart-key` paragraph under `.chart-axis-label`, in two branches. With
+  lines on the axis: a dashed swatch, then what IRMAA is, that it is a cliff and
+  not a phase-in, the price of each line, and that none of it is in the curve
+  above (it is a premium, not tax). With none on the axis: where the nearest one
+  is, in both MAGI and other-income terms, and what crossing it would cost. The
+  `beneficiaries > 1` case says "for the two of you" in both.
+- A collapsed `<details>` explainer, "Medicare's IRMAA cliffs — the red dashed
+  lines", carrying the four paragraphs the deleted Medicare section had: the
+  cliff-not-phase-in definition with the first tier's price, the separate
+  return's tier-4-first schedule under 42 U.S.C. 1395r(i)(3)(C), why the lines
+  sit at less other income than their MAGI figures suggest (benefits reach AGI
+  first; muni interest is added back; a QCD never gets there), the two-year lag
+  and Form SSA-44, and the point that the surcharge appears on no tax return.
+  Placed after "How to mitigate the tax torpedo", whose last paragraph already
+  name-checks Medicare premium surcharges.
+- Imports `irmaaMagiYear` and `IRMAA_LOOKBACK_YEARS` back from `utils/tax`.
+
+### src/index.css
+
+`.chart-key` (flex, sharing the axis label's 70px plot-area offset),
+`.chart-key strong` (rose, to match the line stroke), and `.chart-key-swatch` —
+a zero-height flex item whose `border-top: 2px dashed #f43f5e` *is* the swatch,
+nudged 0.55rem down to sit on the middle of the first text line rather than its
+top.
+
+### Tests
+
+Seven new, in a `the IRMAA cliff lines on the torpedo chart` describe in
+App.test.tsx — the key is plain HTML and renders without recharts, so it belongs
+there rather than in the ResponsiveContainer-mocking chart suite. They cover:
+the three prices at the default scenario, all three sliding $10,000 left when
+muni interest is added, the separate return quoting tier 4 and never tier 1, the
+joint return's off-axis message with the $212,000 / $191,845 pair, the
+two-enrollee doubling to $2,105/yr, the explainer being collapsed and carrying
+the lag sentence (2025 premiums ← 2023 MAGI, this year setting 2027), and the
+tiers-1-through-3 note appearing only on a separate return.
+
+The four existing `App.chart.test.tsx` cases needed no change: their
+`/^IRMAA [123]$/` is anchored, and the key's price list is one text node
+beginning `IRMAA 1 at …`.
+
+### Verified
+
+`npx tsc -b`, `npx eslint src --max-warnings 0`, `npx vitest run` (7 files, 402
+tests, green in 3.5s — no flake this run), `npm run build`. CSS bundle 9.13 kB →
+9.41 kB.

@@ -33,6 +33,8 @@ import {
   irmaaMagi,
   irmaaFor,
   irmaaCliffs,
+  irmaaMagiYear,
+  IRMAA_LOOKBACK_YEARS,
 } from './utils/tax';
 import type {
   TaxYear,
@@ -433,6 +435,27 @@ const App: React.FC = () => {
   const cliffsOnChart: IrmaaCliff[] = cliffs.filter(
     (c) => c.otherIncome > 0 && c.otherIncome <= MAX_INCOME,
   );
+
+  /**
+   * The first cliff off the right edge, for the joint returns where none fit:
+   * "no line is drawn" is only useful next to where the nearest one would be.
+   */
+  const firstCliffPastAxis: IrmaaCliff | undefined = cliffs.find(
+    (c) => c.otherIncome > MAX_INCOME,
+  );
+
+  /**
+   * What each drawn line costs to cross, in the order they are drawn. The chart
+   * label can only carry a tier number without the three of them colliding, so
+   * the price goes in the key underneath instead.
+   */
+  const cliffPriceList = cliffsOnChart
+    .map(
+      (c, i) =>
+        `IRMAA ${c.tier} at ${formatCurrency(Math.round(c.otherIncome))} ` +
+        `${i === 0 ? 'costs' : 'another'} ${formatCurrency(c.step)}/yr`,
+    )
+    .join('; ');
 
   /**
    * Roving tabindex: only the selected tab is in the tab order, and the arrow
@@ -881,6 +904,36 @@ const App: React.FC = () => {
               : ''}
           </p>
 
+          {/* The lines have to carry their own key: the section that used to
+              explain what a cliff is lives on another tab that is not built
+              yet, and a bare red dash on a tax chart explains nothing. */}
+          {cliffsOnChart.length > 0 ? (
+            <p className="chart-key">
+              <span className="chart-key-swatch" aria-hidden="true" />
+              <span>
+                <strong>Medicare&apos;s IRMAA cliffs.</strong> Crossing one raises
+                the Part B and Part D premiums of everyone on this return who is
+                enrolled, for a full year &mdash; and it is a cliff, not a phase-in, so
+                a single dollar over the line buys the whole step.{' '}
+                {cliffPriceList}
+                {beneficiaries > 1 ? ', for the two of you' : ''}. None of that is
+                tax, so none of it is in the curve above.
+              </span>
+            </p>
+          ) : firstCliffPastAxis ? (
+            <p className="chart-key">
+              <span>
+                <strong>No Medicare IRMAA cliff falls on this chart.</strong> The
+                first one this return could reach needs{' '}
+                {formatCurrency(firstCliffPastAxis.magi)} of MAGI &mdash;{' '}
+                {formatCurrency(Math.round(firstCliffPastAxis.otherIncome))} of
+                other income, past the right edge of the axis &mdash; and would cost{' '}
+                {formatCurrency(firstCliffPastAxis.step)}/yr in Medicare premiums
+                {beneficiaries > 1 ? ' for the two of you' : ''}.
+              </span>
+            </p>
+          ) : null}
+
           <details className="explainer">
             <summary>
               <h2 id="tax-torpedo-heading">What is the tax torpedo?</h2>
@@ -969,6 +1022,60 @@ const App: React.FC = () => {
                 The right mix depends on account balances, state taxes, Medicare
                 premium surcharges, and more. The chart above makes the goal concrete:
                 keep provisional income out of the spike, or jump clean over it.
+              </p>
+            </div>
+          </details>
+
+          <details className="explainer">
+            <summary>
+              <h2 id="irmaa-cliffs-heading">
+                Medicare&apos;s IRMAA cliffs &mdash; the red dashed lines
+              </h2>
+            </summary>
+            <div className="explainer-content">
+              <p>
+                Above a MAGI threshold, Medicare adds an{' '}
+                <strong>income-related monthly adjustment amount</strong> to the
+                Part B and Part D premiums of everyone on the return who is
+                enrolled. Unlike the torpedo, it is not a phase-in: one dollar over
+                a threshold triggers the whole surcharge for twelve months. The
+                first cliff this return can reach costs{' '}
+                <strong>{formatCurrency(cliffs[0].step)}</strong> a year
+                {beneficiaries > 1 ? ' for the two of you' : ''} &mdash; on a single
+                dollar of income.
+                {cliffs[0].tier > 1
+                  ? ` A separate return has no access to tiers 1 through 3: 42 U.S.C. 1395r(i)(3)(C) gives it a two-step schedule of its own, so its first cliff is tier ${cliffs[0].tier} and the whole surcharge lands at once.`
+                  : ''}
+              </p>
+              <p>
+                The lines sit at less other income than their MAGI figures suggest,
+                because the benefits the torpedo drags into AGI get there first
+                {muniInterest > 0
+                  ? `, and because Medicare's MAGI is wider than the tax code's — the ${formatCurrency(muniInterest)} of tax-exempt interest set above is added straight back in, moving every line ${formatCurrency(muniInterest)} further left`
+                  : '. Medicare\u2019s MAGI is also wider than the tax code\u2019s: tax-exempt interest is added straight back in, so muni bonds move these lines as well as the torpedo'}
+                . A charitable distribution moves them the other way, because it
+                never reaches AGI at all.
+              </p>
+              <p>
+                <strong>The x-axis caveat.</strong> Medicare bills on a{' '}
+                {IRMAA_LOOKBACK_YEARS}-year lag: the {year} premiums these lines are
+                priced from are set by {irmaaMagiYear(year)} MAGI, so the {year}{' '}
+                income on this chart is really setting the premium for{' '}
+                {year + IRMAA_LOOKBACK_YEARS}, under a schedule CMS has not
+                published yet. Treat the lines as where the cliffs would fall at{' '}
+                {year} thresholds, not as a bill. The lag cuts both ways: a Roth
+                conversion made now surfaces as a premium two years later, and a
+                one-off spike &mdash; a home sale, an inherited IRA &mdash; keeps
+                costing after the income is gone. Retiring or losing that income is
+                a life-changing event you can appeal on Form SSA-44 rather than
+                simply wait out.
+              </p>
+              <p>
+                The surcharge never appears on a tax return, which is exactly why it
+                is worth planning around: nothing about filing reveals that one
+                dollar of income cost {formatCurrency(cliffs[0].step)}. It is not
+                included in any of the tax figures on this page either &mdash; the
+                curve above is federal income tax only.
               </p>
             </div>
           </details>

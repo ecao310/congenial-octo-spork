@@ -336,6 +336,36 @@ h1 {
   color: #94a3b8;
 }
 
+/* Names the reference lines drawn on the chart above. The dashed swatch is the
+   whole point: it is the only thing tying a red dash in the SVG to the prose
+   that prices it, now that the section explaining IRMAA lives behind a
+   disclosure rather than on a tab of its own. Shares the axis label's 70px
+   offset so it starts where the plot area does. */
+.chart-key {
+  display: flex;
+  gap: 0.625rem;
+  margin: 0.875rem 0 0;
+  padding-left: 70px;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: #94a3b8;
+}
+
+.chart-key strong {
+  color: #fb7185;
+  font-weight: 600;
+}
+
+/* A zero-height box so the border *is* the swatch, nudged down to the middle of
+   the first line of text rather than its top. */
+.chart-key-swatch {
+  flex: 0 0 1.75rem;
+  align-self: flex-start;
+  height: 0;
+  margin-top: 0.55rem;
+  border-top: 2px dashed #f43f5e;
+}
+
 .explainer {
   margin-top: 2.5rem;
   padding-top: 2rem;

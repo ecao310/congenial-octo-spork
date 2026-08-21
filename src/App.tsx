@@ -2903,10 +2903,7 @@ const App: React.FC = () => {
         aria-labelledby="step-gains-heading"
       >
         <p className="step-kicker">Step 3 of {STEPS.length}</p>
-        <h2
-          className="step-heading section-heading-amber"
-          id="step-gains-heading"
-        >
+        <h2 className="step-heading" id="step-gains-heading">
           Capital Gains Stacking
         </h2>
 

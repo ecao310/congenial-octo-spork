@@ -5210,3 +5210,117 @@ not worth a spot fix, because the next sub-step deletes both gradients outright
 along with the `@media print` rules that exist only to undo them.
 
 The 618KB chunk warning is unchanged and is still its own Backlog 4 bullet.
+
+## 2026-08-21 — Task: Bring the type down to FI Calc's scale (visual overhaul, step 2 of 6)
+
+### The scale, read rather than guessed
+
+The bullet says FI Calc's "headings stop around 1.4rem". That is `.secondaryHeader`
+— and `.secondaryHeader`, `.primaryHeader` and `.page_title` appear zero times in
+`index-Dn0nig3p.js`. They are dead rules in the stylesheet, left over from a page
+the app no longer builds. Cross-referencing every CSS rule against the shipped
+bundle gives the scale the running app actually spends:
+
+    1.75rem / 900   .results_headerH1     (1.5rem under 550px)
+    1.35rem / 700   .results_h2
+    1.25rem         .configuration_title, .userPrefs_h2
+    1.125rem / 700  .modalForm_h2, .glidePath_header
+    .9375rem        body
+
+Nothing live is larger than that h1. So the target for our own h1 is 1.75rem at
+900, not 1.4rem — and 1.75rem is, by coincidence, exactly what our *step*
+headings were set at, which is the clearest statement of how far the page was
+over-scaled: its second-level heading was as large as FI Calc's first.
+
+### What moved
+
+    h1              2.5 / 800  →  1.75 / 900, 1.5 on a narrow screen
+    .step-heading   1.75 / 700 →  1.35 / 700
+    .answer-heading 1.25 / 700 →  1.35 / 700
+    .explainer h2   1.5  / 700 →  1.125 / 700
+
+The close's heading went *up*. It is the fourth section on the page, not a figure
+inside one, so it belongs on the same step as the three step headings; it had been
+sharing a size with the seven closing figures under it. Body copy was already
+.9375rem and did not move.
+
+Both headings also picked up an explicit `line-height` (1.2, 1.25). `:root` sets
+1.5 for prose and FI Calc's global is normalize's 1.15 — a 28px heading set at 1.5
+carries 14px of air it has no use for.
+
+### Both gradients, and the print rules that existed to undo them
+
+`h1` painted accent-to-indigo and `.section-heading-amber` painted amber-to-orange,
+both knocking the glyphs out with `-webkit-text-fill-color: transparent`. Both are
+gone: FI Calc paints no text with a gradient, and the knockout was a live print bug
+— a browser dropping background graphics prints the knockout without the paint, so
+the two loudest lines on the page came out of the printer as blank space. Three
+print rules existed only to repair that and are deleted with it. `h1` keeps its one
+print declaration, `color: #0c4a6e`; its 1.75rem needs no print override, where
+2.5rem did.
+
+`.section-heading-amber` is deleted outright rather than recoloured, and step 3's
+heading is now plain `--ink-bright` like the other three. The amber signal that
+ties that step to its curve survives where it is doing work — the slider value, the
+chart key, the curve itself — and a single coloured heading among four was the
+inconsistency, not the tie.
+
+### The test that replaced the print pairing
+
+`the print stylesheet` asserted that every gradient-knocked-out heading gets its
+colour back inside `@media print`, and it opened with
+`expect(knockedOut.length).toBeGreaterThan(0)` — a vacuity guard that now fails by
+construction, because there are no knockouts left. Replaced by `the headings`,
+which claims the stronger thing: nothing anywhere paints text with
+`background-clip: text` or a transparent fill, so there is nothing for print to
+repair. That shape stays true as headings are added; the old one had to be
+re-satisfied by each new one.
+
+`printBlock`, its brace-matching helper, had no other caller and went with it.
+
+### And a test that pins the scale
+
+`the type scale` holds a closed list of ten steps — .75, .8125, .875, .9375, 1,
+1.125, 1.25, 1.35, 1.5, 1.75 — and fails on any size in the screen half that is not
+one of them. A second `it` fails on any step declared but unspent, so the list
+cannot rot into a superset of what the page uses.
+
+This is the direction the failure actually runs. A scale does not drift by someone
+rewriting it; it drifts by a 1.05rem typed into the one rule being edited, because
+from inside that rule there is nothing to compare against. Now there is, and
+widening the scale is an edit to the list, made once and on purpose. The scale is
+also written out as a comment above `body`, where the 15px base is set.
+
+### Verified
+
+- `npx tsc -b`, `npx eslint src --max-warnings 0`, `npx vitest run`
+  (10 files, 669 tests — net +2: one print test retired, three added),
+  `npm run build`, tokens read back out of the minified `dist` CSS
+  (`text-fill-color` count: 0).
+- All three new invariants falsified once each: a gradient pasted onto
+  `.answer-heading` fails `the headings`; `font-size: 1.05rem` fails `sets every
+  size from one closed list of steps`; removing both 1.5rem uses fails `spends
+  every step it declares`.
+- Rendered rather than reasoned about. Built, `vite preview`, and drove Chromium
+  through `playwright-core`: computed sizes are 28px/900 for the h1, 21.6px for
+  every step heading and the close's, 18px for an explainer's, 24px for the h1 at
+  a 500px viewport, and `webkitTextFillColor` equals `color` everywhere. Under
+  `emulateMedia({ media: 'print' })` the h1 is `rgb(12, 74, 110)` with
+  `background-image: none` and step 3's heading is black — which is the check that
+  deleting `.section-heading-amber` left it inheriting the right print rule.
+  Zero page errors. Screenshotted the hero, step 3, the explainer stack and the
+  close.
+- Note for a future iteration: the cached Chromium is build 1228 but the
+  `playwright-core` in `node_modules` wants 1234, so `chromium.launch()` fails
+  with "Executable doesn't exist". Passing `executablePath` at
+  `~/Library/Caches/ms-playwright/chromium_headless_shell-1228/chrome-headless-shell-mac-arm64/chrome-headless-shell`
+  works and needs no download. The script has to live in the project root, not
+  `/tmp`, for the bare `playwright-core` import to resolve.
+
+### Left standing, and why
+
+The close and the next-step boxes are still accent-tinted panels on a bluish
+raised surface, which now reads as the one place the page is not flat. That is the
+sixth sub-bullet's job, not this one's. `--orange` is no longer spent by any CSS
+rule — the amber gradient was its only use there — but it stays in `:root` because
+`palette.ts` spends it on the tooltip and `the palette` requires the two to agree.

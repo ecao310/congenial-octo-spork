@@ -67,50 +67,36 @@ const leafRules = (css: string): { selectors: string[]; body: string }[] =>
     body,
   }));
 
-/** The body of the `@media print` block, braces matched rather than counted. */
-const printBlock = (css: string): string => {
-  const stripped = css.replace(/\/\*[\s\S]*?\*\//g, '');
-  const open = stripped.indexOf('{', stripped.indexOf('@media print'));
-  if (open === -1) return '';
-  let depth = 0;
-  for (let i = open; i < stripped.length; i += 1) {
-    if (stripped[i] === '{') depth += 1;
-    else if (stripped[i] === '}' && (depth -= 1) === 0)
-      return stripped.slice(open + 1, i);
-  }
-  return '';
-};
-
 /**
- * Two headings on this page paint their text with a `linear-gradient`
- * background and knock the glyphs out with
- * `-webkit-text-fill-color: transparent`: the page title and step 3's
- * heading. On screen that is the effect. On paper, in a browser printing
- * without background graphics, it is the knockout without the paint — both
- * headings come out as blank space, the build stays green, and nothing
- * anywhere reports it.
+ * Two headings used to paint their text with a `linear-gradient` background
+ * and knock the glyphs out with `-webkit-text-fill-color: transparent`: the
+ * page title and step 3's. On screen that was the effect. On paper, in a
+ * browser printing without background graphics, it was the knockout without
+ * the paint — both headings came out as blank space, the build stayed green,
+ * and nothing anywhere reported it. The print sheet carried two rules whose
+ * only job was to undo them.
  *
- * The pairing is mechanical, so it is checked mechanically rather than
- * remembered: anything that goes transparent has to be given its colour back
- * inside `@media print`. A third gradient heading fails here until it is.
+ * FI Calc paints no text with a gradient, so neither does this page, and the
+ * repair rules are gone. What is left is the reason they were needed: a
+ * knockout is a heading that a printer is free to drop. So the claim is not
+ * that the two are repaired but that there is nothing to repair, which is the
+ * shape that stays true as headings are added.
  */
-describe('the print stylesheet', () => {
-  it('gives every gradient-painted heading its colour back', () => {
-    const knockedOut = leafRules(stylesheet)
-      .filter((rule) => /-webkit-text-fill-color:\s*transparent/.test(rule.body))
+describe('the headings', () => {
+  it('paints none of them with a gradient a printer would drop', () => {
+    const rules = leafRules(stylesheet);
+    // Guards the extractor itself: an empty sheet would pass vacuously.
+    expect(rules.length).toBeGreaterThan(50);
+
+    const knockedOut = rules
+      .filter((rule) =>
+        /-webkit-text-fill-color:\s*transparent|background-clip:\s*text/.test(
+          rule.body,
+        ),
+      )
       .flatMap((rule) => rule.selectors);
-    // Guards the extractor itself: finding none would pass vacuously.
-    expect(knockedOut.length).toBeGreaterThan(0);
 
-    const restored = new Set(
-      leafRules(printBlock(stylesheet))
-        .filter((rule) =>
-          /-webkit-text-fill-color:\s*(?!transparent)\S/.test(rule.body),
-        )
-        .flatMap((rule) => rule.selectors),
-    );
-
-    expect(knockedOut.filter((selector) => !restored.has(selector))).toEqual([]);
+    expect(knockedOut).toEqual([]);
   });
 });
 
@@ -199,5 +185,59 @@ describe('the palette', () => {
       .filter((token) => token.css !== token.value);
 
     expect(disagreed).toEqual([]);
+  });
+});
+
+/**
+ * Every size the screen half sets, in the order the file sets them.
+ *
+ * Comments are stripped first, so the scale written out above `body` in
+ * `index.css` is documentation here rather than nine more sizes to check.
+ */
+const fontSizes = (css: string): string[] =>
+  Array.from(css.matchAll(/font-size:\s*([^;}]+)/g)).map(([, size]) => size.trim());
+
+/**
+ * Ten steps, and no eleventh.
+ *
+ * They are FI Calc's own, read off its stylesheet: .9375rem body copy, a
+ * 1.75rem page title at weight 900, 1.35rem section headings, 1.125rem under
+ * those. Before this the page ran a 2.5rem hero and 1.75rem step headings —
+ * a register above everything FI Calc uses — and the sizes in between had
+ * arrived one rule at a time.
+ *
+ * That is the failure this closes. A scale does not drift by someone
+ * rewriting it; it drifts by a 1.05rem typed into the one rule being edited,
+ * because from inside that rule there is nothing to compare against. Here
+ * there is: a size that is not on the list fails, so widening the scale
+ * becomes an edit to the list, made once, on purpose.
+ */
+describe('the type scale', () => {
+  const STEPS = [
+    '0.75rem',
+    '0.8125rem',
+    '0.875rem',
+    '0.9375rem',
+    '1rem',
+    '1.125rem',
+    '1.25rem',
+    '1.35rem',
+    '1.5rem',
+    '1.75rem',
+  ];
+
+  it('sets every size from one closed list of steps', () => {
+    const sizes = fontSizes(screenBlock(stylesheet));
+    // Guards the extractor itself: an empty list would pass vacuously.
+    expect(sizes.length).toBeGreaterThan(20);
+
+    expect([...new Set(sizes)].filter((size) => !STEPS.includes(size)).sort()).toEqual(
+      [],
+    );
+  });
+
+  it('spends every step it declares', () => {
+    const spent = new Set(fontSizes(screenBlock(stylesheet)));
+    expect(STEPS.filter((step) => !spent.has(step))).toEqual([]);
   });
 });

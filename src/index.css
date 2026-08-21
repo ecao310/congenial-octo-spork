@@ -109,10 +109,33 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* 15px rather than 16px, set here rather than on `:root` on purpose: every
-   length in this file is in rem, so moving the root size would have shrunk
-   the padding and the corners along with the prose. Inherited text is the
-   only thing meant to move. */
+/* ───── The scale ──────────────────────────────────────────────────────────
+ *
+ * FI Calc's, read off its own stylesheet rather than guessed at. Its live app
+ * sets body copy at .9375rem and its headings stop at 1.75rem — the results
+ * page's h1, at weight 900 — with section headings at 1.35rem and the tier
+ * under them at 1.125rem. Nothing in the running app is larger than that h1.
+ *
+ *   1.75    the page title              FI Calc `.results_headerH1`
+ *   1.5     that title on a narrow screen, and the next-step chevron
+ *   1.35    a step heading, and the close's                `.results_h2`
+ *   1.25    a closing figure, a panel title          `.configuration_title`
+ *   1.125   an explainer heading, a slider readout      `.modalForm_h2`
+ *   1       a text input
+ *   .9375   body copy                                            `body`
+ *   .875    a control label
+ *   .8125   a note, a caption, a footnote
+ *   .75     a kicker, a range label
+ *
+ * `the type scale` in styles.test.tsx holds the list closed: a size that is
+ * not one of these fails, so widening the scale is an edit to the scale
+ * rather than a rounding decision made inside one rule.
+ *
+ * 15px is set here rather than on `:root` on purpose: every length in this
+ * file is in rem, so moving the root size would have shrunk the padding and
+ * the corners along with the prose. Inherited text is the only thing meant
+ * to move.
+ */
 body {
   margin: 0;
   display: flex;
@@ -558,19 +581,24 @@ fieldset.ceiling-picker legend {
   font-weight: 600;
 }
 
+/* Was 2.5rem at weight 800, painted with an accent-to-indigo gradient and
+   knocked out with `-webkit-text-fill-color: transparent`. The gradient went
+   because FI Calc paints no text with one, and the knockout went with it:
+   a browser printing without background graphics printed the knockout and
+   not the paint, so the loudest line on the page came out of the printer as
+   blank space, and the print sheet carried a rule whose whole job was to
+   undo this one. */
 h1 {
-  font-size: 2.5rem;
-  font-weight: 800;
+  font-size: 1.75rem;
+  font-weight: 900;
+  line-height: 1.2;
   margin-bottom: 0.5rem;
-  background: linear-gradient(to right, var(--accent), var(--indigo));
-  background-clip: text;
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  color: var(--ink-bright);
 }
 
 @media (max-width: 640px) {
   h1 {
-    font-size: 2rem;
+    font-size: 1.5rem;
   }
 }
 
@@ -729,8 +757,10 @@ fieldset.ceiling-picker {
   border-top: 1px solid var(--edge);
 }
 
+/* The tier under a step heading rather than level with one: these sit inside
+   a step, and half of them are the label on a collapsed disclosure. */
 .explainer h2 {
-  font-size: 1.5rem;
+  font-size: 1.125rem;
   font-weight: 700;
   margin: 0 0 0.75rem;
   color: var(--ink-bright);
@@ -818,14 +848,6 @@ details.explainer summary:focus-visible {
 
 .explainer li:last-child {
   margin-bottom: 0;
-}
-
-/* Amber accent for the LTCG section */
-.section-heading-amber {
-  background: linear-gradient(to right, var(--amber), var(--orange));
-  background-clip: text;
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
 }
 
 .slider-value.amber {
@@ -988,9 +1010,12 @@ footer p {
   color: var(--ink-dim);
 }
 
+/* A section heading, and the close's `.answer-heading` is set to match: the
+   close is a fourth section, not a figure inside one. */
 .step-heading {
-  font-size: 1.75rem;
+  font-size: 1.35rem;
   font-weight: 700;
+  line-height: 1.25;
   margin: 0 0 0.5rem;
   color: var(--ink-bright);
 }
@@ -1118,8 +1143,9 @@ footer p {
 
 .answer-heading {
   margin: 0.25rem 0 0;
-  font-size: 1.25rem;
+  font-size: 1.35rem;
   font-weight: 700;
+  line-height: 1.25;
   color: var(--ink-bright);
 }
 
@@ -1445,25 +1471,11 @@ footer p {
     padding: 0;
   }
 
-  /* The two headings painted with a gradient and knocked out with
-     `-webkit-text-fill-color: transparent` — the page title and step 3's.
-     A browser printing without background graphics prints the knockout and
-     not the paint, so both come out as blank space. `styles.test.tsx` pins
-     the pairing: a third gradient heading fails the suite until it is reset
-     here too. */
-  h1,
-  .section-heading-amber {
-    background: none;
-    -webkit-text-fill-color: currentColor;
-  }
-
+  /* The title keeps its accent on paper and nothing else about it changes:
+     1.75rem is already a printable heading, and there is no gradient
+     knockout left here to undo. */
   h1 {
-    font-size: 2rem;
     color: #0c4a6e;
-  }
-
-  .section-heading-amber {
-    color: #b45309;
   }
 
   /* ── Text ──

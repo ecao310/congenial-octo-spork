@@ -3652,3 +3652,61 @@ its comment says so.
 tests, green in 5.1s), `npm run build`. CSS: `.scenario-recap` (a left rule in
 the step's own sky blue, matching `.slider-advice`'s treatment) and a 62ch
 `max-width` on `.subtitle`, which is now three lines instead of two.
+
+
+Research pass: what the three-step app is still missing
+=======================================================
+
+Backlog 2 emptied last iteration, so the topmost unchecked bullet was the
+standing "Research and create more action items." No code changed. Baseline
+confirmed green first — `npx tsc -b`, `npx eslint src --max-warnings 0`,
+`npx vitest run` (7 files, 486 tests, 5.2s) — so the backlog is written against
+a working tree, not a guess.
+
+### What the app is now
+
+Three mounted sections on one scrolling page. Step 1 sets the return (year,
+filing status, age, benefit, plus muni interest and a charitable gift behind an
+Advanced disclosure) and closes on the scenario recap. Step 2 is the torpedo:
+marginal rate against other income, IRMAA cliff lines, the reader's own dashed
+vertical, the slider, `StandingNote`, four explainers. Step 3 sweeps the split
+rather than the size — how much of step 2's income is a long-term gain — with
+its own chart, slider and one explainer. Then the disclaimer.
+
+### The finding that reordered the list
+
+`conversionCeilings`, `maxConversionUnder` and `sizeConversion` are complete,
+documented, tested, and imported by nothing. `ConversionSizing` returns the
+largest conversion under a chosen ceiling, its tax, the average cost per dollar
+and the rate past the ceiling. Meanwhile the h1 reads "How Much Can You Take
+Out This Year?" — that exact question — and the page answers it with a curve and
+a sentence of advice. The app has the number and does not show it. That went to
+the top.
+
+Second: `point.totalTax` appears twice in App.tsx and both are inside a
+tooltip. Every figure on the page is a *rate*. A reader who does not hover
+never sees a dollar of tax, and there is no effective rate anywhere at all.
+
+Third: both `chart-container` divs are bare recharts SVG — no `role`, no
+`aria-label`, no caption. All the prose is positioned relative to the reader's
+own point, so nothing on the page ever describes the curve's shape. `segments`
+is that shape as data already, which makes the caption cheap.
+
+Also logged: no query-string state (ten `useState` values, so a refresh loses
+the scenario and there is nothing to send an advisor), no closing recap to
+mirror step 1's opening one, `stateTax.ts` unread by any reader while the page
+says only "federal income tax only", and a README/package name still calling
+this "Growth Projector".
+
+### Triage, not just addition
+
+Discovered Work had grown to fifteen unchecked bullets, four of which are
+polish on code that renders nowhere — the sequencing QCD pricing, the
+nominal-dollar shortfall sum, the COLA anchoring question and the 2026 state
+figures were all written while the Over Time and State Taxes tabs still
+existed. A note at the head of that section says so and names them, so a future
+iteration does not spend a pass improving something no reader can reach. They
+stay unchecked: each is a real defect, and each returns with its section.
+
+Backlog 3 ends with another "Research and create more action items." so the
+loop can regenerate when these run out.

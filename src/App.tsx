@@ -70,11 +70,20 @@ const MAX_MUNI_INTEREST = 50_000;
  * `compareSequencing`, `lumpSumElection` and the state table are all still in
  * `utils/`, still under test, and still exported.
  *
- * The inputs are split across the steps that move them: year, filing status,
- * age and the benefit are step 1, other ordinary income is step 2. Capital
- * gains, tax-exempt interest and the charitable distribution sit in a
- * collapsed `advanced-inputs` block at the end of step 1, because each one
- * starts at $0 and at $0 leaves every chart on the page identical.
+ * Every step has the same shape: the chart, then the one slider that says
+ * where on that chart the reader is standing, then the collapsed explainers,
+ * then the box to the next step. Step 1 is the exception that sets the rule —
+ * it has no curve of its own, so the return itself (year, filing status, age)
+ * stands where the chart stands on the two steps below it, and the benefit
+ * slider follows it in the slider's place.
+ *
+ * So the inputs are split across the steps that move them: year, filing
+ * status, age and the benefit are step 1, other ordinary income is step 2 and
+ * the planned capital gain is step 3 — each of the last two being a point on
+ * the axis its chart sweeps. Tax-exempt interest and the charitable
+ * distribution belong to no axis and sit in a collapsed `advanced-inputs`
+ * block at the end of step 1, because each starts at $0 and at $0 leaves every
+ * chart on the page identical.
  */
 const STEPS = [
   {
@@ -137,6 +146,29 @@ const formatCompact = (value: number): string =>
     notation: 'compact',
     maximumFractionDigits: 1,
   }).format(value);
+
+/**
+ * The point on a swept curve at the reader's own value.
+ *
+ * Both charts price a whole axis, so neither one moves when the slider beneath
+ * it moves: the reader's number is a *place* on a curve that is already drawn,
+ * not an input to it. Reading the curve back at that place is what turns the
+ * slider from an inert control into a position. The sweep ascends, so the last
+ * sampled point at or below the value is the one — the sliders step in $500
+ * and the curves sample every $250, so in practice it is an exact hit.
+ */
+function pointAt<P>(
+  curve: P[],
+  axis: (point: P) => number,
+  value: number,
+): P | undefined {
+  let found: P | undefined;
+  for (const point of curve) {
+    if (axis(point) > value) break;
+    found = point;
+  }
+  return found;
+}
 
 const TOOLTIP_STYLE: React.CSSProperties = {
   background: 'rgba(15, 23, 42, 0.95)',
@@ -359,18 +391,19 @@ const App: React.FC = () => {
   const qcdSliderMax = Math.min(qcdLimit, MAX_INCOME);
 
   /**
-   * The three inputs the page does not open with.
+   * The two inputs the page does not open with.
    *
-   * Each starts at $0, and at $0 each one is a no-op: every chart on the page
+   * Both start at $0, and at $0 both are a no-op: every chart on the page
    * prices the identical scenario whether this section is open or shut. That
    * is the whole test for what belongs in here — year, filing status, age,
    * benefit and other income all change the picture the moment the page loads,
-   * so they stay out. What it costs is that a slider you cannot see is a
-   * slider you forget, which is why anything moved off $0 is named in the
-   * summary line and stays named while the section is closed.
+   * so they stay out, and so does the planned capital gain, which is step 3's
+   * own position marker and belongs under the chart it marks. What it costs is
+   * that a slider you cannot see is a slider you forget, which is why anything
+   * moved off $0 is named in the summary line and stays named while the
+   * section is closed.
    */
   const advancedSet = [
-    { label: 'Capital gains', value: plannedLtcg },
     { label: 'Muni interest', value: muniInterest },
     { label: 'Charitable', value: qcd },
   ].filter(({ value }) => value > 0);
@@ -446,6 +479,20 @@ const App: React.FC = () => {
   const ltcgSegments = useMemo(
     () => segmentCurve(ltcgCurve, (p) => p.ltcg),
     [ltcgCurve],
+  );
+
+  /**
+   * Where the reader is standing on each chart. Step 2's slider is a point on
+   * the ordinary-income sweep and step 3's is a point on the gains sweep, so
+   * each one reads its own curve back rather than changing it.
+   */
+  const herePoint = useMemo(
+    () => pointAt(curve, (p) => p.income, ordinaryIncome),
+    [curve, ordinaryIncome],
+  );
+  const hereGainPoint = useMemo(
+    () => pointAt(ltcgCurve, (p) => p.ltcg, plannedLtcg),
+    [ltcgCurve, plannedLtcg],
   );
 
   // Medicare is per enrollee, so a joint return with both spouses over 65 pays
@@ -803,41 +850,18 @@ const App: React.FC = () => {
                   .join(' \u00B7 ')}
               </span>
             ) : (
-              <span className="advanced-state">All three at $0</span>
+              <span className="advanced-state">Both at $0</span>
             )}
           </summary>
           <p className="field-note">
-            Capital gains you plan to realize, tax-exempt interest, and money
-            given to charity straight out of an IRA. All three sit at $0 until you
-            move them, and at $0 none of them changes a single figure on either
-            chart below — so the page opens on the plain picture, benefit plus
-            other income, and you add the rest only if it is yours. Whatever you
-            set here stays set for both of the steps that follow and is named on
-            the line above even when this section is shut.
+            Tax-exempt interest, and money given to charity straight out of an
+            IRA. Both sit at $0 until you move them, and at $0 neither one
+            changes a single figure on either chart below — so the page opens on
+            the plain picture, benefit plus other income, and you add the rest
+            only if it is yours. Whatever you set here stays set for both of the
+            steps that follow and is named on the line above even when this
+            section is shut.
           </p>
-          <div className="input-group">
-            <div className="slider-header">
-              <label htmlFor="planned-ltcg">
-                Long-Term Capital Gains You Plan to Realize
-              </label>
-              <span className="slider-value emerald">{formatCurrency(plannedLtcg)}</span>
-            </div>
-            <input
-              id="planned-ltcg"
-              type="range"
-              min={0}
-              max={MAX_LTCG}
-              step={500}
-              value={plannedLtcg}
-              onChange={(e) => setPlannedLtcg(Number(e.target.value))}
-              className="slider-emerald"
-            />
-            <div className="slider-range-labels">
-              <span>$0</span>
-              <span>{formatCurrency(MAX_LTCG)}</span>
-            </div>
-          </div>
-
           <div className="input-group">
             <div className="slider-header">
               <label htmlFor="muni-interest">Tax-Exempt (Municipal) Interest</label>
@@ -886,7 +910,7 @@ const App: React.FC = () => {
             </div>
             <p className="field-note">
               IRA money paid straight to the charity. It comes <em>out of</em> the
-              other income set above rather than on top of it, because the
+              other income set in step 2 rather than on top of it, because the
               gift is a distribution that would otherwise have been reported — so it
               moves the whole curve to the right, exactly as far as tax-exempt
               interest moves it to the left. Capped at{' '}
@@ -917,26 +941,6 @@ const App: React.FC = () => {
           the slider says which point along it is yours.
         </p>
 
-        <div className="input-group">
-          <div className="slider-header">
-            <label htmlFor="ordinary-income">Other Ordinary Income (non-LTCG, non-SS)</label>
-            <span className="slider-value amber">{formatCurrency(ordinaryIncome)}</span>
-          </div>
-          <input
-            id="ordinary-income"
-            type="range"
-            min={0}
-            max={MAX_INCOME}
-            step={500}
-            value={ordinaryIncome}
-            onChange={(e) => setOrdinaryIncome(Number(e.target.value))}
-            className="slider-amber"
-          />
-          <div className="slider-range-labels">
-            <span>$0</span>
-            <span>{formatCurrency(MAX_INCOME)}</span>
-          </div>
-        </div>
         <div className="chart-container">
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart
@@ -1039,6 +1043,35 @@ const App: React.FC = () => {
             </span>
           </p>
         ) : null}
+
+        <div className="input-group chart-slider">
+          <div className="slider-header">
+            <label htmlFor="ordinary-income">Other Ordinary Income (non-LTCG, non-SS)</label>
+            <span className="slider-value amber">{formatCurrency(ordinaryIncome)}</span>
+          </div>
+          <input
+            id="ordinary-income"
+            type="range"
+            min={0}
+            max={MAX_INCOME}
+            step={500}
+            value={ordinaryIncome}
+            onChange={(e) => setOrdinaryIncome(Number(e.target.value))}
+            className="slider-amber"
+          />
+          <div className="slider-range-labels">
+            <span>$0</span>
+            <span>{formatCurrency(MAX_INCOME)}</span>
+          </div>
+
+          <p className="slider-readout">
+            <strong>You are here.</strong> At {formatCurrency(ordinaryIncome)} of
+            other income the next dollar is taxed at{' '}
+            <strong>{herePoint ? `${herePoint.marginalRate}%` : '\u2014'}</strong>{' '}
+            &mdash; that point on the curve above, not the curve itself, is what
+            the slider moves.
+          </p>
+        </div>
 
         <details className="explainer">
           <summary>
@@ -1281,13 +1314,10 @@ const App: React.FC = () => {
           Capital Gains Stacking
         </h2>
 
-        <p className="step-prose">
-          Long-term capital gains (LTCG) count fully toward{' '}
-          <strong>provisional income</strong> for Social Security taxability,
-          yet they are taxed in their own preferential bracket (0%/15%/20%).
-          When ordinary income pushes Social Security benefits into the
-          taxable base, LTCG can simultaneously shove gains out of the
-          0% bracket into 15%&nbsp;— stacking two effects at once.
+        <p className="step-intro">
+          The chart prices every realized gain from $0 to{' '}
+          {formatCurrency(MAX_LTCG)} on top of the return you have already set;
+          the slider says which one is yours.
         </p>
 
         <div className="chart-container">
@@ -1339,17 +1369,66 @@ const App: React.FC = () => {
           Long-Term Capital Gains ($) &middot; Ordinary income {formatCurrency(ordinaryIncome)} + {formatCurrency(ssBenefit)} SS
         </p>
 
-        <p className="step-prose">
-          The chart shows the <strong>effective marginal tax rate</strong> on
-          each additional dollar of long-term capital gains, given the
-          ordinary income and Social Security benefit set above. Because
-          LTCG raises provisional income, it can drag Social Security
-          benefits into taxable territory (taxed at ordinary rates) while
-          simultaneously pushing the gains themselves from the 0% bracket
-          to 15%. In the worst zone, a single dollar of LTCG can trigger
-          both effects, producing combined marginal rates that far exceed
-          the statutory 15% capital-gains rate.
-        </p>
+        <div className="input-group chart-slider">
+          <div className="slider-header">
+            <label htmlFor="planned-ltcg">
+              Long-Term Capital Gains You Plan to Realize
+            </label>
+            <span className="slider-value emerald">{formatCurrency(plannedLtcg)}</span>
+          </div>
+          <input
+            id="planned-ltcg"
+            type="range"
+            min={0}
+            max={MAX_LTCG}
+            step={500}
+            value={plannedLtcg}
+            onChange={(e) => setPlannedLtcg(Number(e.target.value))}
+            className="slider-emerald"
+          />
+          <div className="slider-range-labels">
+            <span>$0</span>
+            <span>{formatCurrency(MAX_LTCG)}</span>
+          </div>
+
+          <p className="slider-readout">
+            <strong>You are here.</strong> At {formatCurrency(plannedLtcg)} of
+            realized gains the next dollar of gain is taxed at{' '}
+            <strong>
+              {hereGainPoint ? `${hereGainPoint.marginalRate}%` : '\u2014'}
+            </strong>
+            {hereGainPoint && hereGainPoint.marginalRate > 20
+              ? ' \u2014 past the 20% ceiling a gain can be charged on its own, so the rest of it is benefit being dragged into the tax base alongside the gain.'
+              : '.'}
+          </p>
+        </div>
+
+        <details className="explainer">
+          <summary>
+            <h2 id="ltcg-stacking-heading">Why the two effects stack</h2>
+          </summary>
+          <div className="explainer-content">
+            <p>
+              Long-term capital gains (LTCG) count fully toward{' '}
+              <strong>provisional income</strong> for Social Security taxability,
+              yet they are taxed in their own preferential bracket (0%/15%/20%).
+              When ordinary income pushes Social Security benefits into the
+              taxable base, LTCG can simultaneously shove gains out of the
+              0% bracket into 15%&nbsp;— stacking two effects at once.
+            </p>
+            <p>
+              The chart shows the <strong>effective marginal tax rate</strong> on
+              each additional dollar of long-term capital gains, given the
+              ordinary income and Social Security benefit set above. Because
+              LTCG raises provisional income, it can drag Social Security
+              benefits into taxable territory (taxed at ordinary rates) while
+              simultaneously pushing the gains themselves from the 0% bracket
+              to 15%. In the worst zone, a single dollar of LTCG can trigger
+              both effects, producing combined marginal rates that far exceed
+              the statutory 15% capital-gains rate.
+            </p>
+          </div>
+        </details>
       </section>
 
       <footer>

@@ -565,10 +565,112 @@ describe('the step flow', () => {
 });
 
 /**
- * The scenario block opens on five inputs and hides three.
+ * Every step is laid out the same way, and this is the test of it.
+ *
+ * chart \u2192 the one slider that says where on that chart you are \u2192 the
+ * collapsed explainers \u2192 the box to the next step. Step 1 has no curve of
+ * its own, so it starts at the slider; step 3 is last, so it ends at the
+ * explainer. A slider above its chart reads as an input to the chart, which is
+ * exactly what it is not \u2014 the chart already prices every value the slider
+ * can take.
+ */
+describe('the shape every step shares', () => {
+  /** The step's own landmarks in DOM order, runs of a kind collapsed. */
+  const landmarks = (id: string): string[] => {
+    const section = document.getElementById(id) as HTMLElement;
+    const kinds = Array.from(
+      section.querySelectorAll(
+        '.chart-container, input[type="range"], details, .next-step',
+      ),
+    )
+      // A slider inside a disclosure is that disclosure's business, not the
+      // step's: the shape is about what the reader meets on the way down.
+      .filter((el) => el.tagName === 'DETAILS' || el.closest('details') === null)
+      .map((el) =>
+        el.classList.contains('chart-container')
+          ? 'chart'
+          : el.classList.contains('next-step')
+            ? 'next'
+            : el.tagName === 'DETAILS'
+              ? 'details'
+              : 'slider',
+      );
+    return kinds.filter((kind, i) => kind !== kinds[i - 1]);
+  };
+
+  it('lays the two charted steps out chart, slider, explainers, next', () => {
+    render(<App />);
+    expect(landmarks('step-torpedo')).toEqual([
+      'chart',
+      'slider',
+      'details',
+      'next',
+    ]);
+    expect(landmarks('step-gains')).toEqual(['chart', 'slider', 'details']);
+  });
+
+  /**
+   * Step 1 draws nothing, so the return it sets stands where a chart stands.
+   * What it still owes the shape is the ordering of the rest: one slider on
+   * screen, the disclosure after it, the next-step box last.
+   */
+  it('gives the uncharted step the same tail', () => {
+    render(<App />);
+    expect(landmarks('step-benefit')).toEqual(['slider', 'details', 'next']);
+  });
+
+  it('puts each step\u2019s slider on the axis its own chart sweeps', () => {
+    render(<App />);
+    for (const [id, name] of [
+      ['step-torpedo', /other ordinary income/i],
+      ['step-gains', /long-term capital gains you plan to realize/i],
+    ] as const) {
+      const slider = screen.getByRole('slider', { name });
+      expect(document.getElementById(id)?.contains(slider)).toBe(true);
+    }
+  });
+
+  /**
+   * The readout is what makes the slider more than an inert control: it reads
+   * the drawn curve back at the value the reader picked, which is the number
+   * the chart cannot show them without being pointed at.
+   */
+  it('reads the torpedo curve back at the reader\u2019s own income', () => {
+    render(<App />);
+    const readout = (): HTMLElement =>
+      document.querySelector('#step-torpedo .slider-readout') as HTMLElement;
+    expect(readout()).toHaveTextContent('At $30,000 of other income');
+
+    fireEvent.change(
+      screen.getByRole('slider', { name: /other ordinary income/i }),
+      { target: { value: '90000' } },
+    );
+    expect(readout()).toHaveTextContent('At $90,000 of other income');
+    expect(readout()).toHaveTextContent(/taxed at\s+\d+(\.\d+)?%/);
+  });
+
+  it('reads the gains curve back at the reader\u2019s own gain', () => {
+    render(<App />);
+    const readout = (): HTMLElement =>
+      document.querySelector('#step-gains .slider-readout') as HTMLElement;
+    expect(readout()).toHaveTextContent('At $0 of realized gains');
+
+    fireEvent.change(
+      screen.getByRole('slider', {
+        name: /long-term capital gains you plan to realize/i,
+      }),
+      { target: { value: '40000' } },
+    );
+    expect(readout()).toHaveTextContent('At $40,000 of realized gains');
+    expect(readout()).toHaveTextContent(/taxed at\s+\d+(\.\d+)?%/);
+  });
+});
+
+/**
+ * The scenario block opens on five inputs and hides two.
  *
  * A closed `<details>` still renders its children into jsdom, so every other
- * test in this file reaches those three sliders exactly as it did before the
+ * test in this file reaches those two sliders exactly as it did before the
  * split — which means nothing here can be inferred from the rest of the suite
  * passing. These tests assert the split itself: which inputs are inside the
  * disclosure, that it starts shut, and that shutting it never hides a value
@@ -593,37 +695,41 @@ describe('advanced inputs', () => {
   });
 
   /**
-   * The line that justifies the whole disclosure: at their defaults these
-   * three change nothing, so there is nothing to see until one is moved.
+   * The line that justifies the whole disclosure: at their defaults both of
+   * these change nothing, so there is nothing to see until one is moved.
    */
-  it('reports all three sitting at their defaults', () => {
+  it('reports both sitting at their defaults', () => {
     render(<App />);
-    expect(advancedState()).toHaveTextContent('All three at $0');
+    expect(advancedState()).toHaveTextContent('Both at $0');
   });
 
-  it('holds the three inputs that default to zero', () => {
+  it('holds the two inputs that belong to no chart axis', () => {
     render(<App />);
     const inside = within(advanced());
-    expect(
-      inside.getByLabelText('Long-Term Capital Gains You Plan to Realize'),
-    ).toHaveValue('0');
     expect(inside.getByLabelText('Tax-Exempt (Municipal) Interest')).toHaveValue(
       '0',
     );
     expect(inside.getByLabelText('Qualified Charitable Distribution')).toHaveValue(
       '0',
     );
+    expect(
+      inside.queryByLabelText('Long-Term Capital Gains You Plan to Realize'),
+    ).toBeNull();
   });
 
   /**
-   * The complement, and the more important half: an input that changes the
-   * charts at page load has no business being behind a disclosure.
+   * The complement, and the more important half. Two things earn a slider its
+   * place on screen: it moves the opening picture, or it is the point on a
+   * chart the reader is standing at. The planned gain is the second kind — it
+   * is $0 at load and changes nothing there, but step 3's x-axis is gains, so
+   * it lives under that chart rather than in here.
    */
   it('leaves the inputs that move the opening picture on screen', () => {
     render(<App />);
     for (const label of [
       'Annual Social Security Benefit',
       'Other Ordinary Income (non-LTCG, non-SS)',
+      'Long-Term Capital Gains You Plan to Realize',
     ]) {
       expect(screen.getByLabelText(label).closest('details')).toBeNull();
     }
@@ -639,21 +745,13 @@ describe('advanced inputs', () => {
       { target: { value: '5000' } },
     );
     expect(advancedState()).toHaveTextContent('Muni interest $5,000');
-    expect(advancedState()).not.toHaveTextContent('Capital gains');
-
-    fireEvent.change(
-      screen.getByLabelText('Long-Term Capital Gains You Plan to Realize'),
-      { target: { value: '20000' } },
-    );
-    expect(advancedState()).toHaveTextContent(
-      'Capital gains $20,000 \u00B7 Muni interest $5,000',
-    );
+    expect(advancedState()).not.toHaveTextContent('Charitable');
 
     fireEvent.change(screen.getByLabelText('Qualified Charitable Distribution'), {
       target: { value: '3000' },
     });
     expect(advancedState()).toHaveTextContent(
-      'Capital gains $20,000 \u00B7 Muni interest $5,000 \u00B7 Charitable $3,000',
+      'Muni interest $5,000 \u00B7 Charitable $3,000',
     );
 
     fireEvent.change(
@@ -661,6 +759,7 @@ describe('advanced inputs', () => {
       { target: { value: '0' } },
     );
     expect(advancedState()).not.toHaveTextContent('Muni interest');
+    expect(advancedState()).toHaveTextContent('Charitable $3,000');
   });
 
   /**

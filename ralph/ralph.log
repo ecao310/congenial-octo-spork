@@ -3021,3 +3021,92 @@ The nav marks the step the reader last *asked* for, not the one they are
 looking at — with everything mounted, scrolling past a step with the mouse
 leaves `aria-current` behind. Added to Discovered Work with the scroll-spy
 sketch and the open question of whether the nav should also be sticky.
+
+## 2026-08-21 — Task: Give every step the same shape
+
+chart → the one slider that says where on it you are → the collapsed
+explainers → the box to the next step. Steps 2 and 3 now read that way; step 1
+has no curve of its own, so the return it sets (year, filing status, age)
+stands where the chart stands and the benefit slider follows it.
+
+### What moved
+
+- **Step 2.** The Other Ordinary Income slider went from above the chart to
+  below it — under the axis label and the IRMAA key, so the chart and its two
+  captions stay one block. Nothing else in the step changed order.
+- **Step 3.** Was heading → prose → chart → axis label → prose, with no slider
+  at all. Now heading → one-line intro → chart → axis label → the LTCG slider →
+  a single `<details className="explainer">` ("Why the two effects stack")
+  holding both of the old paragraphs verbatim. The intro is written to match
+  step 2's ("The chart prices every … the slider says which one is yours").
+- **The LTCG slider left the advanced disclosure.** Last iteration deliberately
+  left it there, reasoning that the capital-gains rework three bullets down
+  would move it and moving it twice was worse. But that rework changes what the
+  slider *means* (a share of income already entered rather than an addition),
+  not where it lives, and step 3 cannot have the shared shape without it. So it
+  moved once, to its final home.
+
+### Why the readout exists
+
+Moving the slider under the chart exposed something the ordering had been
+hiding: `plannedLtcg` fed nothing at all. Not the torpedo curve, not the gains
+curve, not a tooltip — only its own value and the advanced summary line. It had
+been wired to the Roth and IRMAA sections deleted two iterations ago. Putting a
+dead control in the main flow, where the disclosure's own stated rule is that
+anything visible must earn its place, was not acceptable.
+
+So each of the two charted steps got a `.slider-readout` under its slider,
+reading the drawn curve back at the reader's value: "You are here. At $30,000
+of other income the next dollar is taxed at 22.2%." `pointAt(curve, axis,
+value)` walks the ascending sweep for the last sample at or below the value —
+sliders step $500, curves sample $250, so it is an exact hit in practice and
+the `undefined` branch renders an em dash. Step 3's line adds a clause when the
+rate is past 20%: nothing above the top statutory LTCG rate can be the gain
+itself, so the excess is benefit being dragged in beside it.
+
+This is prose where the next backlog item asks for a labelled dashed vertical.
+They complement rather than duplicate — the line puts the reader on the chart,
+the sentence says what it costs them there — and the item stays open.
+
+### Also
+
+- `advancedSet` is two entries now, so "All three at $0" → "Both at $0" and
+  the field note lost its capital-gains clause.
+- The QCD field note said the gift comes out of "the other income set above".
+  That slider has been *below* the disclosure since the tabs became steps —
+  stale before this change, not caused by it. Now reads "set in step 2", which
+  survives the next reordering too.
+
+### CSS
+
+`.chart-slider` (a top margin, no bottom one — it reads as part of the chart,
+not as a control in a stack) and `.slider-readout` / `.slider-readout strong`,
+sized like a field note.
+
+### Tests
+
+New `describe('the shape every step shares')`, 5 cases. `landmarks(id)` lists
+a step's `.chart-container` / range input / `<details>` / `.next-step` in DOM
+order, drops anything nested inside a disclosure, and collapses runs — so step
+2 is `['chart','slider','details','next']`, step 3 `['chart','slider',
+'details']`, step 1 `['slider','details','next']`. Collapsing runs means adding
+a fourth explainer to step 2 will not break it. Two more assert each readout
+tracks its own slider. The advanced-inputs describe lost its LTCG assertions
+and gained the inverse: the gain slider is *not* in the disclosure, and the
+"on screen" rule is now two-pronged — an input earns its place by moving the
+opening picture or by being a chart's position marker.
+
+### Verified
+
+`npx tsc -b`, `npx eslint src --max-warnings 0`, `npx vitest run` (7 files,
+412 tests, green in 4.3s), `npm run build`. CSS bundle 11.15 kB → 11.32 kB.
+
+### Logged, not fixed
+
+`plannedLtcg` still reaches no chart. `marginalRateCurve` accepts an `ltcg`
+field and step 2 passes it none; `CustomTooltip` hardcodes `ltcg: 0` into
+`irmaaMagi`. So an $80,000 planned gain leaves the torpedo curve, the total-tax
+figure and every IRMAA cliff line priced as if nothing had been realized — and
+IRMAA MAGI is AGI, which includes capital gains, so those lines are wrong by
+the whole gain. Threading it through changes the shape of the app's centrepiece
+chart, which is a task of its own. Added to Discovered work.

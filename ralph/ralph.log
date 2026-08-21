@@ -5324,3 +5324,89 @@ raised surface, which now reads as the one place the page is not flat. That is t
 sixth sub-bullet's job, not this one's. `--orange` is no longer spent by any CSS
 rule — the amber gradient was its only use there — but it stays in `:root` because
 `palette.ts` spends it on the tooltip and `the palette` requires the two to agree.
+
+## 2026-08-21 — Task: Four sites printed `\u2014` at the reader (bug from a previous iteration)
+
+Not a backlog bullet. The run opened with a dirty tree — `46a7448` was HEAD and in
+sync, and `src/App.tsx` held seven uncommitted line changes and nothing else, no
+test, no log entry. Reading the diff: it replaced `\u2014` with a real em dash in
+four places. That is a fix, not a half-finished edit, so this iteration's job was
+to finish it — verify it, cover it, and land it.
+
+### What the bug was
+
+`\u2014` is an em dash inside a JavaScript string and six literal characters
+inside JSX text. Nothing at the call site tells them apart, and the page has both
+spellings a few lines from each other: `'...prices \u2014 the year...'` at
+App.tsx:145 is a single-quoted string and correct, while
+`<option value="">Somewhere else \u2014 or rather not say</option>` was JSX text
+and printed the backslash.
+
+Four sites, all from `7aa0e66` ("Say what the reader's own state does to the
+benefit"), all shipped for fourteen commits:
+
+- the state selector's first option — the default one, so this was on screen on
+  first paint for every reader who never opened the menu;
+- the field note under the selector ("leaves the benefit alone \u2014 with or
+  without an income tax of its own \u2014");
+- the state footnote's federal-only warning, twice.
+
+Two more sat in a JSX comment, where they were harmless; the working tree had
+fixed those too and they are kept, since the comment is read by whoever edits the
+line next.
+
+Why nothing caught it: `npx tsc -b` and `eslint` both see well-formed JSX text, and
+the two tests that touch these strings assert substrings that stop before the dash
+(`App.test.tsx:3160`, `:3168`). No test on this page asserts a whole sentence.
+
+### The guard: `src/prose.test.ts`
+
+Rendering and reading `textContent` would have covered the two unconditional
+sites and missed the two behind `statesTaxing.length > 0`. So the scan is at the
+source instead: `typescript` is already a devDependency for `tsc -b`, so the test
+parses every `.tsx` under `src/` with `ts.createSourceFile(..., ScriptKind.TSX)`
+and walks for two node kinds.
+
+- `ts.isJsxText` — 1,330 of them.
+- `ts.isJsxAttribute` whose initializer is a `StringLiteral` — 301. A `{'...'}`
+  expression attribute is a real string literal and is skipped on purpose.
+
+The claim is wider than one escape: **no backslash at all** in either position.
+`\n`, `\t` and `\'` fail there for the same reason `\u2014` does, and a backslash
+that genuinely belongs on the page is spelled `{'\\'}`. Both `it`s open with a
+count assertion (`>100`, `>50`) so an extractor that walks nothing cannot pass
+vacuously — the same guard `styles.test.tsx` puts on its selector list.
+
+The one escape this cannot see is `{'\u2014'}`, which is the spelling that works.
+
+### Verified
+
+- `npx tsc -b`, `npx eslint src --max-warnings 0`, `npx vitest run`
+  (11 files, 675 tests — +2, both new).
+- Both new invariants falsified once each: putting `\u2014` back into the option's
+  JSX text fails the first with `src/App.tsx:2081: Somewhere else \u2014 or rather
+  not say`; adding `title="a \u2014 b"` to the same element fails the second.
+- The scanner run against `46a7448` itself lists exactly the four sites and no
+  others, which is what says the working tree's fix was complete rather than
+  partial.
+- `npm run build`, then read the text back out of the minified bundle:
+  `Somewhere else — or rather not say`, and zero occurrences of `u2014` anywhere
+  in `dist` (every legitimate string-literal escape resolves at build time, so a
+  surviving one would be a literal).
+
+### Two process notes
+
+`46a7448` wrote its whole write-up into the commit message and never touched
+`ralph/ralph.log`, so the log's last entry is step 2 of the visual overhaul while
+the repo is on step 3. Nothing is lost — the message is thorough — but a reader
+who greps the log for the controls pass will not find it.
+
+And the tree has now opened dirty two runs running. The existing Discovered Work
+bullet asks where a `git status --porcelain` guard belongs; a second occurrence
+inside a day is the argument for answering it. Recovery was cheap both times, but
+only because the diff happened to be legible. Noted both above.
+
+### Left standing
+
+The visual overhaul's step 4 ("Re-shape the shell") is still the topmost unchecked
+bullet and is untouched by this run.

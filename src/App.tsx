@@ -2078,7 +2078,7 @@ const App: React.FC = () => {
                `announceFrom`. */
             onChange={(e) => setHomeState(e.target.value)}
           >
-            <option value="">Somewhere else \u2014 or rather not say</option>
+            <option value="">Somewhere else — or rather not say</option>
             {STATE_SS_RULES.map((rule) => (
               <option key={rule.abbr} value={rule.abbr}>
                 {rule.state}
@@ -2095,8 +2095,8 @@ const App: React.FC = () => {
             The menu is the {STATE_SS_RULES.length} states that taxed a Social
             Security benefit in either year this page prices, and{' '}
             {statesTaxing.length} of them still do in {year}. Everywhere else
-            leaves the benefit alone \u2014 with or without an income tax of its
-            own \u2014 so &ldquo;somewhere else&rdquo; is the right answer for
+            leaves the benefit alone — with or without an income tax of its
+            own — so &ldquo;somewhere else&rdquo; is the right answer for
             most readers. Nothing below is priced from this: no two of these{' '}
             {STATE_SS_RULES.length} rules share a shape, so the page quotes them
             and cites them rather than modelling them wrong. What it changes is
@@ -2493,8 +2493,8 @@ const App: React.FC = () => {
         {/* State tax as a footnote rather than a step of its own: the data is
             text, so what it needs is a paragraph and a citation, not a chart.
             The rule stays quotable even when the state has dropped off the
-            year's list \u2014 West Virginia does exactly that between 2025 and
-            2026 \u2014 which is the second branch here. */}
+            year's list — West Virginia does exactly that between 2025 and
+            2026 — which is the second branch here. */}
         <p className="state-footnote" role="note">
           {homeStateRule ? (
             homeStateTaxes ? (
@@ -2533,8 +2533,8 @@ const App: React.FC = () => {
             <>
               <strong>Every figure on this page is a federal one.</strong>{' '}
               {statesTaxing.length} states still reach a Social Security benefit
-              in {year} \u2014{' '}
-              {sentenceList(statesTaxing.map((rule) => rule.state))} \u2014 and a
+              in {year} —{' '}
+              {sentenceList(statesTaxing.map((rule) => rule.state))} — and a
               reader in one of them is looking at a curve that understates their
               own bill.{' '}
               {movingStates.length > 0 ? (

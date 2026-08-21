@@ -1531,6 +1531,62 @@ describe('Tooltip Recommendations', () => {
       ).toBeInTheDocument();
     });
 
+    /**
+     * The 400% line, priced at the hovered point rather than drawn across the
+     * axis. This is where the poverty-line cliff went when the lines came off
+     * the chart by default: 36B reads a MAGI of its own — the whole benefit,
+     * taxed or not — so it is a third assessment of the same point rather than
+     * a rescaling of Medicare's, and a reader who never switches the line on
+     * still meets it on hover.
+     */
+    it('measures the hovered point against the 400% poverty line', () => {
+      render(
+        <CustomTooltip
+          active={true}
+          payload={[{ payload: { income: 20000, marginalRate: 15, totalTax: 768 } }]}
+          ssBenefit={24852}
+          segments={mockOrdinarySegments}
+          preMedicare
+        />,
+      );
+      // 36B household income is $20,000 + the whole $24,852 benefit = $44,852,
+      // against a one-person cliff of $62,600.
+      expect(
+        screen.getByText(
+          /\$17,748 of household income to the 400% poverty line, then the credit is gone/,
+        ),
+      ).toBeInTheDocument();
+    });
+
+    it('says the credit is gone once the hovered point is past the line', () => {
+      render(
+        <CustomTooltip
+          active={true}
+          payload={[{ payload: { income: 90000, marginalRate: 22, totalTax: 17000 } }]}
+          ssBenefit={24852}
+          segments={mockOrdinarySegments}
+          preMedicare
+        />,
+      );
+      expect(
+        screen.getByText(/Past the 400% poverty line — no Marketplace premium tax credit/),
+      ).toBeInTheDocument();
+    });
+
+    it('leaves the line out for a return that is already on Medicare', () => {
+      render(
+        <CustomTooltip
+          active={true}
+          payload={[{ payload: { income: 20000, marginalRate: 15, totalTax: 768 } }]}
+          ssBenefit={24852}
+          segments={mockOrdinarySegments}
+        />,
+      );
+      // 36B(c)(2)(B): nobody enrolled in Medicare is eligible for the credit,
+      // so there is nothing to measure and the row is not drawn.
+      expect(screen.queryByText(/poverty line/)).not.toBeInTheDocument();
+    });
+
     it('adds tax-exempt interest back and doubles the surcharge for a couple', () => {
       render(
         <CustomTooltip
@@ -2037,82 +2093,172 @@ describe('head of household', () => {
   });
 });
 
+/**
+ * Both of step 2's threshold lines are off until a reader asks for them, and
+ * the panel behind the Lines button is where the asking happens. Opening it is
+ * the first act of every test below, so it has a helper of its own.
+ */
+const openLinesPanel = (): HTMLElement => {
+  fireEvent.click(screen.getByRole('button', { name: /^Lines/ }));
+  return screen.getByRole('group', { name: /Thresholds on this chart/ });
+};
+
+describe('the Lines panel on the torpedo chart', () => {
+  it('draws neither threshold until it is asked to', () => {
+    render(<App />);
+    // Nothing about either cliff is on the page on arrival — not the lines
+    // (App.chart.test.tsx holds those), and not a paragraph of key under the
+    // plot explaining a dash that is not there.
+    expect(screen.queryByRole('group', { name: /Thresholds/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('checkbox', { name: 'Medicare IRMAA cliffs' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Lines/ })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    );
+    expect(document.querySelector('.chart-key')).not.toBeNull(); // step 4 keeps one
+    expect(document.querySelector('.chart-key-subsidy')).toBeNull();
+  });
+
+  it('offers both switches, unticked, and counts what it draws', () => {
+    render(<App />);
+    const button = screen.getByRole('button', { name: /^Lines/ });
+    // Nothing drawn, so nothing counted: the button is bare until it has a
+    // number to report.
+    expect(button).toHaveAccessibleName('Lines');
+
+    openLinesPanel();
+    expect(button).toHaveAttribute('aria-expanded', 'true');
+    const irmaa = screen.getByRole('checkbox', { name: 'Medicare IRMAA cliffs' });
+    const subsidy = screen.getByRole('checkbox', { name: '400% poverty-line cliff' });
+    expect(irmaa).not.toBeChecked();
+    expect(subsidy).not.toBeChecked();
+
+    // Three IRMAA cliffs fit the default axis, and one 400% line: the count is
+    // of marks on the chart, not of ticked boxes.
+    fireEvent.click(irmaa);
+    expect(button).toHaveAccessibleName('Lines (3)');
+    fireEvent.click(subsidy);
+    expect(button).toHaveAccessibleName('Lines (4)');
+    fireEvent.click(irmaa);
+    expect(button).toHaveAccessibleName('Lines (1)');
+  });
+
+  it('counts nothing when a switch is on and its threshold is off the axis', () => {
+    render(<App />);
+    openLinesPanel();
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Medicare IRMAA cliffs' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Jointly' }));
+    // The joint tier-1 threshold is past the right edge, so the switch is on
+    // and the chart is unchanged — which is the case the note inside the panel
+    // is written for.
+    expect(screen.getByRole('checkbox', { name: 'Medicare IRMAA cliffs' })).toBeChecked();
+    expect(screen.getByRole('button', { name: /^Lines/ })).toHaveAccessibleName('Lines');
+  });
+
+  it('closes on Escape and puts focus back on the button', () => {
+    render(<App />);
+    openLinesPanel();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('group', { name: /Thresholds/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Lines/ })).toHaveFocus();
+  });
+
+  it('closes on a click outside itself, and not on one inside', () => {
+    render(<App />);
+    const panel = openLinesPanel();
+    fireEvent.mouseDown(panel);
+    expect(screen.getByRole('group', { name: /Thresholds/ })).toBeInTheDocument();
+
+    fireEvent.mouseDown(document.body);
+    expect(screen.queryByRole('group', { name: /Thresholds/ })).not.toBeInTheDocument();
+  });
+
+  it('says that neither line is tax, and where each is priced instead', () => {
+    render(<App />);
+    // The one thing the two paragraphs of key under the plot were carrying
+    // that a checkbox cannot: what these thresholds are not, and where what
+    // they cost went.
+    const panel = openLinesPanel();
+    expect(panel).toHaveTextContent('Neither is income tax, so neither is in the curve.');
+    expect(panel).toHaveTextContent("priced for your own income in the chart's tooltip");
+  });
+});
+
 describe('the IRMAA cliff lines on the torpedo chart', () => {
   /**
    * The lines themselves are asserted on in App.chart.test.tsx, which mocks
    * ResponsiveContainer so recharts actually draws. What is checked here is the
-   * key underneath: plain HTML, always rendered, and the only thing on the page
-   * that says what a red dash means now that the Medicare tab is gone.
+   * note under the switch that draws them: it is the only thing on the page
+   * that says whether ticking the box will put anything on the chart, and
+   * where — the rest of what a cliff is went to the tooltip and the disclosure.
    */
-  const chartKey = (container: HTMLElement): HTMLElement => {
-    const key = container.querySelector<HTMLElement>('.chart-key');
-    if (!key) throw new Error('no chart key rendered');
-    return key;
+  const irmaaNote = (): HTMLElement => {
+    const panel = screen.getByRole('group', { name: /Thresholds on this chart/ });
+    const note = panel.querySelector<HTMLElement>('.chart-lines-note');
+    if (!note) throw new Error('no IRMAA note rendered');
+    return note;
   };
 
-  it('names the lines and prices every one it draws', () => {
-    const { container } = render(<App />);
-    const key = chartKey(container);
-    expect(key).toHaveTextContent("Medicare's IRMAA cliffs.");
-    expect(key).toHaveTextContent('a cliff, not a phase-in');
+  it('prices every line the switch would draw', () => {
+    render(<App />);
+    openLinesPanel();
     // Tier 1 is a $1,052.40 step; tiers 2 and 3 are $1,591 each. Rounded to
     // whole dollars, in the order the lines are drawn.
-    expect(key).toHaveTextContent(
+    expect(irmaaNote()).toHaveTextContent(
       'IRMAA 1 at $87,876 costs $1,148/yr; IRMAA 2 at $115,876 another $1,736/yr; IRMAA 3 at $149,876 another $1,735/yr.',
     );
-    // The surcharge is a premium, not tax, so it is in none of the tax figures.
-    expect(key).toHaveTextContent('None of that is tax');
   });
 
-  it('re-prices the key when tax-exempt interest moves the lines left', () => {
-    const { container } = render(<App />);
+  it('re-prices the note when tax-exempt interest moves the lines left', () => {
+    render(<App />);
+    openLinesPanel();
     fireEvent.change(
       screen.getByRole('slider', { name: /tax-exempt \(municipal\) interest/i }),
       { target: { value: '10000' } },
     );
     // Medicare's MAGI adds muni interest straight back, so every cliff arrives
     // $10,000 of other income earlier.
-    expect(chartKey(container)).toHaveTextContent(
+    expect(irmaaNote()).toHaveTextContent(
       'IRMAA 1 at $77,876 costs $1,148/yr; IRMAA 2 at $105,876 another $1,736/yr; IRMAA 3 at $139,876 another $1,735/yr.',
     );
   });
 
   it('quotes the separate return its own first tier rather than tier 1', () => {
-    const { container } = render(<App />);
+    render(<App />);
+    openLinesPanel();
     fireEvent.click(
       screen.getByRole('radio', { name: 'Married Filing Separately' }),
     );
-    const key = chartKey(container);
-    expect(key).toHaveTextContent('IRMAA 4 at $87,876 costs $6,355/yr.');
-    expect(key).not.toHaveTextContent('IRMAA 1');
+    expect(irmaaNote()).toHaveTextContent('IRMAA 4 at $87,876 costs $6,355/yr.');
+    expect(irmaaNote()).not.toHaveTextContent('IRMAA 1');
   });
 
   it('says where the nearest cliff is when none fits on the axis', () => {
-    const { container } = render(<App />);
+    render(<App />);
+    openLinesPanel();
     fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Jointly' }));
-    const key = chartKey(container);
-    expect(key).toHaveTextContent('No Medicare IRMAA cliff falls on this chart.');
-    // $212,000 of MAGI, less the benefits already in AGI, is past the $150,000
-    // right edge — so the reader gets the figure instead of a blank margin.
-    expect(key).toHaveTextContent(
-      '$218,000 of MAGI — $196,876 of other income, past the right edge of the axis',
+    // $218,000 of MAGI, less the benefits already in AGI, is past the $150,000
+    // right edge — so the reader gets the figure instead of a switch that
+    // appears to do nothing.
+    expect(irmaaNote()).toHaveTextContent(
+      'None falls on this chart. The first one this return could reach needs $196,876 of other income, past the right edge, and would cost $1,148/yr.',
     );
-    expect(key).toHaveTextContent('$1,148/yr in Medicare premiums');
   });
 
   it('doubles the price for a joint return with two enrollees', () => {
-    const { container } = render(<App />);
+    render(<App />);
+    openLinesPanel();
     fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Jointly' }));
     fireEvent.click(screen.getByRole('checkbox', { name: /age 65 or older/i }));
     fireEvent.click(
       screen.getByRole('checkbox', { name: /both spouses are 65 or older/i }),
     );
-    // Both cliffs are drawn here where the same return without the age toggle
-    // gets neither: claiming the senior deduction stretches the axis to
+    // Both cliffs are reachable here where the same return without the age
+    // toggle gets neither: claiming the senior deduction stretches the axis to
     // $250,000 to fit its phaseout, and the joint cliffs come along with it.
     // IRMAA is charged per enrollee off one household MAGI figure, so both
     // steps are twice what a single filer pays.
-    expect(chartKey(container)).toHaveTextContent(
+    expect(irmaaNote()).toHaveTextContent(
       'IRMAA 1 at $196,876 costs $2,297/yr, for the two of you.',
     );
   });
@@ -2161,8 +2307,16 @@ describe('the IRMAA cliff lines on the torpedo chart', () => {
  * the section stays even though the page can no longer land on that branch.
  */
 describe('the 400% poverty-line cliff under the torpedo chart', () => {
-  const subsidyKey = (container: HTMLElement): HTMLElement | null =>
-    container.querySelector<HTMLElement>('.chart-key-subsidy');
+  /**
+   * The note under the second switch in the Lines panel. Read by position
+   * rather than by a class of its own: the panel offers the IRMAA switch
+   * first, always, so the subsidy note is the second one when it is offered
+   * at all.
+   */
+  const subsidyNote = (): HTMLElement | null => {
+    const panel = screen.queryByRole('group', { name: /Thresholds on this chart/ });
+    return panel?.querySelectorAll<HTMLElement>('.chart-lines-note')[1] ?? null;
+  };
 
   const subsidyExplainer = (): HTMLElement => {
     const heading = screen.getByRole('heading', { name: /400% poverty-line cliff/ });
@@ -2172,22 +2326,22 @@ describe('the 400% poverty-line cliff under the torpedo chart', () => {
   };
 
   it('prices the line for this return, and says what the household pays under it', () => {
-    const { container } = render(<App />);
-    // The heading points at the line, because there is always one to point at.
-    expect(
-      screen.getByRole('heading', { name: /400% poverty-line cliff/ }),
-    ).toHaveTextContent('pink dashed line');
-    const key = subsidyKey(container);
-    expect(key).not.toBeNull();
+    render(<App />);
+    openLinesPanel();
     // 4 x the $15,650 one-person line, reached at $62,600 less the $24,852
     // benefit that is already all of household income.
-    expect(key).toHaveTextContent('Household income over $62,600');
-    expect(key).toHaveTextContent('$15,650 poverty line for a household of 1');
-    expect(key).toHaveTextContent('reached at $37,748 of other income');
-    // 9.96% of $62,600, per Rev. Proc. 2025-25's last row.
-    expect(key).toHaveTextContent('pays at most $6,235 for the benchmark plan');
-    expect(key).toHaveTextContent('until Medicare starts');
+    expect(subsidyNote()).toHaveTextContent(
+      '$62,600 of household income, reached at $37,748 of other income.',
+    );
 
+    // The rest of it — what the household pays under the line, and the
+    // guideline year the line comes from — is the explainer's, which is where
+    // the two paragraphs of key under the plot sent their prose.
+    expect(subsidyExplainer()).toHaveTextContent(
+      '$15,650 poverty line for one person',
+    );
+    // 9.96% of $62,600, per Rev. Proc. 2025-25's last row.
+    expect(subsidyExplainer()).toHaveTextContent('$6,235');
     // 26 CFR 1.36B-1(h): the line is a year old before the year opens, where
     // Medicare's MAGI is two.
     expect(subsidyExplainer()).toHaveTextContent(
@@ -2219,26 +2373,31 @@ describe('the 400% poverty-line cliff under the torpedo chart', () => {
   });
 
   it('says where the line is even when it is off the right edge', () => {
-    const { container } = render(<App />);
+    render(<App />);
+    openLinesPanel();
     fireEvent.change(screen.getByRole('slider', { name: /tax-exempt \(municipal\) interest/i }), {
       target: { value: '40000' },
     });
     // $24,852 of benefit and $40,000 of interest is $64,852 before a dollar of
     // other income — over the line already, so there is nothing left to lose.
-    expect(subsidyKey(container)).toHaveTextContent(
-      'Already past the 400% poverty-line cliff',
-    );
-    expect(subsidyKey(container)).toHaveTextContent(
-      'no Marketplace premium tax credit to lose at any point on this chart',
+    expect(subsidyNote()).toHaveTextContent('Already past it.');
+    expect(subsidyNote()).toHaveTextContent(
+      'there is no credit to lose at any point on this chart',
     );
   });
 
-  it('takes the whole section away once everyone on the return is on Medicare', () => {
-    const { container } = render(<App />);
-    expect(subsidyKey(container)).not.toBeNull();
+  it('takes the switch and the section away once everyone is on Medicare', () => {
+    render(<App />);
+    openLinesPanel();
+    expect(
+      screen.getByRole('checkbox', { name: '400% poverty-line cliff' }),
+    ).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('checkbox', { name: 'Age 65 or older' }));
-    expect(subsidyKey(container)).toBeNull();
+    expect(
+      screen.queryByRole('checkbox', { name: '400% poverty-line cliff' }),
+    ).not.toBeInTheDocument();
+    expect(subsidyNote()).toBeNull();
     expect(
       screen.queryByRole('heading', { name: /400% poverty-line cliff/ }),
     ).not.toBeInTheDocument();

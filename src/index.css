@@ -746,6 +746,133 @@ h1 {
   margin-top: 2rem;
 }
 
+/* ───── The chart's own settings ────────────────────────────────────────────
+ *
+ * Step 2 draws two thresholds that are not income tax — a Medicare premium
+ * and a Marketplace credit — and neither is on by default, so this is the
+ * control that puts them there. It is the only thing on the page that changes
+ * what is *drawn* rather than what is *priced*, which is why it sits with the
+ * chart instead of down among the sliders: everything in the configuration
+ * column moves the return, and this moves nothing.
+ *
+ * It follows the disclosure register rather than inventing a second one. No
+ * gear glyph, because this page draws its one affordance — a chevron — out of
+ * two borders and owns no icon asset; the button rotates the same chevron
+ * `details.explainer summary` does, so an open panel and an open explainer
+ * say "open" the same way.
+ */
+.chart-lines {
+  position: relative;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.chart-lines-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.375rem 0.625rem;
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-md);
+  background: var(--surface-control);
+  font: inherit;
+  font-size: 0.8125rem;
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.chart-lines-button:hover {
+  border-color: var(--accent);
+  color: var(--ink-bright);
+}
+
+.chart-lines-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.chart-lines-button::after {
+  content: '';
+  display: inline-block;
+  width: 0.4rem;
+  height: 0.4rem;
+  border-right: 2px solid var(--ink-muted);
+  border-bottom: 2px solid var(--ink-muted);
+  transform: rotate(45deg);
+  transition: transform 0.2s ease, border-color 0.2s ease;
+}
+
+.chart-lines-button[aria-expanded='true']::after {
+  transform: rotate(-135deg);
+  border-color: var(--accent);
+}
+
+/* Floats over the plot, so it takes the one shadow left on this page — the
+   same pair the hover tooltip and the hint bubble take, for the same reason:
+   it has to stay legible over whatever it happens to be covering. */
+.chart-lines-panel {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  right: 0;
+  z-index: 30;
+  width: max-content;
+  max-width: min(24rem, 100%);
+  padding: 0.875rem;
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-lg);
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-float);
+}
+
+.chart-lines-group {
+  border: none;
+  padding: 0;
+  margin: 0;
+}
+
+.chart-lines-group legend {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+  padding: 0;
+}
+
+.chart-lines-lead {
+  margin: 0.375rem 0 0.75rem;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--ink-dim);
+}
+
+/* The swatch is the key. It is the same dashed rule the chart draws, so a
+   reader matches the switch to the line by hue before reading either — which
+   is the job the two paragraphs of key under the plot used to do, in the one
+   place a reader is already asking about the lines. Re-centred because it was
+   drawn to sit against the first line of a paragraph, and here it sits
+   against a checkbox. */
+.chart-lines-swatch {
+  align-self: center;
+  margin-top: 0;
+}
+
+/* What ticking the box will actually draw, and where. The only thing a
+   checkbox cannot say on its own: a threshold past the right edge of the axis
+   makes the switch look broken, and "off the right edge" is a different
+   answer from "no line". */
+.chart-lines-note {
+  margin: 0.25rem 0 0.875rem 1.5rem;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--ink-muted);
+}
+
+.chart-lines-note:last-child {
+  margin-bottom: 0;
+}
+
 /* The one thing on this page that genuinely floats over something rather than
    sitting in it, so it is the one thing left with a shadow: the tooltip
    follows the pointer across the plot and has to stay legible over whatever
@@ -834,14 +961,13 @@ h1 {
   border-top: 2px dashed var(--rose);
 }
 
-/* Step 2 draws two kinds of cliff, so its key comes in two colours. Fuchsia is
-   the second one: near enough to the rose above it to read as the same kind of
-   thing — a whole year's money turning on one dollar — and far enough to say
-   it is a different line, belonging to a reader who is not on Medicare yet. */
-.chart-key-subsidy strong {
-  color: var(--fuchsia-bright);
-}
-
+/* Step 2 offers two kinds of cliff, so its swatches come in two colours.
+   Fuchsia is the second one: near enough to the rose above it to read as the
+   same kind of thing — a whole year's money turning on one dollar — and far
+   enough to say it is a different line, belonging to a reader who is not on
+   Medicare yet. The `.chart-key-subsidy strong` that stood here went with the
+   paragraph of key it coloured; the swatch outlived it because the Lines panel
+   still has to tell the two switches apart by hue. */
 .chart-key-swatch-subsidy {
   border-top-color: var(--fuchsia);
 }
@@ -1877,6 +2003,7 @@ footer p {
   .next-step,
   .answer-share-button,
   .link-note button,
+  .chart-lines,
   input[type='range'],
   .slider-range-labels {
     display: none;

@@ -81,9 +81,45 @@ const subsidyPositions = (container: HTMLElement): number[] =>
 const herePositions = (container: HTMLElement): number[] =>
   positionsOf(container, '.recharts-reference-line.here-line');
 
+/**
+ * Ask step 2 for both threshold lines.
+ *
+ * Neither is drawn until a reader switches it on: they are a Medicare premium
+ * and a Marketplace credit, so neither is income tax and neither belongs on a
+ * chart of marginal rates by default. Every test below is about where a line
+ * lands once it has been asked for, so each one asks first — and the asking
+ * is done on a fresh render, before any filing status or age is changed,
+ * because the 400% switch is only offered to a return that could still claim
+ * the credit.
+ *
+ * The panel is shut again afterwards. It is not a dialog and nothing traps
+ * focus in it, but leaving it open puts two more checkboxes in the same
+ * accessible-name space as the age toggles for the rest of the test.
+ */
+const showBothThresholds = (): void => {
+  const open = screen.getByRole('button', { name: /^Lines/ });
+  fireEvent.click(open);
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Medicare IRMAA cliffs' }));
+  fireEvent.click(screen.getByRole('checkbox', { name: '400% poverty-line cliff' }));
+  fireEvent.click(open);
+};
+
 describe('IRMAA cliffs on the ordinary-income chart', () => {
+  it('draws nothing until the reader asks for it', () => {
+    const { container } = render(<App />);
+    // The default render is the curve and the reader's own marker, and that is
+    // all: the same return that draws three IRMAA cliffs and a 400% line in
+    // the test below draws none of them here.
+    expect(cliffPositions(container)).toHaveLength(0);
+    expect(subsidyPositions(container)).toHaveLength(0);
+    expect(screen.queryByText(/^IRMAA \d$/)).not.toBeInTheDocument();
+    expect(screen.queryByText('400% FPL')).not.toBeInTheDocument();
+    expect(herePositions(container).length).toBeGreaterThan(0);
+  });
+
   it('draws one labelled reference line per cliff inside the x-axis', () => {
     const { container } = render(<App />);
+    showBothThresholds();
     // Cliffs 4 and 5 need $205,000 and $500,000 of MAGI, past the chart.
     expect(screen.getAllByText(/^IRMAA [123]$/)).toHaveLength(3);
     expect(screen.queryByText('IRMAA 4')).not.toBeInTheDocument();
@@ -99,6 +135,7 @@ describe('IRMAA cliffs on the ordinary-income chart', () => {
 
   it('slides the lines left as tax-exempt interest is added', () => {
     const { container } = render(<App />);
+    showBothThresholds();
     const before = cliffPositions(container);
     fireEvent.change(
       screen.getByRole('slider', { name: /tax-exempt \(municipal\) interest/i }),
@@ -114,6 +151,7 @@ describe('IRMAA cliffs on the ordinary-income chart', () => {
 
   it('draws a separate return a single line, at its fourth-tier cliff', () => {
     const { container } = render(<App />);
+    showBothThresholds();
     fireEvent.click(
       screen.getByRole('radio', { name: 'Married Filing Separately' }),
     );
@@ -143,6 +181,7 @@ describe('IRMAA cliffs on the ordinary-income chart', () => {
    */
   it('slides the lines left as the axis widens for the senior deduction', () => {
     const { container } = render(<App />);
+    showBothThresholds();
     const before = cliffPositions(container);
     fireEvent.click(screen.getByRole('checkbox', { name: 'Age 65 or older' }));
     const after = cliffPositions(container);
@@ -157,6 +196,7 @@ describe('IRMAA cliffs on the ordinary-income chart', () => {
 
   it('brings a joint return\u2019s first cliff onto the chart when the axis grows', () => {
     const { container } = render(<App />);
+    showBothThresholds();
     fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Jointly' }));
     // A joint tier-1 threshold is past a $150,000 axis, so nothing is drawn.
     expect(cliffPositions(container)).toHaveLength(0);
@@ -174,6 +214,7 @@ describe('IRMAA cliffs on the ordinary-income chart', () => {
 
   it('drops the lines entirely when no cliff fits on the axis', () => {
     const { container } = render(<App />);
+    showBothThresholds();
     fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Jointly' }));
     // The joint tier-1 threshold is $218,000 of MAGI — off the right edge.
     expect(cliffPositions(container)).toHaveLength(0);
@@ -195,6 +236,7 @@ describe('IRMAA cliffs on the ordinary-income chart', () => {
 describe('the 400% poverty-line cliff on the ordinary-income chart', () => {
   it('draws one line, left of every IRMAA cliff', () => {
     const { container } = render(<App />);
+    showBothThresholds();
     // $62,600 of household income, less the $24,852 benefit that is already
     // all of it — so $37,748 of other income, against IRMAA 1 at $87,876.
     const subsidy = subsidyPositions(container);
@@ -206,6 +248,7 @@ describe('the 400% poverty-line cliff on the ordinary-income chart', () => {
 
   it('moves left further than the IRMAA lines do as the benefit grows', () => {
     const { container } = render(<App />);
+    showBothThresholds();
     const before = { subsidy: subsidyPositions(container)[0], irmaa: cliffPositions(container)[0] };
     fireEvent.change(screen.getByRole('slider', { name: /social security benefit/i }), {
       target: { value: '34852' },
@@ -223,6 +266,7 @@ describe('the 400% poverty-line cliff on the ordinary-income chart', () => {
 
   it('drops the line once everyone on the return is on Medicare', () => {
     const { container } = render(<App />);
+    showBothThresholds();
     fireEvent.click(screen.getByRole('checkbox', { name: 'Age 65 or older' }));
     // 36B(c)(2)(B): nobody eligible for Medicare is eligible for the credit.
     expect(subsidyPositions(container)).toHaveLength(0);
@@ -233,6 +277,7 @@ describe('the 400% poverty-line cliff on the ordinary-income chart', () => {
 
   it('keeps it for a joint return with one spouse still under 65', () => {
     const { container } = render(<App />);
+    showBothThresholds();
     fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Jointly' }));
     fireEvent.click(screen.getByRole('checkbox', { name: 'Age 65 or older' }));
     // One spouse over, one under: the return stands in front of both cliffs at
@@ -257,6 +302,7 @@ describe('the 400% poverty-line cliff on the ordinary-income chart', () => {
    */
   it('draws it because the year the page prices has a cliff', () => {
     const { container } = render(<App />);
+    showBothThresholds();
     expect(FPL_YEAR_PARAMS[PAGE_TAX_YEAR].cliff).toBe(true);
     expect(subsidyPositions(container)).toHaveLength(1);
   });

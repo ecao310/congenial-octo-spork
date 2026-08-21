@@ -455,6 +455,13 @@ interface CustomTooltipProps {
   beneficiaries?: number;
   /** Which year's premium schedule prices the IRMAA line. */
   year?: TaxYear;
+  /**
+   * Whether anyone on this return is still buying their own coverage, and so
+   * still has a premium tax credit to lose. 36B(c)(2)(B) makes anyone enrolled
+   * in Medicare ineligible, so the 400% row is drawn on the ages the page
+   * already has rather than on a field it does not. See `preMedicare`.
+   */
+  preMedicare?: boolean;
 }
 
 export const CustomTooltip: React.FC<CustomTooltipProps> = ({
@@ -468,6 +475,7 @@ export const CustomTooltip: React.FC<CustomTooltipProps> = ({
   ltcg = 0,
   beneficiaries = 1,
   year = defaultTaxYear(),
+  preMedicare = false,
 }) => {
   if (!active || !payload || !payload.length) return null;
   const point = payload[0].payload;
@@ -488,6 +496,12 @@ export const CustomTooltip: React.FC<CustomTooltipProps> = ({
     beneficiaries,
     year,
   });
+  // And 36B reads a wider one still — the *whole* benefit, taxed or not — so
+  // the 400% line is a third assessment of the same point rather than a
+  // rescaling of Medicare's. This is where both cliffs are priced now that
+  // neither is drawn unless the reader asks for it: the lines say where the
+  // thresholds are, the tooltip says what they cost here.
+  const subsidy = ptcFor(acaMagi(scenario), scenario);
   // The x-axis is income before the gift, so the charitable exclusion has to
   // come back out of the total the header quotes. A gift can only be excluded
   // from the ordinary half — the gain is a sale, not a distribution.
@@ -539,6 +553,22 @@ export const CustomTooltip: React.FC<CustomTooltipProps> = ({
         <div style={{ color: PALETTE.inkMuted }}>
           {formatCurrency(irmaa.headroom)} of MAGI to the next cliff, then{' '}
           {formatCurrency(irmaa.nextStep)}/yr more
+        </div>
+      )}
+      {preMedicare && subsidy.cliffApplies && (
+        <div style={{ color: PALETTE.fuchsiaBright }}>
+          {subsidy.overCliff ? (
+            <>
+              Past the {PTC_CLIFF_PERCENT * 100}% poverty line &mdash; no
+              Marketplace premium tax credit
+            </>
+          ) : (
+            <>
+              {formatCurrency(Math.round(subsidy.headroom ?? 0))} of household
+              income to the {PTC_CLIFF_PERCENT * 100}% poverty line, then the
+              credit is gone
+            </>
+          )}
         </div>
       )}
       {segment && segment.type === 'hill' && (
@@ -935,6 +965,63 @@ const App: React.FC = () => {
    * picker's own captions are for.
    */
   const [ceilingId, setCeilingId] = useState<ConversionCeilingId>(opening.ceilingId);
+
+  /**
+   * Which of step 2's two threshold lines are drawn, and whether the panel
+   * that switches them is open.
+   *
+   * Both lines start off. Neither is income tax — IRMAA is a Medicare premium
+   * and the 400% line is a Marketplace credit — so both were furniture on a
+   * chart of marginal rates for every reader they do not apply to, and each
+   * came with a paragraph of key underneath explaining a dash. What each one
+   * costs *this* return at *this* income is in the hover tooltip, which is
+   * where a per-point figure belongs; the lines are the other question — where
+   * the thresholds sit across the whole axis — and that is worth a control
+   * rather than an assumption.
+   *
+   * Off by default rather than on, because the page has one subject and these
+   * are two more. A reader who came for the torpedo gets the torpedo; a reader
+   * who wants to know where the cliffs fall says so, once, and the panel
+   * remembers for as long as the page is open.
+   *
+   * Not in the query string. Ten keys there describe the return, and a link
+   * carries a scenario rather than a view of it — see `scenarioUrl`.
+   */
+  const [showIrmaaLines, setShowIrmaaLines] = useState(false);
+  const [showSubsidyLine, setShowSubsidyLine] = useState(false);
+  const [linesOpen, setLinesOpen] = useState(false);
+
+  /**
+   * The two ways out of an open panel that is not a dialog: Escape, and a
+   * click on anything else.
+   *
+   * The ref wraps the button *and* the panel, so pressing the button while it
+   * is open is a click inside — otherwise the outside-click listener would
+   * shut the panel a moment before the button's own handler reopened it, and
+   * the control would never close. Escape puts focus back on the button,
+   * because a reader who dismisses a panel with the keyboard has nowhere else
+   * to be. Nothing traps focus: this is a group of checkboxes, not a dialog,
+   * and Tab out of it is a legitimate way to leave it.
+   */
+  const linesRef = useRef<HTMLDivElement>(null);
+  const linesButtonRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!linesOpen) return;
+    const onPointerDown = (e: MouseEvent): void => {
+      if (!linesRef.current?.contains(e.target as Node)) setLinesOpen(false);
+    };
+    const onKeyDown = (e: KeyboardEvent): void => {
+      if (e.key !== 'Escape') return;
+      setLinesOpen(false);
+      linesButtonRef.current?.focus();
+    };
+    document.addEventListener('mousedown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [linesOpen]);
 
   /**
    * Whose reading the live region is carrying, or null before the reader has
@@ -1474,6 +1561,50 @@ const App: React.FC = () => {
     subsidyCliff.otherIncome <= axisMax
       ? subsidyCliff
       : null;
+
+  /**
+   * What each switch has to offer, said under the switch itself.
+   *
+   * The two paragraphs of key that used to sit under the plot are gone: what
+   * the surcharge costs at the reader's own income is in the hover tooltip and
+   * what a cliff *is* is in the disclosure below, so all the panel owes is the
+   * one thing a checkbox cannot say on its own — whether ticking it will draw
+   * anything, and where. "No line" and "off the right edge" are different
+   * answers, and a switch that appears to do nothing is the reason to say so
+   * here rather than leave the reader to work it out from an unchanged chart.
+   */
+  const irmaaLinesNote =
+    cliffsOnChart.length > 0
+      ? `${cliffPriceList}${beneficiaries > 1 ? ', for the two of you' : ''}.`
+      : firstCliffPastAxis
+        ? `None falls on this chart. The first one this return could reach needs ` +
+          `${formatCurrency(Math.round(firstCliffPastAxis.otherIncome))} of other ` +
+          `income, past the right edge, and would cost ` +
+          `${formatCurrency(firstCliffPastAxis.step)}/yr.`
+        : null;
+
+  const subsidyLineNote = !subsidyCliff
+    ? null
+    : subsidyCliffOnChart
+      ? `${formatCurrency(subsidyCliff.magi)} of household income, reached at ` +
+        `${formatCurrency(Math.round(subsidyCliff.otherIncome))} of other income.`
+      : subsidyCliff.otherIncome <= 0
+        ? `Already past it. The benefit and tax-exempt interest set above come ` +
+          `to more than ${formatCurrency(subsidyCliff.magi)} on their own, so ` +
+          `there is no credit to lose at any point on this chart.`
+        : `Off the right edge. It needs ${formatCurrency(subsidyCliff.magi)} of ` +
+          `household income — ` +
+          `${formatCurrency(Math.round(subsidyCliff.otherIncome))} of other income.`;
+
+  /**
+   * How many lines the plot is actually drawing, for the button that opens the
+   * panel — a count of marks on the chart, not of ticked boxes. The two part
+   * company whenever a switch is on and its threshold falls off the axis,
+   * which is exactly the case the notes inside the panel are written for.
+   */
+  const linesShown =
+    (showIrmaaLines ? cliffsOnChart.length : 0) +
+    (showSubsidyLine && subsidyCliffOnChart ? 1 : 0);
 
   /* ───── Step 4: how many dollars fit before the next one costs more ───── */
 
@@ -2204,6 +2335,75 @@ const App: React.FC = () => {
             </p>
 
             <figure className="chart-figure">
+              {/* The chart's own settings, and the only control on the page
+                  that changes what is drawn rather than what is priced. It
+                  sits above the plot on the right, where a chart's controls
+                  go, rather than down among the sliders — those all move the
+                  return, and this one does not touch it. */}
+              <div className="chart-lines" ref={linesRef}>
+                <button
+                  type="button"
+                  ref={linesButtonRef}
+                  className="chart-lines-button"
+                  aria-expanded={linesOpen}
+                  aria-controls="torpedo-lines"
+                  onClick={() => setLinesOpen((open) => !open)}
+                >
+                  Lines
+                  {linesShown > 0 ? ` (${linesShown})` : ''}
+                </button>
+                {linesOpen && (
+                  <div className="chart-lines-panel" id="torpedo-lines">
+                    <fieldset className="chart-lines-group">
+                      <legend>Thresholds on this chart</legend>
+                      <p className="chart-lines-lead">
+                        Neither is income tax, so neither is in the curve. Both
+                        are priced for your own income in the chart&apos;s
+                        tooltip whether or not the line is drawn.
+                      </p>
+                      <label className="checkbox-option">
+                        <input
+                          type="checkbox"
+                          checked={showIrmaaLines}
+                          onChange={(e) => setShowIrmaaLines(e.target.checked)}
+                        />
+                        <span
+                          className="chart-key-swatch chart-lines-swatch"
+                          aria-hidden="true"
+                        />
+                        <span>Medicare IRMAA cliffs</span>
+                      </label>
+                      {irmaaLinesNote && (
+                        <p className="chart-lines-note">{irmaaLinesNote}</p>
+                      )}
+                      {/* The same pair of conditions the explainer below
+                          carries: nobody on Medicare can claim the credit, and
+                          a year without a 400% ceiling has no line to draw. */}
+                      {preMedicare && subsidyLineNote && (
+                        <>
+                          <label className="checkbox-option">
+                            <input
+                              type="checkbox"
+                              checked={showSubsidyLine}
+                              onChange={(e) =>
+                                setShowSubsidyLine(e.target.checked)
+                              }
+                            />
+                            <span
+                              className="chart-key-swatch chart-lines-swatch chart-key-swatch-subsidy"
+                              aria-hidden="true"
+                            />
+                            <span>
+                              {PTC_CLIFF_PERCENT * 100}% poverty-line cliff
+                            </span>
+                          </label>
+                          <p className="chart-lines-note">{subsidyLineNote}</p>
+                        </>
+                      )}
+                    </fieldset>
+                  </div>
+                )}
+              </div>
               <div
                 className="chart-container"
                 role="img"
@@ -2251,33 +2451,36 @@ const App: React.FC = () => {
                           ltcg={plannedLtcg}
                           beneficiaries={beneficiaries}
                           year={year}
+                          preMedicare={preMedicare}
                         />
                       }
                     />
-                    {cliffsOnChart.map((cliff) => (
-                      <ReferenceLine
-                        className="irmaa-cliff"
-                        key={cliff.tier}
-                        x={cliff.otherIncome}
-                        stroke={PALETTE.rose}
-                        strokeDasharray="4 4"
-                        strokeWidth={CHART.rule}
-                        label={{
-                          value: `IRMAA ${cliff.tier}`,
-                          position: 'top',
-                          fill: PALETTE.roseBright,
-                          fontSize: CHART.label,
-                        }}
-                      />
-                    ))}
+                    {showIrmaaLines &&
+                      cliffsOnChart.map((cliff) => (
+                        <ReferenceLine
+                          className="irmaa-cliff"
+                          key={cliff.tier}
+                          x={cliff.otherIncome}
+                          stroke={PALETTE.rose}
+                          strokeDasharray="4 4"
+                          strokeWidth={CHART.rule}
+                          label={{
+                            value: `IRMAA ${cliff.tier}`,
+                            position: 'top',
+                            fill: PALETTE.roseBright,
+                            fontSize: CHART.label,
+                          }}
+                        />
+                      ))}
                     {/* Pink rather than a second red: it is a cliff like the IRMAA
                         ones, but it belongs to a different reader — the one still
-                        buying their own coverage — and the key underneath tells
-                        them apart by colour before it tells them apart in words.
-                        Fuchsia is what was left: the sky curve, the rose cliffs,
-                        the amber marker and every slider on the page already own a
-                        colour, muni interest's violet included. */}
-                    {subsidyCliffOnChart && (
+                        buying their own coverage — and the panel that switches
+                        them on tells them apart by colour before it tells them
+                        apart in words. Fuchsia is what was left: the sky curve,
+                        the rose cliffs, the amber marker and every slider on the
+                        page already own a colour, muni interest's violet
+                        included. */}
+                    {showSubsidyLine && subsidyCliffOnChart && (
                       <ReferenceLine
                         className="subsidy-cliff"
                         x={subsidyCliffOnChart.otherIncome}
@@ -2317,94 +2520,6 @@ const App: React.FC = () => {
                   ? ` \u2212 ${formatCurrency(qcd)} given straight to charity`
                   : ''}
               </p>
-
-              {/* The lines have to carry their own key: what a cliff is gets
-                  explained in a disclosure further down the step, and a bare red
-                  dash on a tax chart explains nothing on its own. */}
-              {cliffsOnChart.length > 0 ? (
-                <p className="chart-key">
-                  <span className="chart-key-swatch" aria-hidden="true" />
-                  <span>
-                    <strong>Medicare&apos;s IRMAA cliffs.</strong> Crossing one raises
-                    the Part B and Part D premiums of everyone on this return who is
-                    enrolled, for a full year &mdash; and it is a cliff, not a phase-in, so
-                    a single dollar over the line buys the whole step.{' '}
-                    {cliffPriceList}
-                    {beneficiaries > 1 ? ', for the two of you' : ''}. None of that is
-                    tax, so none of it is in the curve above.
-                  </span>
-                </p>
-              ) : firstCliffPastAxis ? (
-                <p className="chart-key">
-                  <span>
-                    <strong>No Medicare IRMAA cliff falls on this chart.</strong> The
-                    first one this return could reach needs{' '}
-                    {formatCurrency(firstCliffPastAxis.magi)} of MAGI &mdash;{' '}
-                    {formatCurrency(Math.round(firstCliffPastAxis.otherIncome))} of
-                    other income, past the right edge of the axis &mdash; and would cost{' '}
-                    {formatCurrency(firstCliffPastAxis.step)}/yr in Medicare premiums
-                    {beneficiaries > 1 ? ' for the two of you' : ''}.
-                  </span>
-                </p>
-              ) : null}
-
-              {/* The second key, for the second cliff. It renders whenever this
-                  return is one the credit could reach — under 65, in a year that
-                  has a cliff — and says where the line is even when the line is
-                  not drawn, because "no line" and "off the right edge" are
-                  different answers. */}
-              {preMedicare && subsidyCliff ? (
-                <p className="chart-key chart-key-subsidy">
-                  <span
-                    className="chart-key-swatch chart-key-swatch-subsidy"
-                    aria-hidden="true"
-                  />
-                  <span>
-                    {subsidyCliffOnChart ? (
-                      <>
-                        <strong>
-                          The {PTC_CLIFF_PERCENT * 100}% poverty-line cliff.
-                        </strong>{' '}
-                        Household income over{' '}
-                        {formatCurrency(subsidyCliff.magi)} &mdash;{' '}
-                        {PTC_CLIFF_PERCENT * 100}% of the{' '}
-                        {formatCurrency(subsidyCliff.povertyLine)} poverty line for a
-                        household of {subsidyCliff.householdSize}, reached at{' '}
-                        {formatCurrency(Math.round(subsidyCliff.otherIncome))} of
-                        other income &mdash; ends the Marketplace premium tax credit
-                        for the whole year. Under the line this household pays at most{' '}
-                        {formatCurrency(subsidyCliff.cappedContribution)} for the
-                        benchmark plan; over it, the whole premium.
-                      </>
-                    ) : subsidyCliff.otherIncome <= 0 ? (
-                      <>
-                        <strong>
-                          Already past the {PTC_CLIFF_PERCENT * 100}% poverty-line
-                          cliff.
-                        </strong>{' '}
-                        The benefit and tax-exempt interest set above come to more
-                        than {formatCurrency(subsidyCliff.magi)} on their own, so
-                        there is no Marketplace premium tax credit to lose at any
-                        point on this chart.
-                      </>
-                    ) : (
-                      <>
-                        <strong>
-                          The {PTC_CLIFF_PERCENT * 100}% poverty-line cliff is off
-                          the right edge.
-                        </strong>{' '}
-                        It needs {formatCurrency(subsidyCliff.magi)} of household
-                        income &mdash;{' '}
-                        {formatCurrency(Math.round(subsidyCliff.otherIncome))} of
-                        other income &mdash; and past it there is no Marketplace
-                        premium tax credit for the year.
-                      </>
-                    )}{' '}
-                    Only for coverage bought on the Marketplace, and only until
-                    Medicare starts.
-                  </span>
-                </p>
-              ) : null}
 
               <CurveCaption
                 id="torpedo-chart-caption"
@@ -2573,7 +2688,7 @@ const App: React.FC = () => {
             <details className="explainer">
               <summary>
                 <h2 id="irmaa-cliffs-heading">
-                  Medicare&apos;s IRMAA cliffs &mdash; the red dashed lines
+                  Medicare&apos;s IRMAA cliffs
                 </h2>
               </summary>
               <div className="explainer-content">
@@ -2583,7 +2698,10 @@ const App: React.FC = () => {
                   Part B and Part D premiums of everyone on the return who is
                   enrolled. Unlike the torpedo, it is not a phase-in: one dollar over
                   a threshold triggers the whole surcharge for twelve months. The
-                  first cliff this return can reach costs{' '}
+                  chart above prices your own tier on hover and will draw the
+                  thresholds as red dashed lines if you ask it to, under{' '}
+                  <strong>Lines</strong> above the plot. The first cliff this return
+                  can reach costs{' '}
                   <strong>{formatCurrency(cliffs[0].step)}</strong> a year
                   {beneficiaries > 1 ? ' for the two of you' : ''} &mdash; on a single
                   dollar of income.
@@ -2634,8 +2752,7 @@ const App: React.FC = () => {
               <details className="explainer">
                 <summary>
                   <h2 id="subsidy-cliff-heading">
-                    The {PTC_CLIFF_PERCENT * 100}% poverty-line cliff &mdash; the
-                    pink dashed line
+                    The {PTC_CLIFF_PERCENT * 100}% poverty-line cliff
                   </h2>
                 </summary>
                 <div className="explainer-content">
@@ -2654,7 +2771,9 @@ const App: React.FC = () => {
                     {subsidyCliff.householdSize === 1
                       ? 'one person'
                       : `${subsidyCliff.householdSize} people`}
-                    .
+                    . Switch it on as a pink dashed line under{' '}
+                    <strong>Lines</strong> above the chart, or hover the curve
+                    to read your own distance from it.
                   </p>
                   <p>
                     <strong>What it costs is not on this page.</strong> Just

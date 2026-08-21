@@ -6061,3 +6061,109 @@ tells the next run to clean up after it.
 `executablePath` at `~/Library/Caches/ms-playwright/chromium_headless_shell-1228/
 chrome-headless-shell-mac-arm64/chrome-headless-shell`, and `vite preview`
 serves under `/congenial-octo-spork/` — read the port off preview's own output.
+
+## 2026-08-21 — Task: Move Medicare's IRMAA cliffs to a tooltip; add a settings button on the torpedo chart with checkboxes for the IRMAA and 400% FPL breakpoints, default off.
+
+### What the bullet was asking for, and how I read it
+
+Two halves. The second is unambiguous: a settings control on step 2's chart,
+opening checkboxes that decide whether the IRMAA lines and the 400% FPL line
+are drawn, both starting off. The first — "move the IRMAA cliffs to be a tool
+tip" — had to be read against what was actually on the page, which was two
+things and not one. The *lines* were on the chart; underneath them sat two
+paragraphs of `.chart-key`, one per cliff, carrying what a cliff is, what each
+one costs and where it falls. Meanwhile the hover tooltip had been pricing
+IRMAA per point since the lines landed — tier, annual surcharge, headroom to
+the next cliff and what the next step costs.
+
+So "move to a tooltip" is: the always-on prose goes, and the per-point figure
+in the tooltip becomes where a reader meets the cliff. That reading also makes
+the two halves one change rather than two: with the lines off by default, a
+paragraph of key explaining a dash that is not drawn is worse than nothing.
+
+### What is on the page now
+
+**A `Lines` button above the plot, right-aligned.** Not a gear: this page draws
+its one affordance out of two borders (`details.explainer summary::after`) and
+owns no icon asset, so the button takes the same chevron and rotates it the
+same way. It carries a count of what is actually *drawn* — `Lines (4)` — which
+is not the number of ticked boxes: tick IRMAA on a joint return whose first
+threshold is past the right edge and it stays `Lines`. That difference is the
+whole reason the notes inside the panel exist.
+
+**A panel with two checkboxes, both off.** Each carries the dashed swatch in
+its own hue, so the panel is the key as well as the switch. Under each one, one
+sentence: what ticking it will draw and where. IRMAA gets `cliffPriceList`
+verbatim — the same "IRMAA 1 at $87,876 costs $1,148/yr; …" the deleted key
+carried — or, when none fits, where the nearest one is. The 400% switch is only
+offered to a return that could still claim the credit (`preMedicare`) in a year
+that has a cliff, which is the pair of conditions its explainer already used.
+
+**The tooltip carries both cliffs.** IRMAA's four rows were already there. The
+400% line is new: `ptcFor(acaMagi(scenario), scenario)` at the hovered point,
+saying either the household income left before the credit goes or that it has
+gone. Worth having as a third row rather than a rescaling of Medicare's,
+because 36B counts the *whole* benefit where Medicare counts only the share the
+torpedo dragged in — the same reason the two lines never move together.
+
+**Both `.chart-key` paragraphs deleted.** Nothing in them was lost: the prices
+are in the panel, the per-point standing is in the tooltip, and everything else
+("a cliff, not a phase-in", the two-year lag, what the household pays under the
+400% line) was already in the two disclosures below, which are unchanged apart
+from their headings. Those headings said "the red dashed lines" and "the pink
+dashed line" and now cannot promise that, so each names the setting instead —
+which is also the only discoverability the panel gets.
+
+Escape closes the panel and returns focus to the button; a mousedown outside it
+closes it too. The outside-click ref wraps button *and* panel, or the listener
+would close it a moment before the button's own handler reopened it.
+
+### Verified
+
+- `npx tsc -b`, `npx eslint src --max-warnings 0`, `npx vitest run`
+  (11 files, 688 tests — 678 before, +10 net), `npm run build`.
+- Rendered rather than reasoned about. Built, `vite preview` on 4180, drove
+  Chromium through `playwright-core`. On arrival: 0 IRMAA lines, 0 subsidy
+  lines, button reads `Lines`. Open, tick both: 3 + 1 lines, button reads
+  `Lines (4)`. Escape closes and `document.activeElement` is the button. A
+  click on the page body closes it; a mousedown inside does not. Hovering the
+  curve at $45,750 gives the IRMAA rows and `Past the 400% poverty line — no
+  Marketplace premium tax credit`. Unticking both takes the lines away again.
+  No horizontal scroll at 1440 or 420, zero page errors.
+- Under `emulateMedia({ media: 'print' })` the button is not visible and the
+  charts still render 30 tick labels, so the print sheet is unharmed.
+
+### Tests
+
+`App.chart.test.tsx` asserts on lines that recharts actually draws, so all ten
+cliff tests there now ask for the lines first, through one `showBothThresholds`
+helper that opens the panel, ticks both and shuts it again — on a fresh render,
+before any status or age changes, because the 400% switch is only offered to a
+pre-Medicare return. One new test pins the default: no lines, no labels, and
+the reader's own marker still drawn.
+
+`App.test.tsx` gains a `the Lines panel` describe — default off, both switches
+unticked, the count tracking marks-on-the-chart rather than ticked boxes,
+Escape, outside click, and the one sentence the key was carrying that a
+checkbox cannot ("Neither is income tax"). The five key-prose tests became five
+panel-note tests against the same dollar figures. Three new `CustomTooltip`
+tests cover the 36B row: under the line, past it, and absent for a return
+already on Medicare.
+
+`.chart-key-subsidy strong` went with the paragraph it coloured. `.chart-lines
+.chart-key-swatch` was the natural way to re-centre the swatch inside a
+checkbox and it failed `scopes no rule to a nesting the page never renders` —
+that test renders a default `<App />`, where the panel is shut, so anything
+scoped under `.chart-lines` is dead to it. Flat `.chart-lines-swatch` instead;
+worth knowing before the next panel-internal rule.
+
+### Note for the next run
+
+Deleted this run's two Playwright scratch scripts (`drive-lines.mjs`,
+`drive-print.mjs`) and killed the preview on 4180. Same standing note as every
+run that needs a browser: the script must sit in the project root for the bare
+`playwright-core` import to resolve, `pkill -f "vite preview"` first, and read
+the port off preview's own output. Cached Chromium build 1228,
+`executablePath` at `~/Library/Caches/ms-playwright/chromium_headless_shell-1228/
+chrome-headless-shell-mac-arm64/chrome-headless-shell`, served under
+`/congenial-octo-spork/`.

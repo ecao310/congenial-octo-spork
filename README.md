@@ -22,9 +22,12 @@ the reader along it, then collapsed explainers, then a box to the next step.
    who files it, who on it has reached 65, and how much Social Security it
    collects.
 2. **The tax torpedo** — marginal rate against every dollar that is not Social
-   Security, with the IRMAA cliffs, the 400% poverty-line cliff and the
-   senior-deduction phaseout drawn on the same axis. Every figure under it is
-   a federal one.
+   Security. The senior-deduction phaseout is in the curve, because it is tax.
+   The IRMAA cliffs and the 400% poverty-line cliff are not: they are a
+   Medicare premium and a Marketplace credit, so they are priced for the
+   reader's own income in the chart's tooltip and drawn across the axis only
+   when the **Lines** button above the plot is asked for them. Every figure
+   under it is a federal one.
 3. **Capital gains stacking** — how much of the income already entered is a
    long-term gain. Gains are a *share* of that figure, not an addition to it,
    so moving the slider re-prices the same return rather than inventing a

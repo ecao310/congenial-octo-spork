@@ -7,12 +7,10 @@ import {
   ResponsiveContainer,
   AreaChart,
   Area,
-  ReferenceArea,
   ReferenceLine,
 } from 'recharts';
 import {
   marginalRateCurve,
-  ltcgRateCurve,
   maxAnnualSSBenefit,
   avgAnnualSSBenefit,
   SS_BASES,
@@ -24,7 +22,6 @@ import {
   FilingStatus,
   segmentCurve,
   standingOn,
-  splitOtherIncome,
   incomeAxisMax,
   incomeAxisFeatures,
   MIN_INCOME_AXIS,
@@ -47,18 +44,11 @@ import {
   IRMAA_LOOKBACK_YEARS,
   ptcCliff,
   ptcFor,
+  totalFederalTax,
   acaMagi,
   fplGuidelineYear,
   FPL_GUIDELINE_LOOKBACK_YEARS,
   PTC_CLIFF_PERCENT,
-  conversionCeilings,
-  sizeConversion,
-  CONVERSION_MEASURE_LABELS,
-  niitFor,
-  niitThreshold,
-  NIIT_ENACTED,
-  NIIT_RATE,
-  NIIT_THRESHOLDS,
 } from './utils/tax';
 import {
   decodeScenario,
@@ -69,65 +59,49 @@ import { formatCurrency } from './utils/format';
 import { CHART, PALETTE } from './palette';
 import type {
   TaxYear,
-  LTCGRatePoint,
   MarginalRatePoint,
   CurveSegment,
   CurveStanding,
   IrmaaCliff,
   PtcCliff,
-  ConversionCeilingId,
 } from './utils/tax';
 
 /**
- * One worked example in four steps, in the order a reader builds it: the
- * benefit they will collect, what the rest of their income does to it, how
- * much of that rest is a long-term capital gain, and how many more dollars
- * they can take out before the next one costs more. Every step prices the same
- * return, so a figure set in step 1 is still set in step 4.
- *
- * A gain is a *share* of the income entered in step 2, never something added
- * on top of it — see `splitOtherIncome`. So the reader's total income is one
- * number they set once, and step 3 moves only its composition. That is what
- * lets the two charts price the same return: step 2 sweeps the total holding
- * the split, step 3 sweeps the split holding the total.
+ * One worked example in two steps, in the order a reader builds it: the
+ * benefit they will collect, and what the rest of their income does to it.
+ * Both steps price the same return, so a figure set in step 1 is still set in
+ * step 2.
  *
  * The steps stay mounted and the page scrolls, where the tab strip this
  * replaced swapped one panel for another. Three reasons to scroll: a step you
- * have to click into existence reads as optional, and these are not; steps 2
- * and 3 both quote figures the reader set in step 1, which only works if
- * scrolling back to them is possible; and printing or Ctrl-F now reaches the
- * whole page rather than the open panel. What it costs is length, which is
- * what the step nav and the next-step boxes are for.
+ * have to click into existence reads as optional, and these are not; step 2
+ * quotes figures the reader set in step 1, which only works if scrolling back
+ * to them is possible; and printing or Ctrl-F now reaches the whole page
+ * rather than the open panel. What it costs is length, which is what the step
+ * nav and the next-step box are for.
  *
- * Four more sections stood here as tabs — Medicare, Strategies, Over Time and
- * State Taxes — and are coming back. What they rendered has gone, but
- * everything they rendered *from* stays: `irmaaFor` is still in `utils/`, and
- * `projectYears`, `compareSequencing`, `lumpSumElection` and the state table
- * are on the shelf — all four still under test, all four still exported.
+ * Six more sections have stood here and are coming back. Four were tabs —
+ * Medicare, Strategies, Over Time and State Taxes — and two were steps 3 and
+ * 4, Capital Gains Stacking and Sizing the Conversion, which came off the page
+ * when it narrowed to the torpedo alone. What they rendered has gone, but
+ * everything they rendered *from* stays: `irmaaFor`, `ltcgRateCurve`,
+ * `conversionCeilings`, `sizeConversion` and `niitFor` are all still in
+ * `utils/tax.ts`, and `projectYears`, `compareSequencing`, `lumpSumElection`
+ * and the state table are on the shelf — every one of them still under test,
+ * every one of them still exported.
  *
- * Every step has the same shape: the chart, then the one control that says
+ * Both steps have the same shape: the chart, then the one control that says
  * where on that chart the reader is standing, then the collapsed explainers,
  * then the box to the next step. Step 1 is the exception that sets the rule —
- * it has no curve of its own, so the return itself (year, filing status, age)
- * stands where the chart stands on the steps below it, and the benefit slider
- * follows it in the control's place. Step 4's control is a radio group rather
- * than a slider, because the lines a conversion is sized against are six named
- * places rather than a continuum — but it does the same job, moving a marker
- * along a curve that is already drawn.
+ * it has no curve of its own, so the return itself (filing status, age)
+ * stands where the chart stands on the step below it, and the benefit slider
+ * follows it in the control's place.
  *
- * Step 4 is the one that answers the question in the h1. Steps 2 and 3 price
- * the next dollar; step 4 prices a block of them, by asking which line the
- * reader would rather not cross and reading back the largest conversion that
- * stays under it. It re-draws step 2's curve rather than a new one, because
- * the conversion is measured on step 2's own axis: a Roth conversion is
- * ordinary income, so it walks the reader rightwards along the same sweep.
- *
- * So the inputs are split across the steps that move them: year, filing
- * status, age and the benefit are step 1, other ordinary income is step 2 and
- * the planned capital gain is step 3 — each of the last two being a point on
- * the axis its chart sweeps. Tax-exempt interest and the charitable
+ * So the inputs are split across the steps that move them: filing status, age
+ * and the benefit are step 1, and other ordinary income is step 2, being a
+ * point on the axis its chart sweeps. Tax-exempt interest and the charitable
  * distribution belong to no axis and sit in a collapsed `advanced-inputs`
- * block at the end of step 1, because each starts at $0 and at $0 leaves every
+ * block at the end of step 1, because each starts at $0 and at $0 leaves the
  * chart on the page identical.
  */
 const STEPS = [
@@ -136,7 +110,7 @@ const STEPS = [
     navLabel: 'Your benefit',
     heading: 'Your Social Security benefit',
     blurb:
-      'Set the return the whole page prices \u2014 the year, who files it, and how much Social Security it collects.',
+      'Set the return the whole page prices \u2014 who files it, and how much Social Security it collects.',
   },
   {
     id: 'torpedo',
@@ -144,20 +118,6 @@ const STEPS = [
     heading: 'The tax torpedo',
     blurb:
       'Add everything that is not Social Security, and see what the next dollar of it really costs.',
-  },
-  {
-    id: 'gains',
-    navLabel: 'Capital gains',
-    heading: 'Capital Gains Stacking',
-    blurb:
-      'Say how much of that income is a long-term gain, and watch the two effects stack.',
-  },
-  {
-    id: 'conversion',
-    navLabel: 'Roth conversion',
-    heading: 'Sizing the conversion',
-    blurb:
-      'Pick the line you would rather not cross, and read off the largest conversion that fits under it.',
   },
 ] as const;
 
@@ -195,7 +155,7 @@ const formatCompact = (value: number): string =>
 /**
  * The point on a swept curve at the reader's own value.
  *
- * Both charts price a whole axis, so neither one moves when the slider beneath
+ * The chart prices a whole axis, so it does not move when the slider beneath
  * it moves: the reader's number is a *place* on a curve that is already drawn,
  * not an input to it. Reading the curve back at that place is what turns the
  * slider from an inert control into a position. The sweep ascends, so the last
@@ -219,13 +179,13 @@ function pointAt<P>(
 /**
  * The dashed vertical marking the reader's own place on a chart.
  *
- * The slider under each chart is a *position* on a curve that is already
+ * The slider under the chart is a *position* on a curve that is already
  * drawn, not an input to it, and nothing on screen said so: an "Other Income"
  * slider sitting under a chart whose x-axis is other income reads as the
  * control that draws the curve. The line is what says otherwise.
- * It takes the colour of the slider that drives it — amber on step 2, emerald
- * on step 3 — so the pairing is legible without reading either label, and a
- * heavier dash than the IRMAA cliffs it shares step 2 with.
+ * It takes the colour of the slider that drives it — amber — so the pairing is
+ * legible without reading either label, and a heavier dash than the IRMAA
+ * cliffs it shares the chart with.
  *
  * The label goes *inside* the plot because the strip above the axis top is
  * already the cliff labels' (`position: 'top'`), and it flips to the far side
@@ -255,35 +215,8 @@ const hereLine = (value: number, axisMax: number, colour: string) => (
 );
 
 /**
- * A small count as a word, because "The 7 lines" reads as one more figure on a
- * page that is nothing but figures. Past ten it gives up and hands back the
- * numeral, which is the point at which a reader would want one anyway.
- */
-const COUNT_WORDS = [
-  'no',
-  'one',
-  'two',
-  'three',
-  'four',
-  'five',
-  'six',
-  'seven',
-  'eight',
-  'nine',
-  'ten',
-];
-
-const spellCount = (n: number): string => COUNT_WORDS[n] ?? String(n);
-
-/** The same word, where it opens a sentence. */
-const spellCountCap = (n: number): string => {
-  const word = spellCount(n);
-  return word.charAt(0).toUpperCase() + word.slice(1);
-};
-
-/**
- * How every axis on all three charts is drawn, in one object rather than six
- * copies.
+ * How the axis on the page's one chart is drawn, in one object rather than
+ * two copies.
  *
  * Three tiers, each spending a token the page already declares: the frame is
  * `--edge-strong`, the mesh behind it is `--edge`, and the words are
@@ -300,10 +233,10 @@ const spellCountCap = (n: number): string => {
  * What a hover draws: the rule that follows the pointer down the plot, and
  * the dot it puts on the curve.
  *
- * The one part of these three charts no test here can read back, because
- * recharts decides a hover from `getBoundingClientRect` and jsdom reports
- * every box as zero — so this is the one place the register is held by having
- * been looked at rather than by an assertion. Both were recharts' own
+ * The one part of that chart no test here can read back, because recharts
+ * decides a hover from `getBoundingClientRect` and jsdom reports every box as
+ * zero — so this is the one place the register is held by having been looked
+ * at rather than by an assertion. Both were recharts' own
  * defaults until now, which is to say `#ccc` and `#fff`: two colours this
  * page does not declare, and the brightest things on a plot whose whole point
  * is that chrome is quieter than content.
@@ -345,8 +278,6 @@ interface CustomTooltipProps {
   muniInterest?: number;
   /** Charitable distribution excluded from the x-axis income, if any. */
   qcd?: number;
-  /** How much of the x-axis income is a long-term gain rather than ordinary. */
-  ltcg?: number;
   /** How many people on the return are enrolled in Medicare. */
   beneficiaries?: number;
   /** Which year's premium schedule prices the IRMAA line. */
@@ -368,7 +299,6 @@ export const CustomTooltip: React.FC<CustomTooltipProps> = ({
   filingStatus = 'single',
   muniInterest = 0,
   qcd = 0,
-  ltcg = 0,
   beneficiaries = 1,
   year = defaultTaxYear(),
   preMedicare = false,
@@ -378,12 +308,16 @@ export const CustomTooltip: React.FC<CustomTooltipProps> = ({
   const segment = segments.find(
     (seg) => point.income >= seg.start && point.income <= seg.end,
   );
-  // The axis is every dollar that is not Social Security, gains included, so
-  // the hovered income has to be split before anything is priced off it.
-  const split = splitOtherIncome(point.income, ltcg);
   // The hovered point, as a whole return, so that every figure below is priced
   // off one object rather than off a different subset of the props each time.
-  const scenario = { ...split, ssBenefit, filingStatus, muniInterest, qcd, year };
+  const scenario = {
+    ordinaryIncome: point.income,
+    ssBenefit,
+    filingStatus,
+    muniInterest,
+    qcd,
+    year,
+  };
   // Medicare reads a wider MAGI than the tax chain does — tax-exempt interest
   // is added back — so it has to be recomputed here rather than read off the
   // curve, which only carries taxable figures.
@@ -399,27 +333,17 @@ export const CustomTooltip: React.FC<CustomTooltipProps> = ({
   // thresholds are, the tooltip says what they cost here.
   const subsidy = ptcFor(acaMagi(scenario), scenario);
   // The x-axis is income before the gift, so the charitable exclusion has to
-  // come back out of the total the header quotes. A gift can only be excluded
-  // from the ordinary half — the gain is a sale, not a distribution.
+  // come back out of the total the header quotes.
   const given = qcdFor(scenario);
   // Not `point.income + ssBenefit`: tax-exempt interest is spent like any
   // other dollar and the gift never reaches the filer, so both belong in what
   // this return takes in. See `totalIncomeFor`.
   const totalIncome = totalIncomeFor(scenario);
-  // Chapter 2A is inside `point.totalTax` — the curve plots `totalFederalTax`
-  // now — so the only thing left to say is how much of it, and on what.
-  const niit = niitFor(scenario);
   return (
     <div className="chart-tooltip">
       <div className="chart-tooltip-head">
         Other income {formatCurrency(point.income)} · Total income {formatCurrency(totalIncome)}
       </div>
-      {split.ltcg > 0 && (
-        <div style={{ color: PALETTE.emerald }}>
-          Of which {formatCurrency(split.ltcg)} is a long-term gain —{' '}
-          {formatCurrency(split.ordinaryIncome)} is ordinary
-        </div>
-      )}
       {given > 0 && (
         <div style={{ color: PALETTE.lime }}>
           Less {formatCurrency(given)} given straight to charity —{' '}
@@ -432,12 +356,6 @@ export const CustomTooltip: React.FC<CustomTooltipProps> = ({
       <div>
         Total Federal Tax: <strong style={{ color: PALETTE.orange }}>{formatCurrency(point.totalTax)}</strong>
       </div>
-      {niit.tax > 0 && (
-        <div style={{ color: PALETTE.violet }}>
-          Including {formatCurrency(niit.tax)} of net investment income tax —
-          3.8% of {formatCurrency(niit.base)}
-        </div>
-      )}
       <div>
         Medicare IRMAA:{' '}
         <strong style={{ color: PALETTE.roseBright }}>
@@ -475,101 +393,6 @@ export const CustomTooltip: React.FC<CustomTooltipProps> = ({
       {segment && segment.type === 'valley' && (
         <div className="chart-tooltip-advice">
           Consider filling out this tax valley at {formatCurrency(point.income)}
-        </div>
-      )}
-    </div>
-  );
-};
-
-interface LTCGTooltipProps {
-  active?: boolean;
-  payload?: Array<{ payload: LTCGRatePoint }>;
-  /**
-   * The whole other-income figure the swept gain is carved *out of*, not a
-   * figure the gain sits on top of. It is the same at every point on the axis;
-   * only how much of it is gain moves.
-   */
-  ordinaryIncome: number;
-  ssBenefit: number;
-  segments: CurveSegment<LTCGRatePoint>[];
-  /** Tax-exempt interest, which the return takes in without reporting it. */
-  muniInterest?: number;
-  /** Charitable distribution asked for, before the ordinary-income cap. */
-  qcd?: number;
-  /** Needed only to price the gift against the right annual limit. */
-  filingStatus?: FilingStatus;
-  /** Needed only to price the gift against the right annual limit. */
-  year?: TaxYear;
-}
-
-export const LTCGTooltip: React.FC<LTCGTooltipProps> = ({
-  active,
-  payload,
-  ordinaryIncome,
-  ssBenefit,
-  segments,
-  muniInterest = 0,
-  qcd = 0,
-  filingStatus = 'single',
-  year = defaultTaxYear(),
-}) => {
-  if (!active || !payload || !payload.length) return null;
-  const point = payload[0].payload;
-  const segment = segments.find(
-    (seg) => point.ltcg >= seg.start && point.ltcg <= seg.end,
-  );
-  // Same total as the torpedo tooltip quotes, from the same definition — the
-  // two used to say different numbers about the same return, because this one
-  // left out tax-exempt interest and the charitable gift. See `totalIncomeFor`.
-  //
-  // It is not quite fixed across this axis, despite what the sweep holds
-  // still: a gift can only come out of the ordinary half, so once the gain
-  // grows past what is left beside it, less of the gift is excludable and more
-  // of the same income reaches the return.
-  const scenario = {
-    ...splitOtherIncome(ordinaryIncome, point.ltcg),
-    ssBenefit,
-    muniInterest,
-    qcd,
-    filingStatus,
-    year,
-  };
-  const totalIncome = totalIncomeFor(scenario);
-  // Chapter 2A is inside `point.totalTax` — the curve plots `totalFederalTax`
-  // now — so the only thing left to say is how much of it, and on what.
-  const niit = niitFor(scenario);
-  return (
-    <div className="chart-tooltip">
-      <div className="chart-tooltip-head">
-        {formatCurrency(point.ltcg)} of {formatCurrency(ordinaryIncome)} is gain · Total income {formatCurrency(totalIncome)}
-      </div>
-      <div>
-        Effective Rate on the Gain:{' '}
-        <strong style={{ color: PALETTE.amber }}>{point.effectiveRate}%</strong>
-      </div>
-      <div>
-        Next Dollar of Gain: <strong>{point.marginalRate}%</strong>
-      </div>
-      <div>
-        Total Federal Tax: <strong style={{ color: PALETTE.orange }}>{formatCurrency(point.totalTax)}</strong>
-      </div>
-      {niit.tax > 0 && (
-        <div style={{ color: PALETTE.violet }}>
-          Including {formatCurrency(niit.tax)} of net investment income tax —
-          3.8% of {formatCurrency(niit.base)}
-        </div>
-      )}
-      {/* The segments are cut on the marginal rate, which is no longer the line
-          being drawn — so the advice names the next dollar rather than pointing
-          at a hill or a valley the reader cannot see on this curve. */}
-      {segment && segment.type === 'hill' && (
-        <div className="chart-tooltip-advice">
-          The next dollar of gain is dearest through here — consider staying under {formatCurrency(segment.start)} or over {formatCurrency(segment.end)}
-        </div>
-      )}
-      {segment && segment.type === 'valley' && (
-        <div className="chart-tooltip-advice">
-          The next dollar of gain is cheapest through here — consider filling this stretch out at {formatCurrency(point.ltcg)}
         </div>
       )}
     </div>
@@ -752,27 +575,31 @@ export const StandingNote: React.FC<StandingNoteProps> = ({ standing, at }) => {
  *
  * The interval doubles each time the axis does, so the widest chart this app
  * can draw samples no more points than the narrowest one always did — at most
- * 600 either way. The widest is not step 2's: a conversion sized against the
- * top of the 22% bracket can carry a joint return past $250,000 of other
- * income, and a maxed charitable gift on top of that further still.
+ * 600 either way. A maxed charitable gift is what widens it furthest by hand:
+ * the gift comes off the front of the income, so a joint return giving its
+ * full $216,000 asks for an axis that runs well past $250,000.
  *
- * The last rung exists for links rather than for sliders. Nothing a reader can
+ * The last rungs exist for links rather than for sliders. Nothing a reader can
  * click takes the axis past $300,000, but a link can name any income up to
- * `MAX_OTHER_INCOME`, and without the rung a $1,000,000 return would sweep a
- * thousand points where every other chart on the page sweeps at most six
- * hundred.
+ * `MAX_OTHER_INCOME`, and without them a $1,000,000 return would sweep a
+ * thousand points where the chart otherwise sweeps at most six hundred.
  */
 const curveStepFor = (axisMax: number): number =>
   axisMax > 600_000 ? 2000 : axisMax > 300_000 ? 1000 : axisMax > 150_000 ? 500 : 250;
 
 /**
- * The step the fragment names, for a reader who followed `#step-conversion`
+ * The step the fragment names, for a reader who followed `#step-torpedo`
  * rather than the nav.
  *
  * The query string carries the return and the fragment carries the place — see
  * `scenarioUrl`. The browser does the scrolling on its own; all this does is
  * mark the right nav button current, which it otherwise would not, leaving a
- * reader looking at step 4 under a nav insisting they are on step 1.
+ * reader looking at step 2 under a nav insisting they are on step 1.
+ *
+ * A fragment naming a step that is no longer on the page — `#step-gains`,
+ * `#step-conversion` — matches nothing and lands the reader on step 1, which
+ * is where the browser leaves them anyway when there is no such element to
+ * scroll to.
  */
 const stepFromHash = (hash: string): StepId | null => {
   const id = hash.replace(/^#step-/, '');
@@ -856,18 +683,10 @@ const App: React.FC = () => {
   const [ssBenefit, setSsBenefit] = useState<number>(opening.ssBenefit);
   const [filingStatus, setFilingStatus] = useState<FilingStatus>(opening.filingStatus);
   const [ordinaryIncome, setOrdinaryIncome] = useState<number>(opening.ordinaryIncome);
-  const [plannedLtcg, setPlannedLtcg] = useState<number>(opening.plannedLtcg);
   const [isSenior, setIsSenior] = useState<boolean>(opening.isSenior);
   const [spouseIsSenior, setSpouseIsSenior] = useState<boolean>(opening.spouseIsSenior);
   const [muniInterest, setMuniInterest] = useState<number>(opening.muniInterest);
   const [qcd, setQcd] = useState<number>(opening.qcd);
-  /**
-   * Which line step 4 sizes the conversion against. The top of the 12% bracket
-   * is the default because it is the one a reader arrives already thinking
-   * about — the others are lines they have to be told exist, which is what the
-   * picker's own captions are for.
-   */
-  const [ceilingId, setCeilingId] = useState<ConversionCeilingId>(opening.ceilingId);
 
   /**
    * Which of step 2's two threshold lines are drawn, and whether the panel
@@ -887,7 +706,7 @@ const App: React.FC = () => {
    * who wants to know where the cliffs fall says so, once, and the panel
    * remembers for as long as the page is open.
    *
-   * Not in the query string. Ten keys there describe the return, and a link
+   * Not in the query string. Every key there describes the return, and a link
    * carries a scenario rather than a view of it — see `scenarioUrl`.
    */
   const [showIrmaaLines, setShowIrmaaLines] = useState(false);
@@ -934,16 +753,16 @@ const App: React.FC = () => {
    * announces the slider's own value and nothing else, so the "you are here"
    * sentence, the advice under it and the effective rate all change unheard.
    * A live region fixes that, and the whole difficulty is how much to put in
-   * one — the seven closing figures read out on every notch of a drag would be
+   * one — the closing figures read out on every notch of a drag would be
    * worse than the silence they replaced. So the region carries exactly one
    * step's reading: the step whose control was last touched.
    *
    * Keyed to the control rather than to the step the nav marks current,
-   * because every step is mounted at once and a reader can be working step 3's
-   * slider with the nav still on step 1. And one region rather than four,
-   * because step 1's benefit moves all four readings — four regions would
-   * queue four announcements for one drag, which is the noise this is trying
-   * to avoid.
+   * because every step is mounted at once and a reader can be working step 2's
+   * slider with the nav still on step 1. And one region rather than two,
+   * because step 1's benefit moves both readings — two regions would queue
+   * two announcements for one drag, which is the noise this is trying to
+   * avoid.
    *
    * Null at mount is what keeps the page quiet on arrival: a region with
    * nothing in it announces nothing, and the close is meant to be read on the
@@ -1006,12 +825,10 @@ const App: React.FC = () => {
       filingStatus,
       ssBenefit,
       ordinaryIncome,
-      plannedLtcg,
       isSenior,
       spouseIsSenior,
       muniInterest,
       qcd,
-      ceilingId,
     };
     window.history.replaceState(
       window.history.state,
@@ -1027,12 +844,10 @@ const App: React.FC = () => {
     filingStatus,
     ssBenefit,
     ordinaryIncome,
-    plannedLtcg,
     isSenior,
     spouseIsSenior,
     muniInterest,
     qcd,
-    ceilingId,
   ]);
 
   const yearFiling = filingParams(year, filingStatus);
@@ -1055,14 +870,7 @@ const App: React.FC = () => {
   const mfsBrackets = filingParams(year, 'mfs').brackets;
   const mfsSingleDivergence = mfsBrackets[mfsBrackets.length - 2].upTo;
 
-  /**
-   * The gain is a share of the other income, so it can never be more than
-   * there is. Pulling the income slider down under a gain already set drags
-   * the gain down with it rather than leaving it standing past its own
-   * ceiling — the same re-cap the charitable gift gets when the limit falls.
-   */
   const changeOrdinaryIncome = (next: number): void => {
-    setPlannedLtcg((current) => Math.min(current, next));
     setOrdinaryIncome(next);
     announce('torpedo');
   };
@@ -1132,10 +940,10 @@ const App: React.FC = () => {
   const axisMax = useMemo(
     () =>
       incomeAxisMax(
-        { ssBenefit, filingStatus, seniors, muniInterest, qcd, year, ltcg: plannedLtcg },
+        { ssBenefit, filingStatus, seniors, muniInterest, qcd, year },
         { minimum: Math.max(MIN_INCOME_AXIS, ordinaryIncome) },
       ),
-    [ssBenefit, filingStatus, seniors, muniInterest, qcd, year, plannedLtcg, ordinaryIncome],
+    [ssBenefit, filingStatus, seniors, muniInterest, qcd, year, ordinaryIncome],
   );
 
   /**
@@ -1168,11 +976,9 @@ const App: React.FC = () => {
    * prices the identical scenario whether this section is open or shut. That
    * is the whole test for what belongs in here — year, filing status, age,
    * benefit and other income all change the picture the moment the page loads,
-   * so they stay out, and so does the planned capital gain, which is step 3's
-   * own position marker and belongs under the chart it marks. What it costs is
-   * that a slider you cannot see is a slider you forget, which is why anything
-   * moved off $0 is named in the summary line and stays named while the
-   * section is closed.
+   * so they stay out. What it costs is that a slider you cannot see is a
+   * slider you forget, which is why anything moved off $0 is named in the
+   * summary line and stays named while the section is closed.
    */
   const advancedSet = [
     { label: 'Muni interest', value: muniInterest },
@@ -1222,29 +1028,28 @@ const App: React.FC = () => {
     muniInterest,
     qcd,
     year,
-    ltcg: plannedLtcg,
   }).seniorPhaseoutEnd;
   const phaseoutEndsOnChart =
     phaseoutEndOnAxis !== null && phaseoutEndOnAxis <= axisMax;
 
   /**
-   * Step 2's curve. The axis is every dollar that is not Social Security, and
-   * `gainsWithinIncome` says the planned gain is part of it rather than piled
-   * on top — so the reader who says $12,000 of their income is a gain gets a
-   * curve where, at every income from $12,000 up, $12,000 of it is charged
-   * under the capital-gain schedule and the rest under the ordinary one.
+   * Step 2's curve, and the only one the page draws: every dollar that is not
+   * Social Security, from nothing to the right edge, priced for what the next
+   * one after it costs.
    *
-   * That changes the chart's shape, not just its labels: the next dollar of
-   * ordinary income can shove the gain stack across the 0%/15% line, which is
-   * the stacking effect step 3 is named for, showing up on step 2's chart.
+   * Every dollar on this axis is ordinary income. A long-term gain reaches
+   * provisional income identically but is charged under its own schedule, and
+   * pricing that split is what the capital-gains step did — `ltcg` is still a
+   * field on `Scenario` and `ltcgRateCurve` still sweeps it, but nothing on
+   * this page sets one, so nothing here passes one.
    */
   const curve = useMemo(
     () =>
       marginalRateCurve(
-        { ssBenefit, filingStatus, seniors, muniInterest, qcd, year, ltcg: plannedLtcg },
-        { maxIncome: axisMax, step: curveStep, gainsWithinIncome: true },
+        { ssBenefit, filingStatus, seniors, muniInterest, qcd, year },
+        { maxIncome: axisMax, step: curveStep },
       ),
-    [ssBenefit, filingStatus, seniors, muniInterest, qcd, year, plannedLtcg, axisMax, curveStep],
+    [ssBenefit, filingStatus, seniors, muniInterest, qcd, year, axisMax, curveStep],
   );
 
   const segments = useMemo(
@@ -1269,51 +1074,12 @@ const App: React.FC = () => {
   });
 
   /**
-   * Step 3's axis: how much of the other income already entered is a gain, from
-   * none of it to all of it. It ends where that income ends, because a gain
-   * bigger than the income it came out of is not a scenario.
-   */
-  const gainsAxisMax = ordinaryIncome;
-
-  /**
-   * The mirror of `curve`: the same return, swept the other way. Total income
-   * is held still at every point and only the split moves, which means
-   * provisional income — and so the taxable share of the benefit — is fixed
-   * across the whole axis. What is left varying is which rate schedule each
-   * dollar is charged under, and where the gain stack sits against the
-   * 0%/15%/20% bands.
-   *
-   * One exception, which the axis label under the chart names: a charitable
-   * distribution can only come out of the ordinary half, so a gain big enough
-   * to crowd that half below the gift shrinks what `qcdFor` allows and does
-   * move the income after all.
-   */
-  const ltcgCurve = useMemo(
-    () =>
-      ltcgRateCurve(
-        { ssBenefit, ordinaryIncome, filingStatus, seniors, muniInterest, qcd, year },
-        { maxLTCG: gainsAxisMax, step: 250, gainsWithinIncome: true },
-      ),
-    [ssBenefit, ordinaryIncome, filingStatus, seniors, muniInterest, qcd, year, gainsAxisMax],
-  );
-
-  const ltcgSegments = useMemo(
-    () => segmentCurve(ltcgCurve, (p) => p.ltcg),
-    [ltcgCurve],
-  );
-
-  /**
-   * Where the reader is standing on each chart. Step 2's slider is a point on
-   * the ordinary-income sweep and step 3's is a point on the gains sweep, so
-   * each one reads its own curve back rather than changing it.
+   * Where the reader is standing on the chart: the slider is a point on the
+   * sweep, so it reads the curve back rather than changing it.
    */
   const herePoint = useMemo(
     () => pointAt(curve, (p) => p.income, ordinaryIncome),
     [curve, ordinaryIncome],
-  );
-  const hereGainPoint = useMemo(
-    () => pointAt(ltcgCurve, (p) => p.ltcg, plannedLtcg),
-    [ltcgCurve, plannedLtcg],
   );
 
   /**
@@ -1328,33 +1094,13 @@ const App: React.FC = () => {
   );
 
   /**
-   * What the reader's split is worth against the all-ordinary version of the
-   * same income — the figure the non-additive framing exists to produce, and
-   * the one no chart on the page shows on its own. Both ends are points on the
-   * gains curve, so it costs no extra arithmetic: the left edge is every
-   * dollar taken as ordinary income, and the reader stands wherever they stand.
-   *
-   * Null until a gain is set, because at $0 the comparison is between the
-   * scenario and itself.
-   */
-  const mixSaving =
-    plannedLtcg > 0 && hereGainPoint && ltcgCurve.length > 0
-      ? ltcgCurve[0].totalTax - hereGainPoint.totalTax
-      : null;
-
-  /**
-   * The reader's own return, in the shape the tax chain reads it.
-   *
-   * Steps 2 and 3 treat the gain as a *share* of one other-income figure; the
-   * tax chain treats the two as separate line items. `splitOtherIncome` is the
-   * translation. It matters to both things built on it below: the charitable
-   * exclusion has only the ordinary half to come out of, and a conversion is
-   * ordinary income, so it has to land on the ordinary half rather than on a
-   * total that is part gain.
+   * The reader's own return, in the shape the tax chain reads it: one object
+   * that everything below prices off, rather than a different subset of the
+   * state at each call site.
    */
   const hereScenario = useMemo(
     () => ({
-      ...splitOtherIncome(ordinaryIncome, plannedLtcg),
+      ordinaryIncome,
       ssBenefit,
       filingStatus,
       seniors,
@@ -1362,7 +1108,7 @@ const App: React.FC = () => {
       qcd,
       year,
     }),
-    [ordinaryIncome, plannedLtcg, ssBenefit, filingStatus, seniors, muniInterest, qcd, year],
+    [ordinaryIncome, ssBenefit, filingStatus, seniors, muniInterest, qcd, year],
   );
 
   /**
@@ -1412,9 +1158,8 @@ const App: React.FC = () => {
         qcd,
         beneficiaries,
         year,
-        ltcg: plannedLtcg,
       }),
-    [ssBenefit, filingStatus, muniInterest, qcd, beneficiaries, year, plannedLtcg],
+    [ssBenefit, filingStatus, muniInterest, qcd, beneficiaries, year],
   );
 
   /** The cliffs that actually land inside the chart's x-axis. */
@@ -1479,9 +1224,8 @@ const App: React.FC = () => {
         muniInterest,
         qcd,
         year,
-        ltcg: plannedLtcg,
       }),
-    [ssBenefit, filingStatus, muniInterest, qcd, year, plannedLtcg],
+    [ssBenefit, filingStatus, muniInterest, qcd, year],
   );
 
   /** The 400% line when it is this return's to meet and the axis can show it. */
@@ -1537,119 +1281,6 @@ const App: React.FC = () => {
     (showIrmaaLines ? cliffsOnChart.length : 0) +
     (showSubsidyLine && subsidyCliffOnChart ? 1 : 0);
 
-  /* ───── Step 4: how many dollars fit before the next one costs more ───── */
-
-  /**
-   * The lines a conversion can be sized against, for this return.
-   *
-   * Only the filing status moves them now that the year is fixed — a ceiling
-   * is a line, not a position relative to one — so the list is rebuilt when
-   * that changes. The length is not a constant even so: every status offers
-   * the same ids, but the year decides whether 400% of the poverty line is a
-   * ceiling at all, and in 2025 it was not, because the credit tapered past it
-   * rather than stopping. `?? ceilings[0]` covers a link that names a ceiling
-   * this list does not hold.
-   */
-  const ceilings = useMemo(
-    () => conversionCeilings({ filingStatus, year }),
-    [filingStatus, year],
-  );
-  const ceiling = ceilings.find((c) => c.id === ceilingId) ?? ceilings[0];
-
-  /**
-   * How many income definitions the list above spans, which is the point the
-   * explainer under it is making. Counted rather than written down for the
-   * same reason the list's own length is: four of them in a year without the
-   * poverty line, five in a year with it.
-   */
-  const ceilingMeasures = useMemo(
-    () => new Set(ceilings.map((c) => c.measure)).size,
-    [ceilings],
-  );
-
-  /**
-   * The answer the h1 asks for: the largest conversion that stays under the
-   * chosen line, what it costs, and what the dollar past the line costs.
-   *
-   * `hereScenario` is the return it converts *from* — the same one the
-   * effective rate above is measured on, which is why `sizing.taxBefore` and
-   * the total step 2 quotes are the same figure rather than two roundings of
-   * it.
-   */
-  const sizing = useMemo(
-    () => sizeConversion(ceiling, hereScenario),
-    [ceiling, hereScenario],
-  );
-
-  /**
-   * Where the ceiling falls on step 2's own axis.
-   *
-   * A ceiling is quoted in taxable income, provisional income or MAGI, none of
-   * which is the axis either chart is drawn on — but the conversion that just
-   * fits under it is, because a conversion is ordinary income measured from
-   * where the reader already stands. So the line the reader must not cross is
-   * drawn at their income plus the conversion, and the band between the two is
-   * the conversion itself.
-   *
-   * `unbounded` means the search hit its own bound without reaching the
-   * ceiling, which none of these six can do on a real return; drawing a
-   * million-dollar band on the strength of it would be worse than drawing
-   * nothing, so it draws nothing.
-   */
-  const conversionFits = !sizing.unbounded && sizing.conversion > 0;
-  const conversionTarget = conversionFits
-    ? ordinaryIncome + sizing.conversion
-    : ordinaryIncome;
-
-  /**
-   * Step 4's own right edge. Never inside step 2's — the two charts are the
-   * same sweep and a reader comparing them should not have to re-read the axis
-   * — but wider whenever the conversion runs past it, which the top of the 22%
-   * bracket does on most joint returns.
-   */
-  const conversionAxisMax = useMemo(
-    () =>
-      incomeAxisMax(
-        { ssBenefit, filingStatus, seniors, muniInterest, qcd, year, ltcg: plannedLtcg },
-        { minimum: Math.max(axisMax, conversionTarget) },
-      ),
-    [ssBenefit, filingStatus, seniors, muniInterest, qcd, year, plannedLtcg, axisMax, conversionTarget],
-  );
-
-  /**
-   * Step 2's curve, re-swept when step 4 needs more of it than step 2 drew.
-   * Identical axes are the common case — the conversion usually lands inside
-   * the torpedo chart — and then this is step 2's array, not a copy of it.
-   */
-  const conversionCurve = useMemo(
-    () =>
-      conversionAxisMax === axisMax
-        ? curve
-        : marginalRateCurve(
-            { ssBenefit, filingStatus, seniors, muniInterest, qcd, year, ltcg: plannedLtcg },
-            {
-              maxIncome: conversionAxisMax,
-              step: curveStepFor(conversionAxisMax),
-              gainsWithinIncome: true,
-            },
-          ),
-    [conversionAxisMax, axisMax, curve, ssBenefit, filingStatus, seniors, muniInterest, qcd, year, plannedLtcg],
-  );
-
-  /**
-   * The hills and valleys of step 4's own sweep. Identical to step 2's
-   * whenever the axes are, and a superset of it when the conversion has pushed
-   * the axis out — which is exactly when reusing step 2's would leave the
-   * tooltip silent over the stretch the conversion actually crosses.
-   */
-  const conversionSegments = useMemo(
-    () => segmentCurve(conversionCurve, (p) => p.income),
-    [conversionCurve],
-  );
-
-  /** What the ceiling caps, spelled out for the sentence that quotes it. */
-  const ceilingMeasure = CONVERSION_MEASURE_LABELS[ceiling.measure];
-
   /**
    * What the live region will read out, once whatever changed it has settled.
    *
@@ -1657,10 +1288,10 @@ const App: React.FC = () => {
    * plain sentences with no markup to flatten, no em dashes, and the figures
    * in the order the eye takes them off the page. It says what that step's own
    * readout says and stops there: the rest of the advice paragraph stays on
-   * the page, and so do all seven of the closing figures, for a reader who
-   * goes and reads them.
+   * the page, and so do the closing figures, for a reader who goes and reads
+   * them.
    *
-   * Not memoised: it is four string concatenations on a component that has
+   * Not memoised: it is two string concatenations on a component that has
    * already swept a curve, and holding it as a plain value is what lets the
    * settle hook below compare readings by their text rather than by identity.
    */
@@ -1691,47 +1322,6 @@ const App: React.FC = () => {
               effectiveRateOn(herePoint.totalTax),
             )}. ${standingHeadline(standing)}`
           : '';
-      case 'gains':
-        if (!hereGainPoint) return '';
-        if (plannedLtcg === 0)
-          return `None of your ${formatCurrency(
-            ordinaryIncome,
-          )} is a long-term gain. The first dollar taken as one would be taxed at ${
-            hereGainPoint.marginalRate
-          }%. Federal tax ${formatCurrency(
-            hereGainPoint.totalTax,
-          )} on ${formatCurrency(totalIncome)} of total income, an effective rate of ${formatPercent(
-            effectiveRateOn(hereGainPoint.totalTax),
-          )}.`;
-        return hereGainPoint
-          ? `With ${formatCurrency(plannedLtcg)} of your ${formatCurrency(
-              ordinaryIncome,
-            )} coming from long-term gains, federal tax takes ${
-              hereGainPoint.effectiveRate
-            }% of the gain itself and ${
-              hereGainPoint.marginalRate
-            }% of the next dollar of it. Federal tax ${formatCurrency(
-              hereGainPoint.totalTax,
-            )} on the same ${formatCurrency(
-              totalIncome,
-            )} of total income, an effective rate of ${formatPercent(
-              effectiveRateOn(hereGainPoint.totalTax),
-            )}.`
-          : '';
-      case 'conversion': {
-        const line = `${ceiling.label}, ${formatCurrency(ceiling.amount)} of ${ceilingMeasure}`;
-        if (conversionFits)
-          return `${formatCurrency(
-            sizing.conversion,
-          )} fits under ${line}. It costs ${formatCurrency(
-            sizing.taxCost,
-          )} in federal tax, an average of ${sizing.costPerDollar}% on every dollar converted.`;
-        return sizing.alreadyOver
-          ? `Nothing fits under ${line}. This return is already ${formatCurrency(
-              Math.round(-sizing.headroom),
-            )} past it.`
-          : `Nothing fits under ${line}. This return sits within a dollar of it.`;
-      }
       default:
         return '';
     }
@@ -1743,7 +1333,7 @@ const App: React.FC = () => {
    */
   const announcement = useSettledReading(reading);
 
-  /* ───── The close: what the four steps add up to ───── */
+  /* ───── The close: what the two steps add up to ───── */
 
   /**
    * How much of the benefit 86(a) actually taxes, at the reader's own point.
@@ -1778,30 +1368,11 @@ const App: React.FC = () => {
    *
    * Read off the curve rather than recomputed, so the close quotes the figure
    * step 2's readout already quotes rather than a second rounding of it.
-   * `sizing.taxBefore` — what step 4 calls this year's bill — is the same tax
-   * taken straight from `hereScenario`, so all three agree; it stands in here
-   * for a slider parked below the curve's first sample, which would mean
-   * below $0.
+   * `totalFederalTax` stands in for a slider parked below the curve's first
+   * sample, which would mean below $0, and is the same call the sweep makes at
+   * every point it plots.
    */
-  const hereTax = herePoint?.totalTax ?? sizing.taxBefore;
-
-  /**
-   * What IRC 1411 takes out of that, and how far this return is from the
-   * threshold that starts it.
-   *
-   * Chapter 2A is not income tax and does not go on the income-tax line of a
-   * 1040, so the close names it separately even though `hereTax` — which both
-   * rate curves and step 4's sizing now carry — already contains it.
-   *
-   * The income-tax half is taken by subtraction rather than by a second call
-   * to `totalTax`, so that the two figures the close prints always add up to
-   * the one above them. Each is then within a dollar of its own exact value,
-   * which is the same tolerance every other whole-dollar figure on this page
-   * is quoted to.
-   */
-  const hereNiit = niitFor(hereScenario);
-  const hereSurtax = Math.round(hereNiit.tax);
-  const hereIncomeTax = hereTax - hereSurtax;
+  const hereTax = herePoint?.totalTax ?? Math.round(totalFederalTax(hereScenario));
 
   /**
    * Where the step nav and the next-step boxes both land.
@@ -1875,11 +1446,10 @@ const App: React.FC = () => {
       <h1>How Much Can You Take Out This Year?</h1>
       <p className="subtitle">
         One more dollar out of an IRA — a withdrawal, a Roth conversion, a
-        realized gain — can drag Social Security into the tax base with it and
-        shove a long-term gain out of the 0% band, so what the next dollar
-        actually costs is often nothing like your bracket. This draws that cost
-        across every income level for your own return, and marks the stretches
-        worth filling and the ones worth stepping around.
+        realized gain — can drag Social Security into the tax base with it, so
+        what the next dollar actually costs is often nothing like your bracket.
+        This draws that cost across every income level for your own return, and
+        marks the stretches worth filling and the ones worth stepping around.
       </p>
 
       {linkNotes.length > 0 && (
@@ -2212,10 +1782,7 @@ const App: React.FC = () => {
                 other income set in step 2 rather than on top of it, because the
                 gift is a distribution that would otherwise have been reported — so it
                 moves the whole curve to the right, exactly as far as tax-exempt
-                interest moves it to the left. Out of the ordinary half of that
-                income, at that: a long-term gain is a sale rather than a
-                distribution, so whatever step 3 marks as gain is income this gift
-                cannot be excluded from. Capped at{' '}
+                interest moves it to the left. Capped at{' '}
                 <strong>{formatCurrency(qcdLimit)}</strong> for {year}
                 {filingStatus === 'mfj'
                   ? ' \u2014 408(d)(8)(A) caps it per individual, so a joint return where both spouses have reached 70\u00BD and each gives from their own IRA gets it twice.'
@@ -2414,7 +1981,6 @@ const App: React.FC = () => {
                           filingStatus={filingStatus}
                           muniInterest={muniInterest}
                           qcd={qcd}
-                          ltcg={plannedLtcg}
                           beneficiaries={beneficiaries}
                           year={year}
                           preMedicare={preMedicare}
@@ -2476,9 +2042,6 @@ const App: React.FC = () => {
               </div>
               <p className="chart-axis-label">
                 Other Income ($) &middot; Total income = Other income + {formatCurrency(ssBenefit)} SS
-                {plannedLtcg > 0
-                  ? `, of which ${formatCurrency(plannedLtcg)} is long-term gain`
-                  : ''}
                 {muniInterest > 0
                   ? ` + ${formatCurrency(muniInterest)} tax-exempt interest`
                   : ''}
@@ -2526,9 +2089,6 @@ const App: React.FC = () => {
                     before it is the price of the next one.
                   </>
                 ) : null}
-                {plannedLtcg > 0
-                  ? ` Step 3 has ${formatCurrency(plannedLtcg)} of this coming from long-term gains, which is priced into the curve rather than added to it.`
-                  : ''}
               </p>
 
               <StandingNote standing={standing} at={ordinaryIncome} />
@@ -2888,678 +2448,6 @@ const App: React.FC = () => {
                 )}
               </div>
             </details>
-
-            {nextStepBox(1)}
-          </section>
-
-          {/* ───── Step 3: what kind of income the step-2 figure is ───── */}
-          <section
-            className="step"
-            id="step-gains"
-            tabIndex={-1}
-            aria-labelledby="step-gains-heading"
-          >
-            <p className="step-kicker">Step 3 of {STEPS.length}</p>
-            <h2 className="step-heading" id="step-gains-heading">
-              Capital Gains Stacking
-            </h2>
-
-            <p className="step-intro">
-              Step 2 asked how much income you have. This step asks what kind it
-              is: how much of that {formatCurrency(ordinaryIncome)} is a long-term
-              capital gain? A gain is part of that figure, not another figure on
-              top of it &mdash; so the chart holds your total income still and moves
-              only the split.
-            </p>
-
-            {/* A gain is a share of the income entered in step 2, so with that
-                income at $0 there is nothing to take a share of: the axis has no
-                width, the slider has no travel and the curve has one point. Say so
-                rather than draw it. */}
-            {gainsAxisMax === 0 ? (
-              <p className="step-prose">
-                <strong>Nothing to split yet.</strong> Step 2 has your other income
-                at $0. A long-term gain is a share of the income you have rather
-                than an addition to it, so there is no axis to draw until something
-                is set there — move the other-income slider on step 2 and this
-                step comes back.
-              </p>
-            ) : (
-              <>
-              <figure className="chart-figure">
-                <div
-                  className="chart-container"
-                  role="img"
-                  aria-label={`Chart: the effective tax rate on the gain — the share of it federal tax takes — as more of ${formatCurrency(ordinaryIncome)} of other income is taken as long-term capital gain, plotted from $0 to ${formatCurrency(gainsAxisMax)}.`}
-                >
-                  <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart
-                      data={ltcgCurve}
-                      margin={{ top: 10, right: 10, left: 10, bottom: 0 }}
-                    >
-                      <defs>
-                        <linearGradient id="ltcgGradient" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor={PALETTE.amber} stopOpacity={CHART.fill} />
-                          <stop offset="95%" stopColor={PALETTE.amber} stopOpacity={0} />
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid
-                        stroke={PALETTE.edge}
-                        strokeWidth={CHART.hairline}
-                        vertical={false}
-                      />
-                      <XAxis
-                        {...AXIS_PROPS}
-                        dataKey="ltcg"
-                        type="number"
-                        domain={[0, gainsAxisMax]}
-                        tickFormatter={formatCompact}
-                      />
-                      <YAxis
-                        {...AXIS_PROPS}
-                        tickFormatter={(value) => `${value}%`}
-                        width={CHART.axis}
-                        domain={[0, 'auto']}
-                      />
-                      <Tooltip
-                        cursor={HOVER_CURSOR}
-                        content={
-                          <LTCGTooltip
-                            ordinaryIncome={ordinaryIncome}
-                            ssBenefit={ssBenefit}
-                            segments={ltcgSegments}
-                            muniInterest={muniInterest}
-                            qcd={qcd}
-                            filingStatus={filingStatus}
-                            year={year}
-                          />
-                        }
-                      />
-                      {hereLine(plannedLtcg, gainsAxisMax, PALETTE.emerald)}
-                      {/* An average rather than a schedule, so it is drawn as a
-                          curve rather than as the steps the marginal rate cut. */}
-                      <Area
-                        type="monotone"
-                        dataKey="effectiveRate"
-                        stroke={PALETTE.amber}
-                        strokeWidth={CHART.line}
-                        fill="url(#ltcgGradient)"
-                        fillOpacity={1}
-                        activeDot={HOVER_DOT}
-                      />
-                    </AreaChart>
-                  </ResponsiveContainer>
-                </div>
-                {/* The same total the tooltip above quotes, from the same
-                    definition — this line used to leave out tax-exempt interest
-                    and the charitable gift, so it disagreed with the sentence
-                    under step 2's chart about the very same return. And the sweep
-                    holds it still only when nothing is being given away: a gift
-                    comes out of the ordinary half alone, so past a point the gain
-                    crowds it out. */}
-                <p className="chart-axis-label">
-                  Long-Term Capital Gains, out of {formatCurrency(ordinaryIncome)} of
-                  other income ($) &middot; Total income{' '}
-                  {formatCurrency(totalIncome)}
-                  {given > 0
-                    ? ' where you stand \u2014 the further right you go, the less of the gift has ordinary income to come out of, so the more of this income reaches the return'
-                    : ' at every point on this axis'}
-                </p>
-              </figure>
-
-              <div className="input-group chart-slider">
-                <div className="slider-header">
-                  <label htmlFor="planned-ltcg">
-                    Long-Term Capital Gains Inside That Income
-                  </label>
-                  <span className="slider-value emerald">{formatCurrency(plannedLtcg)}</span>
-                </div>
-                <input
-                  id="planned-ltcg"
-                  type="range"
-                  min={0}
-                  max={gainsAxisMax}
-                  step={500}
-                  value={plannedLtcg}
-                  onChange={(e) => {
-                    setPlannedLtcg(Number(e.target.value));
-                    announce('gains');
-                  }}
-                  className="slider-emerald"
-                />
-                <div className="slider-range-labels">
-                  <span>None of it</span>
-                  <span>All {formatCurrency(gainsAxisMax)} of it</span>
-                </div>
-
-                <p className="slider-readout">
-                  {/* The curve is an average, and at $0 of gain there is nothing
-                      to average — "tax takes 0% of the gain" is true and says
-                      nothing, and $0 is where the page opens. So the no-gain case
-                      leads with the first dollar instead, which is the figure that
-                      moves a reader off the left edge. */}
-                  <strong>You are here.</strong>{' '}
-                  {plannedLtcg === 0 ? (
-                    <>
-                      None of your {formatCurrency(ordinaryIncome)} is a long-term
-                      gain, so the curve above starts where the dashed emerald line
-                      does &mdash; at nothing, with no gain for tax to take a share
-                      of. The first dollar you took as gain instead would be taxed
-                      at{' '}
-                      <strong>
-                        {hereGainPoint ? `${hereGainPoint.marginalRate}%` : '\u2014'}
-                      </strong>
-                      .
-                    </>
-                  ) : (
-                    <>
-                      With {formatCurrency(plannedLtcg)} of your{' '}
-                      {formatCurrency(ordinaryIncome)} coming from long-term gains,
-                      federal tax takes{' '}
-                      <strong>
-                        {hereGainPoint ? `${hereGainPoint.effectiveRate}%` : '\u2014'}
-                      </strong>{' '}
-                      of the gain itself, where the dashed emerald line crosses the
-                      curve above &mdash; an average of every rate the gain has met
-                      on the way up. The next dollar of it would be taxed at{' '}
-                      <strong>
-                        {hereGainPoint ? `${hereGainPoint.marginalRate}%` : '\u2014'}
-                      </strong>
-                      {hereGainPoint && hereGainPoint.marginalRate > 20
-                        ? ' \u2014 past the 20% ceiling a gain can be charged on its own, so the rest of it is benefit being dragged into the tax base alongside the gain.'
-                        : '.'}
-                    </>
-                  )}
-                  {mixSaving === null ? null : mixSaving > 0 ? (
-                    <>
-                      {' '}
-                      Splitting the same {formatCurrency(ordinaryIncome)} this way
-                      rather than taking all of it as ordinary income saves{' '}
-                      <strong>{formatCurrency(mixSaving)}</strong> in federal tax.
-                    </>
-                  ) : (
-                    <>
-                      {' '}
-                      Splitting the same {formatCurrency(ordinaryIncome)} this way
-                      rather than taking all of it as ordinary income changes the
-                      federal tax by nothing at all &mdash; at this income the
-                      ordinary schedule and the capital-gain one charge the same.
-                    </>
-                  )}
-                  {hereGainPoint && totalIncome > 0 ? (
-                    <>
-                      {' '}
-                      All told the return owes{' '}
-                      <strong>{formatCurrency(hereGainPoint.totalTax)}</strong> in
-                      federal tax on the {formatCurrency(totalIncome)} of total
-                      income behind this chart
-                      {given > 0 ? '' : ', which this slider never moves'} &mdash;
-                      an effective rate of{' '}
-                      <strong>
-                        {formatPercent(effectiveRateOn(hereGainPoint.totalTax))}
-                      </strong>
-                      .{' '}
-                      {given > 0
-                        ? 'Mostly the same dollars, taxed differently: the slider moves the bill, and it moves the income only where the gain has crowded the gift out of the ordinary half.'
-                        : 'The same dollars, taxed differently: what the slider moves is the bill, not the income.'}
-                    </>
-                  ) : null}
-                  {hereSurtax > 0 ? (
-                    <>
-                      {' '}
-                      <strong>{formatCurrency(hereSurtax)}</strong> of that is the
-                      3.8% surtax of section 1411, charged on{' '}
-                      {formatCurrency(hereNiit.base)} of the gain because{' '}
-                      {formatCurrency(hereNiit.magi)} of MAGI clears the{' '}
-                      {formatCurrency(hereNiit.threshold)} threshold.
-                    </>
-                  ) : null}
-                </p>
-              </div>
-              </>
-            )}
-
-            <details className="explainer">
-              <summary>
-                <h2 id="ltcg-stacking-heading">Why the two effects stack</h2>
-              </summary>
-              <div className="explainer-content">
-                <p>
-                  Long-term capital gains (LTCG) count fully toward{' '}
-                  <strong>provisional income</strong> for Social Security taxability,
-                  yet they are taxed in their own preferential bracket (0%/15%/20%).
-                  When ordinary income pushes Social Security benefits into the
-                  taxable base, LTCG can simultaneously shove gains out of the
-                  0% bracket into 15%&nbsp;— stacking two effects at once.
-                </p>
-                <p>
-                  The axis above is the <strong>split</strong>, not the size. Every
-                  point on it prices the same{' '}
-                  {formatCurrency(ordinaryIncome + ssBenefit)} of total income and
-                  differs only in how much of it is gain. That holds provisional
-                  income still — a dollar of gain and a dollar of ordinary income
-                  raise it identically — so the taxable share of your benefit is the
-                  same all the way across, and what moves is which rate schedule
-                  each dollar is charged under and how much of the gain fits below
-                  the 0% ceiling.
-                </p>
-                <p>
-                  The <em>height</em> of the curve answers the other question: of
-                  the gain itself, what share does federal tax take — the whole
-                  return’s tax, less what the same return would owe with that gain
-                  never realized, over the gain. It is an average rather than a
-                  schedule, so it moves smoothly where the statutory rates jump: a
-                  gain that fits under the 0% ceiling costs nothing, and one that
-                  pokes above it is charged 15% on the part that pokes and 0% on
-                  the rest. That is also where the two effects compound — the gain
-                  is charged its own preferential rate <em>and</em> drags up to
-                  85&cent; of benefit into the tax base at ordinary rates, so the
-                  figure can run past the statutory 15% even where the gain never
-                  leaves its own band. Hovering gives the other rate, the one on
-                  the next dollar. The same compounding shows up on
-                  step 2&apos;s chart from the other side: with a gain set, the next
-                  dollar of ordinary income lifts the whole gain stack with it, and
-                  can shove part of it out of the 0% band into 15%.
-                </p>
-              </div>
-            </details>
-
-            <details className="explainer">
-              <summary>
-                <h2 id="niit-heading">The third effect: the 3.8% surtax</h2>
-              </summary>
-              <div className="explainer-content">
-                <p>
-                  Above {formatCurrency(niitThreshold(filingStatus))} of modified
-                  AGI, section 1411 charges a further{' '}
-                  {(NIIT_RATE * 100).toFixed(1)}% &mdash; the net investment income
-                  tax, reported on Form 8960. It is not income tax and it is not
-                  part of any bracket; it sits on top of whatever the ordinary and
-                  capital-gain schedules have already charged.
-                </p>
-                <p>
-                  What makes it a third effect rather than a fourth bracket is the
-                  word <em>lesser</em>. The surtax applies to the lesser of your
-                  net investment income and the amount by which MAGI clears the
-                  threshold &mdash; so between those two figures, a dollar that
-                  1411 does not tax at all still drags a dollar that it does into
-                  the base. An IRA withdrawal is expressly excluded by
-                  1411(c)(5). A pension is not investment income. Neither is a
-                  Social Security benefit. Every one of them is in MAGI, and every
-                  one of them can therefore cost you 3.8&cent; on a gain you
-                  realized before you took it.
-                </p>
-                <p>
-                  That is the same shape as the torpedo one step up: an income
-                  definition wider than the income being taxed. And the thresholds
-                  are the same story too &mdash;{' '}
-                  {formatCurrency(NIIT_THRESHOLDS.single)} unmarried,{' '}
-                  {formatCurrency(NIIT_THRESHOLDS.mfj)} joint,{' '}
-                  {formatCurrency(NIIT_THRESHOLDS.mfs)} on a separate return,
-                  fixed in {NIIT_ENACTED} and never indexed since. Tax-exempt
-                  interest is the one input on this page that stays clear of it
-                  entirely: section 103 keeps it out of gross income, so it is
-                  neither investment income here nor part of this MAGI &mdash;
-                  even while it is raising provisional income in step 2 and
-                  Medicare&apos;s MAGI in the line below.
-                </p>
-              </div>
-            </details>
-
-            {nextStepBox(2)}
-          </section>
-
-          {/* ───── Step 4: how many of those dollars fit before the next one costs more ───── */}
-          <section
-            className="step"
-            id="step-conversion"
-            tabIndex={-1}
-            aria-labelledby="step-conversion-heading"
-          >
-            <p className="step-kicker">Step 4 of {STEPS.length}</p>
-            <h2 className="step-heading" id="step-conversion-heading">
-              Sizing the conversion
-            </h2>
-
-            <p className="step-intro">
-              Steps 2 and 3 price the next dollar. This one prices a block of them.
-              Pick the line you would rather not cross and the chart draws the
-              largest Roth conversion that stays under it, running from where you
-              are standing out to that line &mdash; on the same curve as step 2,
-              because a conversion is ordinary income and walks you rightwards
-              along exactly that axis.
-            </p>
-
-            <figure className="chart-figure">
-              <div
-                className="chart-container"
-                role="img"
-                aria-label={
-                  conversionFits
-                    ? `Chart: step 2's marginal-rate curve redrawn from $0 to ${formatCurrency(conversionAxisMax)}, with the sized conversion shaded from ${formatCurrency(ordinaryIncome)} to ${formatCurrency(conversionTarget)}.`
-                    : `Chart: step 2's marginal-rate curve redrawn from $0 to ${formatCurrency(conversionAxisMax)}. Nothing fits under the line picked, so no conversion is shaded.`
-                }
-              >
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart
-                    data={conversionCurve}
-                    margin={{ top: 22, right: 28, left: 10, bottom: 0 }}
-                  >
-                    <defs>
-                      <linearGradient id="conversionGradient" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor={PALETTE.accent} stopOpacity={CHART.fill} />
-                        <stop offset="95%" stopColor={PALETTE.accent} stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid
-                      stroke={PALETTE.edge}
-                      strokeWidth={CHART.hairline}
-                      vertical={false}
-                    />
-                    <XAxis
-                      {...AXIS_PROPS}
-                      dataKey="income"
-                      type="number"
-                      domain={[0, conversionAxisMax]}
-                      tickFormatter={formatCompact}
-                    />
-                    <YAxis
-                      {...AXIS_PROPS}
-                      tickFormatter={(value) => `${value}%`}
-                      width={CHART.axis}
-                      domain={[0, 'auto']}
-                    />
-                    <Tooltip
-                      cursor={HOVER_CURSOR}
-                      content={
-                        <CustomTooltip
-                          ssBenefit={ssBenefit}
-                          segments={conversionSegments}
-                          filingStatus={filingStatus}
-                          muniInterest={muniInterest}
-                          qcd={qcd}
-                          ltcg={plannedLtcg}
-                          beneficiaries={beneficiaries}
-                          year={year}
-                        />
-                      }
-                    />
-                    {conversionFits && (
-                      <ReferenceArea
-                        className="conversion-band"
-                        x1={ordinaryIncome}
-                        x2={conversionTarget}
-                        fill={PALETTE.indigo}
-                        fillOpacity={CHART.fill}
-                        stroke="none"
-                      />
-                    )}
-                    {conversionFits && (
-                      <ReferenceLine
-                        className="ceiling-line"
-                        x={conversionTarget}
-                        stroke={PALETTE.indigo}
-                        strokeDasharray="4 4"
-                        strokeWidth={CHART.rule}
-                        /* The amount goes on the line rather than inside the
-                           band: "You are here" already runs rightwards from the
-                           band's near edge, and a narrow band would put the two
-                           on top of each other. Above the axis is free — this
-                           chart draws no IRMAA cliffs, which is what that strip
-                           carries on step 2. */
-                        label={{
-                          value: `${formatCurrency(sizing.conversion)} converted`,
-                          position: 'top',
-                          fill: PALETTE.indigoBright,
-                          fontSize: CHART.label,
-                          fontWeight: 600,
-                        }}
-                      />
-                    )}
-                    {hereLine(ordinaryIncome, conversionAxisMax, PALETTE.amber)}
-                    <Area
-                      type="stepAfter"
-                      dataKey="marginalRate"
-                      stroke={PALETTE.accent}
-                      strokeWidth={CHART.line}
-                      fill="url(#conversionGradient)"
-                      fillOpacity={1}
-                      activeDot={HOVER_DOT}
-                    />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
-              {/* Deliberately not step 2's label. The two charts sweep the same
-                  axis, so repeating its total-income formula here would say nothing
-                  new; what is worth saying is which stretch of it this one draws. */}
-              <p className="chart-axis-label">
-                Other Income ($), the conversion included &mdash; step 2&apos;s own
-                axis, drawn out to {formatCurrency(conversionAxisMax)}
-              </p>
-
-              <p className="chart-key chart-key-conversion">
-                <span
-                  className="chart-key-swatch chart-key-swatch-conversion"
-                  aria-hidden="true"
-                />
-                {conversionFits ? (
-                  <span>
-                    <strong>The conversion, and the line it stops at.</strong> The
-                    shaded band runs from your own {formatCurrency(ordinaryIncome)}{' '}
-                    out to {formatCurrency(conversionTarget)} of other income &mdash;
-                    the point at which the line you picked is reached, once the
-                    benefit that the extra income drags into the tax base is counted.
-                    That is why the band is shorter than the headroom the line
-                    appears to offer. Every dollar inside it is charged at the rates
-                    the curve draws above it.
-                  </span>
-                ) : (
-                  <span>
-                    <strong>No band is drawn.</strong> Nothing fits under the line
-                    you picked, so there is no conversion to shade. The amber marker
-                    is still where you are standing.
-                  </span>
-                )}
-              </p>
-            </figure>
-
-            <fieldset className="input-group chart-slider ceiling-picker">
-              <legend>The line you would rather not cross</legend>
-              <div className="segmented segmented-stacked">
-                {ceilings.map(({ id, label, amount, measure }) => (
-                  <label key={id} className="segmented-option">
-                    <input
-                      type="radio"
-                      name="conversion-ceiling"
-                      value={id}
-                      checked={ceiling.id === id}
-                      onChange={() => {
-                        setCeilingId(id);
-                        announce('conversion');
-                      }}
-                    />
-                    <span>
-                      {label}
-                      <small className="segmented-caption">
-                        {formatCurrency(amount)} of {CONVERSION_MEASURE_LABELS[measure]}
-                      </small>
-                    </span>
-                  </label>
-                ))}
-              </div>
-
-              <p className="slider-readout">
-                {conversionFits ? (
-                  <>
-                    <strong>{formatCurrency(sizing.conversion)} fits.</strong> On
-                    top of your {formatCurrency(ordinaryIncome)} of other income,
-                    that conversion lands on the line you picked &mdash;{' '}
-                    {ceiling.label}, {formatCurrency(ceiling.amount)} of{' '}
-                    {ceilingMeasure}. It costs{' '}
-                    <strong>{formatCurrency(sizing.taxCost)}</strong> in federal
-                    tax, taking this year&apos;s bill from{' '}
-                    {formatCurrency(sizing.taxBefore)} to{' '}
-                    {formatCurrency(sizing.taxAfter)} &mdash; an average of{' '}
-                    <strong>{sizing.costPerDollar}%</strong> on every dollar
-                    converted, against <strong>{sizing.rateAboveCeiling}%</strong>{' '}
-                    on the first dollar past the line.
-                  </>
-                ) : sizing.alreadyOver ? (
-                  <>
-                    <strong>Nothing fits.</strong> This return is already{' '}
-                    {formatCurrency(Math.round(-sizing.headroom))} past the line
-                    you picked &mdash; {ceiling.label},{' '}
-                    {formatCurrency(ceiling.amount)} of {ceilingMeasure} &mdash;
-                    before a dollar is converted, so there is no room under it to
-                    convert into. Take the other-income slider on step 2 down, or
-                    pick a line further out.
-                  </>
-                ) : (
-                  <>
-                    <strong>Nothing fits.</strong> This return sits within a dollar
-                    of the line you picked &mdash; {ceiling.label},{' '}
-                    {formatCurrency(ceiling.amount)} of {ceilingMeasure} &mdash; so
-                    the largest conversion that stays under it rounds to nothing.
-                    Pick a line further out to see what a conversion would cost.
-                  </>
-                )}
-              </p>
-
-              <p className="slider-advice conversion-advice">
-                <strong>Past the line.</strong> {ceiling.note}
-              </p>
-            </fieldset>
-
-            <details className="explainer">
-              <summary>
-                <h2 id="conversion-what-heading">
-                  What a Roth conversion is, and why it is sized rather than chosen
-                </h2>
-              </summary>
-              <div className="explainer-content">
-                <p>
-                  A conversion moves money from a traditional IRA to a Roth IRA. The
-                  whole amount is ordinary income in the year you do it &mdash; the
-                  same as a withdrawal, and it lands on the same axis as everything
-                  on step 2 &mdash; and after that it is never taxed again, is not a
-                  required distribution at any age, and never counts toward
-                  provisional income, so it never drags a benefit into the tax base
-                  in a later year.
-                </p>
-                <p>
-                  That is why the amount is worth solving for rather than picking. A
-                  conversion is the one piece of income a retiree controls to the
-                  dollar, and every line on this page has a cheap side and a dear
-                  one. Converting up to a line is the cheap side taken in full;
-                  converting a dollar past it buys the whole of the dear side, and
-                  in the case of an IRMAA cliff, buys it for a whole year on the
-                  strength of that single dollar.
-                </p>
-                <p>
-                  Since 2018 a conversion cannot be undone: the Tax Cuts and Jobs
-                  Act repealed recharacterisation for conversions, so the tax is
-                  settled by 31 December of the year you convert. That is the other
-                  half of the case for sizing it &mdash; there is no re-cutting it
-                  in April when the return is prepared.
-                </p>
-              </div>
-            </details>
-
-            <details className="explainer">
-              <summary>
-                <h2 id="conversion-average-rate-heading">
-                  Why the average rate is the number to compare
-                </h2>
-              </summary>
-              <div className="explainer-content">
-                <p>
-                  The curve above prices the <em>next</em> dollar. A conversion is
-                  not one dollar, it is a block of them that walks across the chart
-                  from your own marker to the ceiling, picking up every rate in
-                  between &mdash; so what it actually costs is the area under that
-                  stretch, not the height of the curve at either end.
-                </p>
-                <p>
-                  {conversionFits ? (
-                    <>
-                      Here that is {formatCurrency(sizing.taxCost)} on{' '}
-                      {formatCurrency(sizing.conversion)}, or{' '}
-                      <strong>{sizing.costPerDollar}%</strong> averaged over the
-                      block. That is the figure to hold against the rate you expect
-                      in the years the money would otherwise come out: a conversion
-                      pays when it is cheaper than the future, and the future
-                      includes the years a surviving spouse files single on the same
-                      income, and the ten-year window an adult child has to empty an
-                      inherited IRA.
-                    </>
-                  ) : (
-                    <>
-                      With nothing fitting under the line you picked there is no
-                      block to average, but the comparison is unchanged: the average
-                      cost of a conversion is the figure to hold against the rate
-                      you expect in the years the money would otherwise come out
-                      &mdash; including the years a surviving spouse files single on
-                      the same income, and the ten-year window an adult child has to
-                      empty an inherited IRA.
-                    </>
-                  )}
-                </p>
-                <p>
-                  The average is always lower than the rate at the far end and
-                  always higher than the rate at the near one, which is the whole
-                  reason a conversion sized to a line beats a conversion sized to a
-                  bracket rate. It is also why a conversion that runs <em>through</em>{' '}
-                  the torpedo can still pay: the hump is priced into the average
-                  once, rather than paid year after year by a reader who sits inside
-                  it.
-                </p>
-                <p>
-                  One cost is outside these figures. The Medicare surcharge is not
-                  tax and appears in none of them &mdash; if the line you picked is
-                  an IRMAA tier, crossing it costs the surcharge on top of whatever
-                  the curve says.
-                </p>
-              </div>
-            </details>
-
-            <details className="explainer">
-              <summary>
-                {/* Counted rather than written down. The list is not a fixed
-                    length: 400% of the poverty line is a ceiling only in a year
-                    that has the cliff, so a heading that said "six" was wrong
-                    on every 2026 return before the year became a constant. */}
-                <h2 id="conversion-ceilings-heading">
-                  The {spellCount(ceilings.length)} lines, and what each one is
-                </h2>
-              </summary>
-              <div className="explainer-content">
-                <p>
-                  Each line is a different kind of edge, and they are not in the
-                  same order on every return &mdash; a large benefit can put the
-                  85% base to the left of the 12% bracket top, and a separate return
-                  collapses both bases onto $0. The figures below are this
-                  return&apos;s, for {year}.
-                </p>
-                <ul>
-                  {ceilings.map((c) => (
-                    <li key={c.id}>
-                      <strong>{c.label}</strong> &mdash;{' '}
-                      {formatCurrency(c.amount)} of{' '}
-                      {CONVERSION_MEASURE_LABELS[c.measure]}. {c.note}
-                    </li>
-                  ))}
-                </ul>
-                <p>
-                  {spellCountCap(ceilingMeasures)} different income definitions
-                  are in that list, which is the trap it exists to spring.
-                  Taxable income is after the standard
-                  deduction; provisional income is before it and counts tax-exempt
-                  interest and half the benefit; Medicare&apos;s MAGI is adjusted
-                  gross income with tax-exempt interest added back. A conversion
-                  that clears one line by $5,000 can be $5,000 over another.
-                </p>
-              </div>
-            </details>
           </section>
 
           {/* ───── The close: the reader's own answer, in one place ─────
@@ -3569,8 +2457,8 @@ const App: React.FC = () => {
               the page where the six figures a reader actually leaves with sit
               together rather than one per step.
 
-              Outside step 4 rather than at the foot of it, because it summarises
-              all four steps and belongs to none of them, and last before the
+              Outside step 2 rather than at the foot of it, because it summarises
+              both steps and belongs to neither, and last before the
               disclaimer because it is the thing a reader would screenshot. That
               is also why it restates the return above the figures: a screenshot
               of an answer with no question in it is worth nothing. */}
@@ -3586,9 +2474,6 @@ const App: React.FC = () => {
                 ? `${formatCurrency(ssBenefit)} of Social Security`
                 : 'no Social Security'}{' '}
               and {formatCurrency(ordinaryIncome)} of other income
-              {plannedLtcg > 0
-                ? `, ${formatCurrency(plannedLtcg)} of it a long-term gain`
-                : ''}
               {muniInterest > 0
                 ? `, plus ${formatCurrency(muniInterest)} of tax-exempt interest`
                 : ''}
@@ -3620,80 +2505,9 @@ const App: React.FC = () => {
                 <dd>
                   <strong>{formatCurrency(hereTax)}</strong>
                   <span className="answer-gloss">
-                    What the {year} return owes
-                    {hereSurtax > 0 ? (
-                      <>
-                        : {formatCurrency(hereIncomeTax)} of income tax and{' '}
-                        {formatCurrency(hereSurtax)} of the surtax on the next line,
-                        which is a different chapter of the code on a form of its
-                        own
-                      </>
-                    ) : (
-                      ''
-                    )}
-                    . Federal only &mdash; no Medicare premium, which is charged
-                    rather than taxed and gets its own line below.
-                  </span>
-                </dd>
-              </div>
-
-              {/* Chapter 2A, on Form 8960, carried to Schedule 2 rather than to
-                  the tax line — so it gets a line of its own here even when it
-                  is $0, because what a reader most needs to know about a surtax
-                  they are not paying is how close they are to paying it. */}
-              <div className="answer-figure">
-                <dt>Net investment income tax</dt>
-                <dd>
-                  <strong>
-                    {hereSurtax > 0
-                      ? formatCurrency(hereSurtax)
-                      : 'None — under the threshold'}
-                  </strong>
-                  <span className="answer-gloss">
-                    {hereNiit.nii <= 0 ? (
-                      <>
-                        3.8% of investment income, once MAGI passes{' '}
-                        {formatCurrency(hereNiit.threshold)}. This return has no
-                        investment income for it to reach: a pension, an IRA
-                        withdrawal and Social Security are all outside it, so
-                        however high the income goes, there is nothing here for
-                        1411 to charge.
-                      </>
-                    ) : hereSurtax > 0 ? (
-                      <>
-                        3.8% of {formatCurrency(hereNiit.base)} &mdash; the lesser
-                        of the {formatCurrency(hereNiit.nii)} gain and the{' '}
-                        {formatCurrency(hereNiit.excess)} by which{' '}
-                        {formatCurrency(hereNiit.magi)} of MAGI clears the{' '}
-                        {formatCurrency(hereNiit.threshold)} threshold.{' '}
-                        {hereNiit.toFullyTaxed && hereNiit.toFullyTaxed > 0
-                          ? `Another ${formatCurrency(hereNiit.toFullyTaxed)} of income — of any kind, including an IRA withdrawal 1411 never taxes — pulls the rest of the gain in at 3.8% too.`
-                          : 'The whole gain is already in, so the next dollar of ordinary income no longer adds to it.'}
-                      </>
-                    ) : (
-                      <>
-                        3.8% on the lesser of investment income and MAGI over{' '}
-                        {formatCurrency(hereNiit.threshold)}. This return holds{' '}
-                        {formatCurrency(hereNiit.nii)} of gain and{' '}
-                        {formatCurrency(hereNiit.magi)} of MAGI, so it is{' '}
-                        {formatCurrency(hereNiit.headroom ?? 0)} short &mdash; and
-                        the dollars that would close that gap need not be
-                        investment income at all.
-                      </>
-                    )}{' '}
-                    That threshold was set in {NIIT_ENACTED} and has never been
-                    indexed
-                    {SS_BASES[filingStatus].ssBase50 > 0 ? (
-                      <>
-                        , exactly like the{' '}
-                        {formatCurrency(SS_BASES[filingStatus].ssBase50)} and{' '}
-                        {formatCurrency(SS_BASES[filingStatus].ssBase85)} bases step
-                        2 is built on
-                      </>
-                    ) : (
-                      ' — the same frozen line step 2 is built on, drawn in a different decade'
-                    )}
-                    .
+                    What the {year} return owes. Federal only &mdash; no Medicare
+                    premium, which is charged rather than taxed and gets its own
+                    line below.
                   </span>
                 </dd>
               </div>
@@ -3761,24 +2575,6 @@ const App: React.FC = () => {
                       : 'This is the top tier; there is no cliff above it.'}{' '}
                     Billed on a {IRMAA_LOOKBACK_YEARS}-year lag, so this is what{' '}
                     {year} income sets for {year + IRMAA_LOOKBACK_YEARS}.
-                  </span>
-                </dd>
-              </div>
-
-              <div className="answer-figure">
-                <dt>Room to convert</dt>
-                <dd>
-                  <strong>
-                    {conversionFits
-                      ? `${formatCurrency(sizing.conversion)} fits`
-                      : 'Nothing fits'}
-                  </strong>
-                  <span className="answer-gloss">
-                    {conversionFits
-                      ? `Sized against ${ceiling.label}, ${formatCurrency(ceiling.amount)} of ${ceilingMeasure}. It costs ${formatCurrency(sizing.taxCost)}, taking the bill to ${formatCurrency(sizing.taxAfter)} \u2014 an average of ${sizing.costPerDollar}% on every dollar converted.`
-                      : sizing.alreadyOver
-                        ? `This return is already ${formatCurrency(Math.round(-sizing.headroom))} past ${ceiling.label}, ${formatCurrency(ceiling.amount)} of ${ceilingMeasure}, so there is no room under it to convert into. Step 4 has five other lines to pick from.`
-                        : `This return sits within a dollar of ${ceiling.label}, ${formatCurrency(ceiling.amount)} of ${ceilingMeasure}, so the largest conversion that stays under it rounds to nothing. Step 4 has five other lines to pick from.`}
                   </span>
                 </dd>
               </div>

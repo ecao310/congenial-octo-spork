@@ -31,7 +31,7 @@ export const PALETTE = {
   /** The ordinary-income rate curve, and the fill under it. */
   accent: '#409dff',
 
-  /** The "you are here" marker, and step 3's own curve. */
+  /** The "you are here" marker. */
   amber: '#f59e0b',
   /** What the return owes in total, which is a different quantity from a rate. */
   orange: '#f97316',
@@ -41,14 +41,18 @@ export const PALETTE = {
   /** The 400% FPL cliff: the same kind of thing, for a reader not yet on Medicare. */
   fuchsia: '#e879f9',
   fuchsiaBright: '#f0abfc',
-  /** Step 4's conversion band and the ceiling that closes it. */
+  /** The conversion band and the ceiling that closes it. Unspent while the
+      step that drew them is off the page — kept, like the arithmetic behind
+      it, because the step is coming back and its colour is part of it. */
   indigo: '#818cf8',
   indigoBright: '#a5b4fc',
-  /** The taxable share of the benefit. */
+  /** The taxable share of the benefit, and tax-exempt interest's own slider. */
   violet: '#a78bfa',
-  /** Where the reader stands on the gains axis. */
+  /** Where the reader stands on the gains axis. Unspent by the charts today,
+      for the same reason indigo is. */
   emerald: '#34d399',
-  /** The 0% long-term gain band. */
+  /** The gift that leaves the return before it starts, and the 0% long-term
+      gain band when there is a gains chart to draw it on. */
   lime: '#a3e635',
 } as const;
 

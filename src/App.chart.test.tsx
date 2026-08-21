@@ -332,30 +332,26 @@ describe('the “you are here” marker', () => {
       return label;
     });
 
-  it('puts one labelled marker on each of the three charts', () => {
+  it('puts one labelled marker on the page\u2019s one chart', () => {
     const { container } = render(<App />);
-    expect(container.querySelectorAll('.recharts-wrapper')).toHaveLength(3);
-    expect(herePositions(container)).toHaveLength(3);
+    expect(container.querySelectorAll('.recharts-wrapper')).toHaveLength(1);
+    expect(herePositions(container)).toHaveLength(1);
     expect(hereLabels(container).map((t) => t.textContent)).toEqual([
       'You are here',
-      'You are here',
-      'You are here',
     ]);
-    // Each marker wears the colour of the control that drives it — amber for
-    // other income, emerald for gains — which is what lets the readout under
-    // each one point at "the dashed amber line" and be understood. Step 4's is
-    // amber again because it stands on the same axis at the same figure: it is
-    // the near edge of the conversion band, not a place of its own.
+    // The marker wears the colour of the control that drives it — amber, for
+    // other income — which is what lets the readout under it point at "the
+    // dashed amber line" and be understood.
     expect(
       Array.from(
         container.querySelectorAll('.recharts-reference-line.here-line line'),
       ).map((line) => line.getAttribute('stroke')),
-    ).toEqual(['#f59e0b', '#34d399', '#f59e0b']);
+    ).toEqual(['#f59e0b']);
   });
 
-  it('moves each marker with its own slider, and only its own', () => {
+  it('moves with its own slider', () => {
     const { container } = render(<App />);
-    const [torpedo, gains] = herePositions(container);
+    const [torpedo] = herePositions(container);
 
     fireEvent.change(
       screen.getByRole('slider', { name: /other income \(not social security\)/i }),
@@ -363,15 +359,6 @@ describe('the “you are here” marker', () => {
     );
     // $30,000 to $90,000 on a $150,000 axis: right, and a long way.
     expect(herePositions(container)[0]).toBeGreaterThan(torpedo);
-    expect(herePositions(container)[1]).toBeCloseTo(gains, 6);
-
-    fireEvent.change(
-      screen.getByRole('slider', {
-        name: /long-term capital gains inside that income/i,
-      }),
-      { target: { value: '50000' } },
-    );
-    expect(herePositions(container)[1]).toBeGreaterThan(gains);
   });
 
   it('stands at the reader’s own fraction of the axis', () => {
@@ -406,110 +393,16 @@ describe('the “you are here” marker', () => {
 
 
 /**
- * Step 4 draws the conversion on step 2's own curve: a shaded band from the
- * reader's own income out to the ceiling, closed by a dashed line at the far
- * end. That is what puts a ceiling quoted in taxable income, provisional
- * income or MAGI onto an axis that is none of the three — the conversion is
- * the distance between them, measured in other income.
- *
- * The clock is not pinned in this file, so nothing below asserts a dollar
- * figure: the shapes are what matter, and they hold in every year.
- */
-describe('the conversion band on step 4’s chart', () => {
-  const band = (container: HTMLElement): SVGPathElement | null =>
-    container.querySelector(
-      '.recharts-reference-area.conversion-band .recharts-reference-area-rect',
-    );
-
-  /** The band's left and right pixel edges. */
-  const bandEdges = (container: HTMLElement): [number, number] => {
-    const rect = band(container);
-    if (!rect) throw new Error('no conversion band drawn');
-    const left = Number(rect.getAttribute('x'));
-    return [left, left + Number(rect.getAttribute('width'))];
-  };
-
-  const ceilingPosition = (container: HTMLElement): number[] =>
-    positionsOf(container, '.recharts-reference-line.ceiling-line');
-
-  const pickCeiling = (label: RegExp): void => {
-    fireEvent.click(screen.getByRole('radio', { name: label }));
-  };
-
-  it('runs from the reader’s own marker out to the ceiling line', () => {
-    const { container } = render(<App />);
-    const [left, right] = bandEdges(container);
-    // The near edge is the reader's marker on step 4's chart — the third one,
-    // in page order — and the far edge is the line that closes the band.
-    expect(left).toBeCloseTo(herePositions(container)[2], 1);
-    expect(ceilingPosition(container)).toHaveLength(1);
-    expect(ceilingPosition(container)[0]).toBeCloseTo(right, 1);
-    expect(right).toBeGreaterThan(left);
-  });
-
-  it('labels the line with the conversion it closes', () => {
-    const { container } = render(<App />);
-    const label = Array.from(
-      container.querySelectorAll<SVGTextElement>('text.recharts-label'),
-    ).find((t) => /converted$/.test(t.textContent ?? ''));
-    expect(label?.textContent).toMatch(/^\$[\d,]+ converted$/);
-  });
-
-  it('grows the band when a further-out line is picked', () => {
-    const { container } = render(<App />);
-    const [, near] = bandEdges(container);
-    pickCeiling(/^Top of the 22% bracket/);
-    const [, far] = bandEdges(container);
-    expect(far).toBeGreaterThan(near);
-  });
-
-  /**
-   * The default return is already past the 50% base, so there is no room under
-   * it and nothing to shade. Drawing a zero-width band and a line on top of
-   * the marker would read as a conversion of nothing rather than as no
-   * conversion at all.
-   */
-  it('draws neither band nor line when nothing fits', () => {
-    const { container } = render(<App />);
-    pickCeiling(/^Social Security 50% base/);
-    expect(band(container)).toBeNull();
-    expect(ceilingPosition(container)).toHaveLength(0);
-    // The marker stays: the reader is still standing somewhere.
-    expect(herePositions(container)).toHaveLength(3);
-  });
-
-  /**
-   * Both edges are on the same axis as step 2's chart, so moving the income
-   * that step 2 sets moves the whole band — the near edge because that is
-   * where the reader now stands, the far edge because there is less room left
-   * under the same line.
-   */
-  it('slides the near edge with step 2’s income slider', () => {
-    const { container } = render(<App />);
-    const [left, right] = bandEdges(container);
-    fireEvent.change(
-      screen.getByRole('slider', { name: /other income \(not social security\)/i }),
-      { target: { value: '0' } },
-    );
-    const [movedLeft, movedRight] = bandEdges(container);
-    // Standing further left leaves more room under the same line, so the band
-    // starts earlier and finishes wider.
-    expect(movedLeft).toBeLessThan(left);
-    expect(movedRight - movedLeft).toBeGreaterThan(right - left);
-  });
-});
-
-/**
- * Every number the three plots are drawn with, read back off the SVG.
+ * Every number the plot is drawn with, read back off the SVG.
  *
  * `CHART` in palette.ts is the page's scales written a second time, because
  * an SVG `stroke-width` is an attribute and an attribute cannot hold a
  * `var(--…)`. A second copy of anything drifts, and the way this one drifts is
- * not by someone rewriting it: it is by an `11` or a `2` typed into whichever
- * chart is being edited, which from inside that chart looks like nothing at
- * all. That is how the page arrived here — 11px labels under 15px ticks, a
- * 1px IRMAA cliff beside a 2px marker, and a half-opaque wash whose real
- * alpha was 0.3 because recharts had multiplied it by its own default.
+ * not by someone rewriting it: it is by an `11` or a `2` typed into the chart
+ * being edited, which from inside that chart looks like nothing at all. That
+ * is how the page arrived here — 11px labels under 15px ticks, a 1px IRMAA
+ * cliff beside a 2px marker, and a half-opaque wash whose real alpha was 0.3
+ * because recharts had multiplied it by its own default.
  *
  * So the claims below are made about the rendered surface rather than about
  * the source: they read the attributes a browser would paint from, which is
@@ -518,7 +411,7 @@ describe('the conversion band on step 4’s chart', () => {
 const chartSvgs = (container: HTMLElement): SVGElement[] =>
   Array.from(container.querySelectorAll('.recharts-wrapper svg'));
 
-/** Every value of one attribute across all three plots, deduplicated. */
+/** Every value of one attribute across the plot, deduplicated. */
 const drawnWith = (container: HTMLElement, attribute: string): string[] => [
   ...new Set(
     chartSvgs(container).flatMap((svg) =>
@@ -547,7 +440,7 @@ const drawnOn = (
 describe('the chart register', () => {
   it('says every word in the plot at one size', () => {
     const { container } = render(<App />);
-    expect(chartSvgs(container)).toHaveLength(3);
+    expect(chartSvgs(container)).toHaveLength(1);
 
     const sizes = drawnWith(container, 'font-size');
     // Guards the extractor: a plot that rendered no text would pass vacuously.
@@ -581,24 +474,24 @@ describe('the chart register', () => {
   });
 
   /**
-   * The grid was dashed and drew both ways, so every plot carried a set of
-   * vertical dashes that mean nothing — on step 2, directly across the dashed
-   * cliffs and the dashed marker, which are the lines that do. Horizontal
-   * only is what leaves a vertical line on this page saying one thing.
+   * The grid was dashed and drew both ways, so the plot carried a set of
+   * vertical dashes that mean nothing — directly across the dashed cliffs and
+   * the dashed marker, which are the lines that do. Horizontal only is what
+   * leaves a vertical line on this page saying one thing.
    */
   it('rules the plot one way, so a vertical line still means something', () => {
     const { container } = render(<App />);
 
-    expect(container.querySelectorAll('.recharts-cartesian-grid-horizontal')).toHaveLength(3);
+    expect(container.querySelectorAll('.recharts-cartesian-grid-horizontal')).toHaveLength(1);
     expect(container.querySelectorAll('.recharts-cartesian-grid-vertical')).toHaveLength(0);
-    expect(drawnWith(container, 'stroke-dasharray').sort()).toEqual(['4 4', '6 4']);
+    // Only the reader's own marker is dashed on the page as it opens; the
+    // cliff lines are behind their own switch, and each is a `4 4`.
+    expect(drawnWith(container, 'stroke-dasharray').sort()).toEqual(['6 4']);
   });
 
   /**
-   * The gradient runs from `CHART.fill` down to nothing, and step 4's band is
-   * flat at the same alpha — so the wash under a curve and the wash behind
-   * one are the same weight, which is the whole reason there is one token
-   * rather than two numbers.
+   * The gradient runs from `CHART.fill` down to nothing, so the wash under the
+   * curve is the one token rather than a number typed into this chart.
    */
   it('washes every fill at one alpha', () => {
     const { container } = render(<App />);
@@ -606,60 +499,7 @@ describe('the chart register', () => {
     expect(drawnWith(container, 'stop-opacity').sort()).toEqual(
       ['0', String(CHART.fill)].sort(),
     );
-    expect(
-      drawnOn(container, '.recharts-reference-area-rect', 'fill-opacity'),
-    ).toEqual([String(CHART.fill)]);
     // recharts would otherwise multiply the stop above by its own 0.6.
     expect(drawnOn(container, '.recharts-area-area', 'fill-opacity')).toEqual(['1']);
-  });
-});
-
-/**
- * Step 3 plots the share of the gain federal tax takes, not the rate on the
- * next dollar of it. The two are different lines about the same return, and
- * the cheapest thing to pin is where each one starts: at $0 of gain there is
- * no gain to charge, so the average is 0 and the curve begins on the floor,
- * where the marginal rate it replaced began at whatever the next dollar would
- * have cost — 10.2% on the page as it opens.
- */
-describe('the gains chart draws the average, not the next dollar', () => {
-  /** The gains chart is the second of the three the page renders. */
-  const gainsChart = (container: HTMLElement): Element => {
-    const charts = container.querySelectorAll('.recharts-wrapper');
-    if (charts.length < 2) throw new Error('no gains chart rendered');
-    return charts[1];
-  };
-
-  /** Where the plotted curve starts, and where the x-axis sits under it. */
-  const curveStart = (chart: Element): number => {
-    const d = chart.querySelector('.recharts-area-curve')!.getAttribute('d')!;
-    return Number(d.replace(/^M-?[\d.]+,/, '').match(/^-?[\d.]+/)![0]);
-  };
-  const axisY = (chart: Element): number =>
-    Number(
-      chart
-        .querySelector('.recharts-xAxis .recharts-cartesian-axis-line')!
-        .getAttribute('y1'),
-    );
-
-  it('begins on the zero line, where no gain has been charged anything', () => {
-    const { container } = render(<App />);
-    const chart = gainsChart(container);
-    // The floor of the plot is 0%, so the two coincide to within the stroke.
-    expect(curveStart(chart)).toBeCloseTo(axisY(chart), 0);
-  });
-
-  it('draws a curve rather than the marginal rate’s steps', () => {
-    const { container } = render(<App />);
-    const d = gainsChart(container)
-      .querySelector('.recharts-area-curve')!
-      .getAttribute('d')!;
-    // `type="monotone"` emits cubic segments; `stepAfter` emits only lines.
-    expect(d).toMatch(/C/);
-    const torpedo = container
-      .querySelectorAll('.recharts-wrapper')[0]
-      .querySelector('.recharts-area-curve')!
-      .getAttribute('d')!;
-    expect(torpedo).not.toMatch(/C/);
   });
 });

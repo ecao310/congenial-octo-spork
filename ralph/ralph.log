@@ -6472,3 +6472,101 @@ chrome-headless-shell-mac-arm64/chrome-headless-shell`, served under
 the preview. Add to it: vitest swallows `console.log` from a scratch probe
 test — write to a file if you need to read a computed figure out of the app's
 own modules.
+
+## 2026-08-21 — Task: remove the sections for capital gains and roth conversion from the page to keep it focused on tax torpedo.
+
+The tree opened dirty holding almost all of this task and one failing test. Six
+files, ~2,500 lines deleted, PLAN.md unmarked, ralph.log unwritten — an
+abandoned run, and the fifth in a row to leave one. The first two commands of
+this run (`git status --porcelain`, `npx vitest run`) said within ten seconds
+which of the two it was: finished work with a loose end, not a half-edit worth
+reverting. So this run finished it rather than re-doing it, and the write-up
+below separates what arrived in the tree from what this pass added.
+
+### What was already in the tree
+
+Steps 3 and 4 gone from `STEPS`, from the nav, from the charts and from the
+close; `plannedLtcg` and `ceilingId` out of `PageScenario`; `ltcg` and
+`ceiling` read past rather than honoured on decode; ~1,000 lines of test either
+deleted or rewritten to assert the absence. `tsc -b` and `eslint` were both
+already clean. The arithmetic was left alone, which is the task's own
+instruction: `ltcgRateCurve`, `conversionCeilings`, `sizeConversion` and
+`niitFor` are all still exported from `utils/tax.ts` and still under test.
+
+The one decision in there worth restating, because it is the one a future run
+would otherwise re-litigate: `ltcg` in an old link is **read past in silence**.
+It is the dangerous key of the two — it moved the curve — so honouring it would
+set a figure no reader could see, change, or be told about. `ceiling` goes the
+same way for the same reason.
+
+### The failing test, which was the whole loose end
+
+`the margin rules` in styles.test.tsx counts left borders in the screen block
+and opens with `expect(drawn.length).toBeGreaterThan(5)` — an extractor guard,
+so that an empty list cannot pass the real assertion vacuously. Taking
+`.conversion-advice` out of index.css left exactly five: two note boxes
+(`.link-note`, `.warning-note`) at 3px, three margin rules (`.slider-advice`,
+`.scenario-recap`, `.answer-figure`) at 2px. The guard is now `> 3` and the
+docstring says six closing figures rather than eight. Nothing about the rule
+being guarded changed — one weight, one alpha, still true of all five.
+
+### What this pass added on top
+
+- **README.md.** It was still selling four steps, the eight closing figures,
+  and `ltcg`/`ceiling` as live query keys, with `#step-conversion` as the
+  worked example of a fragment. Now two steps, six figures, seven keys, and a
+  paragraph naming what came off and what stayed exported. The 1411 section
+  says plainly that the surtax is priced by the engine and is $0 for anything
+  the page can currently set — NII is `max(0, ltcg)` and nothing sets `ltcg`
+  any more — rather than leaving a reader to infer a live surtax from prose
+  written when there was one.
+- **`src/shelf/README.md`.** Two sentences that counted the flow's steps to
+  argue why `projection.ts` is not one of them.
+- **`palette.ts` and the two `:root` comments.** `--indigo` is now spent by no
+  rule and no attribute anywhere; `PALETTE.emerald` and `PALETTE.violet` by no
+  chart. Kept, all of them — the colours belong to the arithmetic that stayed,
+  and re-picking them when the steps come back would be a worse outcome than an
+  unspent token. What changed is that the docstrings and the palette header no
+  longer claim a step that is not there. `PALETTE.lime`'s was stale in the
+  other direction: it says "the 0% long-term gain band" and its only live use
+  is the tooltip's charity line.
+- **`.step-prose`.** Newly orphaned by the removal — used once, in step 4 — so
+  its two rules went. The other class-shaped strings a grep turns up
+  (`.configuration_title`, `.mt-checkbox_checkbox`, `.chart-key-subsidy`) are
+  all inside comments, not rules; checked before touching anything.
+
+### Verified
+
+- `npx tsc -b`, `npx eslint src --max-warnings 0`, `npx vitest run` (11 files,
+  650 tests), `npm run build`.
+- Driven in Chromium against the built page. Two `h2` steps and two nav items;
+  `section[id]` is exactly `step-benefit`, `step-torpedo`, `answer`; four
+  sliders, six closing figures; no page errors and no horizontal overflow at
+  1440 or 420.
+- `?filing=mfj&income=90000&ltcg=20000&ceiling=irmaa1&year=2025` opens with no
+  link note, on $128,496 of total income, and rewrites itself to
+  `?filing=mfj&income=90000` — the three dead keys read past in silence, as
+  designed.
+- `#step-conversion` lands at `scrollY` 0 rather than erroring.
+- The walk: clicking the next-step box moves focus into `step-torpedo`;
+  dragging other income to $60,000 gives $84,852 total, $9,017 federal, 10.63%
+  effective, 22% on the next dollar, $21,124 of $24,852 in the base — 85% of
+  the benefit, at the cap, which is the arithmetic checked by hand.
+- Under `emulateMedia({ media: 'print' })`: 10 axis tick labels and 8 visible
+  headings, so the print sheet still survives the section removal.
+
+### Note for the next run
+
+Standing browser note unchanged: script in the project root for the bare
+`playwright-core` import, `pkill -f "vite preview"` first, port off preview's
+own output, Chromium build 1228 at
+`~/Library/Caches/ms-playwright/chromium_headless_shell-1228/
+chrome-headless-shell-mac-arm64/chrome-headless-shell`, served under
+`/congenial-octo-spork/`. Deleted this run's two scratch drivers and killed the
+preview.
+
+Add to it, having now been the run that benefited: `git status --porcelain`
+then `npx vitest run`, before picking a task. Five runs in a row have opened
+dirty. A dirty tree on its own tells you nothing — this one held finished work
+one number away from green, the last one held two thirds of a task with six
+tests red — and the suite is what tells the two apart.

@@ -1,22 +1,21 @@
 # How Much Can You Take Out This Year?
 
 One more dollar out of an IRA — a withdrawal, a Roth conversion, a realized
-gain — can drag Social Security into the tax base behind it and shove a
-long-term gain out of the 0% band at the same time. What that dollar actually
-costs is often nothing like the bracket it lands in: 12% becomes 22.2% and 22%
-becomes 40.7%, and where a gain is in play the two effects compound into a
-figure well past the statutory 15%.
+gain — can drag Social Security into the tax base behind it. What that dollar
+actually costs is often nothing like the bracket it lands in: 12% becomes 22.2%
+and 22% becomes 40.7%, and then the curve falls back down again.
 
 This is one page that draws that cost across every income level for one
-reader's own return, and answers the question in its title with a dollar
-figure.
+reader's own return, and marks the stretches worth filling and the ones worth
+stepping around.
 
 **Live:** https://ecao310.github.io/congenial-octo-spork/
 
-## The four steps
+## The two steps
 
-Every step has the same shape: the chart first, then the one control that moves
-the reader along it, then collapsed explainers, then a box to the next step.
+Both steps have the same shape: the chart first, then the one control that
+moves the reader along it, then collapsed explainers, then a box to the next
+step.
 
 1. **Your Social Security benefit** — the return everything after it prices:
    who files it, who on it has reached 65, and how much Social Security it
@@ -30,19 +29,18 @@ the reader along it, then collapsed explainers, then a box to the next step.
    reader's own income in the chart's tooltip and drawn across the axis only
    when the **Lines** button above the plot is asked for them. Every figure
    under it is a federal one.
-3. **Capital gains stacking** — how much of the income already entered is a
-   long-term gain. Gains are a *share* of that figure, not an addition to it,
-   so moving the slider re-prices the same return rather than inventing a
-   richer one.
-4. **Sizing the conversion** — pick a ceiling (a bracket edge, an inclusion
-   threshold, the top of the 0% gain band, an IRMAA tier, 400% of the poverty
-   line) and read off the largest conversion that fits under it, what it costs,
-   and the average cost per dollar converted.
 
-The page closes on the eight figures the whole walk was for: total income,
-federal tax, the 3.8% net investment income surtax inside it, effective rate,
-the rate on the next dollar, the taxable share of the benefit, the Medicare
-surcharge that MAGI buys, and the room left to convert.
+Two more steps stood here — Capital gains stacking, which split the income
+already entered into ordinary and long-term halves, and Sizing the conversion,
+which read off the largest conversion fitting under a chosen ceiling. Both came
+off the page so that it asks one question, and both are coming back. What they
+rendered is gone; what they rendered *from* is untouched and still under test:
+`ltcgRateCurve`, `conversionCeilings`, `sizeConversion` and `niitFor` are all
+still exported from `src/utils/tax.ts`.
+
+The page closes on the six figures the whole walk was for: total income,
+federal tax, effective rate, the rate on the next dollar, the taxable share of
+the benefit, and the Medicare surcharge that MAGI buys.
 
 ## What is priced
 
@@ -70,12 +68,13 @@ has no way to know — so the line is drawn where it falls and the loss is left
 blank.
 
 Section 1411 is charged on the *lesser* of net investment income and MAGI over
-the threshold, which is why it belongs on a page about stacking: a pension or
-an IRA withdrawal is expressly outside the surtax and still raises the MAGI it
-is measured against, so it drags an already-realized gain into the base at
-3.8%. Only the capital gain counts as net investment income here — a
-distribution is excluded by 1411(c)(5), and tax-exempt interest is outside both
-the income and the MAGI, even while it is moving provisional income.
+the threshold, and only the capital gain counts as net investment income here —
+a distribution is excluded by 1411(c)(5), and tax-exempt interest is outside
+both the income and the MAGI, even while it is moving provisional income. So
+the surtax is priced by the engine and is $0 for everything the page can
+currently set: with the gains step off the page there is no net investment
+income for it to reach. It is charged again the moment a gain is back on the
+page, which is the third effect stacking on the same axis.
 
 The Social Security thresholds — $25,000/$34,000 and $32,000/$44,000 — are not
 indexed and stay frozen across both years while everything around them moves,
@@ -90,24 +89,26 @@ the same place a reader would go to check the figures behind it.
 ## Sharing a return
 
 The whole scenario lives in the query string, so a link survives a refresh and
-can be sent to a spouse or an advisor: `filing`, `ss`, `income`, `ltcg`,
-`muni`, `qcd`, `senior`, `spouse`, `ceiling`. Nothing is written
-unconditionally — a key appears only when it differs from what the page opens
-with, so an untouched page has no query string at all and every key present is
-something the reader did. A link asking for something the page cannot show —
+can be sent to a spouse or an advisor: `filing`, `ss`, `income`, `muni`, `qcd`,
+`senior`, `spouse`. Nothing is written unconditionally — a key appears only
+when it differs from what the page opens with, so an untouched page has no
+query string at all and every key present is something the reader did. A link asking for something the page cannot show —
 an income past the slider's bound, a gift past the statutory limit — is
 clamped to what it can, and the page says on load what it changed. A `year` in
 an older link is read past in silence: there is no year to switch to, so there
-is nothing to tell the reader and nothing to point them at. The step is a
-fragment (`#step-conversion`), not a query parameter: it is where the reader is
-standing, not what the return holds.
+is nothing to tell the reader and nothing to point them at. `ltcg` and
+`ceiling` are read past the same way, for the same reason — both named a step
+that is no longer on the page, and `ltcg` moved the curve, so honouring it
+would set a figure no reader could see or change. The step is a fragment
+(`#step-torpedo`), not a query parameter: it is where the reader is standing,
+not what the return holds.
 
 ## Development
 
 ```bash
 npm install
 npm run dev      # start dev server
-npm run test     # vitest, 581 tests
+npm run test     # vitest, 650 tests
 npm run lint     # eslint
 npm run build    # tsc -b && vite build
 ```
@@ -116,7 +117,7 @@ npm run build    # tsc -b && vite build
 
 | Path | What it is |
 | --- | --- |
-| `src/App.tsx` | The page: all four steps, the charts, the explainers, the close. |
+| `src/App.tsx` | The page: both steps, the chart, the explainers, the close. |
 | `src/utils/tax.ts` | Every figure on the page, and the only place a rate or a threshold is written down. |
 | `src/utils/scenarioUrl.ts` | The return, encoded into the address bar and clamped back out of it. |
 | `src/shelf/` | Finished, tested modules that nothing on the page imports. See [`src/shelf/README.md`](src/shelf/README.md). |

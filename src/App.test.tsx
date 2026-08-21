@@ -1,6 +1,6 @@
 import { render, screen, fireEvent, within, act } from '@testing-library/react';
 import { vi } from 'vitest';
-import App, { CustomTooltip, LTCGTooltip, READING_SETTLE_MS } from './App';
+import App, { CustomTooltip, READING_SETTLE_MS } from './App';
 import { TAX_YEAR_PARAMS, TAX_YEARS, PAGE_TAX_YEAR } from './utils/tax';
 
 /**
@@ -32,12 +32,7 @@ afterEach(() => {
  * to open anything first. What the nav changes is which step is marked current
  * and where focus lands, and that is what the `step flow` describe covers.
  */
-const stepNames = [
-  'Your benefit',
-  'The tax torpedo',
-  'Capital gains',
-  'Roth conversion',
-] as const;
+const stepNames = ['Your benefit', 'The tax torpedo'] as const;
 
 const stepNav = (): HTMLElement => screen.getByRole('toolbar', { name: 'Steps' });
 
@@ -401,13 +396,6 @@ describe('App', () => {
     ).toBeInTheDocument();
   });
 
-  it('renders the Capital Gains Stacking section heading', () => {
-    render(<App />);
-    expect(
-      screen.getByRole('heading', { name: /capital gains stacking/i }),
-    ).toBeInTheDocument();
-  });
-
   it('renders the ordinary income slider defaulting to $30,000', () => {
     render(<App />);
     const slider = screen.getByRole('slider', {
@@ -544,54 +532,62 @@ describe('App', () => {
 });
 
 describe('the step flow', () => {
-  it('numbers all four steps in the nav, in reading order', () => {
+  it('numbers both steps in the nav, in reading order', () => {
     render(<App />);
     expect(
       within(stepNav())
         .getAllByRole('button')
         .map((b) => b.textContent),
-    ).toEqual([
-      '1Your benefit',
-      '2The tax torpedo',
-      '3Capital gains',
-      '4Roth conversion',
-    ]);
+    ).toEqual(['1Your benefit', '2The tax torpedo']);
   });
 
   /**
    * The whole point of the rewrite: the steps scroll rather than swap, so
-   * every one of them is on the page at once. A reader on step 3 can scroll
+   * every one of them is on the page at once. A reader on step 2 can scroll
    * back to the benefit they set in step 1, and Ctrl-F reaches all of it.
    */
   it('renders every step at once', () => {
     render(<App />);
-    for (const name of [
-      /your social security benefit/i,
-      /^the tax torpedo$/i,
-      /capital gains stacking/i,
-      /^sizing the conversion$/i,
-    ]) {
+    for (const name of [/your social security benefit/i, /^the tax torpedo$/i]) {
       expect(screen.getByRole('heading', { name })).toBeInTheDocument();
     }
     expect(screen.queryByRole('tabpanel')).not.toBeInTheDocument();
   });
 
+  /**
+   * The two steps that came off the page: capital-gains stacking and the
+   * conversion sizer. Their arithmetic is still in `utils/tax.ts` and still
+   * under test there — what is gone is every trace of them a reader could
+   * reach.
+   */
+  it('renders nothing of the steps that came off the page', () => {
+    render(<App />);
+    expect(screen.queryByRole('heading', { name: /capital gains stacking/i })).toBeNull();
+    expect(screen.queryByRole('heading', { name: /sizing the conversion/i })).toBeNull();
+    expect(document.getElementById('step-gains')).toBeNull();
+    expect(document.getElementById('step-conversion')).toBeNull();
+    expect(
+      screen.queryByRole('slider', { name: /long-term capital gains/i }),
+    ).toBeNull();
+    expect(screen.queryByRole('radio', { name: /bracket/i })).toBeNull();
+  });
+
   it('opens with the first step marked current', () => {
     render(<App />);
     expect(currentStep()).toBe('Your benefit');
-    expect(navItem('Roth conversion')).not.toHaveAttribute('aria-current');
+    expect(navItem('The tax torpedo')).not.toHaveAttribute('aria-current');
   });
 
   /**
    * Focus follows the scroll. Landing a keyboard reader at the top of the
-   * page after they asked for step 3 would make the nav unusable — the next
+   * page after they asked for step 2 would make the nav unusable — the next
    * Tab press has to continue inside the step they picked.
    */
   it('marks a step current and moves focus into it when the nav is clicked', () => {
     render(<App />);
-    fireEvent.click(navItem('Capital gains'));
-    expect(currentStep()).toBe('Capital gains');
-    expect(document.activeElement).toBe(document.getElementById('step-gains'));
+    fireEvent.click(navItem('The tax torpedo'));
+    expect(currentStep()).toBe('The tax torpedo');
+    expect(document.activeElement).toBe(document.getElementById('step-torpedo'));
   });
 
   it('wires each nav button to the section it moves to', () => {
@@ -599,8 +595,6 @@ describe('the step flow', () => {
     for (const [name, id] of [
       ['Your benefit', 'step-benefit'],
       ['The tax torpedo', 'step-torpedo'],
-      ['Capital gains', 'step-gains'],
-      ['Roth conversion', 'step-conversion'],
     ] as const) {
       const section = document.getElementById(id) as HTMLElement;
       expect(navItem(name)).toHaveAttribute('aria-controls', id);
@@ -614,35 +608,19 @@ describe('the step flow', () => {
    * The box at the foot of each step is the path through the flow for a reader
    * who never looks at the nav, so it has to do everything the nav does.
    */
-  it('walks forward through the next-step boxes', () => {
+  it('walks forward through the next-step box', () => {
     render(<App />);
-    fireEvent.click(screen.getByRole('button', { name: /Step 2 of 4/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Step 2 of 2/ }));
     expect(currentStep()).toBe('The tax torpedo');
     expect(document.activeElement).toBe(document.getElementById('step-torpedo'));
-
-    fireEvent.click(screen.getByRole('button', { name: /Step 3 of 4/ }));
-    expect(currentStep()).toBe('Capital gains');
-    expect(document.activeElement).toBe(document.getElementById('step-gains'));
-
-    fireEvent.click(screen.getByRole('button', { name: /Step 4 of 4/ }));
-    expect(currentStep()).toBe('Roth conversion');
-    expect(document.activeElement).toBe(
-      document.getElementById('step-conversion'),
-    );
   });
 
-  it('names where each box goes, and stops at the last step', () => {
+  it('names where the box goes, and stops at the last step', () => {
     render(<App />);
     expect(
-      screen.getByRole('button', { name: /Step 2 of 4/ }),
+      screen.getByRole('button', { name: /Step 2 of 2/ }),
     ).toHaveTextContent('The tax torpedo');
-    expect(
-      screen.getByRole('button', { name: /Step 3 of 4/ }),
-    ).toHaveTextContent('Capital Gains Stacking');
-    expect(
-      screen.getByRole('button', { name: /Step 4 of 4/ }),
-    ).toHaveTextContent('Sizing the conversion');
-    expect(screen.queryByRole('button', { name: /Step 5 of 4/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Step 3 of 2/ })).toBeNull();
   });
 
   it('moves between steps with the arrow keys and wraps at both ends', () => {
@@ -651,12 +629,11 @@ describe('the step flow', () => {
     fireEvent.keyDown(stepNav(), { key: 'ArrowRight' });
     expect(currentStep()).toBe('The tax torpedo');
 
-    fireEvent.keyDown(stepNav(), { key: 'ArrowLeft' });
-    fireEvent.keyDown(stepNav(), { key: 'ArrowLeft' });
-    expect(currentStep()).toBe('Roth conversion');
-
     fireEvent.keyDown(stepNav(), { key: 'ArrowRight' });
     expect(currentStep()).toBe('Your benefit');
+
+    fireEvent.keyDown(stepNav(), { key: 'ArrowLeft' });
+    expect(currentStep()).toBe('The tax torpedo');
   });
 
   /**
@@ -676,11 +653,11 @@ describe('the step flow', () => {
    */
   it('keeps only the current step in the tab order', () => {
     render(<App />);
-    fireEvent.click(navItem('Roth conversion'));
+    fireEvent.click(navItem('The tax torpedo'));
     for (const name of stepNames) {
       expect(navItem(name)).toHaveAttribute(
         'tabindex',
-        name === 'Roth conversion' ? '0' : '-1',
+        name === 'The tax torpedo' ? '0' : '-1',
       );
     }
   });
@@ -692,10 +669,10 @@ describe('the step flow', () => {
   });
 
   /**
-   * Every step prices the same return, and the inputs that set it are spread
+   * Both steps price the same return, and the inputs that set it are spread
    * across the flow — the benefit in step 1, other income in step 2. Stepping
    * around must never unmount one, or a figure set in step 1 would be gone by
-   * the time step 3 quoted it.
+   * the time the close quoted it.
    */
   it('keeps every input mounted as the reader steps through', () => {
     render(<App />);
@@ -720,14 +697,10 @@ describe('the step flow', () => {
  *
  * chart \u2192 the one control that says where on that chart you are \u2192 the
  * collapsed explainers \u2192 the box to the next step. Step 1 has no curve of
- * its own, so it starts at the control; step 4 is last, so it ends at the
+ * its own, so it starts at the control; step 2 is last, so it ends at the
  * explainer. A control above its chart reads as an input to the chart, which
  * is exactly what it is not \u2014 the chart already prices every value the
  * control can take.
- *
- * "Control" rather than "slider" because step 4's is a radio group: the lines
- * a conversion is sized against are six named places rather than a continuum.
- * It does the same job in the same slot.
  */
 describe('the shape every step shares', () => {
   /** The step's own landmarks in DOM order, runs of a kind collapsed. */
@@ -735,7 +708,7 @@ describe('the shape every step shares', () => {
     const section = document.getElementById(id) as HTMLElement;
     const kinds = Array.from(
       section.querySelectorAll(
-        '.chart-container, input[type="range"], .ceiling-picker, details, .next-step',
+        '.chart-container, input[type="range"], details, .next-step',
       ),
     )
       // A control inside a disclosure is that disclosure's business, not the
@@ -753,25 +726,9 @@ describe('the shape every step shares', () => {
     return kinds.filter((kind, i) => kind !== kinds[i - 1]);
   };
 
-  it('lays the charted steps out chart, control, explainers, next', () => {
+  it('lays the charted step out chart, control, explainers', () => {
     render(<App />);
-    expect(landmarks('step-torpedo')).toEqual([
-      'chart',
-      'control',
-      'details',
-      'next',
-    ]);
-    expect(landmarks('step-gains')).toEqual([
-      'chart',
-      'control',
-      'details',
-      'next',
-    ]);
-    expect(landmarks('step-conversion')).toEqual([
-      'chart',
-      'control',
-      'details',
-    ]);
+    expect(landmarks('step-torpedo')).toEqual(['chart', 'control', 'details']);
   });
 
   /**
@@ -784,22 +741,12 @@ describe('the shape every step shares', () => {
     expect(landmarks('step-benefit')).toEqual(['control', 'details', 'next']);
   });
 
-  it('puts each step\u2019s control on the axis its own chart sweeps', () => {
+  it('puts the step\u2019s control on the axis its own chart sweeps', () => {
     render(<App />);
-    for (const [id, name] of [
-      ['step-torpedo', /other income \(not social security\)/i],
-      ['step-gains', /long-term capital gains inside that income/i],
-    ] as const) {
-      const slider = screen.getByRole('slider', { name });
-      expect(document.getElementById(id)?.contains(slider)).toBe(true);
-    }
-    // Step 4's is a radio group, and its own chart is the only one on the page
-    // whose axis runs far enough right to hold the conversion it sizes.
-    expect(
-      document
-        .getElementById('step-conversion')
-        ?.querySelectorAll('input[name="conversion-ceiling"]'),
-    ).toHaveLength(7);
+    const slider = screen.getByRole('slider', {
+      name: /other income \(not social security\)/i,
+    });
+    expect(document.getElementById('step-torpedo')?.contains(slider)).toBe(true);
   });
 
   /**
@@ -819,51 +766,6 @@ describe('the shape every step shares', () => {
     );
     expect(readout()).toHaveTextContent('At $90,000 of other income');
     expect(readout()).toHaveTextContent(/taxed at\s+\d+(\.\d+)?%/);
-  });
-
-  it('reads the gains curve back at the reader\u2019s own share of it', () => {
-    render(<App />);
-    const readout = (): HTMLElement =>
-      document.querySelector('#step-gains .slider-readout') as HTMLElement;
-    expect(readout()).toHaveTextContent(
-      'None of your $30,000 is a long-term gain',
-    );
-
-    fireEvent.change(
-      screen.getByRole('slider', {
-        name: /long-term capital gains inside that income/i,
-      }),
-      { target: { value: '20000' } },
-    );
-    expect(readout()).toHaveTextContent(
-      'With $20,000 of your $30,000 coming from long-term gains',
-    );
-    expect(readout()).toHaveTextContent(/taxed at\s+\d+(\.\d+)?%/);
-  });
-
-  /**
-   * Two rates, and the readout has to say which one the line above it crosses.
-   * The curve is the average, so that is the figure tied to the marker; the
-   * rate on the next dollar follows it as a separate sentence rather than
-   * pointing at a picture that no longer plots it.
-   */
-  it('ties the marker to the average and names the next dollar separately', () => {
-    render(<App />);
-    const readout = (): HTMLElement =>
-      document.querySelector('#step-gains .slider-readout') as HTMLElement;
-
-    fireEvent.change(
-      screen.getByRole('slider', {
-        name: /long-term capital gains inside that income/i,
-      }),
-      { target: { value: '20000' } },
-    );
-    expect(readout()).toHaveTextContent(
-      /federal tax takes\s+\d+(\.\d+)?%\s+of the gain itself, where the dashed emerald line crosses the curve above/,
-    );
-    expect(readout()).toHaveTextContent(
-      /The next dollar of it would be taxed at\s+\d+(\.\d+)?%/,
-    );
   });
 });
 
@@ -984,12 +886,12 @@ describe('the advice under the slider', () => {
  * What a chart says to a reader who cannot see it.
  *
  * A recharts chart is an SVG of unlabelled paths, so without a name the app's
- * centrepiece says nothing at all to a screen reader. Each plot is one image
+ * centrepiece says nothing at all to a screen reader. The plot is one image
  * carrying one label: what is being plotted, and how far its axis runs.
  *
- * The band-by-band caption that sat under each figure until now — "0% up to
+ * The band-by-band caption that sat under the figure until now — "0% up to
  * $14,750, 15% to $21,500, …" — is off the page. What states where the hump
- * is now is the advice under each slider, which says it relative to where the
+ * is now is the advice under the slider, which says it relative to where the
  * reader is standing rather than as a run of every band on the curve.
  *
  * Figures below are 2026, single, the $24,852 average benefit, the same return
@@ -998,135 +900,32 @@ describe('the advice under the slider', () => {
 describe('the charts as images', () => {
   const charts = (): HTMLElement[] =>
     Array.from(document.querySelectorAll('.chart-container'));
-  const chart = (step: 'torpedo' | 'gains' | 'conversion'): HTMLElement =>
+  const chart = (step: 'torpedo'): HTMLElement =>
     document.querySelector(`#step-${step} .chart-container`) as HTMLElement;
-  const setIncome = (value: number): void => {
-    fireEvent.change(
-      screen.getByRole('slider', { name: /other income \(not social security\)/i }),
-      { target: { value: String(value) } },
-    );
-  };
 
-  it('names every plot, and points at no description that is gone', () => {
+  it('names the plot, and points at no description that is gone', () => {
     render(<App />);
-    expect(charts()).toHaveLength(3);
-    for (const step of ['torpedo', 'gains', 'conversion'] as const) {
-      // The plot is one image with a name, not a tree of unlabelled paths.
-      expect(chart(step)).toHaveAttribute('role', 'img');
-      expect(chart(step).getAttribute('aria-label')).toMatch(/^Chart: /);
-      // An aria-describedby whose target no longer renders is worse than
-      // none: it promises a long description and resolves to nothing.
-      expect(chart(step)).not.toHaveAttribute('aria-describedby');
-    }
+    expect(charts()).toHaveLength(1);
+    // The plot is one image with a name, not a tree of unlabelled paths.
+    expect(chart('torpedo')).toHaveAttribute('role', 'img');
+    expect(chart('torpedo').getAttribute('aria-label')).toMatch(/^Chart: /);
+    // An aria-describedby whose target no longer renders is worse than none:
+    // it promises a long description and resolves to nothing.
+    expect(chart('torpedo')).not.toHaveAttribute('aria-describedby');
     expect(document.querySelector('figcaption')).toBeNull();
   });
 
-  it('drops step 3’s figure entirely when there is no axis to draw', () => {
-    render(<App />);
-    setIncome(0);
-    expect(charts()).toHaveLength(2);
-    expect(chart('gains')).toBeNull();
-  });
-
-  it('names the shaded conversion in step 4’s label, and its absence', () => {
-    render(<App />);
-    expect(chart('conversion').getAttribute('aria-label')).toContain(
-      'with the sized conversion shaded from $30,000 to $45,375',
-    );
-    // Nothing fits under the top of the 12% bracket from $90,000 of income.
-    setIncome(90_000);
-    expect(chart('conversion').getAttribute('aria-label')).toContain(
-      'Nothing fits under the line picked, so no conversion is shaded',
-    );
-  });
-
-  it('gives each chart’s label its own axis and right edge', () => {
+  it('names the axis it plots and the right edge it stops at', () => {
     render(<App />);
     expect(chart('torpedo').getAttribute('aria-label')).toBe(
       'Chart: the marginal tax rate on the next dollar of other income, plotted from $0 to $150,000.',
     );
-    expect(chart('gains').getAttribute('aria-label')).toBe(
-      'Chart: the effective tax rate on the gain \u2014 the share of it federal tax takes \u2014 as more of $30,000 of other income is taken as long-term capital gain, plotted from $0 to $30,000.',
+    // The axis is sized to the return, and the label follows it out — here by
+    // the senior deduction's phaseout, which runs to $175,000 of MAGI.
+    fireEvent.click(screen.getByRole('checkbox', { name: /65 or older/i }));
+    expect(chart('torpedo').getAttribute('aria-label')).toMatch(
+      /plotted from \$0 to \$1(7|8)\d,\d{3}\.$/,
     );
-  });
-});
-
-/**
- * The step-3 rewrite: a long-term gain is a share of the income entered in
- * step 2, never a second figure stacked on top of it. So the reader's total
- * income is one number set once, step 3 moves only its composition, and both
- * charts price the same return.
- */
-describe('a gain is a share of the income, not an addition to it', () => {
-  const incomeSlider = (): HTMLElement =>
-    screen.getByRole('slider', { name: /other income \(not social security\)/i });
-  const gainSlider = (): HTMLElement =>
-    screen.getByRole('slider', {
-      name: /long-term capital gains inside that income/i,
-    });
-  const readout = (step: string): HTMLElement =>
-    document.querySelector(`#step-${step} .slider-readout`) as HTMLElement;
-
-  it('ends the gains axis where the reader\u2019s own income ends', () => {
-    render(<App />);
-    expect(gainSlider()).toHaveAttribute('max', '30000');
-
-    fireEvent.change(incomeSlider(), { target: { value: '90000' } });
-    expect(gainSlider()).toHaveAttribute('max', '90000');
-  });
-
-  it('drags the gain down when the income it came out of falls under it', () => {
-    render(<App />);
-    fireEvent.change(incomeSlider(), { target: { value: '90000' } });
-    fireEvent.change(gainSlider(), { target: { value: '60000' } });
-    expect(gainSlider()).toHaveValue('60000');
-
-    fireEvent.change(incomeSlider(), { target: { value: '40000' } });
-    expect(gainSlider()).toHaveValue('40000');
-  });
-
-  /**
-   * The centrepiece chart honours the split too, and this is the proof: the
-   * same $30,000 of income, with $20,000 of it charged under the capital-gain
-   * schedule instead of the ordinary one, makes the next dollar cheaper. Under
-   * the old additive reading the gain reached no chart at all and this figure
-   * never moved.
-   */
-  it('re-prices the torpedo curve when the split changes', () => {
-    render(<App />);
-    expect(readout('torpedo')).toHaveTextContent('taxed at 22.2%');
-
-    fireEvent.change(gainSlider(), { target: { value: '20000' } });
-    expect(readout('torpedo')).toHaveTextContent('taxed at 18.5%');
-    expect(readout('torpedo')).toHaveTextContent(
-      '$20,000 of this coming from long-term gains',
-    );
-  });
-
-  /**
-   * The figure the non-additive framing exists to produce, and the one neither
-   * chart shows on its own: what taking part of the same income as a gain is
-   * worth against taking all of it as ordinary income.
-   */
-  it('prices the split against the all-ordinary version of the same income', () => {
-    render(<App />);
-    expect(readout('gains')).not.toHaveTextContent('saves');
-
-    fireEvent.change(gainSlider(), { target: { value: '20000' } });
-    expect(readout('gains')).toHaveTextContent(
-      'rather than taking all of it as ordinary income saves $2,263',
-    );
-  });
-
-  it('says there is nothing to split when the income is $0', () => {
-    render(<App />);
-    fireEvent.change(incomeSlider(), { target: { value: '0' } });
-    expect(screen.getByText(/Nothing to split yet/)).toBeInTheDocument();
-    expect(
-      screen.queryByRole('slider', {
-        name: /long-term capital gains inside that income/i,
-      }),
-    ).toBeNull();
   });
 });
 
@@ -1136,14 +935,11 @@ describe('a gain is a share of the income, not an addition to it', () => {
 
 /**
  * Every rate this page quoted was the price of the *next* dollar. The total
- * bill existed only inside the two tooltips, which means a reader who never
- * hovered — and every reader on a touch screen — walked all four steps
- * without once being told what the return costs.
+ * bill existed only inside the tooltip, which means a reader who never
+ * hovered — and every reader on a touch screen — walked both steps without
+ * once being told what the return costs.
  *
- * It is one figure, not two: the two charts sweep the same return two ways and
- * the reader stands at the same place on each, so step 2 and step 3 quote the
- * same total, and step 4's "this year's bill" is the third copy of it. The
- * effective rate beside it is the average the marginal rate is so often
+ * The effective rate beside it is the average the marginal rate is so often
  * mistaken for.
  */
 describe('the total the return owes', () => {
@@ -1169,76 +965,6 @@ describe('the total the return owes', () => {
     expect(readout('torpedo')).toHaveTextContent('taxed at 22.2%');
     expect(readout('torpedo')).toHaveTextContent(
       'the average across every dollar of it; the figure before it is the price of the next one',
-    );
-  });
-
-  it('quotes the same total under the gains slider, on an income it does not move', () => {
-    render(<App />);
-    expect(readout('gains')).toHaveTextContent(
-      'owes $2,819 in federal tax on the $54,852 of total income behind this chart, which this slider never moves — an effective rate of 5.14%',
-    );
-  });
-
-  /**
-   * The four places this figure appears used to spell it out four times, and
-   * two of them left out tax-exempt interest and the charitable gift. Step 3's
-   * axis label was one of the two: it read `ordinaryIncome + ssBenefit`, so a
-   * reader with muni bonds saw two different totals a foot apart on the page.
-   */
-  it('quotes the same total under step 3\u2019s own chart', () => {
-    render(<App />);
-    const gainsLabel = (): HTMLElement =>
-      document.querySelector('#step-gains .chart-axis-label') as HTMLElement;
-    expect(gainsLabel()).toHaveTextContent(
-      'Total income $54,852 at every point on this axis',
-    );
-
-    set(/tax-exempt \(municipal\) interest/i, 10_000);
-    expect(gainsLabel()).toHaveTextContent('Total income $64,852');
-    expect(readout('torpedo')).toHaveTextContent('$64,852 of total income');
-    expect(readout('gains')).toHaveTextContent('$64,852 of total income');
-  });
-
-  /**
-   * The gains sweep holds total income still, with one exception it now says
-   * out loud: a gift comes out of the ordinary half alone, so a gain big
-   * enough to crowd that half below the gift leaves more of the same income on
-   * the return.
-   */
-  it('stops calling the total fixed once the gain crowds out the gift', () => {
-    render(<App />);
-    const gainsLabel = (): HTMLElement =>
-      document.querySelector('#step-gains .chart-axis-label') as HTMLElement;
-    set(/qualified charitable distribution/i, 10_000);
-    expect(gainsLabel()).toHaveTextContent('Total income $44,852 where you stand');
-    expect(gainsLabel()).not.toHaveTextContent('at every point on this axis');
-
-    // $25,000 of the $30,000 taken as gain leaves $5,000 of ordinary income,
-    // so only $5,000 of the $10,000 gift can be excluded.
-    set(/long-term capital gains inside that income/i, 25_000);
-    expect(gainsLabel()).toHaveTextContent('Total income $49,852 where you stand');
-    expect(readout('torpedo')).toHaveTextContent('$49,852 of total income');
-  });
-
-  it('quotes the same total again as step 4\u2019s bill before the conversion', () => {
-    render(<App />);
-    expect(
-      document.querySelector('#step-conversion .slider-readout'),
-    ).toHaveTextContent("taking this year's bill from $2,819 to $5,800");
-  });
-
-  /**
-   * Step 3 moves the composition of an income it never changes the size of, so
-   * the bill and the rate move and the denominator does not.
-   */
-  it('re-prices the bill when the split changes, leaving the income alone', () => {
-    render(<App />);
-    set(/long-term capital gains inside that income/i, 20_000);
-    expect(readout('gains')).toHaveTextContent(
-      'owes $556 in federal tax on the $54,852 of total income behind this chart, which this slider never moves — an effective rate of 1.01%',
-    );
-    expect(readout('torpedo')).toHaveTextContent(
-      'owes $556 in federal tax on $54,852 of total income — an effective rate of 1.01%',
     );
   });
 
@@ -1270,22 +996,6 @@ describe('the total the return owes', () => {
     set(/qualified charitable distribution/i, 20_000);
     expect(readout('torpedo')).toHaveTextContent(
       'owes $11,217 in federal tax on $94,852 of total income',
-    );
-  });
-
-  /**
-   * And only the part of the gift that can actually be excluded: 408(d)(8) has
-   * only the ordinary half of the income to come out of, so a gain that
-   * crowds it out puts the rest of the gift back in the denominator.
-   */
-  it('counts back the part of a gift a gain has crowded out', () => {
-    render(<App />);
-    set(/other income \(not social security\)/i, 90_000);
-    set(/qualified charitable distribution/i, 20_000);
-    set(/long-term capital gains inside that income/i, 80_000);
-    // Only $10,000 of ordinary income is left for the gift to come out of.
-    expect(readout('torpedo')).toHaveTextContent(
-      'owes $5,839 in federal tax on $104,852 of total income',
     );
   });
 
@@ -1352,16 +1062,13 @@ describe('advanced inputs', () => {
   /**
    * The complement, and the more important half. Two things earn a slider its
    * place on screen: it moves the opening picture, or it is the point on a
-   * chart the reader is standing at. The planned gain is the second kind — it
-   * is $0 at load and changes nothing there, but step 3's x-axis is gains, so
-   * it lives under that chart rather than in here.
+   * chart the reader is standing at.
    */
   it('leaves the inputs that move the opening picture on screen', () => {
     render(<App />);
     for (const label of [
       'Annual Social Security Benefit',
       'Other Income (not Social Security)',
-      'Long-Term Capital Gains Inside That Income',
     ]) {
       expect(screen.getByLabelText(label).closest('details')).toBeNull();
     }
@@ -1439,11 +1146,6 @@ describe('Tooltip Recommendations', () => {
     { rate: 15, start: 16000, end: 22000, points: [], type: 'flat' as const },
     { rate: 22.2, start: 24000, end: 40000, points: [], type: 'hill' as const },
     { rate: 12, start: 42000, end: 44000, points: [], type: 'valley' as const },
-  ];
-
-  const mockLtcgSegments = [
-    { rate: 10.2, start: 0, end: 10000, points: [], type: 'hill' as const },
-    { rate: 0, start: 12000, end: 12000, points: [], type: 'valley' as const },
   ];
 
   describe('CustomTooltip', () => {
@@ -1617,35 +1319,24 @@ describe('Tooltip Recommendations', () => {
   });
 
   /**
-   * The bug this pins: the two tooltips and the two axis labels each spelled
-   * out "total income" for themselves, and only one of the four spelled it out
-   * right. With $10,000 of tax-exempt interest set, the torpedo tooltip said
-   * $54,852 where the sentence under the same chart said $64,852 — for the
-   * same return, a foot apart on the page. Both now read `totalIncomeFor`.
+   * The bug this pins: the tooltip and the axis label each spelled out "total
+   * income" for themselves, and only one of the two spelled it out right. With
+   * $10,000 of tax-exempt interest set, the tooltip said $54,852 where the
+   * sentence under the same chart said $64,852 — for the same return, a foot
+   * apart on the page. Both now read `totalIncomeFor`.
    */
-  describe('what the two tooltips call total income', () => {
-    const scenario = {
-      ordinaryIncome: 40_000,
-      ssBenefit: 24_852,
-      ltcg: 15_000,
-      muniInterest: 10_000,
-      qcd: 5_000,
-      filingStatus: 'single' as const,
-      year: PAGE_TAX_YEAR,
-    };
-
-    it('counts tax-exempt interest and drops the gift, on the torpedo chart', () => {
+  describe('what the tooltip calls total income', () => {
+    it('counts tax-exempt interest and drops the gift', () => {
       render(
         <CustomTooltip
           active={true}
           payload={[{ payload: { income: 40_000, marginalRate: 22.2, totalTax: 3_000 } }]}
-          ssBenefit={scenario.ssBenefit}
+          ssBenefit={24_852}
           segments={mockOrdinarySegments}
-          filingStatus={scenario.filingStatus}
-          muniInterest={scenario.muniInterest}
-          qcd={scenario.qcd}
-          ltcg={scenario.ltcg}
-          year={scenario.year}
+          filingStatus="single"
+          muniInterest={10_000}
+          qcd={5_000}
+          year={PAGE_TAX_YEAR}
         />,
       );
       // $40,000 of other income - $5,000 given away + $24,852 of benefit +
@@ -1653,118 +1344,16 @@ describe('Tooltip Recommendations', () => {
       expect(screen.getByText(/Total income \$69,852/)).toBeInTheDocument();
     });
 
-    it('says the same number on the gains chart, for the same return', () => {
-      render(
-        <LTCGTooltip
-          active={true}
-          payload={[{ payload: { ltcg: 15_000, marginalRate: 27.2, effectiveRate: 12.4, totalTax: 3_000 } }]}
-          ordinaryIncome={scenario.ordinaryIncome}
-          ssBenefit={scenario.ssBenefit}
-          segments={mockLtcgSegments}
-          muniInterest={scenario.muniInterest}
-          qcd={scenario.qcd}
-          filingStatus={scenario.filingStatus}
-          year={scenario.year}
-        />,
-      );
-      expect(screen.getByText(/Total income \$69,852/)).toBeInTheDocument();
-    });
-
-    /**
-     * The gains sweep holds total income still — except here. A gift comes out
-     * of the ordinary half alone, so once the gain crowds the ordinary half
-     * below the gift, less of it stays off the return and the total rises.
-     */
-    it('rises on the gains chart once the gain crowds out the gift', () => {
-      render(
-        <LTCGTooltip
-          active={true}
-          payload={[{ payload: { ltcg: 38_000, marginalRate: 0, effectiveRate: 0, totalTax: 3_000 } }]}
-          ordinaryIncome={scenario.ordinaryIncome}
-          ssBenefit={scenario.ssBenefit}
-          segments={mockLtcgSegments}
-          muniInterest={scenario.muniInterest}
-          qcd={scenario.qcd}
-          filingStatus={scenario.filingStatus}
-          year={scenario.year}
-        />,
-      );
-      // Only $2,000 of ordinary income is left, so $2,000 of the $5,000 gift
-      // can be excluded and $3,000 more of the same income reaches the return.
-      expect(screen.getByText(/Total income \$72,852/)).toBeInTheDocument();
-    });
-
     it('falls back to income plus benefit when nothing else is set', () => {
       render(
-        <LTCGTooltip
+        <CustomTooltip
           active={true}
-          payload={[{ payload: { ltcg: 12_000, marginalRate: 0, effectiveRate: 0, totalTax: 3_890 } }]}
-          ordinaryIncome={30_000}
+          payload={[{ payload: { income: 30_000, marginalRate: 22.2, totalTax: 2_819 } }]}
           ssBenefit={24_852}
-          segments={mockLtcgSegments}
+          segments={mockOrdinarySegments}
         />,
       );
       expect(screen.getByText(/Total income \$54,852/)).toBeInTheDocument();
-    });
-  });
-
-  describe('LTCGTooltip', () => {
-    it('renders tax hill recommendation on a hill segment', () => {
-      render(
-        <LTCGTooltip
-          active={true}
-          payload={[{ payload: { ltcg: 4000, marginalRate: 10.2, effectiveRate: 8.1, totalTax: 3221 } }]}
-          ordinaryIncome={30000}
-          ssBenefit={24852}
-          segments={mockLtcgSegments}
-        />,
-      );
-      expect(
-        screen.getByText(
-          /The next dollar of gain is dearest through here \u2014 consider staying under \$0 or over \$10,000/,
-        ),
-      ).toBeInTheDocument();
-    });
-
-    it('renders tax valley recommendation on a valley segment', () => {
-      render(
-        <LTCGTooltip
-          active={true}
-          payload={[{ payload: { ltcg: 12000, marginalRate: 0, effectiveRate: 0, totalTax: 3890 } }]}
-          ordinaryIncome={30000}
-          ssBenefit={24852}
-          segments={mockLtcgSegments}
-        />,
-      );
-      expect(
-        screen.getByText(
-          /The next dollar of gain is cheapest through here \u2014 consider filling this stretch out at \$12,000/,
-        ),
-      ).toBeInTheDocument();
-    });
-
-    /**
-     * The curve is the average now, so that is the figure the tooltip leads
-     * with. The marginal rate stays under it: it is what the hill and valley
-     * advice below is cut on, and dropping it would leave that advice with
-     * nothing on the card to hang off.
-     */
-    it('leads with the rate on the gain and keeps the one on the next dollar', () => {
-      render(
-        <LTCGTooltip
-          active={true}
-          payload={[
-            { payload: { ltcg: 4000, marginalRate: 10.2, effectiveRate: 8.1, totalTax: 3221 } },
-          ]}
-          ordinaryIncome={30000}
-          ssBenefit={24852}
-          segments={mockLtcgSegments}
-        />,
-      );
-      expect(screen.getByText(/Effective Rate on the Gain:/)).toBeInTheDocument();
-      expect(screen.getByText('8.1%')).toBeInTheDocument();
-      expect(screen.getByText(/Next Dollar of Gain:/)).toBeInTheDocument();
-      expect(screen.getByText('10.2%')).toBeInTheDocument();
     });
   });
 });
@@ -2149,8 +1738,8 @@ describe('the Lines panel on the torpedo chart', () => {
       'aria-expanded',
       'false',
     );
-    expect(document.querySelector('.chart-key')).not.toBeNull(); // step 4 keeps one
-    expect(document.querySelector('.chart-key-subsidy')).toBeNull();
+    // And no key at all: the only two this page ever draws are the cliffs'.
+    expect(document.querySelector('.chart-key')).toBeNull();
   });
 
   it('offers both switches, unticked, and counts what it draws', () => {
@@ -2560,221 +2149,13 @@ describe('the torpedo chart’s right edge', () => {
 
 
 /**
- * Step 4 is the one that answers the h1 with a number.
- *
- * Figures below are 2026, single, the $24,852 average benefit, $30,000 of
- * other income and no gain — the page's own defaults. Under the top of the 12%
- * bracket ($50,400 of taxable income) $15,375 fits, costing $2,981 and taking
- * the year's tax from $2,819 to $5,800: 19.39% averaged over the block against
- * 22% on the first dollar past the line. The headroom is $23,548, and the
- * conversion is smaller than it because every dollar inside the torpedo raises
- * taxable income by more than a dollar.
- */
-describe('sizing the conversion', () => {
-  const section = (): HTMLElement =>
-    document.getElementById('step-conversion') as HTMLElement;
-
-  const readout = (): HTMLElement =>
-    section().querySelector('.slider-readout') as HTMLElement;
-
-  const pick = (label: RegExp): void => {
-    fireEvent.click(screen.getByRole('radio', { name: label }));
-  };
-
-  it('answers the heading with a dollar figure, priced', () => {
-    render(<App />);
-    expect(
-      screen.getByRole('heading', { name: /sizing the conversion/i, level: 2 }),
-    ).toBeInTheDocument();
-
-    expect(readout()).toHaveTextContent('$15,375 fits.');
-    expect(readout()).toHaveTextContent(
-      'On top of your $30,000 of other income',
-    );
-    expect(readout()).toHaveTextContent(
-      'Top of the 12% bracket, $50,400 of taxable income',
-    );
-    expect(readout()).toHaveTextContent('costs $2,981 in federal tax');
-    expect(readout()).toHaveTextContent(
-      "taking this year's bill from $2,819 to $5,800",
-    );
-    expect(readout()).toHaveTextContent('an average of 19.39% on every dollar');
-    expect(readout()).toHaveTextContent(
-      'against 22% on the first dollar past the line',
-    );
-  });
-
-  /**
-   * The picker is step 4's slider. Seven lines, each captioned with the income
-   * definition it caps — four different definitions across the seven, which is
-   * the trap the caption exists to keep the reader out of.
-   *
-   * The last of them is the only one whose existence turns on the year: 400%
-   * of the poverty line is a ceiling in 2026 and was not one in 2025, because
-   * ARPA suspended it through 2025. The page prices 2026, so it is here.
-   */
-  it('offers all seven ceilings, each captioned with what it caps', () => {
-    render(<App />);
-    const radios = within(section()).getAllByRole('radio');
-    expect(radios.map((r) => r.getAttribute('value'))).toEqual([
-      'bracket12',
-      'bracket22',
-      'ss50',
-      'ss85',
-      'ltcg0',
-      'irmaa1',
-      'fpl400',
-    ]);
-    expect(radios[0]).toBeChecked();
-    for (const [label, caption] of [
-      [/^Top of the 12% bracket/, '$50,400 of taxable income'],
-      [/^Top of the 22% bracket/, '$105,700 of taxable income'],
-      [/^Social Security 50% base/, '$25,000 of provisional income'],
-      [/^Social Security 85% base/, '$34,000 of provisional income'],
-      [
-        /^Top of the 0% capital-gains bracket/,
-        '$49,450 of total taxable income (ordinary + gains)',
-      ],
-      [/^IRMAA tier 1/, '$109,000 of MAGI'],
-      [
-        /^400% of the federal poverty line/,
-        '$62,600 of household income (36B MAGI)',
-      ],
-    ] as const) {
-      expect(
-        screen
-          .getByRole('radio', { name: label })
-          .closest('.segmented-option'),
-      ).toHaveTextContent(caption);
-    }
-  });
-
-  it('sizes a conversion against the poverty line like any other ceiling', () => {
-    render(<App />);
-    // $62,600 less the $24,852 benefit, which 36B counts in full, less the
-    // $30,000 of other income already on the return.
-    pick(/^400% of the federal poverty line/);
-    expect(readout()).toHaveTextContent('$7,748 fits.');
-  });
-
-  it('re-sizes the conversion when a different line is picked', () => {
-    render(<App />);
-    pick(/^Top of the 22% bracket/);
-    expect(readout()).toHaveTextContent('$70,675 fits.');
-    expect(readout()).toHaveTextContent('costs $15,147 in federal tax');
-    expect(readout()).toHaveTextContent('an average of 21.43%');
-    expect(readout()).toHaveTextContent('against 24% on the first dollar');
-
-    pick(/^IRMAA tier 1/);
-    expect(readout()).toHaveTextContent('$57,875 fits.');
-  });
-
-  /**
-   * The 50% base is $25,000 of provisional income, and the default return is
-   * $41,856 of it before converting anything. Saying "$0 fits" would be true
-   * and useless; what a reader needs is how far past the line they already are.
-   */
-  it('says how far past the line a return already is', () => {
-    render(<App />);
-    pick(/^Social Security 50% base/);
-    expect(readout()).toHaveTextContent('Nothing fits.');
-    expect(readout()).toHaveTextContent(
-      'already $17,426 past the line you picked',
-    );
-    expect(readout()).toHaveTextContent(
-      'Social Security 50% base, $25,000 of provisional income',
-    );
-    expect(section().querySelector('.chart-key')).toHaveTextContent(
-      'No band is drawn.',
-    );
-  });
-
-  /** Every step prices the same return, and step 4 is the proof of it. */
-  it('re-prices when step 2 moves the income the conversion sits on', () => {
-    render(<App />);
-    fireEvent.change(
-      screen.getByRole('slider', { name: /other income \(not social security\)/i }),
-      { target: { value: '0' } },
-    );
-    expect(readout()).toHaveTextContent('On top of your $0 of other income');
-    // More room under the same line, so a larger conversion fits under it.
-    const fits = (readout().textContent ?? '').match(/\$([\d,]+) fits/);
-    expect(fits).not.toBeNull();
-    expect(Number((fits as RegExpMatchArray)[1].replace(/,/g, ''))).toBeGreaterThan(
-      15_375,
-    );
-  });
-
-  it('carries the ceiling’s own note as the advice past the line', () => {
-    render(<App />);
-    const advice = (): HTMLElement =>
-      section().querySelector('.conversion-advice') as HTMLElement;
-    expect(advice()).toHaveTextContent(
-      'The next dollar of ordinary income is taxed at 22% instead of 12%.',
-    );
-
-    pick(/^IRMAA tier 1/);
-    expect(advice()).toHaveTextContent('A true cliff, not a phase-in');
-  });
-
-  it('lists every line in the explainer, with this return’s figures', () => {
-    render(<App />);
-    const list = section().querySelector(
-      '#conversion-ceilings-heading',
-    )?.closest('details')?.querySelector('ul') as HTMLElement;
-    expect(within(list).getAllByRole('listitem')).toHaveLength(7);
-    expect(list).toHaveTextContent(
-      'Top of the 0% capital-gains bracket — $49,450 of total taxable income',
-    );
-    expect(list).toHaveTextContent('IRMAA tier 1 (Medicare surcharge) — $109,000 of MAGI');
-  });
-
-  /**
-   * Step 4 draws step 2's sweep, so it never narrows below step 2's right
-   * edge — but a joint return converting to the top of the 22% bracket runs to
-   * $210,878 of other income, well past the $150,000 the torpedo chart draws.
-   * The axis follows the conversion out; step 2's does not move.
-   */
-  it('widens its own axis when the conversion runs past the torpedo chart', () => {
-    render(<App />);
-    const label = (): HTMLElement =>
-      section().querySelector('.chart-axis-label') as HTMLElement;
-    expect(label()).toHaveTextContent('drawn out to $150,000');
-
-    fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Jointly' }));
-    pick(/^Top of the 22% bracket/);
-    expect(readout()).toHaveTextContent('$180,878 fits.');
-    expect(label()).toHaveTextContent('drawn out to $225,000');
-
-    // Step 2's own axis is untouched: its slider still stops where it did.
-    expect(
-      screen.getByRole('slider', { name: /other income \(not social security\)/i }),
-    ).toHaveAttribute('max', '150000');
-  });
-
-  /**
-   * A ceiling is quoted in taxable income, provisional income or MAGI, and the
-   * chart's axis is none of those. What ties them together is the conversion:
-   * measured in other income from where the reader stands, it is the distance
-   * to the line, so drawing it is what puts the line on the chart.
-   */
-  it('names the far edge of the band in other-income terms', () => {
-    render(<App />);
-    expect(section().querySelector('.chart-key')).toHaveTextContent(
-      'runs from your own $30,000 out to $45,375 of other income',
-    );
-  });
-});
-
-/**
  * The close.
  *
- * Step 1 ends by naming the return every later step prices; this ends the page
- * by saying what came of it. Seven figures a reader leaves with — total
- * income, the tax, the 3.8% surtax inside it, the average rate, the rate on
- * the next dollar, how much of the benefit ended up in the tax base, and which
- * Medicare tier the MAGI landed in — plus what step 4 sized, all in one block
- * for the first time.
+ * Step 1 ends by naming the return step 2 prices; this ends the page by saying
+ * what came of it. Six figures a reader leaves with — total income, the tax,
+ * the average rate, the rate on the next dollar, how much of the benefit ended
+ * up in the tax base, and which Medicare tier the MAGI landed in — all in one
+ * block.
  */
 describe('the closing answer', () => {
   const answer = (): HTMLElement => document.getElementById('answer') as HTMLElement;
@@ -2800,12 +2181,12 @@ describe('the closing answer', () => {
     );
   };
 
-  it('ends the page, after step 4 and before the disclaimer', () => {
+  it('ends the page, after step 2 and before the disclaimer', () => {
     render(<App />);
     expect(
       screen.getByRole('heading', { name: /what this return costs/i, level: 2 }),
     ).toBeInTheDocument();
-    expect(answer().previousElementSibling?.id).toBe('step-conversion');
+    expect(answer().previousElementSibling?.id).toBe('step-torpedo');
 
     // Read in two hops rather than one, because the shell put a column
     // between them: the close is the last thing in the reading column, the
@@ -2820,7 +2201,7 @@ describe('the closing answer', () => {
     );
   });
 
-  it('answers with the eight figures the default return produces', () => {
+  it('answers with the six figures the default return produces', () => {
     render(<App />);
     expect(figure('Total income')).toHaveTextContent('$54,852');
     expect(figure('Federal tax')).toHaveTextContent('$2,819');
@@ -2833,7 +2214,7 @@ describe('the closing answer', () => {
     expect(figure('Medicare surcharge')).toHaveTextContent(
       'None \u2014 the standard premium',
     );
-    expect(figure('Room to convert')).toHaveTextContent('$15,375 fits');
+    expect(answer().querySelectorAll('.answer-figure')).toHaveLength(6);
   });
 
   /**
@@ -2855,20 +2236,17 @@ describe('the closing answer', () => {
   });
 
   /**
-   * The tax and the two rates are already on the page twice — step 2's readout
-   * quotes both, step 4 calls the same tax "this year's bill". The close is a
-   * third rendering of one figure, not a second calculation of it.
+   * The tax and the two rates are already on the page once — step 2's readout
+   * quotes both. The close is a second rendering of one figure, not a second
+   * calculation of it.
    */
-  it('quotes the same tax and rates the steps above it do', () => {
+  it('quotes the same tax and rates the step above it does', () => {
     render(<App />);
     const torpedoReadout = document.querySelector(
       '#step-torpedo .slider-readout',
     ) as HTMLElement;
     expect(torpedoReadout).toHaveTextContent('owes $2,819 in federal tax');
     expect(torpedoReadout).toHaveTextContent('an effective rate of 5.14%');
-    expect(
-      document.querySelector('#step-conversion .slider-readout'),
-    ).toHaveTextContent("taking this year's bill from $2,819");
 
     expect(figure('Federal tax')).toHaveTextContent('$2,819');
     expect(figure('Effective rate')).toHaveTextContent('5.14%');
@@ -2890,10 +2268,6 @@ describe('the closing answer', () => {
     expect(figure('Benefit in the tax base')).toHaveTextContent('85% of it');
     expect(figure('Medicare surcharge')).toHaveTextContent(
       'Tier 1 of 5 \u2014 $1,148/yr',
-    );
-    expect(figure('Room to convert')).toHaveTextContent('Nothing fits');
-    expect(figure('Room to convert')).toHaveTextContent(
-      'already $44,624 past Top of the 12% bracket, $50,400 of taxable income',
     );
   });
 
@@ -2980,21 +2354,6 @@ describe('the closing answer', () => {
     expect(figure('Benefit in the tax base')).toHaveTextContent('$0 of $24,852');
   });
 
-  it('carries whatever line step 4 is sized against', () => {
-    render(<App />);
-    expect(figure('Room to convert')).toHaveTextContent(
-      'Sized against Top of the 12% bracket, $50,400 of taxable income. It costs $2,981, taking the bill to $5,800 \u2014 an average of 19.39% on every dollar converted.',
-    );
-
-    fireEvent.click(
-      screen.getByRole('radio', { name: /^Social Security 50% base/ }),
-    );
-    expect(figure('Room to convert')).toHaveTextContent('Nothing fits');
-    expect(figure('Room to convert')).toHaveTextContent(
-      'already $17,426 past Social Security 50% base, $25,000 of provisional income',
-    );
-  });
-
   /** No income is no denominator, and "0.00%" would be a claim about nothing. */
   it('holds the effective rate back when nothing comes in', () => {
     render(<App />);
@@ -3008,134 +2367,6 @@ describe('the closing answer', () => {
     expect(figure('Effective rate')).not.toHaveTextContent('%');
   });
 
-  /**
-   * IRC 1411's own line.
-   *
-   * Chapter 2A is a different chapter of the code on a form of its own, so the
-   * close names it rather than folding it into the income tax — and it keeps
-   * the line even at $0, because what a reader most needs to know about a
-   * surtax they are not paying is how close they are to paying it.
-   */
-  describe('the 3.8% net investment income tax', () => {
-    const openAt = (search: string): void => {
-      window.history.replaceState(null, '', `/${search}`);
-    };
-
-    it('says there is nothing for it to reach on a return with no gain', () => {
-      render(<App />);
-      const line = figure('Net investment income tax');
-      expect(line).toHaveTextContent('None — under the threshold');
-      expect(line).toHaveTextContent('once MAGI passes $200,000');
-      expect(line).toHaveTextContent(
-        'a pension, an IRA withdrawal and Social Security are all outside it',
-      );
-      // The threshold is the page's third frozen line, and says so.
-      expect(line).toHaveTextContent(
-        'set in 2013 and has never been indexed, exactly like the $25,000 and $34,000 bases',
-      );
-      // Nothing to split, so the tax line stays a single figure.
-      expect(figure('Federal tax')).toHaveTextContent('What the 2026 return owes.');
-      expect(figure('Federal tax')).not.toHaveTextContent('of income tax and');
-    });
-
-    it('measures the distance to the threshold when a gain is set but under it', () => {
-      openAt('?ss=24852&income=100000&ltcg=40000');
-      render(<App />);
-      const line = figure('Net investment income tax');
-      expect(line).toHaveTextContent('None — under the threshold');
-      expect(line).toHaveTextContent('$40,000 of gain and $121,124 of MAGI');
-      expect(line).toHaveTextContent('$78,876 short');
-      // The sentence the whole feature exists for.
-      expect(line).toHaveTextContent(
-        'the dollars that would close that gap need not be investment income at all',
-      );
-    });
-
-    it('prices it, and splits the tax line, once MAGI clears the threshold', () => {
-      openAt('?ss=24852&income=240000&ltcg=60000');
-      render(<App />);
-
-      expect(figure('Total income')).toHaveTextContent('$264,852');
-      expect(figure('Federal tax')).toHaveTextContent('$48,284');
-      // $46,004 of income tax and $2,280 of surtax, which add to the figure
-      // above them.
-      expect(figure('Federal tax')).toHaveTextContent(
-        'What the 2026 return owes: $46,004 of income tax and $2,280 of the surtax on the next line',
-      );
-
-      const line = figure('Net investment income tax');
-      expect(line).toHaveTextContent('$2,280');
-      expect(line).toHaveTextContent(
-        '3.8% of $60,000 — the lesser of the $60,000 gain and the $61,124 by which $261,124 of MAGI clears the $200,000 threshold',
-      );
-      // The whole gain is already in, so ordinary income has stopped dragging.
-      expect(line).toHaveTextContent(
-        'the next dollar of ordinary income no longer adds to it',
-      );
-    });
-
-    /**
-     * The band in the middle, where a dollar 1411 never taxes still costs
-     * 3.8 cents. This is the third stacking effect the page is about.
-     */
-    it('names what more income would drag in while the gain is only part taxed', () => {
-      openAt('?ss=24852&income=200000&ltcg=60000');
-      render(<App />);
-      const line = figure('Net investment income tax');
-      expect(line).toHaveTextContent(
-        'including an IRA withdrawal 1411 never taxes — pulls the rest of the gain in at 3.8% too',
-      );
-    });
-
-    /** Step 3's readout carries the same figure, since that is where it bites. */
-    it('is named in step 3’s readout where it applies', () => {
-      openAt('?ss=24852&income=240000&ltcg=60000');
-      render(<App />);
-      const readout = document.querySelector(
-        '#step-gains .slider-readout',
-      ) as HTMLElement;
-      expect(readout).toHaveTextContent(
-        '$2,280 of that is the 3.8% surtax of section 1411, charged on $60,000 of the gain because $261,124 of MAGI clears the $200,000 threshold',
-      );
-    });
-
-    /** And step 2's curve carries the 3.8 points in the rate on the next dollar. */
-    it('shows in the rate on the next dollar of ordinary income', () => {
-      openAt('?ss=24852&income=220000&ltcg=60000');
-      render(<App />);
-      // Ordinary income at 22%, plus the 3.8 the extra dollar of MAGI drags in.
-      expect(figure('The next dollar')).toHaveTextContent('27.8%');
-    });
-
-    /**
-     * Step 3 already explains why two effects stack. This is the third, and it
-     * gets its own collapsed section rather than a fourth paragraph inside a
-     * heading that says "two".
-     */
-    it('has an explainer of its own under step 3, collapsed like the rest', () => {
-      render(<App />);
-      const explainer = screen
-        .getByRole('heading', { name: /the third effect: the 3\.8% surtax/i })
-        .closest('details');
-
-      expect(explainer).toBeInTheDocument();
-      expect(explainer).not.toHaveAttribute('open');
-      expect(explainer?.closest('section')?.id).toBe('step-gains');
-      // The lesser-of rule, which is the whole reason it stacks.
-      expect(explainer).toHaveTextContent(
-        'the lesser of your net investment income and the amount by which MAGI clears the threshold',
-      );
-      expect(explainer).toHaveTextContent('An IRA withdrawal is expressly excluded by 1411(c)(5)');
-      // All three thresholds, and the year they stopped moving.
-      expect(explainer).toHaveTextContent(
-        '$200,000 unmarried, $250,000 joint, $125,000 on a separate return, fixed in 2013 and never indexed since',
-      );
-      // The one input on the page that is outside it on both counts.
-      expect(explainer).toHaveTextContent(
-        'neither investment income here nor part of this MAGI',
-      );
-    });
-  });
   /**
    * The link is the return, said on the page.
    *
@@ -3292,7 +2523,8 @@ describe('the closing answer', () => {
  * The return in the address bar.
  *
  * Nine `useState` values used to be the whole of it, so a refresh threw the
- * return away and there was nothing to send to anyone. These are the page's
+ * return away and there was nothing to send to anyone. Seven are left, two
+ * having gone with the steps that set them. These are the page's
  * half of `scenarioUrl` — that the link is read on mount, written on every
  * change, and never pushed.
  */
@@ -3306,7 +2538,7 @@ describe('the return in the address bar', () => {
 
   it('opens on the return the link names rather than on its own defaults', () => {
     openAt(
-      '?filing=mfj&ss=40000&income=120000&ltcg=25000&senior=1&spouse=1&muni=8000&qcd=15000&ceiling=irmaa1',
+      '?filing=mfj&ss=40000&income=120000&senior=1&spouse=1&muni=8000&qcd=15000',
     );
     render(<App />);
 
@@ -3315,9 +2547,6 @@ describe('the return in the address bar', () => {
       '40000',
     );
     expect(incomeSlider()).toHaveValue('120000');
-    expect(
-      screen.getByRole('slider', { name: /long-term capital gains inside that income/i }),
-    ).toHaveValue('25000');
     expect(screen.getByRole('checkbox', { name: 'Age 65 or older' })).toBeChecked();
     expect(
       screen.getByRole('checkbox', { name: 'Both spouses are 65 or older' }),
@@ -3328,7 +2557,23 @@ describe('the return in the address bar', () => {
     expect(
       screen.getByRole('slider', { name: /qualified charitable distribution/i }),
     ).toHaveValue('15000');
-    expect(screen.getByRole('radio', { name: /^IRMAA tier 1/ })).toBeChecked();
+  });
+
+  /**
+   * And prices nothing off the two keys that outlived their controls. A gain
+   * named in an old link would move the curve with nothing on the page to say
+   * so or to undo it, which is the one thing worse than dropping it.
+   */
+  it('reads past a gain or a ceiling an older link still names', () => {
+    openAt('?income=120000&ltcg=25000&ceiling=irmaa1');
+    render(<App />);
+
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(incomeSlider()).toHaveValue('120000');
+    expect(window.location.search).toBe('?income=120000');
+    expect(
+      document.querySelector('#step-torpedo .slider-readout'),
+    ).toHaveTextContent('At $120,000 of other income');
   });
 
   it('writes what the reader moves back into the address', () => {
@@ -3382,31 +2627,34 @@ describe('the return in the address bar', () => {
    * has to keep it, because `replaceState` takes a whole URL.
    */
   it('marks the step the fragment names and keeps the fragment through a change', () => {
-    openAt('#step-conversion');
+    openAt('#step-torpedo');
     render(<App />);
-    expect(currentStep()).toBe('Roth conversion');
+    expect(currentStep()).toBe('The tax torpedo');
 
     fireEvent.change(incomeSlider(), { target: { value: '90000' } });
-    expect(window.location.hash).toBe('#step-conversion');
+    expect(window.location.hash).toBe('#step-torpedo');
     expect(window.location.search).toBe('?income=90000');
   });
 
+  /** Including one that named a step until this page had two. */
   it('ignores a fragment that names no step', () => {
-    openAt('#step-medicare');
-    render(<App />);
-    expect(currentStep()).toBe('Your benefit');
+    for (const fragment of ['#step-medicare', '#step-gains', '#step-conversion']) {
+      openAt(fragment);
+      const { unmount } = render(<App />);
+      expect(currentStep()).toBe('Your benefit');
+      unmount();
+    }
   });
 
   describe('a link this page could not honour', () => {
     it('says what it could not give and what it gave instead', () => {
-      openAt('?income=99999999&filing=widow&ceiling=bracket24');
+      openAt('?income=99999999&filing=widow');
       render(<App />);
 
       const note = screen.getByRole('status');
       expect(note).toHaveTextContent('This link asked for something this page could not show');
       expect(note).toHaveTextContent('$1,000,000');
       expect(note).toHaveTextContent('“widow”');
-      expect(note).toHaveTextContent('“bracket24”');
 
       // And the page itself is showing exactly what the note says it is.
       expect(screen.getByRole('radio', { name: 'Single' })).toBeChecked();
@@ -3452,7 +2700,7 @@ describe('the return in the address bar', () => {
  *
  * Every readout here was silent: a range input announces its own new value and
  * nothing else, so the "you are here" sentence, the advice under it, the
- * effective rate and the seven closing figures all changed under a screen
+ * effective rate and the six closing figures all changed under a screen
  * reader without a word. What is asserted below is as much about what the
  * region does *not* say — nothing on arrival, nothing mid-drag, and never two
  * steps' readings for one control — as about what it does.
@@ -3492,7 +2740,6 @@ describe('the live reading under the controls', () => {
   };
   const income = /other income \(not social security\)/i;
   const benefit = /social security benefit/i;
-  const gains = /long-term capital gains/i;
 
   it('is on the page before it has anything to say', () => {
     render(<App />);
@@ -3571,26 +2818,6 @@ describe('the live reading under the controls', () => {
     set(/tax-exempt \(municipal\) interest/i, 10_000);
     settle();
     expect(region()).toHaveTextContent('Muni interest $10,000.');
-  });
-
-  it('reads step 3 back off the gain slider', () => {
-    render(<App />);
-    set(gains, 10_000);
-    settle();
-    expect(region()).toHaveTextContent(
-      'With $10,000 of your $30,000 coming from long-term gains, federal tax takes',
-    );
-    expect(region()).toHaveTextContent(
-      /% of the gain itself and [\d.]+% of the next dollar of it/,
-    );
-  });
-
-  it('reads step 4 back off the ceiling picker', () => {
-    render(<App />);
-    fireEvent.click(screen.getByRole('radio', { name: /Top of the 22% bracket/ }));
-    settle();
-    expect(region()).toHaveTextContent(/\$[\d,]+ fits under Top of the 22% bracket/);
-    expect(region()).toHaveTextContent('in federal tax, an average of');
   });
 
 });

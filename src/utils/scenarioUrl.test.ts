@@ -59,7 +59,7 @@ describe('encodeScenario', () => {
   it('writes only what the reader moved', () => {
     expect(encodeScenario(moved({ ordinaryIncome: 90_000 }))).toBe('income=90000');
     expect(encodeScenario(moved({ filingStatus: 'mfj' }))).toBe('filing=mfj');
-    expect(encodeScenario(moved({ ceilingId: 'irmaa1' }))).toBe('ceiling=irmaa1');
+    expect(encodeScenario(moved({ qcd: 15_000 }))).toBe('qcd=15000');
   });
 
   /**
@@ -86,12 +86,10 @@ describe('encodeScenario', () => {
       filingStatus: 'hoh',
       ssBenefit: 31_000,
       ordinaryIncome: 120_000,
-      plannedLtcg: 40_000,
       isSenior: true,
       spouseIsSenior: true,
       muniInterest: 12_000,
       qcd: 25_000,
-      ceilingId: 'ltcg0',
     });
     expect(decodeScenario(encodeScenario(everything)).scenario).toEqual(everything);
     expect(decodeScenario(encodeScenario(everything)).notes).toEqual([]);
@@ -231,13 +229,6 @@ describe('decodeScenario', () => {
       expect(decodeScenario('ss=124344').scenario.ssBenefit).toBe(62_172);
     });
 
-    it('holds a gain to the income it is a share of', () => {
-      const { scenario, notes } = decodeScenario('income=50000&ltcg=80000');
-      expect(scenario.plannedLtcg).toBe(50_000);
-      expect(notes[0]).toContain('$50,000');
-      expect(notes[0]).toContain('a share of the other income');
-    });
-
     it('holds tax-exempt interest to the slider’s right edge', () => {
       const { scenario, notes } = decodeScenario('muni=90000');
       expect(scenario.muniInterest).toBe(MAX_MUNI_INTEREST);
@@ -285,13 +276,6 @@ describe('decodeScenario', () => {
       expect(notes[0]).toContain('a single filer');
     });
 
-    it('falls back to the top of the 12% bracket for an unknown ceiling', () => {
-      const { scenario, notes } = decodeScenario('ceiling=bracket24');
-      expect(scenario.ceilingId).toBe('bracket12');
-      expect(notes[0]).toContain('“bracket24”');
-      expect(notes[0]).toContain('12% bracket');
-    });
-
     it('takes a figure that is not a number as the page’s own', () => {
       const { scenario, notes } = decodeScenario('income=lots');
       expect(scenario.ordinaryIncome).toBe(DEFAULT_ORDINARY_INCOME);
@@ -301,7 +285,7 @@ describe('decodeScenario', () => {
 
     /** An empty value is a key nobody filled in, not a value to complain about. */
     it('says nothing about an empty value', () => {
-      const { scenario, notes } = decodeScenario('income=&filing=&ceiling=&year=');
+      const { scenario, notes } = decodeScenario('income=&filing=&muni=&year=');
       expect(notes).toEqual([]);
       expect(scenario).toEqual(defaultScenario());
     });
@@ -311,12 +295,25 @@ describe('decodeScenario', () => {
    * A link is older than the page it opens more often than anyone plans for,
    * and the page it opens has fewer inputs than it had. `?state=VT` was
    * written by every link this app produced while step 2 carried a state
-   * footnote, so the reading is: a key nothing prices is a key nothing reads,
-   * and there is nothing to tell the reader about it.
+   * footnote, and `?ltcg=` and `?ceiling=` by every link it produced while the
+   * capital-gains and conversion steps stood — so the reading is: a key
+   * nothing prices is a key nothing reads, and there is nothing to tell the
+   * reader about it.
+   *
+   * `ltcg` is the one worth pinning twice over. It priced something once, and
+   * a page that honoured it would draw a curve nothing on screen could explain
+   * and no control could undo.
    */
   it('ignores a key from a page that had more inputs than this one', () => {
     const { scenario, notes } = decodeScenario('year=2025&income=90000&state=VT');
     expect(scenario).toEqual({ ...defaultScenario(), ordinaryIncome: 90_000 });
     expect(notes).toEqual([]);
+  });
+
+  it('prices nothing off a gain or a ceiling an old link still carries', () => {
+    const { scenario, notes } = decodeScenario('income=90000&ltcg=40000&ceiling=irmaa1');
+    expect(scenario).toEqual({ ...defaultScenario(), ordinaryIncome: 90_000 });
+    expect(notes).toEqual([]);
+    expect(encodeScenario(scenario)).toBe('income=90000');
   });
 });

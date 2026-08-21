@@ -612,8 +612,8 @@ const leftBorders = (
  *
  * This page sets something apart in the margin rather than in a box more
  * often than it does anything else: the recap that closes step 1, the advice
- * under each slider and each of the eight closing figures are all a rule and
- * an indent. They arrived one at a
+ * under each slider and each of the six closing figures are all a rule and an
+ * indent. They arrived one at a
  * time and had drifted into three alphas — 0.5 under the sliders, 0.5 under
  * the recap, 0.35 beside the figures — which is the same drift `the corners`
  * and `the type scale` were written for, in the one dimension neither of them
@@ -634,7 +634,7 @@ describe('the margin rules', () => {
   it('draws every one of them at one weight and one alpha', () => {
     const drawn = leftBorders(screenBlock(stylesheet));
     // Guards the extractor itself: an empty list would pass vacuously.
-    expect(drawn.length).toBeGreaterThan(5);
+    expect(drawn.length).toBeGreaterThan(3);
 
     const odd = drawn
       .filter((border) =>

@@ -25,9 +25,10 @@
  * the old background — it read 3.75:1 there and reads 4.72:1 here.
  *
  * The data colours are unchanged in hue. They are not decoration: amber is
- * the marker, rose is a Medicare cliff, fuchsia is the subsidy cliff, indigo
- * is the conversion band, and a reader matches a swatch in the key to a line
- * in the SVG by colour alone. Re-pointing the chrome does not get to move
+ * the marker, rose is a Medicare cliff, fuchsia is the subsidy cliff, and a
+ * reader matches a swatch in the key to a line in the SVG by colour alone.
+ * Indigo was the conversion band and is spent by nothing today; it stays with
+ * the arithmetic it belonged to, against the step coming back. Re-pointing the chrome does not get to move
  * them. What moves them is the charts step, which moves the SVG with them.
  */
 :root {
@@ -342,8 +343,7 @@ fieldset.filing-status {
   margin: 0;
 }
 
-fieldset.filing-status legend,
-fieldset.ceiling-picker legend {
+fieldset.filing-status legend {
   font-size: 0.875rem;
   font-weight: 500;
   color: var(--ink-muted);
@@ -360,8 +360,7 @@ fieldset.ceiling-picker legend {
    its last option. Found on the Tax Year strip, which has since gone — the
    Age fieldset is the shortest one left and it would come back there.
    `align-self` is what an inline-level box needs to shrink to fit inside a
-   flex parent. `.segmented-stacked` sets `width: 100%` and so
-   is unaffected — it is a column of full-width options, not a strip. */
+   flex parent. */
 .segmented {
   display: inline-flex;
   align-self: flex-start;
@@ -981,65 +980,6 @@ h1 {
   border-top-color: var(--fuchsia);
 }
 
-/* Step 4's key names a band and the line that closes it, both indigo — the one
-   accent no curve, cliff or marker on the page already owns. The swatch is a
-   filled box rather than a dashed rule because the band is the larger half of
-   what it stands for. */
-.chart-key-conversion strong {
-  color: var(--indigo-bright);
-}
-
-.chart-key-swatch-conversion {
-  height: 0.75rem;
-  margin-top: 0.2rem;
-  border-top: none;
-  border-right: 2px dashed var(--indigo);
-  background: rgba(var(--indigo-rgb), 0.2);
-}
-
-/* The ceiling picker is step 4's slider: six named places rather than a
-   continuum, so it stacks rather than running along a strip. Full width, one
-   line each, because every option carries a caption under it. */
-.segmented-stacked {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  width: 100%;
-  max-width: 34rem;
-}
-
-.segmented-caption {
-  display: block;
-  margin-top: 0.125rem;
-  font-size: 0.75rem;
-  font-weight: 400;
-  color: var(--ink-dim);
-}
-
-.segmented-option input[type='radio']:checked + span .segmented-caption {
-  color: var(--accent-bright);
-}
-
-/* The same rule the torpedo's advice gets, in the colour of the band it is
-   about rather than the amber of the marker. */
-.conversion-advice {
-  border-left-color: rgba(var(--indigo-rgb), 0.5);
-}
-
-.conversion-advice strong {
-  color: var(--indigo-bright);
-}
-
-/* A fieldset standing in for an .input-group. Deliberately not
-   .filing-status, which zeroes the margin an element-plus-class rule that
-   .chart-slider cannot then win back — and the whole point of .chart-slider
-   is the room it puts between a chart and the control that walks it. */
-fieldset.ceiling-picker {
-  border: none;
-  padding: 0;
-  min-width: 0;
-}
-
 /* A row in an accordion, not a section of its own.
  *
  * These were spaced for the border they used to have — a 10%-alpha slate that
@@ -1165,14 +1105,6 @@ details.explainer summary:focus-visible {
 
 .slider-amber {
   accent-color: var(--amber) !important;
-}
-
-.slider-value.emerald {
-  color: var(--emerald);
-}
-
-.slider-emerald {
-  accent-color: var(--emerald-deep) !important;
 }
 
 .slider-value.violet {
@@ -1353,8 +1285,7 @@ footer p {
   color: var(--ink-bright);
 }
 
-.step-intro,
-.step-prose {
+.step-intro {
   color: var(--ink-muted);
   margin: 0 0 1.5rem;
 }
@@ -1373,11 +1304,6 @@ footer p {
 }
 
 .scenario-recap strong {
-  color: var(--ink);
-  font-weight: 600;
-}
-
-.step-prose strong {
   color: var(--ink);
   font-weight: 600;
 }
@@ -1512,9 +1438,9 @@ footer p {
 }
 
 /* At the page's one alpha for a rule in the margin, which was the only thing
-   about these that was its own: 0.35 where `.scenario-recap`, `.slider-advice`
-   and `.conversion-advice` are all 0.5. `the margin rules` in styles.test.tsx
-   holds the four of them to one value. */
+   about these that was its own: 0.35 where `.scenario-recap` and
+   `.slider-advice` are both 0.5. `the margin rules` in styles.test.tsx holds
+   the three of them to one value. */
 .answer-figure {
   min-width: 0;
   padding-left: 0.875rem;
@@ -1885,8 +1811,8 @@ footer p {
    * that distinction shows.
    *
    * *The data hues keep their identities.* Amber is still the marker, rose is
-   * still a Medicare cliff, fuchsia is still the subsidy cliff and indigo is
-   * still the conversion band — a reader matches a swatch in the key to a
+   * still a Medicare cliff and fuchsia is still the subsidy cliff — a reader
+   * matches a swatch in the key to a
    * line in the chart by hue, and that has to survive the printer. Each is the
    * 700 or 800 step of the same hue rather than a different colour, and each
    * clears 4.5:1 on white so it can carry the text it does in the keys.

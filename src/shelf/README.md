@@ -21,7 +21,8 @@ everything else. They are on the shelf, not in quarantine.
 ## Why they are here
 
 Three of them were rendered once, as the Over Time and Strategies tabs, and
-commit 5fe9854 removed those tabs when the app became a linear four-step flow. That was
+commit 5fe9854 removed those tabs when the app became a linear step-by-step
+flow. That was
 explicitly a render-layer deletion: the arithmetic was good, and throwing away
 1,845 sourced lines because the page around them changed shape would have been
 the expensive kind of tidying. `stateTax.ts` arrived the same way and later:
@@ -29,13 +30,13 @@ it rendered as a footnote under step 2's chart until the page dropped every
 mention of state tax, which took the paragraph and left the table.
 
 What kept them from coming straight back is that the page is a *this-year* page.
-It asks "How Much Can You Take Out This Year?", and its four steps set a
-scenario, walk the torpedo, split the income into gains, and size a conversion —
-all inside one tax year, all priced against figures the IRS has published. The
-first three modules answer a different question, and to answer it they have to
-assume things the rest of the page never asks for: an inflation rate, a spending
-need, account balances, a birth year, a decade of them. That is a second app's
-worth of input hanging off a step 5, which is why the flow has four steps.
+It asks "How Much Can You Take Out This Year?", and its steps set a scenario and
+walk the torpedo — all inside one tax year, all priced against figures the IRS
+has published. The first three modules answer a different question, and to
+answer it they have to assume things the rest of the page never asks for: an
+inflation rate, a spending need, account balances, a birth year, a decade of
+them. That is a second app's worth of input hanging off a step of its own, which
+is why the flow has none.
 
 `stateTax.ts` is here for the opposite reason. It costs almost nothing to
 render — a menu and a paragraph — and it was rendered, right up until the page

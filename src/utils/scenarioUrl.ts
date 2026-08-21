@@ -1,19 +1,19 @@
 /**
  * The return, written into the address bar and read back out of it.
  *
- * Every figure on the page is derived from nine values, and until this file
- * existed all nine lived only in React state: a refresh threw the return away
+ * Every figure on the page is derived from seven values, and until this file
+ * existed all seven lived only in React state: a refresh threw the return away
  * and there was nothing to send to a spouse or an advisor. Putting them in the query string
  * fixes both at once, because the address bar is already the share surface
  * every reader knows how to use. Every value it carries prices something: a
  * link is the return, and nothing that changes no figure belongs in it.
  *
- * Three decisions are worth writing down, since the encoding itself is
+ * Four decisions are worth writing down, since the encoding itself is
  * trivial and these are not.
  *
  * **The step is not in the link.** It is where the reader is looking, not what
  * the return holds, and the page already names places a better way: every
- * step is mounted and every section carries an `id`, so `#step-conversion` is
+ * step is mounted and every section carries an `id`, so `#step-torpedo` is
  * a fragment the browser scrolls to on its own. The query string says what the
  * return *is*; the fragment says where on the page to stand. Putting the step
  * in the query string would also make the one control that changes nothing
@@ -28,6 +28,15 @@
  * told and no control to be pointed at. Every figure they see is a
  * `PAGE_TAX_YEAR` figure, which the page says in its own prose in a dozen
  * places.
+ *
+ * **Two more keys went the same way, and later.** `ltcg` sized the capital
+ * gain inside the other income and `ceiling` picked the line a conversion was
+ * sized against; both steps came off the page when it narrowed to the torpedo,
+ * so both keys now name a control that is not there. `ltcg=20000` is the
+ * dangerous one of the two — it moved the curve — which is why it is read past
+ * rather than honoured: a figure no reader can see, change or be told about is
+ * worse than a figure the link never carried. Old links naming either open in
+ * silence, on the return the rest of their keys describe.
  *
  * **Writing is `replaceState`, never `pushState`.** A slider fires a change per
  * notch, so pushing would bury the back button under one entry per $500 of
@@ -46,9 +55,8 @@ import {
   avgAnnualSSBenefit,
   maxAnnualSSBenefit,
   qcdLimitFor,
-  conversionCeilings,
 } from './tax';
-import type { FilingStatus, ConversionCeilingId } from './tax';
+import type { FilingStatus } from './tax';
 import { formatCurrency } from './format';
 
 /** The whole return the page prices, and the whole of what a link carries. */
@@ -56,12 +64,10 @@ export interface PageScenario {
   filingStatus: FilingStatus;
   ssBenefit: number;
   ordinaryIncome: number;
-  plannedLtcg: number;
   isSenior: boolean;
   spouseIsSenior: boolean;
   muniInterest: number;
   qcd: number;
-  ceilingId: ConversionCeilingId;
 }
 
 /** The other income the page opens with, before the reader touches anything. */
@@ -101,25 +107,16 @@ const FILING_STATUS_SHORT: Record<FilingStatus, string> = {
   hoh: 'head of household',
 };
 
-/**
- * The six ceilings step 4 offers. Read off `conversionCeilings` rather than
- * written down again: the ids are fixed but the list is not, and a seventh
- * ceiling should not need remembering here to be linkable.
- */
-const CEILING_IDS = conversionCeilings().map((c) => c.id);
-
 /** The page as it opens, before the reader touches anything. */
 export function defaultScenario(): PageScenario {
   return {
     filingStatus: 'single',
     ssBenefit: avgAnnualSSBenefit(PAGE_TAX_YEAR, 'single'),
     ordinaryIncome: DEFAULT_ORDINARY_INCOME,
-    plannedLtcg: 0,
     isSenior: false,
     spouseIsSenior: false,
     muniInterest: 0,
     qcd: 0,
-    ceilingId: 'bracket12',
   };
 }
 
@@ -156,9 +153,6 @@ export function encodeScenario(scenario: PageScenario): string {
   if (scenario.ordinaryIncome !== opening.ordinaryIncome) {
     params.set('income', String(scenario.ordinaryIncome));
   }
-  if (scenario.plannedLtcg !== opening.plannedLtcg) {
-    params.set('ltcg', String(scenario.plannedLtcg));
-  }
   if (scenario.muniInterest !== opening.muniInterest) {
     params.set('muni', String(scenario.muniInterest));
   }
@@ -167,9 +161,6 @@ export function encodeScenario(scenario: PageScenario): string {
   }
   if (scenario.isSenior) params.set('senior', '1');
   if (scenario.spouseIsSenior) params.set('spouse', '1');
-  if (scenario.ceilingId !== opening.ceilingId) {
-    params.set('ceiling', scenario.ceilingId);
-  }
   return params.toString();
 }
 
@@ -292,13 +283,6 @@ export function decodeScenario(search: string): DecodedScenario {
     reason: 'past that no line on any of these charts moves',
   });
 
-  const plannedLtcg = dollars('ltcg', {
-    fallback: 0,
-    max: ordinaryIncome,
-    what: 'long-term capital gain',
-    reason: 'a gain is a share of the other income rather than something on top of it',
-  });
-
   const muniInterest = dollars('muni', {
     fallback: 0,
     max: MAX_MUNI_INTEREST,
@@ -313,29 +297,15 @@ export function decodeScenario(search: string): DecodedScenario {
     reason: `the ${PAGE_TAX_YEAR} annual limit for this return`,
   });
 
-  const rawCeiling = params.get('ceiling');
-  let ceilingId: ConversionCeilingId = 'bracket12';
-  if (rawCeiling !== null && rawCeiling.trim() !== '') {
-    if ((CEILING_IDS as string[]).includes(rawCeiling)) {
-      ceilingId = rawCeiling as ConversionCeilingId;
-    } else {
-      notes.push(
-        `This link sizes the conversion against a ceiling this page does not offer (“${rawCeiling}”), so step 4 is using the top of the 12% bracket.`,
-      );
-    }
-  }
-
   return {
     scenario: {
       filingStatus,
       ssBenefit,
       ordinaryIncome,
-      plannedLtcg,
       isSenior: flag('senior'),
       spouseIsSenior: flag('spouse'),
       muniInterest,
       qcd,
-      ceilingId,
     },
     notes,
   };

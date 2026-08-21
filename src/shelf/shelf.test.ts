@@ -57,9 +57,9 @@ describe('the shelf', () => {
   it('has a README whose table is exactly what is on it', () => {
     const readme = readFileSync(join(SHELF_DIR, 'README.md'), 'utf8');
     // The rows of the "What is on it" table, which is the only place in the
-    // README a module name starts a line. Prose elsewhere names `stateTax.ts`,
-    // which is on step 2 rather than on the shelf, so a looser match would
-    // read it as shelved.
+    // README a module name starts a line. Prose elsewhere names modules too —
+    // the bring-one-back list names all four — so a looser match would read
+    // that list as the inventory.
     const documented = [...readme.matchAll(/^\| `([^`]+)` \|/gm)].map((row) => row[1]).sort();
 
     expect(shelfModules).not.toEqual([]);

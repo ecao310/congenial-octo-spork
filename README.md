@@ -23,9 +23,8 @@ the reader along it, then collapsed explainers, then a box to the next step.
    Security it collects.
 2. **The tax torpedo** — marginal rate against every dollar that is not Social
    Security, with the IRMAA cliffs, the 400% poverty-line cliff and the
-   senior-deduction phaseout drawn on the same axis, and a footnote for the
-   states that still tax the benefit — nine in 2025, eight in 2026 once West
-   Virginia's phaseout finishes.
+   senior-deduction phaseout drawn on the same axis. Every figure under it is
+   a federal one.
 3. **Capital gains stacking** — how much of the income already entered is a
    long-term gain. Gains are a *share* of that figure, not an addition to it,
    so moving the slider re-prices the same return rather than inventing a
@@ -83,7 +82,7 @@ than hiding it.
 
 The whole scenario lives in the query string, so a link survives a refresh and
 can be sent to a spouse or an advisor: `year`, `filing`, `ss`, `income`,
-`ltcg`, `muni`, `qcd`, `senior`, `spouse`, `ceiling`, `state`. Only the year is
+`ltcg`, `muni`, `qcd`, `senior`, `spouse`, `ceiling`. Only the year is
 always written; everything else appears only when it differs from what that
 year opens with. A link asking for something the page cannot show — a year
 with no published figures, an income past the slider's bound — is clamped to
@@ -107,7 +106,6 @@ npm run build    # tsc -b && vite build
 | --- | --- |
 | `src/App.tsx` | The page: all four steps, the charts, the explainers, the close. |
 | `src/utils/tax.ts` | Every figure on the page, and the only place a rate or a threshold is written down. |
-| `src/utils/stateTax.ts` | Lookup table of state treatment of the benefit — text, deliberately not arithmetic. |
 | `src/utils/scenarioUrl.ts` | The return, encoded into the address bar and clamped back out of it. |
 | `src/shelf/` | Finished, tested modules that nothing on the page imports. See [`src/shelf/README.md`](src/shelf/README.md). |
 

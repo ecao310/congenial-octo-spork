@@ -5847,3 +5847,95 @@ resolve. New: `vite preview` serves under the repo's base path, so the URL is
 `http://localhost:<port>/congenial-octo-spork/` — a bare `/` 302s — and ports
 4173-4175 were already held by preview servers left running by earlier runs,
 so read the port off preview's own output rather than assuming 4173.
+
+## 2026-08-21 — Task: remove all references to states. i may add them back later.
+
+Also flipped the parent bullet above it — "update visuals and structure" — whose
+six sub-bullets were all struck by earlier runs. Nothing was left in it to do;
+it was bookkeeping, not a second task.
+
+### What "all references" was read to mean
+
+The feature: the State menu in step 1, the footnote under step 2's chart, the
+`state=` link parameter, and every clause elsewhere on the page that qualified a
+figure by naming state tax. Not the word wherever it falls — two mentions stay
+and both are deliberate:
+
+- **The poverty-line caveat under the 400% FPL cliff.** It said the guideline is
+  "the one for the 48 contiguous states and DC; Alaska and Hawaii have their
+  own, higher". That is geography qualifying a *federal* figure, and deleting it
+  would make the cliff drawn on the chart wrong for two states' readers. Reworded
+  to "the one for the lower 48 and DC" so the word goes and the fact stays.
+- **`tax.ts`'s source comment on `POVERTY_GUIDELINE`**, same reasoning, and it is
+  a citation rather than page text.
+
+Everything else that named a state as a taxing authority is gone. Three clauses
+were reworded rather than cut, because each was carrying something other than
+the state:
+
+- The close's `Federal income tax` gloss, "Federal only — no state, and no
+  Medicare premium" → "Federal only — no Medicare premium". The scope claim it
+  was making survives in "Federal only", which is the half a reader needs.
+- Step 4's "Two costs are outside these figures … And state income tax is not
+  here at all" → "One cost is outside these figures", keeping the IRMAA half.
+- The closing note's "no credits, no other household member's income, no state
+  and no withholding" → the same list without the state.
+
+### The move
+
+`stateTax.ts` and its 256 lines of table went to `src/shelf/`, which is where
+this repo puts finished, tested code the page does not import. That is the
+directory's own rule (`shelf.test.ts` fails if anything outside imports it), and
+until this run `stateTax.ts` was the README's worked example of a module that had
+come *off* the shelf. Now it is the example of the move running both ways, which
+is what the README says instead. Its `./tax` imports became `../utils/tax`.
+
+`homeState` came out of `PageScenario` entirely rather than being left to ride
+along unread. A link is the return, and a key nothing prices is a key nothing
+reads. A new test in `scenarioUrl.test.ts` pins the compatibility direction:
+`?year=2025&income=90000&state=VT` — every link this app produced for the last
+several weeks — decodes to the same scenario with **no** note, because a reader
+opening an old link has nothing to be told.
+
+### Verified
+
+- `npx tsc -b`, `npx eslint src --max-warnings 0`, `npx vitest run`
+  (11 files, 679 tests — 688 before, so 10 state tests removed and 1 added),
+  `npm run build`.
+- Rendered rather than reasoned about. Built, `vite preview`, drove Chromium
+  through `playwright-core`, opened **every** `<details>` on the page so the
+  whole 5,056-word prose was in the DOM, and matched it against `/\bstates?\b/i`
+  plus all nine state names the table used to print. Zero hits. Zero `<select>`
+  elements, zero `role=combobox`. Loaded with `?state=VT` and the address bar
+  came back `?year=2026` — the stale key is dropped, not echoed.
+- No horizontal scroll at 1440 or 420, zero page errors, and the print media
+  emulation still renders 30 tick values across 3 charts (the fix from the run
+  before this one is intact).
+
+### Left standing, and why
+
+Three source comments still name the feature, and all three are load-bearing
+history rather than stale description: `App.tsx`'s header paragraph on the four
+tabs that were removed (updated to say the state table is now on the shelf
+rather than in `utils/`), `prose.test.ts`'s account of the `—` bug, which
+shipped *in* the state selector's first option and is the reason that test file
+exists, and `shelf/README.md`'s history of the move.
+
+Two `styles.test.tsx` comments were stale in the other direction — they
+described `.state-select:focus` as the live exception to the one-ring rule, and
+listed the state footnote among the page's margin rules. Both rewritten to
+describe what the stylesheet holds today.
+
+### Note for the next run
+
+Backlog 4's "The close says 'no state' without saying which state" is marked
+`[blocked: superseded]` rather than done: the sentence it was about no longer
+exists, and neither does the selector it wanted to name. It comes back with the
+feature or not at all.
+
+`playwright-core` note unchanged from the last run: cached Chromium build 1228,
+`executablePath` at `~/Library/Caches/ms-playwright/chromium_headless_shell-1228/
+chrome-headless-shell-mac-arm64/chrome-headless-shell`, driving script must sit
+in the project root for the bare import to resolve, and `vite preview` serves
+under `/congenial-octo-spork/`. Ports 4173-4181 have all been used by preview
+servers at some point; read the port off preview's own output.

@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import {
   XAxis,
   YAxis,
@@ -63,14 +63,6 @@ import {
   scenarioUrl,
   MAX_MUNI_INTEREST,
 } from './utils/scenarioUrl';
-import {
-  STATE_SS_RULES,
-  stateSSRule,
-  stateTestDeltas,
-  statesTaxingSocialSecurity,
-  statesWithMovingTests,
-  taxesBenefitsIn,
-} from './utils/stateTax';
 import { formatCurrency } from './utils/format';
 import { CHART, PALETTE } from './palette';
 import type {
@@ -107,9 +99,9 @@ import type {
  *
  * Four more sections stood here as tabs — Medicare, Strategies, Over Time and
  * State Taxes — and are coming back. What they rendered has gone, but
- * everything they rendered *from* stays: `irmaaFor`, `projectYears`,
- * `compareSequencing`, `lumpSumElection` and the state table are all still in
- * `utils/`, still under test, and still exported.
+ * everything they rendered *from* stays: `irmaaFor` is still in `utils/`, and
+ * `projectYears`, `compareSequencing`, `lumpSumElection` and the state table
+ * are on the shelf — all four still under test, all four still exported.
  *
  * Every step has the same shape: the chart, then the one control that says
  * where on that chart the reader is standing, then the collapsed explainers,
@@ -191,12 +183,6 @@ const formatPercent = (rate: number): string =>
 /** A rate given as a fraction, rendered as cents lost per dollar earned. */
 const formatCents = (rate: number): string =>
   `${Math.round(rate * 10_000) / 100}\u00A2`;
-
-/** "Colorado, Connecticut and Vermont" — no Oxford comma, as elsewhere here. */
-const sentenceList = (items: string[]): string =>
-  items.length < 2
-    ? (items[0] ?? '')
-    : `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
 
 const formatCompact = (value: number): string =>
   new Intl.NumberFormat('en-US', {
@@ -909,16 +895,6 @@ const App: React.FC = () => {
    * picker's own captions are for.
    */
   const [ceilingId, setCeilingId] = useState<ConversionCeilingId>(opening.ceilingId);
-  /**
-   * Where the reader lives, as a postal abbreviation, or `''` for a reader who
-   * has not said.
-   *
-   * The only input on this page that moves no figure. State treatment of a
-   * benefit is nine different rules and no two of them share a shape, so the
-   * app prints them and cites them rather than modelling them wrong — which
-   * means this selects a paragraph under step 2's chart and nothing else.
-   */
-  const [homeState, setHomeState] = useState<string>(opening.homeState);
 
   /**
    * Whose reading the live region is carrying, or null before the reader has
@@ -1007,7 +983,6 @@ const App: React.FC = () => {
       muniInterest,
       qcd,
       ceilingId,
-      homeState,
     };
     window.history.replaceState(
       window.history.state,
@@ -1030,7 +1005,6 @@ const App: React.FC = () => {
     muniInterest,
     qcd,
     ceilingId,
-    homeState,
   ]);
 
   const yearFiling = filingParams(year, filingStatus);
@@ -1052,25 +1026,6 @@ const App: React.FC = () => {
    */
   const mfsBrackets = filingParams(year, 'mfs').brackets;
   const mfsSingleDivergence = mfsBrackets[mfsBrackets.length - 2].upTo;
-
-  /**
-   * The state footnote's whole input, which is a lookup and not a sum.
-   *
-   * `homeStateRule` stays set when the selected state drops off the year's
-   * list — West Virginia does exactly that between 2025 and 2026 — because a
-   * reader who said "West Virginia" and then changed the year is owed the
-   * sentence explaining that the phase-out finished, not a silently cleared
-   * selector.
-   */
-  const homeStateRule = homeState ? stateSSRule(homeState) : undefined;
-  const homeStateTaxes = homeStateRule
-    ? taxesBenefitsIn(homeStateRule, year)
-    : false;
-  const homeStateDeltas = homeStateRule
-    ? stateTestDeltas(homeStateRule, year)
-    : [];
-  const statesTaxing = statesTaxingSocialSecurity(year);
-  const movingStates = statesWithMovingTests(year);
 
   /**
    * Switching years re-prices the benefit as well as the brackets. Someone who
@@ -2070,54 +2025,6 @@ const App: React.FC = () => {
             </div>
           </div>
 
-          {/* The one control on this page that moves no figure. It belongs in
-              step 1 because it is a fact about the reader rather than about the
-              chart, and it is answered under step 2's chart because that is the
-              curve it qualifies. */}
-          <div className="input-group">
-            <div className="slider-header">
-              <label htmlFor="home-state">State</label>
-              <span className="slider-value">
-                {homeStateRule ? homeStateRule.abbr : 'Not said'}
-              </span>
-            </div>
-            <select
-              id="home-state"
-              className="state-select"
-              value={homeState}
-              /* The one control here that does not feed the live region. It
-                 moves no figure — it selects the footnote under step 2's chart —
-                 and a select announces its own new option, so the only thing
-                 left to read out would be the whole footnote. See
-                 `announceFrom`. */
-              onChange={(e) => setHomeState(e.target.value)}
-            >
-              <option value="">Somewhere else — or rather not say</option>
-              {STATE_SS_RULES.map((rule) => (
-                <option key={rule.abbr} value={rule.abbr}>
-                  {rule.state}
-                </option>
-              ))}
-            </select>
-            <div className="slider-range-labels">
-              <span>
-                {statesTaxing.length} of these {STATE_SS_RULES.length} still tax a
-                benefit in {year}
-              </span>
-            </div>
-            <p className="field-note">
-              The menu is the {STATE_SS_RULES.length} states that taxed a Social
-              Security benefit in either year this page prices, and{' '}
-              {statesTaxing.length} of them still do in {year}. Everywhere else
-              leaves the benefit alone — with or without an income tax of its
-              own — so &ldquo;somewhere else&rdquo; is the right answer for
-              most readers. Nothing below is priced from this: no two of these{' '}
-              {STATE_SS_RULES.length} rules share a shape, so the page quotes them
-              and cites them rather than modelling them wrong. What it changes is
-              one footnote under step 2&rsquo;s chart.
-            </p>
-          </div>
-
           <details className="advanced-inputs">
             <summary>
               <span className="advanced-label">Advanced inputs</span>
@@ -2542,66 +2449,6 @@ const App: React.FC = () => {
               <StandingNote standing={standing} at={ordinaryIncome} />
             </div>
 
-            {/* State tax as a footnote rather than a step of its own: the data is
-                text, so what it needs is a paragraph and a citation, not a chart.
-                The rule stays quotable even when the state has dropped off the
-                year's list — West Virginia does exactly that between 2025 and
-                2026 — which is the second branch here. */}
-            <p className="state-footnote" role="note">
-              {homeStateRule ? (
-                homeStateTaxes ? (
-                  <>
-                    <strong>
-                      {homeStateRule.state} taxes part of this benefit as well, and
-                      the curve above does not.
-                    </strong>{' '}
-                    {homeStateRule.mechanism}. {homeStateRule.rule} The {year} test
-                    is <em>{homeStateRule.test[year]}</em>.
-                    {homeStateDeltas.map((delta) => (
-                      <React.Fragment key={delta.year}>
-                        {' '}
-                        It reads differently in {delta.year}: <em>{delta.test}</em>.
-                      </React.Fragment>
-                    ))}{' '}
-                    <span className="state-source">
-                      {homeStateRule.source}.
-                    </span>
-                  </>
-                ) : (
-                  <>
-                    <strong>
-                      {homeStateRule.state} stopped taxing benefits in{' '}
-                      {homeStateRule.exemptFrom}.
-                    </strong>{' '}
-                    {homeStateRule.rule} So on a {year} return the curve above is
-                    the whole of what this benefit costs: {homeStateRule.state}{' '}
-                    still taxes other income, but no part of the benefit.{' '}
-                    <span className="state-source">
-                      {homeStateRule.source}.
-                    </span>
-                  </>
-                )
-              ) : (
-                <>
-                  <strong>Every figure on this page is a federal one.</strong>{' '}
-                  {statesTaxing.length} states still reach a Social Security benefit
-                  in {year} —{' '}
-                  {sentenceList(statesTaxing.map((rule) => rule.state))} — and a
-                  reader in one of them is looking at a curve that understates their
-                  own bill.{' '}
-                  {movingStates.length > 0 ? (
-                    <>
-                      {sentenceList(movingStates.map((rule) => rule.state))}{' '}
-                      {movingStates.length > 1 ? 'read' : 'reads'} differently in
-                      the other year this page prices, so the tax year set in step 1
-                      moves {movingStates.length > 1 ? 'them' : 'it'} too.{' '}
-                    </>
-                  ) : null}
-                  Name your state in step 1 and this footnote says what it does.
-                </>
-              )}
-            </p>
-
             <details className="explainer">
               <summary>
                 <h2 id="tax-torpedo-heading">What is the tax torpedo?</h2>
@@ -2687,8 +2534,8 @@ const App: React.FC = () => {
                   )}
                 </ul>
                 <p>
-                  The right mix depends on account balances, state taxes, Medicare
-                  premium surcharges, and more. The chart above makes the goal concrete:
+                  The right mix depends on account balances, Medicare premium
+                  surcharges, and more. The chart above makes the goal concrete:
                   keep provisional income out of the spike, or jump clean over it.
                 </p>
               </div>
@@ -2844,9 +2691,9 @@ const App: React.FC = () => {
                         Coverage from an employer, a retiree plan or a spouse&apos;s
                         plan takes the credit away too, so a reader with any of
                         those can read this line as decoration. The poverty line
-                        used here is the one for the 48 contiguous states and DC;
-                        Alaska and Hawaii have their own, higher, so the line falls
-                        further right there than it is drawn.{' '}
+                        used here is the one for the lower 48 and DC; Alaska and
+                        Hawaii have their own, higher, so the line falls further
+                        right there than it is drawn.{' '}
                         {subsidyCliff.householdSize === 1
                           ? 'A dependent would move it right by about $5,500 of income, and this page has no field for one.'
                           : 'A dependent past the two people this filing status implies would move it right by about $5,500 of income, and this page has no field for one.'}
@@ -3547,11 +3394,10 @@ const App: React.FC = () => {
                   it.
                 </p>
                 <p>
-                  Two costs are outside these figures. The Medicare surcharge is not
+                  One cost is outside these figures. The Medicare surcharge is not
                   tax and appears in none of them &mdash; if the line you picked is
                   an IRMAA tier, crossing it costs the surcharge on top of whatever
-                  the curve says. And state income tax is not here at all; this page
-                  is federal only.
+                  the curve says.
                 </p>
               </div>
             </details>
@@ -3660,8 +3506,8 @@ const App: React.FC = () => {
                     ) : (
                       ''
                     )}
-                    . Federal only &mdash; no state, and no Medicare premium,
-                    which is charged rather than taxed and gets its own line below.
+                    . Federal only &mdash; no Medicare premium, which is charged
+                    rather than taxed and gets its own line below.
                   </span>
                 </dd>
               </div>
@@ -3859,7 +3705,7 @@ const App: React.FC = () => {
             <p className="answer-note">
               Every figure here moves the moment any slider does, and none of them
               is a filing: this is the standard deduction with nothing itemised,
-              no credits, no other household member&apos;s income, no state and no
+              no credits, no other household member&apos;s income and no
               withholding. What they are for is the comparison &mdash; this year
               against the years the same money would otherwise come out in.
             </p>

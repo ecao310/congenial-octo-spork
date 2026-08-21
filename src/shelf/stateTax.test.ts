@@ -7,7 +7,7 @@ import {
   stateTestDeltas,
   taxesBenefitsIn,
 } from './stateTax';
-import { TAX_YEARS } from './tax';
+import { TAX_YEARS } from '../utils/tax';
 
 describe('state treatment of Social Security benefits', () => {
   it('lists the nine states that taxed benefits for 2025', () => {

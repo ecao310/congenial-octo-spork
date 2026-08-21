@@ -153,7 +153,7 @@
  *   1.35    a step heading, and the close's                `.results_h2`
  *   1.25    a closing figure, a panel title          `.configuration_title`
  *   1.125   an explainer heading, a slider readout      `.modalForm_h2`
- *   .9375   body copy, and the state menu                        `body`
+ *   .9375   body copy                                            `body`
  *   .875    a control label
  *   .8125   a note, a caption, a footnote
  *   .75     a kicker, a range label
@@ -202,8 +202,8 @@ body {
  *
  * FI Calc's shape: a configuration column that stays put and a reading column
  * that scrolls past it. Every input this page has that describes the *return*
- * — the year, the status, the ages, the benefit, the state, and the two
- * advanced amounts — lives in the first; the charts, their sliders, the
+ * — the year, the status, the ages, the benefit, and the two advanced
+ * amounts — lives in the first; the charts, their sliders, the
  * explainers and the close live in the second.
  *
  * That is the fix for the thing this page could not do: every input sat in
@@ -660,89 +660,6 @@ fieldset.ceiling-picker legend {
 .slider-range-labels {
   display: flex;
   justify-content: space-between;
-  font-size: 0.75rem;
-  color: var(--ink-dim);
-}
-
-/* The state menu, and the only control here that picks a name rather than an
-   amount. Set to FI Calc's `.select` — .9375rem, a 6px corner, a hairline in
-   the stronger edge, and a fill that rises out of the page rather than
-   sinking into it. It was a 1rem field on an 8px corner with 12px of padding
-   above and below, which is a text input's box, and it is not a text input:
-   it opens a list. */
-.state-select {
-  width: 100%;
-  appearance: none;
-  background: var(--surface-control);
-  border: 1px solid var(--edge-strong);
-  border-radius: var(--radius-md);
-  padding: 0.5rem 1.75rem 0.5rem 0.625rem;
-  color: var(--ink-bright);
-  font-size: 0.9375rem;
-  font-family: inherit;
-  cursor: pointer;
-  transition:
-    border-color 0.15s ease,
-    box-shadow 0.15s ease;
-  /* The chevron, drawn rather than shipped — one gradient pair, no asset. */
-  background-image:
-    linear-gradient(45deg, transparent 50%, var(--ink-dim) 50%),
-    linear-gradient(135deg, var(--ink-dim) 50%, transparent 50%);
-  background-position:
-    calc(100% - 0.875rem) calc(50% + 1px),
-    calc(100% - 0.5rem) calc(50% + 1px);
-  background-size:
-    0.375rem 0.375rem,
-    0.375rem 0.375rem;
-  background-repeat: no-repeat;
-}
-
-.state-select:hover {
-  border-color: var(--accent);
-}
-
-/* The ring a field takes: its own border thickened, not a wash laid around
-   it. One pixel of `box-shadow` in the border's new colour reads as a 2px
-   border without moving the box a pixel, which is exactly how FI Calc rings
-   its own `.select`. */
-.state-select:focus {
-  outline: none;
-  border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent);
-}
-
-.state-select option {
-  background: var(--surface-raised);
-  color: var(--ink);
-}
-
-/* The state footnote under step 2's chart. A footnote, so: quieter than the
-   readout above it, set off by a rule rather than a box, and never coloured
-   like a warning — a state rule is a fact about the reader's return, not
-   something that has gone wrong. */
-.state-footnote {
-  margin: 1.5rem 0 0;
-  padding: 0.75rem 0 0.75rem 0.875rem;
-  border-left: 2px solid var(--edge);
-  font-size: 0.8125rem;
-  line-height: 1.65;
-  color: var(--ink-muted);
-}
-
-.state-footnote strong {
-  color: var(--ink);
-  font-weight: 600;
-}
-
-.state-footnote em {
-  color: var(--ink-soft);
-  font-style: normal;
-  font-variant-numeric: tabular-nums;
-}
-
-.state-source {
-  display: block;
-  margin-top: 0.5rem;
   font-size: 0.75rem;
   color: var(--ink-dim);
 }
@@ -1975,13 +1892,6 @@ footer p {
   details.explainer summary,
   .advanced-inputs > summary {
     cursor: default;
-  }
-
-  /* The chevron is two gradients that only mean something beside a menu that
-     opens, and without it the field's right padding is dead space. */
-  .state-select {
-    padding: 0.35rem 0.5rem;
-    background-image: none;
   }
 
   /* ── What a fill was carrying ──

@@ -53,9 +53,6 @@ describe('encodeScenario', () => {
     expect(encodeScenario(with2025({ ceilingId: 'irmaa1' }))).toBe(
       'year=2025&ceiling=irmaa1',
     );
-    expect(encodeScenario(with2025({ homeState: 'VT' }))).toBe(
-      'year=2025&state=VT',
-    );
   });
 
   /**
@@ -93,7 +90,6 @@ describe('encodeScenario', () => {
       muniInterest: 12_000,
       qcd: 25_000,
       ceilingId: 'ltcg0',
-      homeState: 'MT',
     });
     expect(decodeScenario(encodeScenario(moved)).scenario).toEqual(moved);
     expect(decodeScenario(encodeScenario(moved)).notes).toEqual([]);
@@ -254,41 +250,22 @@ describe('decodeScenario', () => {
 
     /** An empty value is a key nobody filled in, not a value to complain about. */
     it('says nothing about an empty value', () => {
-      const { scenario, notes } = decodeScenario('income=&filing=&ceiling=&year=&state=');
+      const { scenario, notes } = decodeScenario('income=&filing=&ceiling=&year=');
       expect(notes).toEqual([]);
       expect(scenario).toEqual(defaultScenario());
     });
   });
 
   /**
-   * The state is the one value here that prices nothing — it picks step 2's
-   * footnote — so what it costs to get wrong is a paragraph, and the rules for
-   * reading it back are looser than the rules for a dollar figure.
+   * A link is older than the page it opens more often than anyone plans for,
+   * and the page it opens has fewer inputs than it had. `?state=VT` was
+   * written by every link this app produced while step 2 carried a state
+   * footnote, so the reading is: a key nothing prices is a key nothing reads,
+   * and there is nothing to tell the reader about it.
    */
-  describe('the state, which prices nothing', () => {
-    it('takes a state the table knows, in any case', () => {
-      expect(decodeScenario('state=mt').scenario.homeState).toBe('MT');
-      expect(decodeScenario('state=MT').scenario.homeState).toBe('MT');
-      expect(decodeScenario('state= wv ').scenario.homeState).toBe('WV');
-      expect(decodeScenario('state=MT').notes).toEqual([]);
-    });
-
-    /**
-     * California is not on the list because California does not tax the
-     * benefit, so the honest answer to `state=CA` is the same one the page's
-     * own menu gives it: no footnote, and nothing to apologise for.
-     */
-    it('says nothing about a real state that leaves the benefit alone', () => {
-      const { scenario, notes } = decodeScenario('state=CA');
-      expect(scenario.homeState).toBe('');
-      expect(notes).toEqual([]);
-    });
-
-    it('names what it could not read when the link gives something else', () => {
-      const { scenario, notes } = decodeScenario('state=Montana');
-      expect(scenario.homeState).toBe('');
-      expect(notes[0]).toContain('“Montana”');
-      expect(notes[0]).toContain('two-letter');
-    });
+  it('ignores a key from a page that had more inputs than this one', () => {
+    const { scenario, notes } = decodeScenario('year=2025&income=90000&state=VT');
+    expect(scenario).toEqual({ ...defaultScenario(2025), ordinaryIncome: 90_000 });
+    expect(notes).toEqual([]);
   });
 });

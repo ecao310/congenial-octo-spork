@@ -1,5 +1,5 @@
-import type { TaxYear } from './tax';
-import { TAX_YEARS, defaultTaxYear } from './tax';
+import type { TaxYear } from '../utils/tax';
+import { TAX_YEARS, defaultTaxYear } from '../utils/tax';
 
 /**
  * State treatment of Social Security benefits — a lookup table, not a

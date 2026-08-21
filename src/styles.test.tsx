@@ -360,9 +360,10 @@ const fontSizes = (css: string): string[] =>
  * arrived one rule at a time.
  *
  * It was ten until the controls pass: 1rem was set by a generic `input` rule
- * painting a text field this page has never rendered, and by the state menu
- * copying it. Both are gone, and the second `it` below is what caught the
- * step going unspent rather than lingering as a size nothing sets.
+ * painting a text field this page has never rendered, and by the one menu
+ * this page had, which copied it. Both are gone, and the second `it` below is
+ * what caught the step going unspent rather than lingering as a size nothing
+ * sets.
  *
  * That is the failure this closes. A scale does not drift by someone
  * rewriting it; it drifts by a 1.05rem typed into the one rule being edited,
@@ -441,11 +442,11 @@ const rings = (
  * that actually happens — a ring pasted into the rule being edited, carrying
  * whatever alpha it had where it was copied from.
  *
- * Fields are the exception the second part allows for and the first does not:
- * FI Calc rings a `.select` by thickening its own border rather than by
- * laying an outline around it, so `.state-select:focus` sets `border-color`
- * and a 1px `box-shadow` in the same accent. That is still one ring in one
- * colour; it is drawn on the border rather than outside it.
+ * The second part allows for a ring drawn on a border rather than outside it —
+ * FI Calc rings a `.select` that way, by thickening its own border and laying
+ * a 1px `box-shadow` in the same accent behind it. Nothing on the page takes
+ * that shape today; it stays allowed because it is still one ring in one
+ * colour, which is the whole of what these two tests hold.
  */
 describe('the controls', () => {
   it('paints a ring in no state but focus', () => {
@@ -611,8 +612,8 @@ const leftBorders = (
  *
  * This page sets something apart in the margin rather than in a box more
  * often than it does anything else: the recap that closes step 1, the advice
- * under each slider, the state footnote under step 2's chart and each of the
- * eight closing figures are all a rule and an indent. They arrived one at a
+ * under each slider and each of the eight closing figures are all a rule and
+ * an indent. They arrived one at a
  * time and had drifted into three alphas — 0.5 under the sliders, 0.5 under
  * the recap, 0.35 beside the figures — which is the same drift `the corners`
  * and `the type scale` were written for, in the one dimension neither of them

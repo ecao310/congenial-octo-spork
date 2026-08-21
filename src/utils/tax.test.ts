@@ -59,6 +59,15 @@ import {
   incomeAxisFeatures,
   incomeAxisMax,
   MIN_INCOME_AXIS,
+  niitFor,
+  niitMagi,
+  niitThreshold,
+  netInvestmentIncomeFor,
+  netInvestmentIncomeTax,
+  totalFederalTax,
+  NIIT_RATE,
+  NIIT_ENACTED,
+  NIIT_THRESHOLDS,
 } from './tax';
 import type { ConversionCeiling, ConversionCeilingId, TaxYear } from './tax';
 import { vi } from 'vitest';
@@ -3181,6 +3190,324 @@ describe('sizing the income axis to the return', () => {
       // tight around the curve can ask for one, and gets the torpedo's own
       // $40,561.88 plus a tail, rounded up.
       expect(incomeAxisMax(scenario, { minimum: 0 })).toBe(50_000);
+    });
+  });
+});
+
+/**
+ * IRC 1411 — the 3.8% net investment income tax.
+ *
+ * The third stacking effect on the same axis as the other two, and the third
+ * frozen threshold on a page built around frozen thresholds. Every figure here
+ * is the statute: 3.8% under 1411(a)(1), $200,000/$250,000/$125,000 under
+ * 1411(b), the lesser-of rule under 1411(a)(1)(A)-(B), and the IRA and wage
+ * exclusions of 1411(c)(5) and (c)(1).
+ */
+describe('net investment income tax (IRC 1411)', () => {
+  const SS = AVG_ANNUAL_SS_BENEFIT; // $23,712
+  const YEAR = { year: PINNED_YEAR };
+
+  describe('the thresholds', () => {
+    it('is 3.8% over $200,000 unmarried, $250,000 joint, $125,000 separate', () => {
+      expect(NIIT_RATE).toBe(0.038);
+      expect(NIIT_THRESHOLDS).toEqual({
+        single: 200_000,
+        mfj: 250_000,
+        mfs: 125_000,
+        hoh: 200_000,
+      });
+      // Head of household files on the unmarried figure, as it does under
+      // 86(c) — the two statutes agree about that much.
+      expect(niitThreshold('hoh')).toBe(niitThreshold('single'));
+      // And the separate return gets half the joint one, the same halving
+      // 86(c)(1)(C) does to a filer who lived with their spouse.
+      expect(niitThreshold('mfs')).toBe(niitThreshold('mfj') / 2);
+    });
+
+    /**
+     * The point of the bullet this came from: 1411(b) provides no inflation
+     * adjustment, so the same figures apply in every year this app prices.
+     */
+    it('does not move between tax years, because 1411(b) never indexed it', () => {
+      const scenario = { ordinaryIncome: 190_000, ltcg: 30_000 };
+      for (const year of TAX_YEARS) {
+        expect(niitFor({ ...scenario, year }).threshold).toBe(200_000);
+        expect(niitFor({ ...scenario, year }).tax).toBeCloseTo(760, 6);
+      }
+      // Enacted in 2010, effective for tax years beginning after 2012.
+      expect(NIIT_ENACTED).toBe(2013);
+      expect(NIIT_ENACTED).toBeGreaterThan(SS_BASE85_ENACTED);
+    });
+  });
+
+  describe('what counts as net investment income', () => {
+    it('counts the capital gain and nothing else this app models', () => {
+      expect(netInvestmentIncomeFor({ ltcg: 30_000 })).toBe(30_000);
+      // An IRA or pension distribution is excluded by name under 1411(c)(5),
+      // and wages are outside 1411(c)(1) altogether.
+      expect(netInvestmentIncomeFor({ ordinaryIncome: 300_000 })).toBe(0);
+      // A Social Security benefit is in no 1411(c)(1) category, taxable share
+      // or not.
+      expect(netInvestmentIncomeFor({ ssBenefit: MAX_ANNUAL_SS_BENEFIT })).toBe(0);
+      // 1411(c)(1)(A)(i) reaches interest only to the extent it is in gross
+      // income, and 103 keeps this out of gross income entirely.
+      expect(netInvestmentIncomeFor({ muniInterest: 100_000 })).toBe(0);
+    });
+
+    /**
+     * A return with no investment income has nothing for 1411 to charge, at
+     * any income at all. This is the branch the page's default scenario takes.
+     */
+    it('charges nothing on a return with no gain, however high the income', () => {
+      const huge = { ordinaryIncome: 2_000_000, ssBenefit: SS, ...YEAR };
+      expect(niitFor(huge).tax).toBe(0);
+      expect(netInvestmentIncomeTax(huge)).toBe(0);
+      expect(totalFederalTax(huge)).toBe(totalTax(huge));
+      // Nothing to be short of, so there is no headroom to report either.
+      expect(niitFor(huge).headroom).toBeNull();
+      expect(niitFor(huge).toFullyTaxed).toBeNull();
+    });
+  });
+
+  describe('the MAGI it is measured against', () => {
+    /**
+     * Three MAGIs on this page, and this is the plainest of them: 1411(d) is
+     * AGI plus the section 911 exclusion, which no scenario here has.
+     */
+    it('is plain AGI, not the one Medicare adds tax-exempt interest back to', () => {
+      const scenario = {
+        ordinaryIncome: 190_000,
+        ltcg: 30_000,
+        muniInterest: 25_000,
+        ...YEAR,
+      };
+      expect(niitMagi(scenario)).toBe(agiFor(scenario));
+      expect(niitMagi(scenario)).toBe(220_000);
+      // Medicare's MAGI is $25,000 higher on the same return.
+      expect(irmaaMagi(scenario)).toBe(245_000);
+      expect(irmaaMagi(scenario) - niitMagi(scenario)).toBe(25_000);
+    });
+
+    /**
+     * The one input on this page that moves the torpedo, moves Medicare, and
+     * leaves 1411 completely alone.
+     */
+    it('is untouched by tax-exempt interest except through the benefits it drags in', () => {
+      const without = { ordinaryIncome: 190_000, ltcg: 30_000, ...YEAR };
+      const with25k = { ...without, muniInterest: 25_000 };
+      expect(niitFor(with25k).magi).toBe(niitFor(without).magi);
+      expect(niitFor(with25k).tax).toBeCloseTo(niitFor(without).tax, 6);
+
+      // With a benefit in play it does move it — but only by the benefit it
+      // pulls into AGI, never by a dollar of its own.
+      const benefit = { ordinaryIncome: 190_000, ltcg: 30_000, ssBenefit: SS, ...YEAR };
+      const shifted = niitMagi({ ...benefit, muniInterest: 25_000 }) - niitMagi(benefit);
+      expect(shifted).toBeGreaterThanOrEqual(0);
+      expect(shifted).toBeLessThan(25_000);
+      expect(shifted).toBeCloseTo(
+        taxableSocialSecurity({ ...benefit, muniInterest: 25_000 }) -
+          taxableSocialSecurity(benefit),
+        6,
+      );
+    });
+  });
+
+  describe('the lesser-of rule, which is what makes it stack', () => {
+    const gain = 40_000;
+    const at = (ordinary: number) => ({
+      ordinaryIncome: ordinary,
+      ltcg: gain,
+      filingStatus: 'single' as const,
+      ...YEAR,
+    });
+
+    it('charges nothing under the threshold', () => {
+      const under = niitFor(at(150_000));
+      expect(under.magi).toBe(190_000);
+      expect(under.excess).toBe(0);
+      expect(under.base).toBe(0);
+      expect(under.tax).toBe(0);
+      expect(under.headroom).toBe(10_000);
+      expect(under.toFullyTaxed).toBe(gain);
+    });
+
+    it('charges the excess while the excess is the smaller of the two', () => {
+      const straddling = niitFor(at(175_000));
+      expect(straddling.magi).toBe(215_000);
+      expect(straddling.excess).toBe(15_000);
+      expect(straddling.nii).toBe(gain);
+      expect(straddling.base).toBe(15_000);
+      expect(straddling.tax).toBeCloseTo(0.038 * 15_000, 6);
+      expect(straddling.headroom).toBe(0);
+      expect(straddling.toFullyTaxed).toBe(25_000);
+    });
+
+    it('stops at the whole gain once the excess passes it', () => {
+      const past = niitFor(at(250_000));
+      expect(past.excess).toBe(90_000);
+      expect(past.base).toBe(gain);
+      expect(past.tax).toBeCloseTo(0.038 * gain, 6);
+      expect(past.toFullyTaxed).toBe(0);
+    });
+
+    /**
+     * The sentence the whole bullet is about. Every dollar in this band is an
+     * IRA distribution 1411(c)(5) excludes by name — and every one of them
+     * still costs 3.8 cents, because it drags a dollar of an already-realized
+     * gain into the base.
+     */
+    it('makes a distribution 1411 never taxes cost 3.8% anyway', () => {
+      const before = niitFor(at(175_000));
+      const after = niitFor(at(176_000));
+      expect(netInvestmentIncomeFor(at(176_000))).toBe(gain);
+      expect(after.nii).toBe(before.nii);
+      expect(after.base - before.base).toBe(1_000);
+      expect(after.tax - before.tax).toBeCloseTo(38, 6);
+    });
+  });
+
+  describe('totalFederalTax', () => {
+    const scenario = {
+      ordinaryIncome: 180_000,
+      ltcg: 60_000,
+      ssBenefit: SS,
+      filingStatus: 'single' as const,
+      ...YEAR,
+    };
+
+    /**
+     * Chapter 1 and chapter 2A stay separate functions, because they are
+     * separate lines on a 1040 — the income tax line and Schedule 2's other
+     * taxes, off Form 8960.
+     */
+    it('is chapter 1 plus chapter 2A, and totalTax is still chapter 1 alone', () => {
+      const surtax = netInvestmentIncomeTax(scenario);
+      expect(surtax).toBeCloseTo(0.038 * 60_000, 6);
+      expect(totalFederalTax(scenario)).toBeCloseTo(totalTax(scenario) + surtax, 6);
+      // The benefit of keeping them apart: `totalTax` did not move, so nothing
+      // that means "income tax" silently started meaning something else.
+      expect(totalTax(scenario)).toBeCloseTo(46_104.248, 3);
+      expect(totalFederalTax(scenario)).toBeCloseTo(48_384.248, 3);
+    });
+
+    it('does not include the Medicare surcharge, which is a premium', () => {
+      const magi = irmaaMagi(scenario);
+      expect(irmaaFor(magi, scenario).annualSurcharge).toBeGreaterThan(0);
+      expect(totalFederalTax(scenario)).toBeCloseTo(totalTax(scenario) + 2_280, 3);
+    });
+  });
+
+  describe('on the charts', () => {
+    /**
+     * The third hump. Between the threshold and the threshold plus the gain,
+     * the next dollar of ordinary income costs its bracket rate plus 3.8 —
+     * and then the rate falls back, exactly like the torpedo does.
+     */
+    it('raises the ordinary-income curve by 3.8 points over a band as wide as the gain', () => {
+      const curve = marginalRateCurve(
+        { ssBenefit: 0, ltcg: 20_000, filingStatus: 'single', ...YEAR },
+        { maxIncome: 260_000, step: 1_000, gainsWithinIncome: true },
+      );
+      const rateAt = (income: number): number =>
+        curve.find((p) => p.income === income)!.marginalRate;
+      expect(rateAt(199_000)).toBe(24);
+      expect(rateAt(200_000)).toBe(27.8);
+      expect(rateAt(219_000)).toBe(27.8);
+      // $200,000 + the $20,000 gain: the whole gain is in the base, so the
+      // next dollar stops adding to it.
+      expect(rateAt(220_000)).toBe(24);
+
+      // And the tax the curve reports is the whole bill, not chapter 1.
+      const point = curve.find((p) => p.income === 210_000)!;
+      const scenario = {
+        ...splitOtherIncome(210_000, 20_000),
+        ssBenefit: 0,
+        filingStatus: 'single' as const,
+        ...YEAR,
+      };
+      expect(point.totalTax).toBe(Math.round(totalFederalTax(scenario)));
+      expect(point.totalTax).toBeGreaterThan(Math.round(totalTax(scenario)));
+    });
+
+    /**
+     * From the other side: a gain dollar past the threshold is both net
+     * investment income and MAGI, so it enters the base from both ends and
+     * pays 3.8 on top of its own 15%.
+     */
+    it('raises the gains curve by 3.8 points on top of the capital-gain rate', () => {
+      const curve = ltcgMarginalRateCurve(
+        { ssBenefit: 0, ordinaryIncome: 260_000, filingStatus: 'single', ...YEAR },
+        { maxLTCG: 40_000, step: 5_000, gainsWithinIncome: true },
+      );
+      // MAGI is $260,000 all the way across — the sweep only moves the split —
+      // so every gain dollar on this axis is inside the surtax base.
+      for (const point of curve) {
+        expect(point.marginalRate).toBeCloseTo(18.8, 6);
+      }
+      // Under the threshold there is no surtax to add, and the same sweep is
+      // the bare 15%.
+      const below = ltcgMarginalRateCurve(
+        { ssBenefit: 0, ordinaryIncome: 150_000, filingStatus: 'single', ...YEAR },
+        { maxLTCG: 40_000, step: 5_000, gainsWithinIncome: true },
+      );
+      for (const point of below) {
+        expect(point.marginalRate).toBeCloseTo(15, 6);
+      }
+    });
+
+    /**
+     * The reason `niitEnd` had to become an axis feature: the threshold sits
+     * $50,000 past the axis this chart used to be fixed at, so the surtax was
+     * drawn nowhere.
+     */
+    it('widens the income axis to reach the band, and only when there is a gain', () => {
+      const noGain = { ssBenefit: SS, filingStatus: 'single' as const, ...YEAR };
+      expect(incomeAxisFeatures(noGain).niitEnd).toBeNull();
+      expect(incomeAxisMax(noGain)).toBe(MIN_INCOME_AXIS);
+
+      const withGain = { ...noGain, ltcg: 60_000 };
+      const { niitEnd } = incomeAxisFeatures(withGain);
+      expect(niitEnd).not.toBeNull();
+      // $200,000 + $60,000 of MAGI, less the benefit already dragged into AGI
+      // by that much other income — so it lands at less other income than the
+      // raw MAGI figure suggests.
+      expect(niitEnd!).toBeCloseTo(239_844.8, 1);
+      expect(niitEnd!).toBeLessThan(260_000);
+      expect(agiFor({ ...withGain, ...splitOtherIncome(niitEnd!, 60_000) })).toBeCloseTo(
+        260_000,
+        4,
+      );
+      expect(incomeAxisMax(withGain)).toBe(275_000);
+      expect(incomeAxisMax(withGain)).toBeGreaterThan(niitEnd!);
+    });
+  });
+
+  /**
+   * A conversion is ordinary income and so is never itself net investment
+   * income — which is exactly why sizing one has to price the surtax: the
+   * conversion pushes MAGI up and drags somebody's old gain in behind it.
+   */
+  describe('sizing a conversion against it', () => {
+    const scenario = {
+      ordinaryIncome: 150_000,
+      ltcg: 60_000,
+      ssBenefit: 0,
+      filingStatus: 'single' as const,
+      ...YEAR,
+    };
+
+    it('prices the surtax into the bill a conversion starts from', () => {
+      const ceiling = conversionCeilings(scenario).find((c) => c.id === 'irmaa1')!;
+      const sizing = sizeConversion(ceiling, scenario);
+      expect(sizing.taxBefore).toBe(Math.round(totalFederalTax(scenario)));
+      expect(sizing.taxBefore - Math.round(totalTax(scenario))).toBe(380);
+      // MAGI is $210,000, so $10,000 of the $60,000 gain is already surtaxed.
+      expect(niitFor(scenario).base).toBe(10_000);
+    });
+
+    it('reports the 3.8 points in the rate just past the ceiling', () => {
+      const ceiling = conversionCeilings(scenario).find((c) => c.id === 'bracket22')!;
+      expect(sizeConversion(ceiling, scenario).rateAboveCeiling).toBeCloseTo(27.8, 6);
     });
   });
 });

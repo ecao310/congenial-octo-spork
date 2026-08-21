@@ -46,6 +46,11 @@ import {
   conversionCeilings,
   sizeConversion,
   CONVERSION_MEASURE_LABELS,
+  niitFor,
+  niitThreshold,
+  NIIT_ENACTED,
+  NIIT_RATE,
+  NIIT_THRESHOLDS,
 } from './utils/tax';
 import {
   decodeScenario,
@@ -427,6 +432,9 @@ export const CustomTooltip: React.FC<CustomTooltipProps> = ({
   // other dollar and the gift never reaches the filer, so both belong in what
   // this return takes in. See `totalIncomeFor`.
   const totalIncome = totalIncomeFor(scenario);
+  // Chapter 2A is inside `point.totalTax` — the curve plots `totalFederalTax`
+  // now — so the only thing left to say is how much of it, and on what.
+  const niit = niitFor(scenario);
   return (
     <div style={TOOLTIP_STYLE}>
       <div style={{ fontWeight: 600, marginBottom: '0.25rem' }}>
@@ -450,6 +458,12 @@ export const CustomTooltip: React.FC<CustomTooltipProps> = ({
       <div>
         Total Federal Tax: <strong style={{ color: '#ea580c' }}>{formatCurrency(point.totalTax)}</strong>
       </div>
+      {niit.tax > 0 && (
+        <div style={{ fontSize: '0.8125rem', color: '#c084fc' }}>
+          Including {formatCurrency(niit.tax)} of net investment income tax —
+          3.8% of {formatCurrency(niit.base)}
+        </div>
+      )}
       <div>
         Medicare IRMAA:{' '}
         <strong style={{ color: '#fb7185' }}>
@@ -531,6 +545,9 @@ export const LTCGTooltip: React.FC<LTCGTooltipProps> = ({
     year,
   };
   const totalIncome = totalIncomeFor(scenario);
+  // Chapter 2A is inside `point.totalTax` — the curve plots `totalFederalTax`
+  // now — so the only thing left to say is how much of it, and on what.
+  const niit = niitFor(scenario);
   return (
     <div style={TOOLTIP_STYLE}>
       <div style={{ fontWeight: 600, marginBottom: '0.25rem' }}>
@@ -542,6 +559,12 @@ export const LTCGTooltip: React.FC<LTCGTooltipProps> = ({
       <div>
         Total Federal Tax: <strong style={{ color: '#ea580c' }}>{formatCurrency(point.totalTax)}</strong>
       </div>
+      {niit.tax > 0 && (
+        <div style={{ fontSize: '0.8125rem', color: '#c084fc' }}>
+          Including {formatCurrency(niit.tax)} of net investment income tax —
+          3.8% of {formatCurrency(niit.base)}
+        </div>
+      )}
       {segment && segment.type === 'hill' && (
         <div style={{ marginTop: '0.5rem', borderTop: '1px solid rgba(255, 255, 255, 0.1)', paddingTop: '0.5rem', fontSize: '0.875rem', color: '#94a3b8' }}>
           Consider avoiding this tax hill by staying under {formatCurrency(segment.start)} or over {formatCurrency(segment.end)}
@@ -1380,6 +1403,24 @@ const App: React.FC = () => {
    * below $0.
    */
   const hereTax = herePoint?.totalTax ?? sizing.taxBefore;
+
+  /**
+   * What IRC 1411 takes out of that, and how far this return is from the
+   * threshold that starts it.
+   *
+   * Chapter 2A is not income tax and does not go on the income-tax line of a
+   * 1040, so the close names it separately even though `hereTax` — which both
+   * rate curves and step 4's sizing now carry — already contains it.
+   *
+   * The income-tax half is taken by subtraction rather than by a second call
+   * to `totalTax`, so that the two figures the close prints always add up to
+   * the one above them. Each is then within a dollar of its own exact value,
+   * which is the same tolerance every other whole-dollar figure on this page
+   * is quoted to.
+   */
+  const hereNiit = niitFor(hereScenario);
+  const hereSurtax = Math.round(hereNiit.tax);
+  const hereIncomeTax = hereTax - hereSurtax;
 
   /**
    * Where the step nav and the next-step boxes both land.
@@ -2520,6 +2561,16 @@ const App: React.FC = () => {
                     : 'The same dollars, taxed differently: what the slider moves is the bill, not the income.'}
                 </>
               ) : null}
+              {hereSurtax > 0 ? (
+                <>
+                  {' '}
+                  <strong>{formatCurrency(hereSurtax)}</strong> of that is the
+                  3.8% surtax of section 1411, charged on{' '}
+                  {formatCurrency(hereNiit.base)} of the gain because{' '}
+                  {formatCurrency(hereNiit.magi)} of MAGI clears the{' '}
+                  {formatCurrency(hereNiit.threshold)} threshold.
+                </>
+              ) : null}
             </p>
           </div>
           </>
@@ -2559,6 +2610,48 @@ const App: React.FC = () => {
               step 2&apos;s chart from the other side: with a gain set, the next
               dollar of ordinary income lifts the whole gain stack with it, and
               can shove part of it out of the 0% band into 15%.
+            </p>
+          </div>
+        </details>
+
+        <details className="explainer">
+          <summary>
+            <h2 id="niit-heading">The third effect: the 3.8% surtax</h2>
+          </summary>
+          <div className="explainer-content">
+            <p>
+              Above {formatCurrency(niitThreshold(filingStatus))} of modified
+              AGI, section 1411 charges a further{' '}
+              {(NIIT_RATE * 100).toFixed(1)}% &mdash; the net investment income
+              tax, reported on Form 8960. It is not income tax and it is not
+              part of any bracket; it sits on top of whatever the ordinary and
+              capital-gain schedules have already charged.
+            </p>
+            <p>
+              What makes it a third effect rather than a fourth bracket is the
+              word <em>lesser</em>. The surtax applies to the lesser of your
+              net investment income and the amount by which MAGI clears the
+              threshold &mdash; so between those two figures, a dollar that
+              1411 does not tax at all still drags a dollar that it does into
+              the base. An IRA withdrawal is expressly excluded by
+              1411(c)(5). A pension is not investment income. Neither is a
+              Social Security benefit. Every one of them is in MAGI, and every
+              one of them can therefore cost you 3.8&cent; on a gain you
+              realized before you took it.
+            </p>
+            <p>
+              That is the same shape as the torpedo one step up: an income
+              definition wider than the income being taxed. And the thresholds
+              are the same story too &mdash;{' '}
+              {formatCurrency(NIIT_THRESHOLDS.single)} unmarried,{' '}
+              {formatCurrency(NIIT_THRESHOLDS.mfj)} joint,{' '}
+              {formatCurrency(NIIT_THRESHOLDS.mfs)} on a separate return,
+              fixed in {NIIT_ENACTED} and never indexed since. Tax-exempt
+              interest is the one input on this page that stays clear of it
+              entirely: section 103 keeps it out of gross income, so it is
+              neither investment income here nor part of this MAGI &mdash;
+              even while it is raising provisional income in step 2 and
+              Medicare&apos;s MAGI in the line below.
             </p>
           </div>
         </details>
@@ -2966,13 +3059,84 @@ const App: React.FC = () => {
           </div>
 
           <div className="answer-figure">
-            <dt>Federal income tax</dt>
+            <dt>Federal tax</dt>
             <dd>
               <strong>{formatCurrency(hereTax)}</strong>
               <span className="answer-gloss">
-                What the {year} return owes. Federal income tax only &mdash;
-                no state, and no Medicare premium, which is charged rather
-                than taxed and gets its own line below.
+                What the {year} return owes
+                {hereSurtax > 0 ? (
+                  <>
+                    : {formatCurrency(hereIncomeTax)} of income tax and{' '}
+                    {formatCurrency(hereSurtax)} of the surtax on the next line,
+                    which is a different chapter of the code on a form of its
+                    own
+                  </>
+                ) : (
+                  ''
+                )}
+                . Federal only &mdash; no state, and no Medicare premium,
+                which is charged rather than taxed and gets its own line below.
+              </span>
+            </dd>
+          </div>
+
+          {/* Chapter 2A, on Form 8960, carried to Schedule 2 rather than to
+              the tax line — so it gets a line of its own here even when it
+              is $0, because what a reader most needs to know about a surtax
+              they are not paying is how close they are to paying it. */}
+          <div className="answer-figure">
+            <dt>Net investment income tax</dt>
+            <dd>
+              <strong>
+                {hereSurtax > 0
+                  ? formatCurrency(hereSurtax)
+                  : 'None — under the threshold'}
+              </strong>
+              <span className="answer-gloss">
+                {hereNiit.nii <= 0 ? (
+                  <>
+                    3.8% of investment income, once MAGI passes{' '}
+                    {formatCurrency(hereNiit.threshold)}. This return has no
+                    investment income for it to reach: a pension, an IRA
+                    withdrawal and Social Security are all outside it, so
+                    however high the income goes, there is nothing here for
+                    1411 to charge.
+                  </>
+                ) : hereSurtax > 0 ? (
+                  <>
+                    3.8% of {formatCurrency(hereNiit.base)} &mdash; the lesser
+                    of the {formatCurrency(hereNiit.nii)} gain and the{' '}
+                    {formatCurrency(hereNiit.excess)} by which{' '}
+                    {formatCurrency(hereNiit.magi)} of MAGI clears the{' '}
+                    {formatCurrency(hereNiit.threshold)} threshold.{' '}
+                    {hereNiit.toFullyTaxed && hereNiit.toFullyTaxed > 0
+                      ? `Another ${formatCurrency(hereNiit.toFullyTaxed)} of income — of any kind, including an IRA withdrawal 1411 never taxes — pulls the rest of the gain in at 3.8% too.`
+                      : 'The whole gain is already in, so the next dollar of ordinary income no longer adds to it.'}
+                  </>
+                ) : (
+                  <>
+                    3.8% on the lesser of investment income and MAGI over{' '}
+                    {formatCurrency(hereNiit.threshold)}. This return holds{' '}
+                    {formatCurrency(hereNiit.nii)} of gain and{' '}
+                    {formatCurrency(hereNiit.magi)} of MAGI, so it is{' '}
+                    {formatCurrency(hereNiit.headroom ?? 0)} short &mdash; and
+                    the dollars that would close that gap need not be
+                    investment income at all.
+                  </>
+                )}{' '}
+                That threshold was set in {NIIT_ENACTED} and has never been
+                indexed
+                {SS_BASES[filingStatus].ssBase50 > 0 ? (
+                  <>
+                    , exactly like the{' '}
+                    {formatCurrency(SS_BASES[filingStatus].ssBase50)} and{' '}
+                    {formatCurrency(SS_BASES[filingStatus].ssBase85)} bases step
+                    2 is built on
+                  </>
+                ) : (
+                  ' — the same frozen line step 2 is built on, drawn in a different decade'
+                )}
+                .
               </span>
             </dd>
           </div>

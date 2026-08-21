@@ -1,7 +1,10 @@
 export interface MarginalRatePoint {
   income: number;
   marginalRate: number;
-  /** Total federal tax (whole dollars) at this income level. */
+  /**
+   * Total federal tax (whole dollars) at this income level: `totalFederalTax`,
+   * so the 3.8% surtax of IRC 1411 is in it wherever it applies.
+   */
   totalTax: number;
 }
 
@@ -1007,6 +1010,22 @@ export interface IncomeAxisFeatures {
    * share before the first dollar of other income lands.
    */
   giftEnd: number;
+  /**
+   * Where the 3.8% surtax of IRC 1411 finishes biting, or `null` when this
+   * return has no net investment income for it to bite on.
+   *
+   * The surtax applies to the lesser of net investment income and MAGI over
+   * the threshold, so it ramps in over a band exactly as wide as the gain: it
+   * starts at the threshold and is fully priced at threshold-plus-gain. This
+   * is the far end of that band, and past it the curve is flat again — the
+   * same "end" the other three fields are.
+   *
+   * It is the one feature that can sit past `MIN_INCOME_AXIS` for an unmarried
+   * return with a modest gain, which is the reason it is here: the $200,000
+   * threshold is $50,000 off the right edge of the axis this chart used to be
+   * fixed at, so without this entry the surtax would be drawn nowhere at all.
+   */
+  niitEnd: number | null;
 }
 
 /**
@@ -1025,11 +1044,22 @@ export function incomeAxisFeatures(scenario: Scenario = {}): IncomeAxisFeatures 
   const claimed = seniorDeductionFor({ ...scenario, seniors }, 0) > 0;
   const phaseoutEnd = seniorDeductionPhaseoutEnd(filingStatus);
   const gift = qcdAllowed(scenario);
+  // Read off `netInvestmentIncomeFor` rather than off `ltcg` directly, so the
+  // one place that decides what 1411 counts stays the one place.
+  const nii = netInvestmentIncomeFor(scenario);
   return {
     torpedoEnd: otherIncomeAtTaxableSSCap(scenario),
     seniorPhaseoutEnd:
       claimed && phaseoutEnd !== null ? otherIncomeAtAgi(phaseoutEnd, scenario) : null,
     giftEnd: gift > 0 ? gift + Math.max(0, ltcg) : 0,
+    // 1411's MAGI is plain AGI, so this solves on the same axis the senior
+    // phaseout does — and lands at *less* other income than the raw MAGI
+    // figure suggests, because the benefits the torpedo dragged in are in AGI
+    // too. See `otherIncomeAtAgi`.
+    niitEnd:
+      nii > 0
+        ? otherIncomeAtAgi(niitThreshold(filingStatus) + nii, scenario)
+        : null,
   };
 }
 
@@ -1076,13 +1106,23 @@ export interface IncomeAxisRange {
  * axis, and 408(d)(8) lets a joint return give $216,000 of them. The axis has
  * to reach past it or the gift is a slider whose effect is off the right edge
  * of every chart: see `IncomeAxisFeatures.giftEnd`.
+ *
+ * The 1411 surtax widens it the same way and for the same reason: its
+ * thresholds start at $200,000 of MAGI, which is past where this axis used to
+ * stop. See `IncomeAxisFeatures.niitEnd`.
  */
 export function incomeAxisMax(
   scenario: Scenario = {},
   { headroom = 0.05, roundTo = 25_000, minimum = MIN_INCOME_AXIS }: IncomeAxisRange = {},
 ): number {
-  const { torpedoEnd, seniorPhaseoutEnd, giftEnd } = incomeAxisFeatures(scenario);
-  const lastFeature = Math.max(torpedoEnd, seniorPhaseoutEnd ?? 0, giftEnd);
+  const { torpedoEnd, seniorPhaseoutEnd, giftEnd, niitEnd } =
+    incomeAxisFeatures(scenario);
+  const lastFeature = Math.max(
+    torpedoEnd,
+    seniorPhaseoutEnd ?? 0,
+    giftEnd,
+    niitEnd ?? 0,
+  );
   const wanted = Math.max(minimum, lastFeature * (1 + headroom));
   return Math.ceil(wanted / roundTo) * roundTo;
 }
@@ -1130,8 +1170,11 @@ export function marginalRateCurve(
       : { ...scenario, ordinaryIncome: income };
   const data: MarginalRatePoint[] = [];
   for (let income = 0; income <= maxIncome; income += step) {
-    const taxHere = totalTax(at(income));
-    const rate = totalTax(at(income + 1)) - taxHere;
+    // `totalFederalTax`, not `totalTax`: between the 1411 threshold and the
+    // gain above it, a dollar of ordinary income costs 3.8 cents more than
+    // chapter 1 says it does. That band is a third hump on this very axis.
+    const taxHere = totalFederalTax(at(income));
+    const rate = totalFederalTax(at(income + 1)) - taxHere;
     data.push({
       income,
       marginalRate: Math.round(rate * 10_000) / 100,
@@ -1199,6 +1242,7 @@ export function totalTax(scenario: Scenario = {}): number {
 export interface LTCGMarginalRatePoint {
   ltcg: number;
   marginalRate: number;
+  /** `totalFederalTax` — chapter 1 plus the 1411 surtax. */
   totalTax: number;
 }
 
@@ -1249,8 +1293,11 @@ export function ltcgMarginalRateCurve(
   const data: LTCGMarginalRatePoint[] = [];
   for (let ltcg = 0; ltcg <= maxLTCG; ltcg += step) {
     const here = at(ltcg);
-    const taxHere = totalTax(here);
-    const rate = totalTax({ ...here, ltcg: (here.ltcg ?? 0) + 1 }) - taxHere;
+    // A gain dollar past the 1411 threshold is both net investment income and
+    // MAGI, so it enters the surtax base from both ends at once — 3.8 points
+    // on top of whichever capital-gain band it lands in. See `niitFor`.
+    const taxHere = totalFederalTax(here);
+    const rate = totalFederalTax({ ...here, ltcg: (here.ltcg ?? 0) + 1 }) - taxHere;
     data.push({
       ltcg,
       marginalRate: Math.round(rate * 10_000) / 100,
@@ -1258,6 +1305,189 @@ export function ltcgMarginalRateCurve(
     });
   }
   return data;
+}
+
+
+/* ------------------------------------------------------------------ */
+/*  Net investment income tax (IRC 1411)                              */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The rate IRC 1411(a)(1) charges: 3.8%, unchanged since it took effect.
+ *
+ * It is not an income tax. Chapter 1 ends at `totalTax`; this is chapter 2A,
+ * "Unearned Income Medicare Contribution", reported on Form 8960 and carried
+ * to Schedule 2 rather than to the tax line — which is why the two have
+ * separate functions here and separate lines at the foot of the page.
+ */
+export const NIIT_RATE = 0.038;
+
+/**
+ * The first year 1411 applied. Enacted in 2010 and effective for tax years
+ * beginning after 31 December 2012.
+ *
+ * Kept here for the same reason `SS_BASE50_ENACTED` is: the thresholds below
+ * carry no inflation adjustment and 1411(b) provides for none, so every year
+ * since has moved more filers over a line drawn against a different decade's
+ * dollars. The page already tells that story about the $25,000 and $32,000
+ * bases of 1983 and 1993; this is the third instance of it.
+ */
+export const NIIT_ENACTED = 2013;
+
+/**
+ * The 1411(b) threshold amounts, by filing status. Not indexed, ever.
+ *
+ * Head of household shares the unmarried filer's $200,000. A separate return
+ * gets $125,000 — half the joint figure, and the same halving that leaves an
+ * MFS filer with $0 provisional-income bases under 86(c).
+ */
+export const NIIT_THRESHOLDS: Record<FilingStatus, number> = {
+  single: 200_000,
+  mfj: 250_000,
+  mfs: 125_000,
+  hoh: 200_000,
+};
+
+/** The 1411(b) threshold this return is measured against. */
+export function niitThreshold(filingStatus: FilingStatus = 'single'): number {
+  return NIIT_THRESHOLDS[filingStatus];
+}
+
+/**
+ * The net investment income of this scenario, under 1411(c).
+ *
+ * Only the capital gain counts. That is a modelling decision about what this
+ * app's four income inputs are, and it is worth stating in full, because the
+ * whole surtax turns on it:
+ *
+ * - `ltcg` is gain from the disposition of property and qualified dividends,
+ *   both squarely inside 1411(c)(1)(A)(i) and (iii). In.
+ * - `ordinaryIncome` is read as what the page has always called it: pensions,
+ *   IRA withdrawals and wages. 1411(c)(5) excludes any distribution from a
+ *   qualified plan or IRA by name, and wages are excluded as they are subject
+ *   to FICA instead. Out. A filer whose "other income" is really taxable bond
+ *   interest would have net investment income this app does not price — the
+ *   field note says so rather than the code guessing.
+ * - `ssBenefit` is not in any 1411(c)(1) category, taxable share or not. Out.
+ * - `muniInterest` is excluded from gross income by 103, and 1411(c)(1)(A)(i)
+ *   reaches interest only to the extent it is *in* gross income. Out — and
+ *   out of the MAGI below as well, which makes tax-exempt interest the one
+ *   input on this page that moves the torpedo, moves Medicare's MAGI, and
+ *   leaves the surtax entirely alone.
+ *
+ * The exclusions are the point. Every dollar this function leaves out still
+ * raises the MAGI the threshold is measured against, so it drags somebody
+ * else's already-realized gain into the surtax without being taxed by it.
+ */
+export function netInvestmentIncomeFor(scenario: Scenario = {}): number {
+  return Math.max(0, resolveScenario(scenario).ltcg);
+}
+
+/**
+ * Modified AGI for 1411 purposes: AGI, full stop.
+ *
+ * 1411(d) defines it as AGI increased by the amount excluded under section 911
+ * — foreign earned income — and nothing else. No filer this page models has
+ * any, so this is `agiFor` under a name that says which MAGI it is.
+ *
+ * It is emphatically not `irmaaMagi`, which adds tax-exempt interest back, and
+ * it is not the AGI the senior deduction phases out against only by accident
+ * — that one happens to coincide. Three MAGIs, three definitions; naming each
+ * one is cheaper than tracking which is meant at the call site.
+ */
+export function niitMagi(scenario: Scenario = {}): number {
+  return agiFor(scenario);
+}
+
+/** What 1411 charges this return, and how close the threshold is. */
+export interface NiitAssessment {
+  /** The 1411(d) MAGI the threshold is measured against. */
+  magi: number;
+  /** The 1411(b) threshold for this filing status. */
+  threshold: number;
+  /** Net investment income under 1411(c) — see `netInvestmentIncomeFor`. */
+  nii: number;
+  /** MAGI over the threshold; 0 when under it. */
+  excess: number;
+  /** The amount actually surtaxed: the lesser of `nii` and `excess`. */
+  base: number;
+  /**
+   * 3.8% of `base`, unrounded.
+   *
+   * Deliberately not rounded to cents the way `IrmaaAssessment` rounds its
+   * premiums. Both rate curves read a marginal rate off a one-dollar
+   * difference in `totalFederalTax`, so a half-cent of rounding in the surtax
+   * is half a percentage point on the chart: cent-rounding drew the band above
+   * the threshold at a flat 28% where the true rate is 24% plus 3.8.
+   */
+  tax: number;
+  /**
+   * MAGI still available before the first surtaxed dollar; 0 once over.
+   * Null when there is no net investment income, because then there is no
+   * threshold to worry about however high MAGI goes.
+   */
+  headroom: number | null;
+  /**
+   * How much more MAGI it takes before the whole of `nii` is surtaxed and the
+   * next ordinary dollar stops costing 3.8% extra. Null when there is no net
+   * investment income; 0 once the base is already the whole of it.
+   */
+  toFullyTaxed: number | null;
+}
+
+/**
+ * 1411 applied to a scenario.
+ *
+ * The surtax is 3.8% of the *lesser* of net investment income and the excess
+ * of MAGI over the threshold — which is what makes it stack rather than
+ * merely add. Below the threshold a gain costs nothing extra. Between the
+ * threshold and threshold-plus-gain, every dollar of MAGI drags one more
+ * dollar of an already-realized gain into the base, so an IRA withdrawal that
+ * is itself exempt from 1411 still costs 3.8 cents on the dollar. Past that
+ * the gain is fully surtaxed and the extra rate falls away again.
+ *
+ * That middle band is a hump on the same axis the torpedo is drawn on, from
+ * the same mechanism: an income definition wider than the income being taxed.
+ */
+export function niitFor(scenario: Scenario = {}): NiitAssessment {
+  const { filingStatus } = resolveScenario(scenario);
+  const threshold = niitThreshold(filingStatus);
+  const magi = niitMagi(scenario);
+  const nii = netInvestmentIncomeFor(scenario);
+  const excess = Math.max(0, magi - threshold);
+  const base = Math.min(nii, excess);
+  return {
+    magi,
+    threshold,
+    nii,
+    excess,
+    base,
+    tax: NIIT_RATE * base,
+    headroom: nii > 0 ? Math.max(0, threshold - magi) : null,
+    toFullyTaxed: nii > 0 ? Math.max(0, nii - excess) : null,
+  };
+}
+
+/** Just the surtax, for the callers that only want the dollars. */
+export function netInvestmentIncomeTax(scenario: Scenario = {}): number {
+  return niitFor(scenario).tax;
+}
+
+/**
+ * Everything this return owes the federal government in tax: chapter 1 plus
+ * chapter 2A. Form 1040's total tax line, near enough.
+ *
+ * This — not `totalTax` — is what both rate curves plot and what the reader's
+ * own answer at the foot of the page adds up, because a marginal rate that
+ * stops at chapter 1 is wrong by 3.8 points exactly where this app's subject
+ * bites hardest. `totalTax` stays chapter 1 on its own so the close can name
+ * the surtax as its own line rather than burying it in the income tax.
+ *
+ * Medicare's IRMAA surcharge is still not in here: it is a premium, not a tax,
+ * and it is charged two years later. See `irmaaFor`.
+ */
+export function totalFederalTax(scenario: Scenario = {}): number {
+  return totalTax(scenario) + netInvestmentIncomeTax(scenario);
 }
 
 /* ------------------------------------------------------------------ */
@@ -2275,8 +2505,13 @@ export function sizeConversion(
   const headroom =
     ceiling.amount - conversionMeasureValue(ceiling.measure, scenario, 0);
 
+  // The whole bill, surtax included. A conversion is ordinary income and so is
+  // never itself net investment income — but it raises the MAGI 1411 measures
+  // against, so converting into a return that holds a gain can cost 3.8% on
+  // dollars that were realized years ago. Pricing a conversion at chapter 1
+  // would understate exactly the case this page exists to warn about.
   const taxAt = (ordinary: number): number =>
-    totalTax({ ...scenario, ordinaryIncome: ordinary });
+    totalFederalTax({ ...scenario, ordinaryIncome: ordinary });
 
   const taxBefore = Math.round(taxAt(ordinaryIncome));
   const taxAfter = Math.round(taxAt(ordinaryIncome + conversion));

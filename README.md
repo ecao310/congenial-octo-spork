@@ -34,10 +34,10 @@ the reader along it, then collapsed explainers, then a box to the next step.
    largest conversion that fits under it, what it costs, and the average cost
    per dollar converted.
 
-The page closes on the seven figures the whole walk was for: total income,
-federal tax, effective rate, the rate on the next dollar, the taxable share of
-the benefit, the Medicare surcharge that MAGI buys, and the room left to
-convert.
+The page closes on the eight figures the whole walk was for: total income,
+federal tax, the 3.8% net investment income surtax inside it, effective rate,
+the rate on the next dollar, the taxable share of the benefit, the Medicare
+surcharge that MAGI buys, and the room left to convert.
 
 ## What is priced
 
@@ -47,10 +47,20 @@ deduction plus the 65+ additional amount plus the OBBBA senior deduction and
 its 6% phaseout, ordinary brackets for all four filing statuses, capital gains
 stacked on top of ordinary taxable income, QCDs excluded under IRC 408(d)(8),
 tax-exempt interest that moves provisional income without moving the tax base,
-and the IRMAA tiers on their two-year MAGI lag.
+the 3.8% net investment income tax of IRC 1411, and the IRMAA tiers on their
+two-year MAGI lag.
+
+Section 1411 is charged on the *lesser* of net investment income and MAGI over
+the threshold, which is why it belongs on a page about stacking: a pension or
+an IRA withdrawal is expressly outside the surtax and still raises the MAGI it
+is measured against, so it drags an already-realized gain into the base at
+3.8%. Only the capital gain counts as net investment income here — a
+distribution is excluded by 1411(c)(5), and tax-exempt interest is outside both
+the income and the MAGI, even while it is moving provisional income.
 
 The Social Security thresholds — $25,000/$34,000 and $32,000/$44,000 — are not
-indexed and stay frozen across both years while everything around them moves.
+indexed and stay frozen across both years while everything around them moves,
+and neither are 1411's $200,000/$250,000/$125,000, fixed since 2013.
 That contrast is the point of the year selector, so the page states it rather
 than hiding it.
 

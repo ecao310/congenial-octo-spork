@@ -2479,10 +2479,11 @@ describe('sizing the conversion', () => {
  * The close.
  *
  * Step 1 ends by naming the return every later step prices; this ends the page
- * by saying what came of it. Six figures a reader leaves with — total income,
- * the tax, the average rate, the rate on the next dollar, how much of the
- * benefit ended up in the tax base, and which Medicare tier the MAGI landed in
- * — plus what step 4 sized, all in one block for the first time.
+ * by saying what came of it. Seven figures a reader leaves with — total
+ * income, the tax, the 3.8% surtax inside it, the average rate, the rate on
+ * the next dollar, how much of the benefit ended up in the tax base, and which
+ * Medicare tier the MAGI landed in — plus what step 4 sized, all in one block
+ * for the first time.
  */
 describe('the closing answer', () => {
   const answer = (): HTMLElement => document.getElementById('answer') as HTMLElement;
@@ -2520,10 +2521,10 @@ describe('the closing answer', () => {
     );
   });
 
-  it('answers with the six figures the default return produces', () => {
+  it('answers with the eight figures the default return produces', () => {
     render(<App />);
     expect(figure('Total income')).toHaveTextContent('$53,712');
-    expect(figure('Federal income tax')).toHaveTextContent('$2,813');
+    expect(figure('Federal tax')).toHaveTextContent('$2,813');
     expect(figure('Effective rate')).toHaveTextContent('5.24%');
     expect(figure('The next dollar')).toHaveTextContent('22.2%');
     expect(figure('Benefit in the tax base')).toHaveTextContent(
@@ -2570,7 +2571,7 @@ describe('the closing answer', () => {
       document.querySelector('#step-conversion .slider-readout'),
     ).toHaveTextContent("taking this year's bill from $2,813");
 
-    expect(figure('Federal income tax')).toHaveTextContent('$2,813');
+    expect(figure('Federal tax')).toHaveTextContent('$2,813');
     expect(figure('Effective rate')).toHaveTextContent('5.24%');
     expect(figure('The next dollar')).toHaveTextContent('22.2%');
   });
@@ -2579,7 +2580,7 @@ describe('the closing answer', () => {
     render(<App />);
     setIncome(90_000);
     expect(figure('Total income')).toHaveTextContent('$113,712');
-    expect(figure('Federal income tax')).toHaveTextContent('$15,683');
+    expect(figure('Federal tax')).toHaveTextContent('$15,683');
     expect(figure('Effective rate')).toHaveTextContent('13.79%');
     // Past the torpedo: the next dollar is back to its own bracket rate.
     expect(figure('The next dollar')).toHaveTextContent('22%');
@@ -2675,7 +2676,7 @@ describe('the closing answer', () => {
     );
     // The gift takes provisional income under the 50% base, so none of the
     // benefit is taxable and the return owes nothing.
-    expect(figure('Federal income tax')).toHaveTextContent('$0');
+    expect(figure('Federal tax')).toHaveTextContent('$0');
     expect(figure('Benefit in the tax base')).toHaveTextContent('$0 of $23,712');
   });
 
@@ -2705,6 +2706,135 @@ describe('the closing answer', () => {
       'there is no income to average a bill over',
     );
     expect(figure('Effective rate')).not.toHaveTextContent('%');
+  });
+
+  /**
+   * IRC 1411's own line.
+   *
+   * Chapter 2A is a different chapter of the code on a form of its own, so the
+   * close names it rather than folding it into the income tax — and it keeps
+   * the line even at $0, because what a reader most needs to know about a
+   * surtax they are not paying is how close they are to paying it.
+   */
+  describe('the 3.8% net investment income tax', () => {
+    const openAt = (search: string): void => {
+      window.history.replaceState(null, '', `/${search}`);
+    };
+
+    it('says there is nothing for it to reach on a return with no gain', () => {
+      render(<App />);
+      const line = figure('Net investment income tax');
+      expect(line).toHaveTextContent('None — under the threshold');
+      expect(line).toHaveTextContent('once MAGI passes $200,000');
+      expect(line).toHaveTextContent(
+        'a pension, an IRA withdrawal and Social Security are all outside it',
+      );
+      // The threshold is the page's third frozen line, and says so.
+      expect(line).toHaveTextContent(
+        'set in 2013 and has never been indexed, exactly like the $25,000 and $34,000 bases',
+      );
+      // Nothing to split, so the tax line stays a single figure.
+      expect(figure('Federal tax')).toHaveTextContent('What the 2025 return owes.');
+      expect(figure('Federal tax')).not.toHaveTextContent('of income tax and');
+    });
+
+    it('measures the distance to the threshold when a gain is set but under it', () => {
+      openAt('?year=2025&ss=23712&income=100000&ltcg=40000');
+      render(<App />);
+      const line = figure('Net investment income tax');
+      expect(line).toHaveTextContent('None — under the threshold');
+      expect(line).toHaveTextContent('$40,000 of gain and $120,155 of MAGI');
+      expect(line).toHaveTextContent('$79,845 short');
+      // The sentence the whole feature exists for.
+      expect(line).toHaveTextContent(
+        'the dollars that would close that gap need not be investment income at all',
+      );
+    });
+
+    it('prices it, and splits the tax line, once MAGI clears the threshold', () => {
+      openAt('?year=2025&ss=23712&income=240000&ltcg=60000');
+      render(<App />);
+
+      expect(figure('Total income')).toHaveTextContent('$263,712');
+      expect(figure('Federal tax')).toHaveTextContent('$48,384');
+      // $46,104 of income tax and $2,280 of surtax, which add to the figure
+      // above them.
+      expect(figure('Federal tax')).toHaveTextContent(
+        'What the 2025 return owes: $46,104 of income tax and $2,280 of the surtax on the next line',
+      );
+
+      const line = figure('Net investment income tax');
+      expect(line).toHaveTextContent('$2,280');
+      expect(line).toHaveTextContent(
+        '3.8% of $60,000 — the lesser of the $60,000 gain and the $60,155 by which $260,155 of MAGI clears the $200,000 threshold',
+      );
+      // The whole gain is already in, so ordinary income has stopped dragging.
+      expect(line).toHaveTextContent(
+        'the next dollar of ordinary income no longer adds to it',
+      );
+    });
+
+    /**
+     * The band in the middle, where a dollar 1411 never taxes still costs
+     * 3.8 cents. This is the third stacking effect the page is about.
+     */
+    it('names what more income would drag in while the gain is only part taxed', () => {
+      openAt('?year=2025&ss=23712&income=200000&ltcg=60000');
+      render(<App />);
+      const line = figure('Net investment income tax');
+      expect(line).toHaveTextContent(
+        'including an IRA withdrawal 1411 never taxes — pulls the rest of the gain in at 3.8% too',
+      );
+    });
+
+    /** Step 3's readout carries the same figure, since that is where it bites. */
+    it('is named in step 3’s readout where it applies', () => {
+      openAt('?year=2025&ss=23712&income=240000&ltcg=60000');
+      render(<App />);
+      const readout = document.querySelector(
+        '#step-gains .slider-readout',
+      ) as HTMLElement;
+      expect(readout).toHaveTextContent(
+        '$2,280 of that is the 3.8% surtax of section 1411, charged on $60,000 of the gain because $260,155 of MAGI clears the $200,000 threshold',
+      );
+    });
+
+    /** And step 2's curve carries the 3.8 points in the rate on the next dollar. */
+    it('shows in the rate on the next dollar of ordinary income', () => {
+      openAt('?year=2025&ss=23712&income=220000&ltcg=60000');
+      render(<App />);
+      // Ordinary income at 22%, plus the 3.8 the extra dollar of MAGI drags in.
+      expect(figure('The next dollar')).toHaveTextContent('27.8%');
+    });
+
+    /**
+     * Step 3 already explains why two effects stack. This is the third, and it
+     * gets its own collapsed section rather than a fourth paragraph inside a
+     * heading that says "two".
+     */
+    it('has an explainer of its own under step 3, collapsed like the rest', () => {
+      render(<App />);
+      const explainer = screen
+        .getByRole('heading', { name: /the third effect: the 3\.8% surtax/i })
+        .closest('details');
+
+      expect(explainer).toBeInTheDocument();
+      expect(explainer).not.toHaveAttribute('open');
+      expect(explainer?.closest('section')?.id).toBe('step-gains');
+      // The lesser-of rule, which is the whole reason it stacks.
+      expect(explainer).toHaveTextContent(
+        'the lesser of your net investment income and the amount by which MAGI clears the threshold',
+      );
+      expect(explainer).toHaveTextContent('An IRA withdrawal is expressly excluded by 1411(c)(5)');
+      // All three thresholds, and the year they stopped moving.
+      expect(explainer).toHaveTextContent(
+        '$200,000 unmarried, $250,000 joint, $125,000 on a separate return, fixed in 2013 and never indexed since',
+      );
+      // The one input on the page that is outside it on both counts.
+      expect(explainer).toHaveTextContent(
+        'neither investment income here nor part of this MAGI',
+      );
+    });
   });
 });
 

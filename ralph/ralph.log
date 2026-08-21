@@ -4529,3 +4529,98 @@ The other seven are the seams the last five iterations opened and did not close:
 Left to the existing bullet rather than duplicated. Rev. Proc. figures for 2027
 are not published in August, so `TAX_YEARS` stays at [2025, 2026] and the
 existing state-figures bullet already carries the re-check.
+
+## 2026-08-21 — Task: Price the third stacking effect (the 3.8% NIIT, IRC 1411)
+
+Topmost unchecked bullet, top of Backlog 4. HEAD was clean and green before;
+616 tests green after, up from 592.
+
+### The three decisions the bullet left open
+
+**Is "Other Ordinary Income" net investment income?** No. The field's own doc
+comment has always called it "pensions, IRA withdrawals, wages, interest", and
+1411(c)(5) excludes a distribution from a qualified plan or IRA by name while
+wages are outside 1411(c)(1) entirely. So net investment income in this app is
+`ltcg` and nothing else. `netInvestmentIncomeFor` is the one place that decides
+it, and its comment argues each of the four inputs in turn — including the one
+that surprised me: tax-exempt interest is out on *both* counts, because 103
+keeps it out of gross income and 1411(c)(1)(A)(i) reaches interest only to the
+extent it is in gross income. That makes muni the single input on this page
+that moves provisional income, moves Medicare's MAGI, and leaves 1411 alone.
+
+**Its own line, or folded into the income tax?** Both, and the split is the
+point. `totalTax` stays chapter 1 exactly as it was — nothing that meant
+"income tax" quietly started meaning something else — and a new
+`totalFederalTax` adds chapter 2A on top. *That* is what both rate curves and
+step 4's sizing now plot, because a marginal rate that stops at chapter 1 is
+wrong by 3.8 points precisely where this app's subject bites. The close then
+names the surtax on a line of its own (Form 8960, Schedule 2, not the tax
+line), and the tax line above it splits into "$46,104 of income tax and $2,280
+of the surtax on the next line" when there is one.
+
+**An `incomeAxisFeatures` entry?** Yes — `niitEnd`, and it belongs in that
+interface's own terms because it genuinely is an *end*. The surtax is 3.8% of
+the *lesser* of NII and MAGI-over-threshold, so it ramps in over a band exactly
+as wide as the gain and is fully priced at threshold-plus-gain; past that the
+curve is flat again. Null when there is no gain, so the default chart is
+untouched. With a $60,000 gain and an average benefit it lands at $239,845 of
+other income — less than the $260,000 MAGI figure suggests, because the
+benefits the torpedo dragged in are in AGI too — and widens the axis to
+$275,000.
+
+### The third hump, drawn
+
+`marginalRateCurve` over a single filer with a $20,000 gain:
+
+    199,000 → 24%      200,000 → 27.8%  ...  219,000 → 27.8%   220,000 → 24%
+
+Twenty thousand dollars of band, exactly the size of the gain, every dollar of
+it ordinary income that 1411 never taxes and that costs 3.8 cents anyway. Same
+shape as the torpedo one step up, same cause: an income definition wider than
+the income being taxed.
+
+### One bug I put in and took out again
+
+`niitFor.tax` was `toCents(NIIT_RATE * base)` at first, matching what
+`IrmaaAssessment` does with premiums. That drew the band at a flat **28%**
+rather than 27.8: both curves read a marginal rate off a one-dollar difference
+in the total, so a half-cent of rounding is half a percentage point on the
+chart. The surtax is now returned unrounded, like `totalTax`, with a comment
+saying why. Anything that displays it rounds at the edge — `hereSurtax` in
+App.tsx does.
+
+`hereIncomeTax` is taken by subtraction (`hereTax - hereSurtax`) rather than by
+a second `totalTax` call, so the two figures the close prints always add to the
+one above them; each is then within a dollar of exact, which is the tolerance
+every other whole-dollar figure on the page is quoted to.
+
+### Verified
+
+- 24 new tests across `tax.test.ts` (thresholds by status, unindexed across
+  both years, what counts as NII, 1411's MAGI vs Medicare's on one return with
+  muni, the lesser-of rule in three positions, the distribution that costs 3.8%
+  anyway, `totalFederalTax` = chapter 1 + chapter 2A, both curves, the axis
+  feature, conversion sizing) and `App.test.tsx` (the close's new line in all
+  three of its states, the split tax line, step 3's readout, the 27.8% on "the
+  next dollar", the explainer).
+- `npx tsc -b`, `npx eslint src --max-warnings 0`, `npx vitest run` (9 files,
+  616 tests), `npm run build`.
+- Not one of the 592 pre-existing tests changed behaviour: the only edits were
+  four `figure('Federal income tax')` → `figure('Federal tax')` for the
+  relabelled line, and two stale counts in test names/comments.
+
+### Left alone deliberately
+
+The close's "no state" gloss. Adding the state name there is the *next*
+unchecked bullet's whole job, and my first draft of it duplicated the step 2
+footnote's exact phrase and broke that footnote's test — which is a fair
+warning that it is a prose decision, not a clause to smuggle in here. Reverted.
+
+### Filed under Discovered Work
+
+Step 4 still has no ceiling for the 1411 threshold, and cannot reuse the
+existing `'magi'` measure because that one is Medicare's (muni added back)
+rather than 1411(d)'s plain AGI — it needs a seventh `ConversionMeasure`. And
+the three shelved modules still call `totalTax` at nine sites, so they score
+lifetime tax at chapter 1; not visible, but an inconsistency to settle when
+they come off the shelf rather than before.

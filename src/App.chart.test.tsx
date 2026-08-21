@@ -157,9 +157,11 @@ describe('IRMAA cliffs on the ordinary-income chart', () => {
   it('draws a separate return a single line, at its fourth-tier cliff', () => {
     const { container } = render(<App />);
     showBothThresholds();
-    fireEvent.click(
-      screen.getByRole('radio', { name: 'Married Filing Separately' }),
-    );
+    // A separate return is not on the strip — it is the second option in the
+    // menu beside it.
+    fireEvent.change(screen.getByRole('combobox', { name: 'More filing statuses' }), {
+      target: { value: 'mfs' },
+    });
     // Tiers 1 through 3 do not exist for a separate return, and tier 5 needs
     // $391,000 of MAGI, so exactly one line survives — the fourth.
     expect(screen.getByText('IRMAA 4')).toBeInTheDocument();

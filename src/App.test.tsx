@@ -34,6 +34,34 @@ afterEach(() => {
 const scenarioRecap = (): HTMLElement =>
   screen.getByText(/Everything from here on prices one return/);
 
+/** The menu holding the two statuses that are not on the strip. */
+const filingMenu = (): HTMLSelectElement =>
+  screen.getByRole('combobox', { name: 'More filing statuses' }) as HTMLSelectElement;
+
+/**
+ * Set the filing status, wherever the page keeps that one.
+ *
+ * Single and Married Filing Jointly are radios in the strip; head of
+ * household and a separate return are options in the menu beside it. Which
+ * half a status sits in is a layout decision that has already moved once, so
+ * every test that only needs the status *set* asks for it by name and lets
+ * this find it. The tests that are about the split — `renders a filing status
+ * selector defaulting to Single` and the one under it — address each half
+ * directly instead, which is what keeps this from hiding the strip emptying
+ * out or the menu losing an option.
+ */
+const chooseFilingStatus = (label: string): void => {
+  const onStrip = screen.queryByRole('radio', { name: label });
+  if (onStrip) {
+    fireEvent.click(onStrip);
+    return;
+  }
+  const menu = filingMenu();
+  const option = Array.from(menu.options).find((candidate) => candidate.text === label);
+  if (!option) throw new Error(`No filing status on this page is called ${label}`);
+  fireEvent.change(menu, { target: { value: option.value } });
+};
+
 describe('App', () => {
   /**
    * The benefit slider's own input group.
@@ -143,7 +171,7 @@ describe('App', () => {
       expect(slider).toHaveValue('40000');
 
       fireEvent.change(slider, { target: { value: '100000' } });
-      fireEvent.click(screen.getByRole('radio', { name: 'Head of Household' }));
+      chooseFilingStatus('Head of Household');
       // $100,000 is two benefits' worth and there is only one person on this
       // return now, so it comes back to the ceiling rather than standing past
       // the right edge of its own slider.
@@ -154,7 +182,7 @@ describe('App', () => {
     it('leaves every other status setting one person\u2019s benefit', () => {
       render(<App />);
       for (const name of ['Head of Household', 'Married Filing Separately']) {
-        fireEvent.click(screen.getByRole('radio', { name }));
+        chooseFilingStatus(name);
         expect(
           screen.getByRole('slider', { name: /social security benefit/i }),
         ).toHaveAttribute('max', '62172');
@@ -187,11 +215,57 @@ describe('App', () => {
     expect(
       screen.getByRole('radio', { name: 'Married Filing Jointly' }),
     ).not.toBeChecked();
-    expect(
-      screen.getByRole('radio', { name: 'Married Filing Separately' }),
-    ).not.toBeChecked();
+    // Nothing is chosen in the menu while the strip is holding the answer.
+    expect(filingMenu()).toHaveValue('');
     // The close repeats the status prose, so this asks the recap that closes
     // step 1 rather than the page.
+    expect(scenarioRecap()).toHaveTextContent('a single filer');
+  });
+
+  /**
+   * Two of the four statuses are nearly every reader this page has, and they
+   * are the two with a control of their own; the other two are one click away
+   * in the menu beside them. Asserted as the whole split rather than as "the
+   * strip has two options", because the failure worth catching is a status
+   * that has fallen off both halves, and a count on either half alone would
+   * not see it. The strip is read in order, which is the other half of the
+   * claim: Single first, then the joint return.
+   */
+  it('keeps two statuses on the strip and the other two in the menu', () => {
+    render(<App />);
+    expect(screen.getAllByRole('radio').map((radio) => radio.getAttribute('value'))).toEqual([
+      'single',
+      'mfj',
+    ]);
+    expect(Array.from(filingMenu().options).map((option) => option.value)).toEqual([
+      '',
+      'hoh',
+      'mfs',
+    ]);
+    // The empty one is the menu's own label rather than a fifth status: it
+    // says so in words, and it is disabled so that it cannot be chosen back.
+    expect(filingMenu().options[0]).toBeDisabled();
+    expect(filingMenu().options[0]).toHaveTextContent('More statuses');
+  });
+
+  /**
+   * One answer in two halves. The strip cannot show a status it does not
+   * carry, so when the menu is holding one the strip has nothing checked —
+   * and the menu is showing the answer in words, which is what keeps the
+   * empty strip from reading as no answer at all.
+   */
+  it('hands the answer between the strip and the menu', () => {
+    render(<App />);
+    chooseFilingStatus('Head of Household');
+    expect(filingMenu()).toHaveValue('hoh');
+    expect(
+      screen.getAllByRole('radio').filter((radio) => (radio as HTMLInputElement).checked),
+    ).toEqual([]);
+    expect(scenarioRecap()).toHaveTextContent('a head of household');
+
+    chooseFilingStatus('Single');
+    expect(screen.getByRole('radio', { name: 'Single' })).toBeChecked();
+    expect(filingMenu()).toHaveValue('');
     expect(scenarioRecap()).toHaveTextContent('a single filer');
   });
 
@@ -287,9 +361,7 @@ describe('App', () => {
 
   /** Selects the separate-return status and returns its warning banner. */
   const selectMfs = (): HTMLElement => {
-    fireEvent.click(
-      screen.getByRole('radio', { name: 'Married Filing Separately' }),
-    );
+    chooseFilingStatus('Married Filing Separately');
     return filingStatusNote() as HTMLElement;
   };
 
@@ -299,9 +371,7 @@ describe('App', () => {
     expect(filingStatusNote()).not.toBeInTheDocument();
 
     const warning = selectMfs();
-    expect(
-      screen.getByRole('radio', { name: 'Married Filing Separately' }),
-    ).toBeChecked();
+    expect(filingMenu()).toHaveValue('mfs');
     expect(warning).toHaveTextContent('Filing separately zeroes out both thresholds');
     // 42.5% of the $24,852 average benefit, taxable at $0 of other income,
     // and the 85% cap reached at half the benefit.
@@ -1563,16 +1633,11 @@ describe('head of household', () => {
   const filingSection = (): HTMLElement =>
     screen.getByRole('group', { name: /filing status/i });
 
-  const selectHoh = (): void => {
-    fireEvent.click(screen.getByRole('radio', { name: 'Head of Household' }));
-  };
-
-  it('offers Head of Household alongside the other three statuses', () => {
+  it('offers Head of Household from the menu beside the strip', () => {
     render(<App />);
-    const hoh = screen.getByRole('radio', { name: 'Head of Household' });
-    expect(hoh).not.toBeChecked();
-    selectHoh();
-    expect(hoh).toBeChecked();
+    expect(filingMenu()).toHaveValue('');
+    chooseFilingStatus('Head of Household');
+    expect(filingMenu()).toHaveValue('hoh');
     expect(screen.getByRole('radio', { name: 'Single' })).not.toBeChecked();
     // Once in the recap that closes step 1, once in the close that ends the
     // page, once opening the status note.
@@ -1581,7 +1646,7 @@ describe('head of household', () => {
 
   it('explains that the thresholds are a single filer\'s and the rest is not', () => {
     render(<App />);
-    selectHoh();
+    chooseFilingStatus('Head of Household');
     const note = filingSection();
     expect(note).toHaveTextContent(
       /IRC 86\(c\) names only two special base amounts — \$32,000 on a joint return and \$0 on a separate one/,
@@ -1598,7 +1663,7 @@ describe('head of household', () => {
 
   it('warns that qualifying is the hard part, and that a widow is not here yet', () => {
     render(<App />);
-    selectHoh();
+    chooseFilingStatus('Head of Household');
     const note = filingSection();
     expect(note).toHaveTextContent(/unmarried at year end/);
     expect(note).toHaveTextContent(/more than half the cost of keeping up your home/);
@@ -1609,7 +1674,7 @@ describe('head of household', () => {
   it('shows the note only for this status, and not the separate-return warning', () => {
     render(<App />);
     expect(filingSection()).not.toHaveTextContent(/keeps a single filer's thresholds/);
-    selectHoh();
+    chooseFilingStatus('Head of Household');
     expect(filingSection()).toHaveTextContent(/keeps a single filer's thresholds/);
     expect(filingSection()).not.toHaveTextContent(/zeroes out both thresholds/);
     fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Jointly' }));
@@ -1618,7 +1683,7 @@ describe('head of household', () => {
 
   it('takes the unmarried age-65 addition with no per-spouse wording', () => {
     render(<App />);
-    selectHoh();
+    chooseFilingStatus('Head of Household');
     expect(screen.getByText(/Turning 65 adds \$2,050\./)).toBeInTheDocument();
     expect(screen.queryByText(/per qualifying spouse/)).not.toBeInTheDocument();
     expect(
@@ -1628,7 +1693,7 @@ describe('head of household', () => {
 
   it('keeps the single filer\'s torpedo thresholds in the explainer', () => {
     render(<App />);
-    selectHoh();
+    chooseFilingStatus('Head of Household');
     expect(screen.getByText(/provisional income passes \$25,000/)).toBeInTheDocument();
     expect(screen.getByText(/past \$34,000/)).toBeInTheDocument();
   });
@@ -1767,9 +1832,7 @@ describe('the IRMAA cliff lines on the torpedo chart', () => {
   it('quotes the separate return its own first tier rather than tier 1', () => {
     render(<App />);
     openLinesPanel();
-    fireEvent.click(
-      screen.getByRole('radio', { name: 'Married Filing Separately' }),
-    );
+    chooseFilingStatus('Married Filing Separately');
     expect(irmaaNote()).toHaveTextContent('IRMAA 4 at $87,876 costs $6,355/yr.');
     expect(irmaaNote()).not.toHaveTextContent('IRMAA 1');
   });
@@ -1825,9 +1888,7 @@ describe('the IRMAA cliff lines on the torpedo chart', () => {
     const details = () =>
       screen.getByRole('heading', { name: /medicare's irmaa cliffs/i }).closest('details');
     expect(details()).not.toHaveTextContent('tiers 1 through 3');
-    fireEvent.click(
-      screen.getByRole('radio', { name: 'Married Filing Separately' }),
-    );
+    chooseFilingStatus('Married Filing Separately');
     expect(details()).toHaveTextContent(
       'A separate return has no access to tiers 1 through 3',
     );
@@ -1951,7 +2012,7 @@ describe('separate-return divergence figure', () => {
     // 35% band ends, which is indexed like everything else: $375,800 in 2025,
     // $384,350 in 2026. It used to be written into the sentence.
     render(<App />);
-    fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Separately' }));
+    chooseFilingStatus('Married Filing Separately');
     const fieldset = screen.getByRole('group', { name: /filing status/i });
     expect(fieldset).toHaveTextContent(
       /identical up to \$384,350 of taxable income; head of household is better than either/,
@@ -2529,13 +2590,13 @@ describe('the return in the address bar', () => {
   it('comes back on the same return after the page is thrown away', () => {
     const first = render(<App />);
     fireEvent.change(incomeSlider(), { target: { value: '90000' } });
-    fireEvent.click(screen.getByRole('radio', { name: 'Head of Household' }));
+    chooseFilingStatus('Head of Household');
     const survived = window.location.search;
     first.unmount();
 
     render(<App />);
     expect(incomeSlider()).toHaveValue('90000');
-    expect(screen.getByRole('radio', { name: 'Head of Household' })).toBeChecked();
+    expect(filingMenu()).toHaveValue('hoh');
     expect(window.location.search).toBe(survived);
   });
 

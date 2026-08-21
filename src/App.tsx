@@ -118,10 +118,31 @@ const STEPS = ['benefit', 'torpedo'] as const;
 
 type StepId = (typeof STEPS)[number];
 
-const FILING_STATUS_OPTIONS: { value: FilingStatus; label: string }[] = [
+/**
+ * The strip, and the menu beside it.
+ *
+ * Four statuses, and two of them are almost every reader this page has. Head
+ * of household and a separate return are priced exactly as carefully — each
+ * one has a note of its own under the control, and the separate return has
+ * the loudest warning on the page — but a four-option strip spends the widest
+ * row in step 1 restating two answers most readers scroll straight past, and
+ * `Married Filing Separately` is the longest label of the four. So the common
+ * pair rides the strip and the other two sit in a menu next to it: one click
+ * for the reader who needs them, no row at all for the reader who does not.
+ *
+ * They stay one answer. The strip is a radio group over the first list and
+ * the menu is a `<select>` over the second, and whichever holds the current
+ * status is the one showing it — when the menu holds it the strip has nothing
+ * checked, which is what a radio group whose answer is elsewhere looks like,
+ * and the menu is showing that answer in words rather than a placeholder.
+ */
+const FILING_STATUS_STRIP: { value: FilingStatus; label: string }[] = [
   { value: 'single', label: 'Single' },
-  { value: 'hoh', label: 'Head of Household' },
   { value: 'mfj', label: 'Married Filing Jointly' },
+];
+
+const FILING_STATUS_MENU: { value: FilingStatus; label: string }[] = [
+  { value: 'hoh', label: 'Head of Household' },
   { value: 'mfs', label: 'Married Filing Separately' },
 ];
 
@@ -916,6 +937,9 @@ const App: React.FC = () => {
     announce('benefit');
   };
 
+  /** The status the menu is holding, or undefined while the strip holds it. */
+  const menuStatus = FILING_STATUS_MENU.find((option) => option.value === filingStatus);
+
   // Only a joint return can claim the addition twice, and the spouse's
   // checkbox is meaningless until the filer's is on.
   const seniors = isSenior ? (filingStatus === 'mfj' && spouseIsSenior ? 2 : 1) : 0;
@@ -1488,26 +1512,51 @@ const App: React.FC = () => {
           <h2 className="step-heading" id="step-benefit-heading">
             Your Social Security benefit
           </h2>
-          <p className="step-intro">
-            Everything below is priced off one return. Set it here and it stays
-            set for the rest of the page.
-          </p>
 
           <fieldset className="input-group filing-status">
             <legend>Filing Status</legend>
-            <div className="segmented">
-              {FILING_STATUS_OPTIONS.map(({ value, label }) => (
-                <label key={value} className="segmented-option">
-                  <input
-                    type="radio"
-                    name="filing-status"
-                    value={value}
-                    checked={filingStatus === value}
-                    onChange={() => changeFilingStatus(value)}
-                  />
-                  <span>{label}</span>
-                </label>
-              ))}
+            <div className="filing-choices">
+              <div className="segmented">
+                {FILING_STATUS_STRIP.map(({ value, label }) => (
+                  <label key={value} className="segmented-option">
+                    <input
+                      type="radio"
+                      name="filing-status"
+                      value={value}
+                      checked={filingStatus === value}
+                      onChange={() => changeFilingStatus(value)}
+                    />
+                    <span>{label}</span>
+                  </label>
+                ))}
+              </div>
+              {/* The placeholder is what the menu shows while the strip holds
+                  the answer, and it is `disabled` so that it cannot be chosen
+                  back — there is no such status, and the way out of the menu
+                  is the strip, which is right beside it. `onChange` looks its
+                  value up in the list rather than casting the string to a
+                  `FilingStatus`, so nothing but one of these two can be set
+                  from here however the event arrives. */}
+              <select
+                className={`filing-more${menuStatus ? ' filing-more-chosen' : ''}`}
+                aria-label="More filing statuses"
+                value={menuStatus?.value ?? ''}
+                onChange={(event) => {
+                  const chosen = FILING_STATUS_MENU.find(
+                    (option) => option.value === event.target.value,
+                  );
+                  if (chosen) changeFilingStatus(chosen.value);
+                }}
+              >
+                <option value="" disabled>
+                  More statuses…
+                </option>
+                {FILING_STATUS_MENU.map(({ value, label }) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
             </div>
             {filingStatus === 'mfs' && (
               <p className="warning-note" role="note">

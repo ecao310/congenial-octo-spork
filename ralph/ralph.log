@@ -7471,3 +7471,128 @@ The next run's topmost unchecked item is the **filing-status dropdown**: single
 and MFJ as the first two options, with head of household and filing separately
 behind a menu. `FILING_STATUS_OPTIONS` (App.tsx:121) currently lists all four in
 the order single / hoh / mfj / mfs and renders them as one `.segmented` strip.
+
+## Backlog 6 · bullet 2 — two statuses on the strip, two behind a menu
+
+`FILING_STATUS_OPTIONS` rendered all four statuses as one `.segmented` strip
+in the order single / hoh / mfj / mfs. The bullet asks for Single and Married
+Filing Jointly as the first two options with head of household and a separate
+return behind a dropdown, so the constant split in two — `FILING_STATUS_STRIP`
+and `FILING_STATUS_MENU` — and the render puts a `<select>` beside the strip.
+
+### Why a native `<select>` rather than the page's own dropdown
+
+The page already owns one dropdown: `.chart-lines`, a button with
+`aria-expanded` over a panel, with an outside-click listener and an Escape
+handler behind it. Reusing that shape here would have meant a second copy of
+that machinery, a second widget to keep keyboard-correct, and a rename of
+`.chart-lines-*` to something both could share. A `<select>` is what a choice
+among named values already is, and it costs no ARIA, no listeners and no focus
+management — which is the same trade the previous iteration made in the other
+direction when it deleted a `role="toolbar"` with roving tabindex.
+
+The one thing it costs is the split value: while the menu is holding the
+answer, the radio group has nothing checked. That is legal and ordinary — it
+is what any unanswered radio question looks like — and the reader's answer is
+not hidden by it, because the menu is showing that answer in words and drawn
+in the accent fill a chosen segmented option is drawn in. `.filing-more-chosen`
+is that fill, and the alternative shapes all had a worse version of the same
+problem: a `<details>` or a custom panel holding the extra two radios hides the
+*checked* control when it is closed, which is the failure that actually matters,
+and forcing it open whenever a hidden status is chosen gives you a disclosure
+that will not close.
+
+### What the control does now
+
+- Strip: `Single`, `Married Filing Jointly`, in that order.
+- Menu: a disabled `More statuses…` placeholder, then `Head of Household` and
+  `Married Filing Separately`. The placeholder is `disabled` so it cannot be
+  chosen back — there is no such status, and the way out of the menu is the
+  strip beside it.
+- `onChange` looks the event's value up in `FILING_STATUS_MENU` and calls
+  `changeFilingStatus` with the found entry rather than casting the string to a
+  `FilingStatus`, so nothing but those two can be set from here.
+- `menuStatus` (App.tsx:941) is the single derivation both the `value` and the
+  chosen class read, so the two cannot disagree.
+
+### Layout, measured rather than assumed
+
+`.filing-choices` is a wrapping flex row. In the 18rem configuration column
+there is never room for both — the strip alone measures 245px against the
+column's 276px — so they stack there; at 900px and 700px, where the shell has
+collapsed to one column and the fieldset has the whole measure, they sit side
+by side and the chosen menu reads as a third segmented option. Both checked in
+a real Chromium against the built page, and the comment on the rule says which
+happens where instead of claiming a row it does not always get.
+
+### The print sheet gained a third control
+
+Its "what a fill was carrying" block held two controls that state their answer
+with a background colour. The menu is a third, and the one whose answer is
+already in words — but the printer that *does* honour backgrounds would put
+this sheet's near-black ink on a mid-blue, so the fill comes off and the answer
+takes the accent border and ink the chosen option beside it takes. Verified
+under `emulateMedia({ media: 'print' })`: `rgba(0,0,0,0)` fill, `#0369a1` ink
+and border.
+
+### Tests
+
+`chooseFilingStatus(label)` (App.test.tsx:36) sets a status wherever the page
+keeps it: it clicks the radio if there is one and drives the menu if there is
+not. Every test that only needs the status *set* goes through it, so the next
+move of a status between the two halves is one helper edit rather than fifteen.
+The tests that are *about* the split address each half directly:
+
+- `renders a filing status selector defaulting to Single` now also asserts the
+  menu is showing its placeholder while the strip holds the answer.
+- `keeps two statuses on the strip and the other two in the menu` reads the
+  strip's values in order (`['single', 'mfj']`) and the menu's
+  (`['', 'hoh', 'mfs']`), plus that the placeholder is disabled and says so in
+  words. Written as the whole split because the failure worth catching is a
+  status that has fallen off *both* halves.
+- `hands the answer between the strip and the menu` holds the invariant the
+  design rests on: with the menu holding it, no radio is checked and the recap
+  still names the status; choosing from the strip takes it back and the menu
+  returns to the placeholder.
+- `offers Head of Household alongside the other three statuses` →
+  `offers Head of Household from the menu beside the strip`.
+
+`selectHoh` was a one-line wrapper around what is now the shared helper, so it
+went and its six call sites call the helper.
+
+### Mutation-checked three ways, each reverted
+
+| mutation | result |
+| --- | --- |
+| `hoh` moved back onto the strip | red ×4, incl. `expected [ 'single', 'mfj', 'hoh' ] to deeply equal [ 'single', 'mfj' ]` |
+| placeholder's `disabled` removed | red: `keeps two statuses on the strip…` |
+| menu always renders the placeholder | red ×4, incl. `hands the answer between the strip and the menu` |
+
+### Verification
+
+`npx vitest run` **676 passed in 13 files** (674 before: +3 new, −1 folded).
+`tsc -b`, `eslint . --max-warnings 0` and `npm run build` all clean. Screenshots
+and computed styles read off a real Chromium at 1280 / 900 / 700 / 420 wide and
+under print emulation.
+
+### Not mine, and in this commit
+
+`src/App.tsx` was edited by a human mid-run again — the same thing the previous
+entry reports. Step 1's `.step-intro` paragraph ("Everything below is priced
+off one return. Set it here and it stays set for the rest of the page.") was
+deleted from the working tree while I was working in the same file. It is not
+my edit and it is in my commit, because reverting someone's in-flight work is
+worse than carrying it: if a later run bisects through here, that four-line
+deletion at the top of step 1 is what it is. Step 2's `.step-intro` is
+untouched, so the CSS rule and `App.test.tsx:2046` still have a reader.
+
+**A caution for the next run.** Mutation-testing by writing to `src/App.tsx`
+and restoring from a `cp` snapshot is not safe while a human is editing the
+same file: anything they typed between the snapshot and the restore is
+silently overwritten. Nothing observable was lost this time — the deletion
+above survived because it landed before the snapshot — but the next run should
+mutate a copy under `/tmp` and point vitest at it, or take the snapshot
+immediately before each mutation.
+
+The next unchecked bullet is the graph one: remove the "You are here" label and
+have the x-label read total income ($) including $z of social security.

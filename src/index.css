@@ -343,6 +343,55 @@ fieldset.filing-status legend {
   margin-bottom: 0.5rem;
 }
 
+/* The strip and the menu are one control with one answer, so they share a row
+   where there is room for one. In the 18rem configuration column there never
+   is — the strip alone is 245px — so they stack there, and they sit side by
+   side wherever the shell has collapsed to a single column and this fieldset
+   has the whole measure. Wrapping rather than shrinking, because a menu that
+   drops under the strip still reads as the same control and a squeezed one
+   reads as a broken one. */
+.filing-choices {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* The one native menu on the page, and the one control here that keeps a
+   platform glyph: `color-scheme: dark` at the root already draws the arrow in
+   this register, and the page owns no icon asset to replace it with. Border,
+   fill and corner are the segmented tray's, so the pair beside each other
+   reads as one control rather than two. */
+.filing-more {
+  padding: 0.375rem 0.5rem;
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-md);
+  background: var(--surface-control);
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--ink-muted);
+  cursor: pointer;
+}
+
+.filing-more:hover {
+  border-color: var(--edge-strong);
+  color: var(--ink-soft);
+}
+
+.filing-more:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Holding the answer, drawn the way a chosen segmented option is drawn: one
+   control, one answer, and it looks the same whichever half it landed in. The
+   print sheet takes the fill back off — see the rule beside the strip's. */
+.filing-more-chosen {
+  background: var(--accent-muted);
+  color: var(--ink-bright);
+}
+
 /* The tray, and the one place an 8px corner still earns itself: it holds
    6px-cornered options with 4px of padding around them, and a tray whose
    corner matched its contents' would draw a visible gap at each end.
@@ -1766,8 +1815,8 @@ footer p {
   }
 
   /* ── What a fill was carrying ──
-     Two controls state their answer with a background colour, which is the
-     one thing on this page that may not reach the paper. Both restate it
+     Three controls state their answer with a background colour, which is the
+     one thing on this page that may not reach the paper. All three restate it
      with ink instead.
 
      The chosen option's border comes out of the padding rather than adding to
@@ -1780,6 +1829,18 @@ footer p {
     padding: calc(0.375rem - 1px) calc(0.75rem - 1px);
     color: var(--accent);
     font-weight: 700;
+  }
+
+  /* The menu is the one of the three whose answer is already in words — the
+     status is written across the control — so the fill was never the only
+     signal here. It still comes off, because the printer that does honour it
+     would put this sheet's near-black ink on a mid-blue and that is worse
+     than either half. What is left is the border and the ink the chosen
+     option beside it takes. */
+  .filing-more-chosen {
+    background: none;
+    border-color: var(--accent);
+    color: var(--accent);
   }
 
   .checkbox-option input[type='checkbox'],

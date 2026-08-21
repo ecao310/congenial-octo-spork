@@ -2842,6 +2842,40 @@ describe('sizing the income axis to the return', () => {
         6,
       );
     });
+
+    /**
+     * The gift's own far side. Left of it every ordinary dollar is given away;
+     * right of it the return starts again from zero.
+     */
+    it('reports where a charitable gift stops covering the income', () => {
+      const base = { ssBenefit: SS, filingStatus: 'single' as const, year: PINNED_YEAR };
+      expect(incomeAxisFeatures(base).giftEnd).toBe(0);
+      expect(incomeAxisFeatures({ ...base, qcd: 40_000 }).giftEnd).toBe(40_000);
+      // 408(d)(8)(A) caps it, so asking for more moves nothing.
+      expect(incomeAxisFeatures({ ...base, qcd: 500_000 }).giftEnd).toBe(
+        qcdLimitFor(base),
+      );
+      // Twice the cap on a joint return, which is the whole reason the axis
+      // had to learn about the gift at all.
+      expect(
+        incomeAxisFeatures({ ...base, filingStatus: 'mfj', qcd: 500_000 }).giftEnd,
+      ).toBe(2 * qcdLimitFor(base));
+    });
+
+    /**
+     * A gain is a sale, not a distribution, so it is income the gift cannot be
+     * excluded from — and the chart reads the gain as a share *of* the swept
+     * income. Both together put the last excludable dollar that much further
+     * along the axis.
+     */
+    it('pushes the gift’s far side out past the gain inside the income', () => {
+      const base = { ssBenefit: SS, filingStatus: 'single' as const, year: PINNED_YEAR };
+      expect(incomeAxisFeatures({ ...base, qcd: 40_000, ltcg: 25_000 }).giftEnd).toBe(
+        65_000,
+      );
+      // No gift, no far side, however big the gain.
+      expect(incomeAxisFeatures({ ...base, ltcg: 25_000 }).giftEnd).toBe(0);
+    });
   });
 
   describe('incomeAxisMax', () => {
@@ -2886,6 +2920,53 @@ describe('sizing the income axis to the return', () => {
                 const { seniorPhaseoutEnd } = incomeAxisFeatures(scenario);
                 if (seniorPhaseoutEnd === null) continue;
                 expect(incomeAxisMax(scenario)).toBeGreaterThan(seniorPhaseoutEnd);
+              }
+            }
+          }
+        }
+      }
+    });
+
+    /**
+     * The gift is the second thing the reader sets in dollars of this axis,
+     * and 408(d)(8)(A) lets a joint return set $216,000 of them. Sizing the
+     * axis by the torpedo alone was not enough: the same gift pushes the
+     * torpedo right dollar for dollar, so it usually carries the gift along
+     * with it — but a return with no benefit has no torpedo to push, and the
+     * gift would have run off a $150,000 chart with nothing to widen it.
+     */
+    it('widens to fit a gift that outruns the chart', () => {
+      const limit = qcdLimitFor({ filingStatus: 'mfj', year: PINNED_YEAR });
+      expect(limit).toBe(216_000);
+      const scenario = {
+        ssBenefit: 0,
+        filingStatus: 'mfj' as const,
+        qcd: limit,
+        year: PINNED_YEAR,
+      };
+      // Without the gift there is nothing on this curve at all, so the axis
+      // sits at its floor; the gift alone takes it out past $216,000.
+      expect(incomeAxisMax({ ...scenario, qcd: 0 })).toBe(MIN_INCOME_AXIS);
+      expect(incomeAxisMax(scenario)).toBe(250_000);
+    });
+
+    it('always contains the gift it is drawn for', () => {
+      for (const year of TAX_YEARS) {
+        for (const filingStatus of ['single', 'mfj', 'mfs', 'hoh'] as FilingStatus[]) {
+          for (const ssBenefit of [0, avgAnnualSSBenefit(year)]) {
+            for (const seniors of [0, 1, 2]) {
+              for (const muniInterest of [0, 40_000]) {
+                const scenario = {
+                  ssBenefit,
+                  filingStatus,
+                  seniors,
+                  muniInterest,
+                  qcd: 500_000,
+                  year,
+                };
+                expect(incomeAxisMax(scenario)).toBeGreaterThan(
+                  qcdLimitFor({ filingStatus, year }),
+                );
               }
             }
           }

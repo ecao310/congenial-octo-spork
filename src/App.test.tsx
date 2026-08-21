@@ -1142,13 +1142,54 @@ describe('qualified charitable distribution', () => {
     expect(qcdNote()).toHaveTextContent('Capped at $108,000 for 2025');
   });
 
-  it('doubles the limit on a joint return but keeps the slider on the chart', () => {
+  /**
+   * The slider used to stop at `min(limit, axisMax)`, so a joint return's
+   * $216,000 was cut off at the chart's $150,000 domain — the chart clipping
+   * the statute. Now the statute sets the slider and the chart follows.
+   */
+  it('doubles the limit on a joint return and runs the slider all the way to it', () => {
     render(<App />);
     fireEvent.click(screen.getByRole('radio', { name: /married filing jointly/i }));
-    // $216,000 is the statutory figure; the slider stops at the chart's axis.
-    expect(qcdSlider()).toHaveAttribute('max', '150000');
+    expect(qcdSlider()).toHaveAttribute('max', '216000');
     expect(qcdNote()).toHaveTextContent('Capped at $216,000 for 2025');
     expect(qcdNote()).toHaveTextContent(/caps it per individual/);
+  });
+
+  /**
+   * And the other half of the same change: a gift the old axis could not hold
+   * has to widen the axis, or it is a slider whose whole effect is off the
+   * right edge of every chart. The gift comes off the front of the income, so
+   * the reader needs to be able to walk past it to see anything happen.
+   */
+  it('widens the chart and the income slider to make room for the gift', () => {
+    render(<App />);
+    const incomeSlider = (): HTMLElement =>
+      screen.getByRole('slider', { name: /other income \(not social security\)/i });
+    fireEvent.click(screen.getByRole('radio', { name: /married filing jointly/i }));
+    expect(incomeSlider()).toHaveAttribute('max', '150000');
+
+    setSlider(/qualified charitable distribution/i, '216000');
+    // The torpedo's right foot moves right dollar for dollar with the gift:
+    // $48,797 + $216,000, plus a tail, rounded up to a legible tick.
+    expect(incomeSlider()).toHaveAttribute('max', '300000');
+    expect(screen.getByText(/far enough right to reach the last/i)).toHaveTextContent(
+      '$300,000',
+    );
+  });
+
+  /**
+   * The case the axis could not have found any other way. With no benefit
+   * there is no torpedo for the gift to push right, so nothing but the gift
+   * itself asks for the width.
+   */
+  it('makes room for the gift even when there is no torpedo to carry it', () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole('radio', { name: /married filing jointly/i }));
+    setSlider(/annual social security benefit/i, '0');
+    setSlider(/qualified charitable distribution/i, '216000');
+    expect(
+      screen.getByRole('slider', { name: /other income \(not social security\)/i }),
+    ).toHaveAttribute('max', '250000');
   });
 
   it('re-prices the limit when the tax year changes', () => {
@@ -1509,5 +1550,30 @@ describe('the torpedo chart’s right edge', () => {
     // The second hump is gone, but the reader is still out at $175,000.
     expect(incomeSlider()).toHaveAttribute('max', '175000');
     expect(incomeSlider()).toHaveValue('175000');
+  });
+
+  /**
+   * The slider steps in whatever the curve beneath it samples, so the widest
+   * chart costs no more points than the narrowest and the reader's marker
+   * still lands on a sampled point. The third rung exists because a maxed
+   * charitable gift can take a joint return past $300,000.
+   */
+  it('coarsens its step as the axis widens', () => {
+    render(<App />);
+    expect(incomeSlider()).toHaveAttribute('step', '500');
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Age 65 or older' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Jointly' }));
+    expect(incomeSlider()).toHaveAttribute('max', '250000');
+    expect(incomeSlider()).toHaveAttribute('step', '500');
+
+    fireEvent.change(
+      screen.getByRole('slider', { name: /qualified charitable distribution/i }),
+      { target: { value: '216000' } },
+    );
+    // The gift never enters AGI, so the phaseout ends $216,000 further out:
+    // $229,845 + $216,000 of other income, plus a tail, rounded up.
+    expect(incomeSlider()).toHaveAttribute('max', '475000');
+    expect(incomeSlider()).toHaveAttribute('step', '1000');
   });
 });

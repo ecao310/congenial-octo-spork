@@ -965,26 +965,43 @@ export interface IncomeAxisFeatures {
    * 2025-2028. Null means there is no second hump to make room for.
    */
   seniorPhaseoutEnd: number | null;
+  /**
+   * Where the charitable gift runs out: the last dollar of other income it can
+   * be excluded from, which is the gift itself plus whatever of that income is
+   * a gain — 408(d)(8) excludes a *distribution*, and a sale is not one. 0
+   * when there is no gift.
+   *
+   * Left of it every ordinary dollar is given away and the curve is flat at
+   * nothing; right of it the return starts again from zero. Normally it sits
+   * well inside `torpedoEnd`, which the same gift pushes right dollar for
+   * dollar — it binds only when there is no torpedo left to push, which is a
+   * benefit of $0, or enough tax-exempt interest to have capped the taxable
+   * share before the first dollar of other income lands.
+   */
+  giftEnd: number;
 }
 
 /**
- * The two humps' right-hand feet, on the axis the chart actually plots.
+ * The right-hand feet of everything worth seeing, on the axis the chart
+ * actually plots.
  *
- * Both are *ends*: past them the curve is a flat rate schedule that says
+ * All three are *ends*: past them the curve is a flat rate schedule that says
  * nothing the reader has not already seen. That is what makes them the right
  * thing to size an axis by.
  */
 export function incomeAxisFeatures(scenario: Scenario = {}): IncomeAxisFeatures {
-  const { filingStatus, seniors } = resolveScenario(scenario);
+  const { filingStatus, seniors, ltcg } = resolveScenario(scenario);
   // Read off `seniorDeductionFor` rather than re-testing its conditions: the
   // phaseout is worth axis space exactly when there is a deduction to phase
   // out, which is age, filing status and tax year all at once.
   const claimed = seniorDeductionFor({ ...scenario, seniors }, 0) > 0;
   const phaseoutEnd = seniorDeductionPhaseoutEnd(filingStatus);
+  const gift = qcdAllowed(scenario);
   return {
     torpedoEnd: otherIncomeAtTaxableSSCap(scenario),
     seniorPhaseoutEnd:
       claimed && phaseoutEnd !== null ? otherIncomeAtAgi(phaseoutEnd, scenario) : null,
+    giftEnd: gift > 0 ? gift + Math.max(0, ltcg) : 0,
   };
 }
 
@@ -1026,13 +1043,18 @@ export interface IncomeAxisRange {
  * never below `MIN_INCOME_AXIS`, rounded up to something the tick labels can
  * live with. Callers who need the axis to contain a point of their own — the
  * reader's own income, wherever they left the slider — pass it as `minimum`.
+ *
+ * A charitable gift is the other input the reader sets in dollars of this same
+ * axis, and 408(d)(8) lets a joint return give $216,000 of them. The axis has
+ * to reach past it or the gift is a slider whose effect is off the right edge
+ * of every chart: see `IncomeAxisFeatures.giftEnd`.
  */
 export function incomeAxisMax(
   scenario: Scenario = {},
   { headroom = 0.05, roundTo = 25_000, minimum = MIN_INCOME_AXIS }: IncomeAxisRange = {},
 ): number {
-  const { torpedoEnd, seniorPhaseoutEnd } = incomeAxisFeatures(scenario);
-  const lastFeature = Math.max(torpedoEnd, seniorPhaseoutEnd ?? 0);
+  const { torpedoEnd, seniorPhaseoutEnd, giftEnd } = incomeAxisFeatures(scenario);
+  const lastFeature = Math.max(torpedoEnd, seniorPhaseoutEnd ?? 0, giftEnd);
   const wanted = Math.max(minimum, lastFeature * (1 + headroom));
   return Math.ceil(wanted / roundTo) * roundTo;
 }

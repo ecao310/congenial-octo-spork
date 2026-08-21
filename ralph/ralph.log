@@ -3387,3 +3387,91 @@ Two Discovered Work bullets: the narrower-axis question above, and that
 App.chart.test.tsx is the one suite that never pins the clock — it runs on 2026
 figures while its comments quote 2025 dollars, and passes only because the two
 years' shapes coincide.
+
+
+Raise the charitable slider to the statute, and let the axis follow
+====================================================================
+
+Also committed the previous iteration's work first: the axis-sizing change was
+staged, green and marked done in PLAN.md but never committed (725bb13). Nothing
+was wrong with it; it just never got the commit.
+
+### The bug
+
+`qcdSliderMax = Math.min(qcdLimit, axisMax)`. A joint return's 408(d)(8)(A)
+limit is doubled — $216,000 for 2025 — and the chart's domain was $150,000, so
+the slider stopped at the chart. That is the chart clipping the statute, which
+is backwards: the gift is a fact about the return, and the axis exists to draw
+the return.
+
+### The fix, in two halves
+
+**The slider runs to `qcdLimit`.** One line, and the note under it loses the
+sentence apologising for the old edge.
+
+**The axis learns about the gift.** `IncomeAxisFeatures` gains a third member:
+
+    giftEnd: gift > 0 ? qcdAllowed(scenario) + ltcg : 0
+
+`incomeAxisMax` takes the max of all three. The gain is in there because
+408(d)(8) excludes a *distribution* and a sale is not one, and the chart reads
+the gain as a share *of* the swept income — so the last excludable dollar sits
+at gift + gain along the axis.
+
+The non-obvious part is why the axis did not already handle this. `torpedoEnd`
+moves right dollar for dollar with the gift, so in the ordinary case it carries
+the gift along and `giftEnd` never binds. It binds exactly where there is no
+torpedo left to push: **a benefit of $0**, or enough tax-exempt interest to have
+capped the taxable share before the first dollar of other income lands. Both are
+one slider away from the default. Without `giftEnd` a joint return with no
+benefit and a $216,000 gift got a $150,000 chart — a slider whose entire effect
+was off the right edge, with no way to reach it, since the income slider shares
+that edge.
+
+### What it costs: the chart got wide
+
+The widest reachable axis is now **$500,000** (joint, one spouse 65+, no
+benefit, full gift: the senior deduction's phaseout ends at $466,000 of other
+income once $216,000 of it never enters AGI). Confirmed by sweeping every
+year x status x seniors x muni x benefit x gift combination in a scratch test.
+
+That would have doubled the curve's point count, so `curveStep` grew a third
+rung — 250 / 500 / 1000 at $150k and $300k — restoring the invariant the code
+already claimed: the widest chart samples no more points than the narrowest
+always did, 600 either way. The income slider's step now derives from it
+(`max(500, curveStep)`) rather than being a hardcoded 500, because `pointAt`
+reads the reader's position off the nearest sample at or below it — a slider
+stepping finer than the sweep would quietly report someone else's marginal rate.
+
+### Tests
+
++7, 455 -> 462.
+
+tax.test.ts: `giftEnd` at zero, at the gift, clamped by the statutory limit,
+doubled on a joint return, and pushed out by the gain; the axis widening from
+$150,000 to $250,000 on the no-benefit joint case that has nothing else to
+widen it; and the property — for every year, status, senior count, muni and
+benefit, the axis contains the whole statutory limit.
+
+App.test.tsx: the joint slider max at $216,000 rather than $150,000; setting it
+there widening the income slider and the step intro to $300,000; the no-torpedo
+case widening to $250,000; and the step tiers, 500 -> 500 -> 1000 as the axis
+goes $150k -> $250k -> $475k.
+
+### Verified
+
+`npx tsc -b`, `npx eslint src --max-warnings 0`, `npx vitest run` (7 files, 462
+tests, green in ~5s), `npm run build`. No CSS change.
+
+### Logged, not fixed
+
+One Discovered Work bullet: at the extreme the chart's first 43% is a flat run
+at nothing. It is honest — that run is exactly what the gift buys — but it may
+be a worse teacher than a sentence would be. Options are capping the axis and
+marking the gift off-chart the way the IRMAA cliffs already are, breaking the
+axis, or leaving it.
+
+Note also that the existing "a gain crowds out the gift" bullet gets more
+reachable with this change: the summary line still names the gift the reader
+set, not the smaller amount their income can actually exclude, and the gift can
+now be set well past any income.

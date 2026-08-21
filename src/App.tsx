@@ -162,9 +162,9 @@ const formatCompact = (value: number): string =>
  * it moves: the reader's number is a *place* on a curve that is already drawn,
  * not an input to it. Reading the curve back at that place is what turns the
  * slider from an inert control into a position. The sweep ascends, so the last
- * sampled point at or below the value is the one — the sliders step in $500
- * and the curves sample every $250 or $500 depending on how wide the axis has
- * had to grow, so in practice it is an exact hit.
+ * sampled point at or below the value is the one — and every slider steps in a
+ * multiple of what the curve beneath it samples, so in practice it is an exact
+ * hit. See `curveStep`.
  */
 function pointAt<P>(
   curve: P[],
@@ -471,6 +471,11 @@ const App: React.FC = () => {
    * The reader's own income is passed as the floor so the axis always contains
    * where they are standing. Without it, turning the age toggle back off would
    * pull the right edge in behind a slider left out at $170,000.
+   *
+   * A charitable gift widens it too, and it is the one input that can widen it
+   * a lot: the gift comes off the front of the income, so a joint return giving
+   * its full $216,000 is asking for a chart whose first $216,000 is a flat run
+   * at nothing. That run is what the gift buys, so it is worth the width.
    */
   const axisMax = useMemo(
     () =>
@@ -482,21 +487,36 @@ const App: React.FC = () => {
   );
 
   /**
-   * Sampling interval for the swept curve. One point per $250 up to the axis's
-   * old fixed width and one per $500 past it, so the widest chart this app can
-   * draw samples no more points than the narrowest one always did — and the
-   * slider's own $500 step lands on a sampled point either way.
+   * Sampling interval for the swept curve, and the step of the slider that
+   * walks it.
+   *
+   * The interval doubles each time the axis does, so the widest chart this app
+   * can draw samples no more points than the narrowest one always did — at
+   * most 600 either way. The third rung is new: a maxed charitable gift pushes
+   * a joint return claiming the senior deduction out to $500,000 of other
+   * income, where $500 sampling would have cost a thousand points.
+   *
+   * The slider steps in whatever the curve samples, never finer than the $500
+   * it has always used. `pointAt` reads the reader's position back off the
+   * nearest sample at or below it, so a slider that stepped finer than the
+   * sweep would quietly report the marginal rate from somewhere else.
    */
-  const curveStep = axisMax > 150_000 ? 500 : 250;
+  const curveStep = axisMax > 300_000 ? 1000 : axisMax > 150_000 ? 500 : 250;
+  const incomeSliderStep = Math.max(500, curveStep);
 
   /**
    * The statutory annual QCD limit for this return, and the right edge of the
-   * slider. They differ only on a joint return, whose $216,000 limit is far
-   * past the chart's own axis — a slider that long would be unreadable, and the
-   * note under it states the statutory figure either way.
+   * slider under it.
+   *
+   * The slider used to stop at `min(limit, axisMax)`, which meant a joint
+   * return — whose limit 408(d)(8)(A) doubles, to $216,000 for 2025 — was cut
+   * off at the chart's $150,000 domain. That is the chart clipping the statute,
+   * which is backwards: the gift is a fact about the return, and the axis is
+   * drawn to show the return. So the slider runs to the limit and the axis
+   * follows it out, because `incomeAxisFeatures` counts the gift's own far
+   * side as a feature to make room for.
    */
   const qcdLimit = qcdLimitFor({ filingStatus, year });
-  const qcdSliderMax = Math.min(qcdLimit, axisMax);
 
   /**
    * The two inputs the page does not open with.
@@ -1060,7 +1080,7 @@ const App: React.FC = () => {
               id="qcd"
               type="range"
               min={0}
-              max={qcdSliderMax}
+              max={qcdLimit}
               step={250}
               value={qcd}
               onChange={(e) => setQcd(Number(e.target.value))}
@@ -1068,7 +1088,7 @@ const App: React.FC = () => {
             />
             <div className="slider-range-labels">
               <span>$0</span>
-              <span>{formatCurrency(qcdSliderMax)}</span>
+              <span>{formatCurrency(qcdLimit)}</span>
             </div>
             <p className="field-note">
               IRA money paid straight to the charity. It comes <em>out of</em> the
@@ -1081,8 +1101,11 @@ const App: React.FC = () => {
               cannot be excluded from. Capped at{' '}
               <strong>{formatCurrency(qcdLimit)}</strong> for {year}
               {filingStatus === 'mfj'
-                ? ' \u2014 408(d)(8)(A) caps it per individual, so a joint return where both spouses have reached 70\u00BD and each gives from their own IRA gets it twice. The slider stops at the chart\u2019s own right edge rather than at that figure.'
-                : ' by 408(d)(8)(A), which the IRS indexes every year. Anything past it is an ordinary distribution, deductible only on an itemized return and only within the AGI limits of section 170(b).'}
+                ? ' \u2014 408(d)(8)(A) caps it per individual, so a joint return where both spouses have reached 70\u00BD and each gives from their own IRA gets it twice.'
+                : ' by 408(d)(8)(A), which the IRS indexes every year. Anything past it is an ordinary distribution, deductible only on an itemized return and only within the AGI limits of section 170(b).'}{' '}
+              A gift anywhere near that figure is more income than step 2’s
+              chart used to draw, so the slider runs to the statutory limit and
+              that chart’s right edge moves out to hold it.
             </p>
           </div>
         </details>
@@ -1226,7 +1249,7 @@ const App: React.FC = () => {
             type="range"
             min={0}
             max={axisMax}
-            step={500}
+            step={incomeSliderStep}
             value={ordinaryIncome}
             onChange={(e) => changeOrdinaryIncome(Number(e.target.value))}
             className="slider-amber"

@@ -838,3 +838,110 @@ footer p {
   padding-top: 0;
   border-top: none;
 }
+
+/* ───── Advanced inputs ─────────────────────────────────────────────────────
+ *
+ * A quieter sibling of `.explainer`: same disclosure chevron, but sunk into
+ * the page rather than separated from it by a rule, because this is an input
+ * block that happens to be collapsed and not a wall of prose. The summary
+ * carries whatever has been set, so closing it never hides state.
+ */
+.advanced-inputs {
+  margin-bottom: 1.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 0.75rem;
+  background: rgba(15, 23, 42, 0.35);
+}
+
+.advanced-inputs > summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1rem;
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+  padding: 0.875rem 1rem;
+  border-radius: 0.75rem;
+  transition: background 0.2s ease;
+}
+
+.advanced-inputs > summary::-webkit-details-marker {
+  display: none;
+}
+
+.advanced-inputs > summary:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.advanced-inputs > summary:focus-visible {
+  outline: 2px solid rgba(56, 189, 248, 0.6);
+  outline-offset: 2px;
+}
+
+.advanced-label {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #cbd5e1;
+  flex-shrink: 0;
+}
+
+.advanced-inputs > summary:hover .advanced-label {
+  color: #38bdf8;
+}
+
+/* Pushed hard right, ahead of the chevron, so the set values read as a
+ * status line rather than as a subtitle to the label. */
+.advanced-state {
+  margin-left: auto;
+  font-size: 0.8125rem;
+  color: #64748b;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.advanced-state-set {
+  color: #34d399;
+}
+
+.advanced-inputs > summary::after {
+  content: '';
+  display: inline-block;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-right: 2px solid #94a3b8;
+  border-bottom: 2px solid #94a3b8;
+  transform: rotate(45deg);
+  transition: transform 0.2s ease, border-color 0.2s ease;
+  align-self: center;
+  flex-shrink: 0;
+}
+
+.advanced-inputs[open] > summary::after {
+  transform: rotate(-135deg);
+  border-color: #38bdf8;
+}
+
+.advanced-inputs > summary:hover::after {
+  border-color: #38bdf8;
+}
+
+.advanced-inputs[open] > summary {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0.75rem 0.75rem 0 0;
+}
+
+/* The block's own padding replaces the input groups' bottom margin on the
+ * last one, so the section does not end with a gap the border still draws. */
+.advanced-inputs > :not(summary) {
+  margin-left: 1rem;
+  margin-right: 1rem;
+}
+
+.advanced-inputs > .field-note:first-of-type {
+  margin-top: 1rem;
+}
+
+.advanced-inputs > .input-group:last-child {
+  margin-bottom: 1rem;
+}

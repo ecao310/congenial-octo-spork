@@ -53,6 +53,17 @@ const renderTab = (name: TabName): ReturnType<typeof render> => {
   return utils;
 };
 
+/** Every tab, in strip order — both the strip's own tests and the shared
+ * scenario's "survives every tab" tests walk this list. */
+const tabNames: TabName[] = [
+  'Tax Torpedo',
+  'Capital Gains',
+  'Medicare',
+  'Strategies',
+  'Over Time',
+  'State Taxes',
+];
+
 describe('App', () => {
   /**
    * The benefit slider's own input group.
@@ -494,7 +505,9 @@ describe('App', () => {
       screen.getByText(/^Municipal bond interest never enters taxable income/),
     ).toBeInTheDocument();
     // Nothing to price yet, so the section prompts rather than reporting zeros.
-    expect(muniSection()).toHaveTextContent('Move the slider above to price it');
+    expect(muniSection()).toHaveTextContent(
+      'Open Advanced inputs above and move the tax-exempt interest slider',
+    );
   });
 
   it('prices the muni interest against the taxable share of benefits', () => {
@@ -657,15 +670,6 @@ describe('App', () => {
 });
 
 describe('tabs', () => {
-  const tabNames = [
-    'Tax Torpedo',
-    'Capital Gains',
-    'Medicare',
-    'Strategies',
-    'Over Time',
-    'State Taxes',
-  ];
-
   it('opens on the tax torpedo, with every other panel unmounted', () => {
     render(<App />);
     expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual(tabNames);
@@ -764,6 +768,143 @@ describe('tabs', () => {
     expect(screen.getByRole('tab', { selected: true })).toHaveTextContent(
       'Tax Torpedo',
     );
+  });
+});
+
+/**
+ * The scenario block opens on five inputs and hides three.
+ *
+ * A closed `<details>` still renders its children into jsdom, so every other
+ * test in this file reaches those three sliders exactly as it did before the
+ * split — which means nothing here can be inferred from the rest of the suite
+ * passing. These tests assert the split itself: which inputs are inside the
+ * disclosure, that it starts shut, and that shutting it never hides a value
+ * that has been set.
+ */
+describe('advanced inputs', () => {
+  // "Advanced inputs" is also the name two sections use when they point a
+  // reader at a slider they cannot see, so pin the summary's own label.
+  const advanced = (): HTMLElement =>
+    screen
+      .getByText('Advanced inputs', { selector: '.advanced-label' })
+      .closest('details') as HTMLElement;
+
+  /** The status line beside the label — what the section still says while shut. */
+  const advancedState = (): HTMLElement =>
+    advanced().querySelector('.advanced-state') as HTMLElement;
+
+  it('starts collapsed', () => {
+    render(<App />);
+    expect(advanced()).toBeInTheDocument();
+    expect(advanced()).not.toHaveAttribute('open');
+  });
+
+  /**
+   * The line that justifies the whole disclosure: at their defaults these
+   * three change nothing, so there is nothing to see until one is moved.
+   */
+  it('reports all three sitting at their defaults', () => {
+    render(<App />);
+    expect(advancedState()).toHaveTextContent('All three at $0');
+  });
+
+  it('holds the three inputs that default to zero', () => {
+    render(<App />);
+    const inside = within(advanced());
+    expect(
+      inside.getByLabelText('Long-Term Capital Gains You Plan to Realize'),
+    ).toHaveValue('0');
+    expect(inside.getByLabelText('Tax-Exempt (Municipal) Interest')).toHaveValue(
+      '0',
+    );
+    expect(inside.getByLabelText('Qualified Charitable Distribution')).toHaveValue(
+      '0',
+    );
+  });
+
+  /**
+   * The complement, and the more important half: an input that changes the
+   * charts at page load has no business being behind a disclosure.
+   */
+  it('leaves the inputs that move the opening picture on screen', () => {
+    render(<App />);
+    for (const label of [
+      'Annual Social Security Benefit',
+      'Other Ordinary Income (non-LTCG, non-SS)',
+    ]) {
+      expect(screen.getByLabelText(label).closest('details')).toBeNull();
+    }
+    for (const legend of ['Tax Year', 'Filing Status', 'Age']) {
+      expect(screen.getByRole('group', { name: legend }).closest('details')).toBeNull();
+    }
+  });
+
+  it('names each input that has been moved off zero', () => {
+    render(<App />);
+    fireEvent.change(
+      screen.getByLabelText('Tax-Exempt (Municipal) Interest'),
+      { target: { value: '5000' } },
+    );
+    expect(advancedState()).toHaveTextContent('Muni interest $5,000');
+    expect(advancedState()).not.toHaveTextContent('Capital gains');
+
+    fireEvent.change(
+      screen.getByLabelText('Long-Term Capital Gains You Plan to Realize'),
+      { target: { value: '20000' } },
+    );
+    expect(advancedState()).toHaveTextContent(
+      'Capital gains $20,000 \u00B7 Muni interest $5,000',
+    );
+
+    fireEvent.change(screen.getByLabelText('Qualified Charitable Distribution'), {
+      target: { value: '3000' },
+    });
+    expect(advancedState()).toHaveTextContent(
+      'Capital gains $20,000 \u00B7 Muni interest $5,000 \u00B7 Charitable $3,000',
+    );
+
+    fireEvent.change(
+      screen.getByLabelText('Tax-Exempt (Municipal) Interest'),
+      { target: { value: '0' } },
+    );
+    expect(advancedState()).not.toHaveTextContent('Muni interest');
+  });
+
+  /**
+   * A joint return's charitable limit is twice everyone else's, so leaving it
+   * and coming back re-caps the gift. That re-cap happens whether or not the
+   * section is open, which is precisely when a summary that goes stale would
+   * mislead.
+   */
+  it('follows a value the app clamps behind its back', () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Jointly' }));
+    fireEvent.change(screen.getByLabelText('Qualified Charitable Distribution'), {
+      target: { value: '150000' },
+    });
+    expect(advancedState()).toHaveTextContent('Charitable $150,000');
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Single' }));
+    expect(advancedState()).toHaveTextContent('Charitable $108,000');
+  });
+
+  /**
+   * The disclosure sits above the tab strip with the rest of the scenario, so
+   * a value set on one tab has to survive every other one.
+   */
+  it('keeps its values across tabs', () => {
+    render(<App />);
+    fireEvent.change(
+      screen.getByLabelText('Tax-Exempt (Municipal) Interest'),
+      { target: { value: '9000' } },
+    );
+    for (const name of tabNames) {
+      fireEvent.click(screen.getByRole('tab', { name }));
+      expect(
+        screen.getByLabelText('Tax-Exempt (Municipal) Interest'),
+      ).toHaveValue('9000');
+      expect(advancedState()).toHaveTextContent('Muni interest $9,000');
+    }
   });
 });
 

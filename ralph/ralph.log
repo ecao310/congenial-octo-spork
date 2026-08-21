@@ -2113,3 +2113,85 @@ sliders keep their values across all six tabs.
 
 npx tsc -b, npm run lint, npx vitest run (424 passed, up from 417),
 npm run build — all clean; only the pre-existing >500kB chunk warning.
+
+---
+
+## Simplify by starting with basic defaults and hiding advanced sliders
+
+The scenario block above the tab strip had grown to eight inputs — tax year,
+filing status, age, benefit, other ordinary income, LTCG, muni interest, QCD —
+every one of them rendered before the reader reaches a chart.
+
+### The line I drew, and why it is not a matter of taste
+
+**Does this input change the picture at page load?** Year, filing status, age,
+benefit and other ordinary income all do: the app opens on 2025 / single /
+under 65 / the average retired-worker benefit / $30,000, and each of those five
+is a real answer that a real reader will want to change. LTCG, muni interest
+and QCD open at $0, and at $0 each is arithmetically a no-op — every chart on
+every tab prices the identical scenario whether the section is open or shut.
+
+So the split is not "which are advanced" in the hand-wavy sense. It is "which
+three can be removed from the screen without changing a single number on it."
+Exactly three qualify, and they are the three that moved.
+
+That also settles the one I went back and forth on. **Tax Year stays visible**
+despite defaulting to today, because its fieldset carries the app's thesis —
+the paragraph on the $25,000/$32,000 thresholds frozen since 1983/1993 while
+everything around them indexes. Collapsing the control would collapse the
+argument with it.
+
+### The hazard, and the mitigation
+
+A slider you cannot see is a slider you forget. Someone who sets $20,000 of
+gains, collapses the section, and then reads the Medicare tab has no way to
+know why their MAGI is what it is.
+
+So the `<summary>` is a status line, not a label: it names every input that has
+been moved off $0 and its value, and keeps naming it while shut. At the
+defaults it reads "All three at $0", which is the sentence that justifies the
+disclosure existing.
+
+The test that matters most here is `follows a value the app clamps behind its
+back`. `changeFilingStatus` re-caps the QCD when a joint return's $216,000
+limit halves to $108,000 — a value can therefore move while the section is
+closed and no one touched it. The summary tracks it because it is derived, not
+stored. Worth an explicit test since a cached-summary implementation would pass
+every other test in the block.
+
+### Closed `<details>` is invisible to the eye and not to the suite
+
+jsdom does not apply the UA stylesheet rule that hides a closed disclosure's
+children, so `getByLabelText` and `getByRole('slider')` reach inside one
+unchanged. Verified with a throwaway test before writing anything, because the
+answer decided the whole approach: had it gone the other way, this would have
+been a `hidden`-attribute or conditional-render job and it would have broken
+dozens of existing tests.
+
+Consequence to keep in mind: **the rest of the suite passing proves nothing
+about the split.** All 424 pre-existing tests would pass with the disclosure
+absent. The seven new ones assert the split itself — what is inside, what is
+deliberately outside, that it starts shut, and that shutting it hides no value.
+
+### Prose that pointed at things no longer on screen
+
+Two sections prompted "Move the slider above to price it" at $0 — pointing at
+a slider now behind a disclosure. Both now name the section: "Open **Advanced
+inputs** above and move the tax-exempt interest slider". The muni section's
+"Flipping this slider" became "that slider" for the same reason. One test
+asserted the old muni sentence verbatim and was updated with it.
+
+`tabNames` moved from inside the `tabs` describe to module scope, typed
+`TabName[]`, because the new "keeps its values across tabs" test walks the same
+list.
+
+### Verification
+
+npx tsc -b, npm run lint, npx vitest run (431 passed, up from 424),
+npm run build — all clean; only the pre-existing >500kB chunk warning.
+
+### Logged as discovered work
+
+The prose is now the heaviest thing above the fold — Tax Year carries three
+paragraphs and Age two, all always-on. The same page-load test that sorted the
+sliders sorts the paragraphs too.

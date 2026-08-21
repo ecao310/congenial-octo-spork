@@ -154,6 +154,12 @@ const SEQUENCING_COLORS: Record<SequencingStrategy['chartKey'], string> = {
  * The page outgrew a single scroll. Every section still reads off one shared
  * scenario — the sliders above the tab strip — so the split is by subject, not
  * by input: pick a tab and the same taxpayer is re-priced from that angle.
+ *
+ * Those shared inputs are themselves split. Year, filing status, age, benefit
+ * and other ordinary income are always on screen because all five change the
+ * picture at page load. Capital gains, tax-exempt interest and the charitable
+ * distribution sit in a collapsed `advanced-inputs` block, because each one
+ * starts at $0 and at $0 leaves every chart on every tab identical.
  */
 const TABS = [
   { id: 'torpedo', label: 'Tax Torpedo' },
@@ -612,6 +618,23 @@ const App: React.FC = () => {
    */
   const qcdLimit = qcdLimitFor({ filingStatus, year });
   const qcdSliderMax = Math.min(qcdLimit, MAX_INCOME);
+
+  /**
+   * The three inputs the page does not open with.
+   *
+   * Each starts at $0, and at $0 each one is a no-op: every chart on every tab
+   * prices the identical scenario whether this section is open or shut. That
+   * is the whole test for what belongs in here — year, filing status, age,
+   * benefit and other income all change the picture the moment the page loads,
+   * so they stay out. What it costs is that a slider you cannot see is a
+   * slider you forget, which is why anything moved off $0 is named in the
+   * summary line and stays named while the section is closed.
+   */
+  const advancedSet = [
+    { label: 'Capital gains', value: plannedLtcg },
+    { label: 'Muni interest', value: muniInterest },
+    { label: 'Charitable', value: qcd },
+  ].filter(({ value }) => value > 0);
 
   const baseDeduction = yearFiling.standardDeduction;
   const standardDeduction = standardDeductionFor({ filingStatus, seniors, year });
@@ -1264,87 +1287,110 @@ const App: React.FC = () => {
         </div>
       </div>
 
-      <div className="input-group">
-        <div className="slider-header">
-          <label htmlFor="planned-ltcg">
-            Long-Term Capital Gains You Plan to Realize
-          </label>
-          <span className="slider-value emerald">{formatCurrency(plannedLtcg)}</span>
-        </div>
-        <input
-          id="planned-ltcg"
-          type="range"
-          min={0}
-          max={MAX_LTCG}
-          step={500}
-          value={plannedLtcg}
-          onChange={(e) => setPlannedLtcg(Number(e.target.value))}
-          className="slider-emerald"
-        />
-        <div className="slider-range-labels">
-          <span>$0</span>
-          <span>{formatCurrency(MAX_LTCG)}</span>
-        </div>
-      </div>
-
-      <div className="input-group">
-        <div className="slider-header">
-          <label htmlFor="muni-interest">Tax-Exempt (Municipal) Interest</label>
-          <span className="slider-value violet">{formatCurrency(muniInterest)}</span>
-        </div>
-        <input
-          id="muni-interest"
-          type="range"
-          min={0}
-          max={MAX_MUNI_INTEREST}
-          step={250}
-          value={muniInterest}
-          onChange={(e) => setMuniInterest(Number(e.target.value))}
-          className="slider-violet"
-        />
-        <div className="slider-range-labels">
-          <span>$0</span>
-          <span>{formatCurrency(MAX_MUNI_INTEREST)}</span>
-        </div>
+      <details className="advanced-inputs">
+        <summary>
+          <span className="advanced-label">Advanced inputs</span>
+          {advancedSet.length > 0 ? (
+            <span className="advanced-state advanced-state-set">
+              {advancedSet
+                .map(({ label, value }) => `${label} ${formatCurrency(value)}`)
+                .join(' \u00B7 ')}
+            </span>
+          ) : (
+            <span className="advanced-state">All three at $0</span>
+          )}
+        </summary>
         <p className="field-note">
-          Municipal bond interest never enters taxable income, but it counts
-          toward provisional income dollar for dollar — so it drags benefits
-          into the tax base exactly as fast as a paycheck would, and shifts the
-          whole curve to the left.
+          Capital gains you plan to realize, tax-exempt interest, and money
+          given to charity straight out of an IRA. All three sit at $0 until you
+          move them, and at $0 none of them changes a single figure on any tab —
+          so the page opens on the plain picture, benefit plus other income, and
+          you add the rest only if it is yours. Whatever you set here stays set
+          across every tab and is named on the line above even when this section
+          is shut.
         </p>
-      </div>
+        <div className="input-group">
+          <div className="slider-header">
+            <label htmlFor="planned-ltcg">
+              Long-Term Capital Gains You Plan to Realize
+            </label>
+            <span className="slider-value emerald">{formatCurrency(plannedLtcg)}</span>
+          </div>
+          <input
+            id="planned-ltcg"
+            type="range"
+            min={0}
+            max={MAX_LTCG}
+            step={500}
+            value={plannedLtcg}
+            onChange={(e) => setPlannedLtcg(Number(e.target.value))}
+            className="slider-emerald"
+          />
+          <div className="slider-range-labels">
+            <span>$0</span>
+            <span>{formatCurrency(MAX_LTCG)}</span>
+          </div>
+        </div>
 
-      <div className="input-group">
-        <div className="slider-header">
-          <label htmlFor="qcd">Qualified Charitable Distribution</label>
-          <span className="slider-value lime">{formatCurrency(qcd)}</span>
+        <div className="input-group">
+          <div className="slider-header">
+            <label htmlFor="muni-interest">Tax-Exempt (Municipal) Interest</label>
+            <span className="slider-value violet">{formatCurrency(muniInterest)}</span>
+          </div>
+          <input
+            id="muni-interest"
+            type="range"
+            min={0}
+            max={MAX_MUNI_INTEREST}
+            step={250}
+            value={muniInterest}
+            onChange={(e) => setMuniInterest(Number(e.target.value))}
+            className="slider-violet"
+          />
+          <div className="slider-range-labels">
+            <span>$0</span>
+            <span>{formatCurrency(MAX_MUNI_INTEREST)}</span>
+          </div>
+          <p className="field-note">
+            Municipal bond interest never enters taxable income, but it counts
+            toward provisional income dollar for dollar — so it drags benefits
+            into the tax base exactly as fast as a paycheck would, and shifts the
+            whole curve to the left.
+          </p>
         </div>
-        <input
-          id="qcd"
-          type="range"
-          min={0}
-          max={qcdSliderMax}
-          step={250}
-          value={qcd}
-          onChange={(e) => setQcd(Number(e.target.value))}
-          className="slider-lime"
-        />
-        <div className="slider-range-labels">
-          <span>$0</span>
-          <span>{formatCurrency(qcdSliderMax)}</span>
+
+        <div className="input-group">
+          <div className="slider-header">
+            <label htmlFor="qcd">Qualified Charitable Distribution</label>
+            <span className="slider-value lime">{formatCurrency(qcd)}</span>
+          </div>
+          <input
+            id="qcd"
+            type="range"
+            min={0}
+            max={qcdSliderMax}
+            step={250}
+            value={qcd}
+            onChange={(e) => setQcd(Number(e.target.value))}
+            className="slider-lime"
+          />
+          <div className="slider-range-labels">
+            <span>$0</span>
+            <span>{formatCurrency(qcdSliderMax)}</span>
+          </div>
+          <p className="field-note">
+            IRA money paid straight to the charity. It comes <em>out of</em> the
+            other income set above rather than on top of it, because the
+            gift is a distribution that would otherwise have been reported — so it
+            moves the whole curve to the right, exactly as far as tax-exempt
+            interest moves it to the left. Capped at{' '}
+            <strong>{formatCurrency(qcdLimit)}</strong> for {year}
+            {filingStatus === 'mfj'
+              ? ' \u2014 408(d)(8)(A) caps it per individual, so a joint return where both spouses have reached 70\u00BD and each gives from their own IRA gets it twice. The slider stops at the chart\u2019s own right edge rather than at that figure.'
+              : ' by 408(d)(8)(A), which the IRS indexes every year. Anything past it is an ordinary distribution, deductible only on an itemized return and only within the AGI limits of section 170(b).'}
+          </p>
         </div>
-        <p className="field-note">
-          IRA money paid straight to the charity. It comes <em>out of</em> the
-          other income set above rather than on top of it, because the
-          gift is a distribution that would otherwise have been reported — so it
-          moves the whole curve to the right, exactly as far as tax-exempt
-          interest moves it to the left. Capped at{' '}
-          <strong>{formatCurrency(qcdLimit)}</strong> for {year}
-          {filingStatus === 'mfj'
-            ? ' \u2014 408(d)(8)(A) caps it per individual, so a joint return where both spouses have reached 70\u00BD and each gives from their own IRA gets it twice. The slider stops at the chart\u2019s own right edge rather than at that figure.'
-            : ' by 408(d)(8)(A), which the IRS indexes every year. Anything past it is an ordinary distribution, deductible only on an itemized return and only within the AGI limits of section 170(b).'}
-        </p>
-      </div>
+      </details>
 
       <div
         className="tabs"
@@ -1495,9 +1541,11 @@ const App: React.FC = () => {
 
             {muniInterest === 0 ? (
               <p>
-                Move the slider above to price it. Tax-exempt interest cannot land in
-                taxable income itself, so the only line it can move is Social
-                Security — which is exactly why the cost is so easy to miss.
+                Open <strong>Advanced inputs</strong> above and move the
+                tax-exempt interest slider to price it. Municipal interest cannot
+                land in taxable income itself, so the only line it can move is
+                Social Security — which is exactly why the cost is so easy to
+                miss.
               </p>
             ) : muniEffect.taxCost === 0 ? (
               <p>
@@ -1522,7 +1570,7 @@ const App: React.FC = () => {
             )}
 
             <p>
-              Flipping this slider on and off is the cleanest way to see the torpedo
+              Flipping that slider on and off is the cleanest way to see the torpedo
               in isolation: nothing about the ordinary tax base changes, so every
               dollar of tax it adds is the Social Security inclusion rules and
               nothing else. It also cuts the other way — a retiree sitting inside the
@@ -2162,7 +2210,8 @@ const App: React.FC = () => {
                 </p>
               ) : (
                 <p>
-                  Move the slider above to price it. At this income the next dollar
+                  Open <strong>Advanced inputs</strong> above and move the
+                  charitable slider to price it. At this income the next dollar
                   given from the IRA rather than the checking account is worth{' '}
                   <strong>{qcdSwing.ratePerNextDollar}%</strong> in federal tax —
                   and that is before anything Medicare does with it two years later.

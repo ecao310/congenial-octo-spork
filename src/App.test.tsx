@@ -853,6 +853,169 @@ describe('the advice under the slider', () => {
 });
 
 /**
+ * The text alternative to the charts.
+ *
+ * A recharts chart is an SVG of unlabelled paths, so until this the app's
+ * centrepiece said nothing at all to a screen reader, and every word the page
+ * spent on the curve was relative to wherever the reader's own slider happened
+ * to be. The caption is the curve itself, in order, for everybody — and it is
+ * the only place the hump's location is stated without the reader first having
+ * to put a slider inside it.
+ *
+ * Figures below are 2025, single, the $23,712 average benefit, the same return
+ * the advice tests read.
+ */
+describe('the curve in words', () => {
+  const captions = (): HTMLElement[] =>
+    Array.from(document.querySelectorAll('figcaption.chart-caption'));
+  const caption = (step: 'torpedo' | 'gains' | 'conversion'): HTMLElement =>
+    document.querySelector(
+      `#step-${step} figcaption.chart-caption`,
+    ) as HTMLElement;
+  const chart = (step: 'torpedo' | 'gains' | 'conversion'): HTMLElement =>
+    document.querySelector(`#step-${step} .chart-container`) as HTMLElement;
+  const setIncome = (value: number): void => {
+    fireEvent.change(
+      screen.getByRole('slider', { name: /other income \(not social security\)/i }),
+      { target: { value: String(value) } },
+    );
+  };
+
+  it('makes every chart a figure whose caption is its description', () => {
+    render(<App />);
+    expect(captions()).toHaveLength(3);
+    for (const step of ['torpedo', 'gains', 'conversion'] as const) {
+      // The plot is one image with a name, not a tree of unlabelled paths.
+      expect(chart(step)).toHaveAttribute('role', 'img');
+      expect(chart(step).getAttribute('aria-label')).toMatch(/^Chart: /);
+      // And the caption below it is that image's long description.
+      expect(chart(step)).toHaveAttribute(
+        'aria-describedby',
+        caption(step).id,
+      );
+      expect(chart(step).closest('figure')).toBe(caption(step).closest('figure'));
+    }
+  });
+
+  it('names every band of step 2’s curve, left to right', () => {
+    render(<App />);
+    expect(caption('torpedo')).toHaveTextContent(
+      'Left to right, the rate on the next dollar of other income is 0% up to $14,750, 15% to $22,000, 18.5% to $22,500, 22.2% to $40,500, 12% to $44,000, 22% to $98,750, then 24% out to $150,000.',
+    );
+  });
+
+  it('states where the hump starts and stops without being asked', () => {
+    render(<App />);
+    expect(caption('torpedo')).toHaveTextContent(
+      'The hump is the 22.2% stretch between $22,750 and $40,500',
+    );
+    expect(caption('torpedo')).toHaveTextContent('the ground just past it is cheaper');
+  });
+
+  it('does not move when the slider does — the caption is the curve, not the point', () => {
+    render(<App />);
+    const before = caption('torpedo').textContent;
+    setIncome(120_000);
+    expect(caption('torpedo').textContent).toBe(before);
+  });
+
+  it('redraws when the return does', () => {
+    render(<App />);
+    fireEvent.change(
+      screen.getByRole('slider', { name: /social security benefit/i }),
+      { target: { value: '0' } },
+    );
+    // No benefit to drag into the tax base, so the curve is the bracket
+    // schedule and nothing else: it climbs and never comes back down.
+    expect(caption('torpedo')).toHaveTextContent(
+      '0% up to $15,500, 10% to $27,500, 12% to $64,000, 22% to $119,000, then 24% out to $150,000.',
+    );
+    expect(caption('torpedo')).toHaveTextContent(
+      'No stretch of it is a hump: none costs more than the ground on both sides of it.',
+    );
+  });
+
+  it('counts the humps when a return has more than one', () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Jointly' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Age 65 or older' }));
+    fireEvent.click(
+      screen.getByRole('checkbox', { name: 'Both spouses are 65 or older' }),
+    );
+    fireEvent.change(
+      screen.getByRole('slider', { name: /social security benefit/i }),
+      { target: { value: '47424' } },
+    );
+    // The inclusion phase, then the senior deduction's phaseout: the second
+    // hump is the one no reader would guess was there.
+    expect(caption('torpedo')).toHaveTextContent(
+      'It humps twice: 22.2% between $44,500 and $60,500, and 26.88% between $202,500 and $209,500 — the ground just past each one is cheaper than the ground on it.',
+    );
+  });
+
+  it('words step 3’s caption about the split rather than the size', () => {
+    render(<App />);
+    expect(caption('gains')).toHaveTextContent(
+      'Left to right, the rate on the next dollar taken as gain rather than as ordinary income is 10.2% up to $13,500, 8.5% to $25,250, then 0% out to $30,000.',
+    );
+    expect(caption('gains')).toHaveTextContent(
+      'The hump is the 10.2% stretch between $0 and $13,500',
+    );
+  });
+
+  it('says so plainly when a curve never changes rate', () => {
+    render(<App />);
+    // Past the torpedo the benefit is fully in the tax base at every split,
+    // so moving income between the two schedules costs one rate throughout.
+    setIncome(90_000);
+    expect(caption('gains')).toHaveTextContent(
+      'is a flat 15% the whole way, from $0 to $90,000.',
+    );
+    // One band has already said it has no hump; the note would repeat it.
+    expect(caption('gains')).not.toHaveTextContent('hump');
+  });
+
+  it('drops step 3’s figure entirely when there is no axis to draw', () => {
+    render(<App />);
+    setIncome(0);
+    expect(captions()).toHaveLength(2);
+    expect(caption('gains')).toBeNull();
+  });
+
+  it('says step 4 is redrawing step 2’s curve, and how far out', () => {
+    render(<App />);
+    expect(caption('conversion')).toHaveTextContent(
+      "Step 2's own curve, redrawn out to $150,000:",
+    );
+    expect(caption('conversion')).toHaveTextContent(
+      '22.2% to $40,500, 12% to $44,000',
+    );
+  });
+
+  it('names the shaded conversion in step 4’s label, and its absence', () => {
+    render(<App />);
+    expect(chart('conversion').getAttribute('aria-label')).toContain(
+      'with the sized conversion shaded from $30,000 to $44,069',
+    );
+    // Nothing fits under the top of the 12% bracket from $90,000 of income.
+    setIncome(90_000);
+    expect(chart('conversion').getAttribute('aria-label')).toContain(
+      'Nothing fits under the line picked, so no conversion is shaded',
+    );
+  });
+
+  it('gives each chart’s label its own axis and right edge', () => {
+    render(<App />);
+    expect(chart('torpedo').getAttribute('aria-label')).toBe(
+      'Chart: the marginal tax rate on the next dollar of other income, plotted from $0 to $150,000.',
+    );
+    expect(chart('gains').getAttribute('aria-label')).toBe(
+      'Chart: the marginal tax rate as more of $30,000 of other income is taken as long-term capital gain, plotted from $0 to $30,000.',
+    );
+  });
+});
+
+/**
  * The step-3 rewrite: a long-term gain is a share of the income entered in
  * step 2, never a second figure stacked on top of it. So the reader's total
  * income is one number set once, step 3 moves only its composition, and both

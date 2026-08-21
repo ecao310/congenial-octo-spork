@@ -243,6 +243,110 @@ const hereLine = (value: number, axisMax: number, colour: string) => (
   />
 );
 
+/**
+ * The curve as a sentence: every stretch of constant marginal rate, named in
+ * order, left to right.
+ *
+ * `segmentCurve` has carried this shape since the first tooltip — it is what
+ * says "stay under $x or over $y" over a hill, and what `standingOn`
+ * classifies into advice — but every word the page has ever spent on it has
+ * been relative to wherever the reader happens to be standing. The picture
+ * itself went undescribed: a recharts chart is an SVG of unlabelled paths, so
+ * a reader who cannot see it got nothing at all from the centrepiece of the
+ * page, and a reader who can still had to read the band edges off a compact
+ * axis.
+ *
+ * Each band is named by its own last sampled point, so consecutive bands
+ * quote figures one sampling step apart rather than a shared edge. That is the
+ * approximation the advice under every slider already makes when it quotes
+ * `hump.start` and `hump.end`, and the step is $250 on the narrowest chart.
+ */
+const bandRun = <T,>(segments: CurveSegment<T>[]): string | null => {
+  if (segments.length === 0) return null;
+  if (segments.length === 1) {
+    const [only] = segments;
+    return `a flat ${only.rate}% the whole way, from ${formatCurrency(only.start)} to ${formatCurrency(only.end)}`;
+  }
+  const last = segments.length - 1;
+  return segments
+    .map((seg, i) => {
+      if (i === 0) return `${seg.rate}% up to ${formatCurrency(seg.end)}`;
+      if (i === last) return `then ${seg.rate}% out to ${formatCurrency(seg.end)}`;
+      return `${seg.rate}% to ${formatCurrency(seg.end)}`;
+    })
+    .join(', ');
+};
+
+/**
+ * How many times a curve humps, as prose. Only two and up ever reach it: none
+ * and one are sentences of their own below, because "it humps once" says less
+ * than naming the one hump does.
+ */
+const HUMP_COUNTS: Record<number, string> = {
+  2: 'twice',
+  3: 'three times',
+  4: 'four times',
+};
+
+/**
+ * Where the humps are, in one sentence.
+ *
+ * A hump is `segmentCurve`'s `hill`: a stretch dearer than the ground on both
+ * sides of it, which on this page is either the Social Security inclusion
+ * phase or the senior deduction's phaseout, and often both. Deliberately
+ * unnamed, for the same reason `StandingNote` leaves it unnamed — the shape is
+ * what matters and two different mechanisms draw it, so the explainers below
+ * the chart are where the mechanism belongs.
+ *
+ * The claim made about every hump is the one its classification actually
+ * guarantees: the ground just past it is cheaper. "Costs more than the ground
+ * on both sides" is only true of a hump with ground on both sides, and the
+ * gains curve routinely humps against its own left edge.
+ */
+const humpNote = <T,>(segments: CurveSegment<T>[]): string => {
+  const hills = segments.filter((seg) => seg.type === 'hill');
+  const span = (hill: CurveSegment<T>): string =>
+    `${hill.rate}% between ${formatCurrency(hill.start)} and ${formatCurrency(hill.end)}`;
+
+  if (hills.length === 0) {
+    return 'No stretch of it is a hump: none costs more than the ground on both sides of it.';
+  }
+  if (hills.length === 1) {
+    return `The hump is the ${hills[0].rate}% stretch between ${formatCurrency(hills[0].start)} and ${formatCurrency(hills[0].end)}; the ground just past it is cheaper, which is what makes it worth stepping over rather than into.`;
+  }
+  return `It humps ${HUMP_COUNTS[hills.length] ?? `${hills.length} times`}: ${hills.map(span).join(', and ')} — the ground just past each one is cheaper than the ground on it.`;
+};
+
+interface CurveCaptionProps<T> {
+  /** Referenced by the chart's `aria-describedby`, so it needs a stable id. */
+  id: string;
+  segments: CurveSegment<T>[];
+  /** How the caption opens, before the bands: what this particular sweep is. */
+  lead: React.ReactNode;
+}
+
+/**
+ * The text alternative to a chart, and the only place on the page that states
+ * where the hump starts and stops without the reader first putting a slider
+ * inside it.
+ *
+ * Visible rather than screen-reader-only on purpose: the band edges are the
+ * chart's whole content, and reading them off a compact axis is guesswork for
+ * everybody.
+ */
+function CurveCaption<T>({ id, segments, lead }: CurveCaptionProps<T>) {
+  const bands = bandRun(segments);
+  if (!bands) return null;
+  return (
+    <figcaption className="chart-caption" id={id}>
+      <strong>The curve in words.</strong> {lead} {bands}.
+      {/* A curve of one band has already said it has no hump by being one
+          band, so the hump note would only repeat it back. */}
+      {segments.length > 1 ? ` ${humpNote(segments)}` : ''}
+    </figcaption>
+  );
+}
+
 const TOOLTIP_STYLE: React.CSSProperties = {
   background: 'rgba(15, 23, 42, 0.95)',
   border: '1px solid rgba(56, 189, 248, 0.3)',
@@ -1520,113 +1624,126 @@ const App: React.FC = () => {
           it is yours.
         </p>
 
-        <div className="chart-container">
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart
-              data={curve}
-              margin={{ top: 22, right: 28, left: 10, bottom: 0 }}
-            >
-              <defs>
-                <linearGradient id="rateGradient" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#38bdf8" stopOpacity={0.5} />
-                  <stop offset="95%" stopColor="#38bdf8" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255, 255, 255, 0.1)" />
-              <XAxis
-                dataKey="income"
-                type="number"
-                domain={[0, axisMax]}
-                tickFormatter={formatCompact}
-                stroke="#94a3b8"
-              />
-              <YAxis
-                stroke="#94a3b8"
-                tickFormatter={(value) => `${value}%`}
-                width={70}
-                domain={[0, 'auto']}
-              />
-              <Tooltip
-                content={
-                  <CustomTooltip
-                    ssBenefit={ssBenefit}
-                    segments={segments}
-                    filingStatus={filingStatus}
-                    muniInterest={muniInterest}
-                    qcd={qcd}
-                    ltcg={plannedLtcg}
-                    beneficiaries={beneficiaries}
-                    year={year}
-                  />
-                }
-              />
-              {cliffsOnChart.map((cliff) => (
-                <ReferenceLine
-                  key={cliff.tier}
-                  x={cliff.otherIncome}
-                  stroke="#f43f5e"
-                  strokeDasharray="4 4"
-                  label={{
-                    value: `IRMAA ${cliff.tier}`,
-                    position: 'top',
-                    fill: '#fb7185',
-                    fontSize: 11,
-                  }}
+        <figure className="chart-figure">
+          <div
+            className="chart-container"
+            role="img"
+            aria-label={`Chart: the marginal tax rate on the next dollar of other income, plotted from $0 to ${formatCurrency(axisMax)}.`}
+            aria-describedby="torpedo-chart-caption"
+          >
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart
+                data={curve}
+                margin={{ top: 22, right: 28, left: 10, bottom: 0 }}
+              >
+                <defs>
+                  <linearGradient id="rateGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#38bdf8" stopOpacity={0.5} />
+                    <stop offset="95%" stopColor="#38bdf8" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255, 255, 255, 0.1)" />
+                <XAxis
+                  dataKey="income"
+                  type="number"
+                  domain={[0, axisMax]}
+                  tickFormatter={formatCompact}
+                  stroke="#94a3b8"
                 />
-              ))}
-              {hereLine(ordinaryIncome, axisMax, '#f59e0b')}
-              <Area
-                type="stepAfter"
-                dataKey="marginalRate"
-                stroke="#38bdf8"
-                strokeWidth={2}
-                fill="url(#rateGradient)"
-              />
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
-        <p className="chart-axis-label">
-          Other Income ($) &middot; Total income = Other income + {formatCurrency(ssBenefit)} SS
-          {plannedLtcg > 0
-            ? `, of which ${formatCurrency(plannedLtcg)} is long-term gain`
-            : ''}
-          {muniInterest > 0
-            ? ` + ${formatCurrency(muniInterest)} tax-exempt interest`
-            : ''}
-          {qcd > 0
-            ? ` \u2212 ${formatCurrency(qcd)} given straight to charity`
-            : ''}
-        </p>
+                <YAxis
+                  stroke="#94a3b8"
+                  tickFormatter={(value) => `${value}%`}
+                  width={70}
+                  domain={[0, 'auto']}
+                />
+                <Tooltip
+                  content={
+                    <CustomTooltip
+                      ssBenefit={ssBenefit}
+                      segments={segments}
+                      filingStatus={filingStatus}
+                      muniInterest={muniInterest}
+                      qcd={qcd}
+                      ltcg={plannedLtcg}
+                      beneficiaries={beneficiaries}
+                      year={year}
+                    />
+                  }
+                />
+                {cliffsOnChart.map((cliff) => (
+                  <ReferenceLine
+                    key={cliff.tier}
+                    x={cliff.otherIncome}
+                    stroke="#f43f5e"
+                    strokeDasharray="4 4"
+                    label={{
+                      value: `IRMAA ${cliff.tier}`,
+                      position: 'top',
+                      fill: '#fb7185',
+                      fontSize: 11,
+                    }}
+                  />
+                ))}
+                {hereLine(ordinaryIncome, axisMax, '#f59e0b')}
+                <Area
+                  type="stepAfter"
+                  dataKey="marginalRate"
+                  stroke="#38bdf8"
+                  strokeWidth={2}
+                  fill="url(#rateGradient)"
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+          <p className="chart-axis-label">
+            Other Income ($) &middot; Total income = Other income + {formatCurrency(ssBenefit)} SS
+            {plannedLtcg > 0
+              ? `, of which ${formatCurrency(plannedLtcg)} is long-term gain`
+              : ''}
+            {muniInterest > 0
+              ? ` + ${formatCurrency(muniInterest)} tax-exempt interest`
+              : ''}
+            {qcd > 0
+              ? ` \u2212 ${formatCurrency(qcd)} given straight to charity`
+              : ''}
+          </p>
 
-        {/* The lines have to carry their own key: what a cliff is gets
-            explained in a disclosure further down the step, and a bare red
-            dash on a tax chart explains nothing on its own. */}
-        {cliffsOnChart.length > 0 ? (
-          <p className="chart-key">
-            <span className="chart-key-swatch" aria-hidden="true" />
-            <span>
-              <strong>Medicare&apos;s IRMAA cliffs.</strong> Crossing one raises
-              the Part B and Part D premiums of everyone on this return who is
-              enrolled, for a full year &mdash; and it is a cliff, not a phase-in, so
-              a single dollar over the line buys the whole step.{' '}
-              {cliffPriceList}
-              {beneficiaries > 1 ? ', for the two of you' : ''}. None of that is
-              tax, so none of it is in the curve above.
-            </span>
-          </p>
-        ) : firstCliffPastAxis ? (
-          <p className="chart-key">
-            <span>
-              <strong>No Medicare IRMAA cliff falls on this chart.</strong> The
-              first one this return could reach needs{' '}
-              {formatCurrency(firstCliffPastAxis.magi)} of MAGI &mdash;{' '}
-              {formatCurrency(Math.round(firstCliffPastAxis.otherIncome))} of
-              other income, past the right edge of the axis &mdash; and would cost{' '}
-              {formatCurrency(firstCliffPastAxis.step)}/yr in Medicare premiums
-              {beneficiaries > 1 ? ' for the two of you' : ''}.
-            </span>
-          </p>
-        ) : null}
+          {/* The lines have to carry their own key: what a cliff is gets
+              explained in a disclosure further down the step, and a bare red
+              dash on a tax chart explains nothing on its own. */}
+          {cliffsOnChart.length > 0 ? (
+            <p className="chart-key">
+              <span className="chart-key-swatch" aria-hidden="true" />
+              <span>
+                <strong>Medicare&apos;s IRMAA cliffs.</strong> Crossing one raises
+                the Part B and Part D premiums of everyone on this return who is
+                enrolled, for a full year &mdash; and it is a cliff, not a phase-in, so
+                a single dollar over the line buys the whole step.{' '}
+                {cliffPriceList}
+                {beneficiaries > 1 ? ', for the two of you' : ''}. None of that is
+                tax, so none of it is in the curve above.
+              </span>
+            </p>
+          ) : firstCliffPastAxis ? (
+            <p className="chart-key">
+              <span>
+                <strong>No Medicare IRMAA cliff falls on this chart.</strong> The
+                first one this return could reach needs{' '}
+                {formatCurrency(firstCliffPastAxis.magi)} of MAGI &mdash;{' '}
+                {formatCurrency(Math.round(firstCliffPastAxis.otherIncome))} of
+                other income, past the right edge of the axis &mdash; and would cost{' '}
+                {formatCurrency(firstCliffPastAxis.step)}/yr in Medicare premiums
+                {beneficiaries > 1 ? ' for the two of you' : ''}.
+              </span>
+            </p>
+          ) : null}
+
+          <CurveCaption
+            id="torpedo-chart-caption"
+            segments={segments}
+            lead="Left to right, the rate on the next dollar of other income is"
+          />
+        </figure>
 
         <div className="input-group chart-slider">
           <div className="slider-header">
@@ -1937,58 +2054,71 @@ const App: React.FC = () => {
           </p>
         ) : (
           <>
-          <div className="chart-container">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart
-                data={ltcgCurve}
-                margin={{ top: 10, right: 10, left: 10, bottom: 0 }}
-              >
-                <defs>
-                  <linearGradient id="ltcgGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.5} />
-                    <stop offset="95%" stopColor="#f59e0b" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255, 255, 255, 0.1)" />
-                <XAxis
-                  dataKey="ltcg"
-                  type="number"
-                  domain={[0, gainsAxisMax]}
-                  tickFormatter={formatCompact}
-                  stroke="#94a3b8"
-                />
-                <YAxis
-                  stroke="#94a3b8"
-                  tickFormatter={(value) => `${value}%`}
-                  width={70}
-                  domain={[0, 'auto']}
-                />
-                <Tooltip
-                  content={
-                    <LTCGTooltip
-                      ordinaryIncome={ordinaryIncome}
-                      ssBenefit={ssBenefit}
-                      segments={ltcgSegments}
-                    />
-                  }
-                />
-                {hereLine(plannedLtcg, gainsAxisMax, '#34d399')}
-                <Area
-                  type="stepAfter"
-                  dataKey="marginalRate"
-                  stroke="#f59e0b"
-                  strokeWidth={2}
-                  fill="url(#ltcgGradient)"
-                />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-          <p className="chart-axis-label">
-            Long-Term Capital Gains, out of {formatCurrency(ordinaryIncome)} of
-            other income ($) &middot; Total income{' '}
-            {formatCurrency(ordinaryIncome + ssBenefit)} at every point on this
-            axis
-          </p>
+          <figure className="chart-figure">
+            <div
+              className="chart-container"
+              role="img"
+              aria-label={`Chart: the marginal tax rate as more of ${formatCurrency(ordinaryIncome)} of other income is taken as long-term capital gain, plotted from $0 to ${formatCurrency(gainsAxisMax)}.`}
+              aria-describedby="gains-chart-caption"
+            >
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart
+                  data={ltcgCurve}
+                  margin={{ top: 10, right: 10, left: 10, bottom: 0 }}
+                >
+                  <defs>
+                    <linearGradient id="ltcgGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.5} />
+                      <stop offset="95%" stopColor="#f59e0b" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255, 255, 255, 0.1)" />
+                  <XAxis
+                    dataKey="ltcg"
+                    type="number"
+                    domain={[0, gainsAxisMax]}
+                    tickFormatter={formatCompact}
+                    stroke="#94a3b8"
+                  />
+                  <YAxis
+                    stroke="#94a3b8"
+                    tickFormatter={(value) => `${value}%`}
+                    width={70}
+                    domain={[0, 'auto']}
+                  />
+                  <Tooltip
+                    content={
+                      <LTCGTooltip
+                        ordinaryIncome={ordinaryIncome}
+                        ssBenefit={ssBenefit}
+                        segments={ltcgSegments}
+                      />
+                    }
+                  />
+                  {hereLine(plannedLtcg, gainsAxisMax, '#34d399')}
+                  <Area
+                    type="stepAfter"
+                    dataKey="marginalRate"
+                    stroke="#f59e0b"
+                    strokeWidth={2}
+                    fill="url(#ltcgGradient)"
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+            <p className="chart-axis-label">
+              Long-Term Capital Gains, out of {formatCurrency(ordinaryIncome)} of
+              other income ($) &middot; Total income{' '}
+              {formatCurrency(ordinaryIncome + ssBenefit)} at every point on this
+              axis
+            </p>
+
+            <CurveCaption
+              id="gains-chart-caption"
+              segments={ltcgSegments}
+              lead="Left to right, the rate on the next dollar taken as gain rather than as ordinary income is"
+            />
+          </figure>
 
           <div className="input-group chart-slider">
             <div className="slider-header">
@@ -2120,121 +2250,138 @@ const App: React.FC = () => {
           along exactly that axis.
         </p>
 
-        <div className="chart-container">
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart
-              data={conversionCurve}
-              margin={{ top: 22, right: 28, left: 10, bottom: 0 }}
-            >
-              <defs>
-                <linearGradient id="conversionGradient" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#38bdf8" stopOpacity={0.5} />
-                  <stop offset="95%" stopColor="#38bdf8" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255, 255, 255, 0.1)" />
-              <XAxis
-                dataKey="income"
-                type="number"
-                domain={[0, conversionAxisMax]}
-                tickFormatter={formatCompact}
-                stroke="#94a3b8"
-              />
-              <YAxis
-                stroke="#94a3b8"
-                tickFormatter={(value) => `${value}%`}
-                width={70}
-                domain={[0, 'auto']}
-              />
-              <Tooltip
-                content={
-                  <CustomTooltip
-                    ssBenefit={ssBenefit}
-                    segments={conversionSegments}
-                    filingStatus={filingStatus}
-                    muniInterest={muniInterest}
-                    qcd={qcd}
-                    ltcg={plannedLtcg}
-                    beneficiaries={beneficiaries}
-                    year={year}
+        <figure className="chart-figure">
+          <div
+            className="chart-container"
+            role="img"
+            aria-label={
+              conversionFits
+                ? `Chart: step 2's marginal-rate curve redrawn from $0 to ${formatCurrency(conversionAxisMax)}, with the sized conversion shaded from ${formatCurrency(ordinaryIncome)} to ${formatCurrency(conversionTarget)}.`
+                : `Chart: step 2's marginal-rate curve redrawn from $0 to ${formatCurrency(conversionAxisMax)}. Nothing fits under the line picked, so no conversion is shaded.`
+            }
+            aria-describedby="conversion-chart-caption"
+          >
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart
+                data={conversionCurve}
+                margin={{ top: 22, right: 28, left: 10, bottom: 0 }}
+              >
+                <defs>
+                  <linearGradient id="conversionGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#38bdf8" stopOpacity={0.5} />
+                    <stop offset="95%" stopColor="#38bdf8" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255, 255, 255, 0.1)" />
+                <XAxis
+                  dataKey="income"
+                  type="number"
+                  domain={[0, conversionAxisMax]}
+                  tickFormatter={formatCompact}
+                  stroke="#94a3b8"
+                />
+                <YAxis
+                  stroke="#94a3b8"
+                  tickFormatter={(value) => `${value}%`}
+                  width={70}
+                  domain={[0, 'auto']}
+                />
+                <Tooltip
+                  content={
+                    <CustomTooltip
+                      ssBenefit={ssBenefit}
+                      segments={conversionSegments}
+                      filingStatus={filingStatus}
+                      muniInterest={muniInterest}
+                      qcd={qcd}
+                      ltcg={plannedLtcg}
+                      beneficiaries={beneficiaries}
+                      year={year}
+                    />
+                  }
+                />
+                {conversionFits && (
+                  <ReferenceArea
+                    className="conversion-band"
+                    x1={ordinaryIncome}
+                    x2={conversionTarget}
+                    fill="#818cf8"
+                    fillOpacity={0.2}
+                    stroke="none"
                   />
-                }
-              />
-              {conversionFits && (
-                <ReferenceArea
-                  className="conversion-band"
-                  x1={ordinaryIncome}
-                  x2={conversionTarget}
-                  fill="#818cf8"
-                  fillOpacity={0.2}
-                  stroke="none"
-                />
-              )}
-              {conversionFits && (
-                <ReferenceLine
-                  className="ceiling-line"
-                  x={conversionTarget}
-                  stroke="#818cf8"
-                  strokeDasharray="4 4"
+                )}
+                {conversionFits && (
+                  <ReferenceLine
+                    className="ceiling-line"
+                    x={conversionTarget}
+                    stroke="#818cf8"
+                    strokeDasharray="4 4"
+                    strokeWidth={2}
+                    /* The amount goes on the line rather than inside the
+                       band: "You are here" already runs rightwards from the
+                       band's near edge, and a narrow band would put the two
+                       on top of each other. Above the axis is free — this
+                       chart draws no IRMAA cliffs, which is what that strip
+                       carries on step 2. */
+                    label={{
+                      value: `${formatCurrency(sizing.conversion)} converted`,
+                      position: 'top',
+                      fill: '#a5b4fc',
+                      fontSize: 11,
+                      fontWeight: 600,
+                    }}
+                  />
+                )}
+                {hereLine(ordinaryIncome, conversionAxisMax, '#f59e0b')}
+                <Area
+                  type="stepAfter"
+                  dataKey="marginalRate"
+                  stroke="#38bdf8"
                   strokeWidth={2}
-                  /* The amount goes on the line rather than inside the
-                     band: "You are here" already runs rightwards from the
-                     band's near edge, and a narrow band would put the two
-                     on top of each other. Above the axis is free — this
-                     chart draws no IRMAA cliffs, which is what that strip
-                     carries on step 2. */
-                  label={{
-                    value: `${formatCurrency(sizing.conversion)} converted`,
-                    position: 'top',
-                    fill: '#a5b4fc',
-                    fontSize: 11,
-                    fontWeight: 600,
-                  }}
+                  fill="url(#conversionGradient)"
                 />
-              )}
-              {hereLine(ordinaryIncome, conversionAxisMax, '#f59e0b')}
-              <Area
-                type="stepAfter"
-                dataKey="marginalRate"
-                stroke="#38bdf8"
-                strokeWidth={2}
-                fill="url(#conversionGradient)"
-              />
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
-        {/* Deliberately not step 2's label. The two charts sweep the same
-            axis, so repeating its total-income formula here would say nothing
-            new; what is worth saying is which stretch of it this one draws. */}
-        <p className="chart-axis-label">
-          Other Income ($), the conversion included &mdash; step 2&apos;s own
-          axis, drawn out to {formatCurrency(conversionAxisMax)}
-        </p>
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+          {/* Deliberately not step 2's label. The two charts sweep the same
+              axis, so repeating its total-income formula here would say nothing
+              new; what is worth saying is which stretch of it this one draws. */}
+          <p className="chart-axis-label">
+            Other Income ($), the conversion included &mdash; step 2&apos;s own
+            axis, drawn out to {formatCurrency(conversionAxisMax)}
+          </p>
 
-        <p className="chart-key chart-key-conversion">
-          <span
-            className="chart-key-swatch chart-key-swatch-conversion"
-            aria-hidden="true"
+          <p className="chart-key chart-key-conversion">
+            <span
+              className="chart-key-swatch chart-key-swatch-conversion"
+              aria-hidden="true"
+            />
+            {conversionFits ? (
+              <span>
+                <strong>The conversion, and the line it stops at.</strong> The
+                shaded band runs from your own {formatCurrency(ordinaryIncome)}{' '}
+                out to {formatCurrency(conversionTarget)} of other income &mdash;
+                the point at which the line you picked is reached, once the
+                benefit that the extra income drags into the tax base is counted.
+                That is why the band is shorter than the headroom the line
+                appears to offer. Every dollar inside it is charged at the rates
+                the curve draws above it.
+              </span>
+            ) : (
+              <span>
+                <strong>No band is drawn.</strong> Nothing fits under the line
+                you picked, so there is no conversion to shade. The amber marker
+                is still where you are standing.
+              </span>
+            )}
+          </p>
+
+          <CurveCaption
+            id="conversion-chart-caption"
+            segments={conversionSegments}
+            lead={`Step 2's own curve, redrawn out to ${formatCurrency(conversionAxisMax)}: left to right, the rate on the next dollar of other income is`}
           />
-          {conversionFits ? (
-            <span>
-              <strong>The conversion, and the line it stops at.</strong> The
-              shaded band runs from your own {formatCurrency(ordinaryIncome)}{' '}
-              out to {formatCurrency(conversionTarget)} of other income &mdash;
-              the point at which the line you picked is reached, once the
-              benefit that the extra income drags into the tax base is counted.
-              That is why the band is shorter than the headroom the line
-              appears to offer. Every dollar inside it is charged at the rates
-              the curve draws above it.
-            </span>
-          ) : (
-            <span>
-              <strong>No band is drawn.</strong> Nothing fits under the line
-              you picked, so there is no conversion to shade. The amber marker
-              is still where you are standing.
-            </span>
-          )}
-        </p>
+        </figure>
 
         <fieldset className="input-group chart-slider ceiling-picker">
           <legend>The line you would rather not cross</legend>

@@ -3895,3 +3895,91 @@ wording, step 4's third copy of the total, re-pricing on the gains slider with
 the denominator held, all three figures moving with the income, the muni and
 gift denominators, the crowded-out gift, and the silent case. No CSS: both
 clauses are prose inside `.slider-readout`.
+
+
+Say what the picture says, in words
+===================================
+
+Three charts, three bare recharts SVGs: no `role`, no `aria-label`, no
+caption. A screen reader got nothing from the app's centrepiece, and every
+word the page spent on the curve — the tooltips, `StandingNote`, both slider
+readouts — was relative to wherever the reader's own slider happened to be.
+Nothing described the curve. Each chart is now a `<figure>` whose contents are
+the plot, its axis label, its key and a caption that reads the curve out band
+by band; the plot itself is `role="img"` with a name and an
+`aria-describedby` pointing at that caption.
+
+### The caption
+
+`segmentCurve` has carried the shape all along — it is what the tooltip reads
+to say "stay under $x or over $y" — so the caption is a rendering of data that
+was already there. Two sentences: the bands, then the humps.
+
+2025, single, the $23,712 average benefit: "Left to right, the rate on the
+next dollar of other income is 0% up to $14,750, 15% to $22,000, 18.5% to
+$22,500, 22.2% to $40,500, 12% to $44,000, 22% to $98,750, then 24% out to
+$150,000. The hump is the 22.2% stretch between $22,750 and $40,500; the
+ground just past it is cheaper, which is what makes it worth stepping over
+rather than into."
+
+That second sentence is the thing the page has never stated for any reader:
+where the torpedo starts and stops, without first putting a slider inside it.
+Visible rather than screen-reader-only, because reading a band edge off a
+compact axis is guesswork for a sighted reader too.
+
+Each band is named by its own last sampled point, so consecutive bands quote
+figures one sampling step apart ($250 on the narrowest chart) rather than a
+shared edge. That is the approximation `StandingNote` already makes every time
+it quotes `hump.start` and `hump.end`.
+
+### What the hump sentence is allowed to claim
+
+`segmentCurve` marks a `hill` when a stretch is dearer than both neighbours —
+or, at an edge, dearer than the one neighbour it has. The gains curve humps
+against its own left edge routinely (10.2% from $0), so "costs more than the
+ground on both sides" would be false there. The claim made instead is the one
+the classification guarantees everywhere: the ground just past it is cheaper.
+
+Three branches, all tested. No hills: "No stretch of it is a hump: none costs
+more than the ground on both sides of it" — a return with no benefit to drag
+in. One: named outright. More than one: "It humps twice: 22.2% between $44,500
+and $60,500, and 26.88% between $202,500 and $209,500" — the inclusion phase
+and the senior deduction's phaseout on a joint return with both spouses 65+,
+and the second is the one no reader would guess was there. The hump is left
+unnamed for the same reason `StandingNote` leaves it unnamed: two mechanisms
+draw the same shape, and the explainers below the chart are where mechanism
+belongs.
+
+A one-band curve — "a flat 15% the whole way, from $0 to $90,000", which is
+step 3 past the torpedo — gets no hump sentence at all. Being one band has
+already said it.
+
+### The labels
+
+Each `role="img"` carries its own axis and right edge rather than a shared
+string: step 2's is other income out to `axisMax`, step 3's is "as more of
+$30,000 of other income is taken as long-term capital gain", and step 4's says
+it is step 2's curve redrawn, and where the conversion is shaded — or that
+nothing fits under the line and no band is drawn, which is the one thing on
+that chart a caption of bands cannot say.
+
+Step 4's caption repeats step 2's whenever the axes match, which is the common
+case. Deliberate — a figure should stand alone for a reader who lands on step
+4 — but logged in Discovered work as a call worth settling once.
+
+### Verified
+
+`npx tsc -b`, `npx eslint src --max-warnings 0`, `npx vitest run` (7 files,
+522 tests, green in 8.4s), `npm run build`. +12 tests in a new `the curve in
+words` describe: the figure/role/describedby wiring on all three, step 2's
+full band run, the hump sentence, that the caption does *not* move when the
+slider does, the no-hump and two-hump returns, step 3's own wording, the flat
+curve, step 3's figure vanishing with its axis, step 4's lead, and each
+label. CSS: `.chart-figure` is a margin reset (`<figure>` ships with 40px) and
+`.chart-caption` is `.chart-key`'s size, colour and 70px plot-area offset,
+since it is the same kind of thing — a note about the picture rather than part
+of it.
+
+`bandRun` and `humpNote` are module-private: exporting them tripped
+`react-refresh/only-export-components`, and the page's prose has always been
+tested through `render(<App />)` anyway.

@@ -361,6 +361,14 @@ h1 {
   margin-bottom: 2.5rem;
 }
 
+/* Everything that describes one chart, grouped: the plot, the axis label, the
+   key to its reference lines, and the caption that says in words what the plot
+   says in paint. The margin reset is the whole styling job — <figure> ships
+   with 40px of it. */
+.chart-figure {
+  margin: 0;
+}
+
 .chart-container {
   height: 400px;
   width: 100%;
@@ -405,6 +413,24 @@ h1 {
   height: 0;
   margin-top: 0.55rem;
   border-top: 2px dashed #f43f5e;
+}
+
+/* The curve in words. Sized and coloured like the key above it, because it is
+   the same kind of thing — a note about the picture rather than part of it —
+   and shares the axis label's 70px offset so it starts where the plot area
+   does. Visible rather than screen-reader-only: reading a band edge off a
+   compact axis is guesswork for a sighted reader too. */
+.chart-caption {
+  margin: 0.875rem 0 0;
+  padding-left: 70px;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: #94a3b8;
+}
+
+.chart-caption strong {
+  color: #cbd5e1;
+  font-weight: 600;
 }
 
 /* Step 4's key names a band and the line that closes it, both indigo — the one

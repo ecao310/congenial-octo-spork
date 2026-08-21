@@ -237,7 +237,53 @@ fieldset.ceiling-picker legend {
   transform: translateY(0);
 }
 
-.hint-bubble .field-note {
+.hint-bubble .link-note {
+  margin: 0 0 1.25rem;
+  padding: 0.875rem 1rem;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  border-left: 3px solid #f59e0b;
+  border-radius: 0.5rem;
+  background: rgba(245, 158, 11, 0.08);
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  color: #cbd5e1;
+}
+
+.link-note p {
+  margin: 0;
+}
+
+.link-note strong {
+  color: #fbbf24;
+}
+
+.link-note ul {
+  margin: 0.5rem 0 0;
+  padding-left: 1.1rem;
+}
+
+.link-note li + li {
+  margin-top: 0.375rem;
+}
+
+.link-note button {
+  margin-top: 0.75rem;
+  padding: 0.3rem 0.7rem;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 0.375rem;
+  background: transparent;
+  color: #94a3b8;
+  font-size: 0.75rem;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.link-note button:hover {
+  color: #e2e8f0;
+  border-color: rgba(148, 163, 184, 0.6);
+}
+
+.field-note {
   margin: 0;
 }
 

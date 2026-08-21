@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   XAxis,
   YAxis,
@@ -46,6 +46,12 @@ import {
   sizeConversion,
   CONVERSION_MEASURE_LABELS,
 } from './utils/tax';
+import {
+  decodeScenario,
+  scenarioUrl,
+  MAX_MUNI_INTEREST,
+} from './utils/scenarioUrl';
+import { formatCurrency } from './utils/format';
 import type {
   TaxYear,
   LTCGMarginalRatePoint,
@@ -55,10 +61,6 @@ import type {
   IrmaaCliff,
   ConversionCeilingId,
 } from './utils/tax';
-
-const DEFAULT_ORDINARY_INCOME = 30_000;
-/** Roughly a $1.4M muni ladder at 2025 yields — well past any realistic retiree. */
-const MAX_MUNI_INTEREST = 50_000;
 
 /**
  * One worked example in four steps, in the order a reader builds it: the
@@ -159,13 +161,6 @@ const FILING_STATUS_PROSE: Record<FilingStatus, string> = {
   mfs: 'a married filer filing separately who lived with their spouse',
   hoh: 'a head of household',
 };
-
-const formatCurrency = (value: number): string =>
-  new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    maximumFractionDigits: 0,
-  }).format(value);
 
 /** A rate given as a fraction, rendered the way the chart axis renders it. */
 const formatPercent = (rate: number): string =>
@@ -664,30 +659,112 @@ export const StandingNote: React.FC<StandingNoteProps> = ({ standing, at }) => {
  * 600 either way. The widest is not step 2's: a conversion sized against the
  * top of the 22% bracket can carry a joint return past $250,000 of other
  * income, and a maxed charitable gift on top of that further still.
+ *
+ * The last rung exists for links rather than for sliders. Nothing a reader can
+ * click takes the axis past $300,000, but a link can name any income up to
+ * `MAX_OTHER_INCOME`, and without the rung a $1,000,000 return would sweep a
+ * thousand points where every other chart on the page sweeps at most six
+ * hundred.
  */
 const curveStepFor = (axisMax: number): number =>
-  axisMax > 300_000 ? 1000 : axisMax > 150_000 ? 500 : 250;
+  axisMax > 600_000 ? 2000 : axisMax > 300_000 ? 1000 : axisMax > 150_000 ? 500 : 250;
+
+/**
+ * The step the fragment names, for a reader who followed `#step-conversion`
+ * rather than the nav.
+ *
+ * The query string carries the return and the fragment carries the place — see
+ * `scenarioUrl`. The browser does the scrolling on its own; all this does is
+ * mark the right nav button current, which it otherwise would not, leaving a
+ * reader looking at step 4 under a nav insisting they are on step 1.
+ */
+const stepFromHash = (hash: string): StepId | null => {
+  const id = hash.replace(/^#step-/, '');
+  return STEPS.some((s) => s.id === id) ? (id as StepId) : null;
+};
 
 const App: React.FC = () => {
-  const [step, setStep] = useState<StepId>('benefit');
-  const [year, setYear] = useState<TaxYear>(() => defaultTaxYear());
-  const [ssBenefit, setSsBenefit] = useState<number>(() =>
-    avgAnnualSSBenefit(defaultTaxYear()),
+  /**
+   * The return this page opened with, read out of the address bar once.
+   *
+   * Lazily initialised rather than computed at module load, because the
+   * address is a fact about this mount: the tests render `<App />` many times
+   * under many different links, and a module-level read would hand every one
+   * of them whichever link happened to be first.
+   */
+  const [openedWith] = useState(() => decodeScenario(window.location.search));
+  const opening = openedWith.scenario;
+
+  /**
+   * What the link asked for and could not have, if anything. Dismissible
+   * because it describes the arrival rather than the return: it stops being
+   * true of what is on screen the moment the reader moves a control, and there
+   * is no honest way to keep it current.
+   */
+  const [linkNotes, setLinkNotes] = useState<string[]>(() => openedWith.notes);
+
+  const [step, setStep] = useState<StepId>(
+    () => stepFromHash(window.location.hash) ?? 'benefit',
   );
-  const [filingStatus, setFilingStatus] = useState<FilingStatus>('single');
-  const [ordinaryIncome, setOrdinaryIncome] = useState<number>(DEFAULT_ORDINARY_INCOME);
-  const [plannedLtcg, setPlannedLtcg] = useState<number>(0);
-  const [isSenior, setIsSenior] = useState<boolean>(false);
-  const [spouseIsSenior, setSpouseIsSenior] = useState<boolean>(false);
-  const [muniInterest, setMuniInterest] = useState<number>(0);
-  const [qcd, setQcd] = useState<number>(0);
+  const [year, setYear] = useState<TaxYear>(opening.year);
+  const [ssBenefit, setSsBenefit] = useState<number>(opening.ssBenefit);
+  const [filingStatus, setFilingStatus] = useState<FilingStatus>(opening.filingStatus);
+  const [ordinaryIncome, setOrdinaryIncome] = useState<number>(opening.ordinaryIncome);
+  const [plannedLtcg, setPlannedLtcg] = useState<number>(opening.plannedLtcg);
+  const [isSenior, setIsSenior] = useState<boolean>(opening.isSenior);
+  const [spouseIsSenior, setSpouseIsSenior] = useState<boolean>(opening.spouseIsSenior);
+  const [muniInterest, setMuniInterest] = useState<number>(opening.muniInterest);
+  const [qcd, setQcd] = useState<number>(opening.qcd);
   /**
    * Which line step 4 sizes the conversion against. The top of the 12% bracket
    * is the default because it is the one a reader arrives already thinking
    * about — the others are lines they have to be told exist, which is what the
    * picker's own captions are for.
    */
-  const [ceilingId, setCeilingId] = useState<ConversionCeilingId>('bracket12');
+  const [ceilingId, setCeilingId] = useState<ConversionCeilingId>(opening.ceilingId);
+
+  /**
+   * The address bar, kept in step with the return.
+   *
+   * `replaceState`, not `pushState`: a slider fires a change per notch, so
+   * pushing would spend a history entry on every $500 of income and turn Back
+   * into a scrub through the drag that got here. Replacing means the address
+   * is shareable at every instant and Back still leaves the page.
+   *
+   * The whole URL is rebuilt each time rather than the search alone, because
+   * `replaceState` takes a URL: passing a bare `?query` would drop the
+   * `#step-…` fragment the reader may have arrived on.
+   */
+  useEffect(() => {
+    const scenario = {
+      year,
+      filingStatus,
+      ssBenefit,
+      ordinaryIncome,
+      plannedLtcg,
+      isSenior,
+      spouseIsSenior,
+      muniInterest,
+      qcd,
+      ceilingId,
+    };
+    window.history.replaceState(
+      window.history.state,
+      '',
+      scenarioUrl(scenario, window.location),
+    );
+  }, [
+    year,
+    filingStatus,
+    ssBenefit,
+    ordinaryIncome,
+    plannedLtcg,
+    isSenior,
+    spouseIsSenior,
+    muniInterest,
+    qcd,
+    ceilingId,
+  ]);
 
   const yearFiling = filingParams(year, filingStatus);
   /**
@@ -1301,6 +1378,23 @@ const App: React.FC = () => {
         across every income level for your own return, and marks the stretches
         worth filling and the ones worth stepping around.
       </p>
+
+      {linkNotes.length > 0 && (
+        <div className="link-note" role="status">
+          <p>
+            <strong>This link asked for something this page could not show.</strong>{' '}
+            Everything else in it came through as sent.
+          </p>
+          <ul>
+            {linkNotes.map((note) => (
+              <li key={note}>{note}</li>
+            ))}
+          </ul>
+          <button type="button" onClick={() => setLinkNotes([])}>
+            Dismiss
+          </button>
+        </div>
+      )}
 
       <div
         className="step-nav"

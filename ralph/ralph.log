@@ -4073,3 +4073,104 @@ swap, and the em-dash rate. CSS: `.answer` takes `.next-step`'s card treatment
 — that is the shape the flow taught for "end of a section" — with a two-column
 `.answer-figures` grid that stacks under 640px, since no row of it means
 anything.
+
+Make a scenario survivable and shareable
+========================================
+
+Ten `useState` values were the whole return, so a refresh threw it away and
+there was nothing to send to a spouse or an advisor. All ten now live in the
+query string: read once on mount, written on every change. `src/utils/
+scenarioUrl.ts` owns both directions; App.tsx keeps only the wiring.
+
+The encoding is trivial and was never the work. The three decisions the bullet
+named were.
+
+### The step is not in the link
+
+It is where the reader is looking, not what the return holds, and the page
+already names places a better way: every step is mounted and every section
+carries `id="step-…"`, so `#step-conversion` is a fragment the browser scrolls
+to on its own. The query string says what the return *is*; the fragment says
+where to stand. Putting the step in the query string would also have made the
+one control that changes nothing about the return the one control that
+rewrites the address.
+
+So `stepFromHash` reads the fragment on mount and marks that nav button
+current — otherwise a reader who followed `#step-conversion` lands on step 4
+under a nav insisting they are on step 1. The page never *writes* the hash;
+`goToStep` already scrolls, and writing it would double-scroll and spend a
+history entry per nav click.
+
+That decision has a consequence that had to be handled rather than discovered:
+`replaceState` takes a whole URL, so writing a bare `?query` silently drops the
+fragment. `scenarioUrl` rebuilds pathname + search + hash every time.
+
+### A year this page cannot price loses, out loud
+
+`hasPublishedParams` (already in tax.ts) decides; anything else gets
+`defaultTaxYear()` plus a note. Refusing to render would trade a page priced
+for the wrong year against no page at all. The year-dependent bounds then clamp
+against the year it *fell back to*, not the one the link asked for — a 2027
+link carrying the 2026 maximum benefit raises two notes, and the second one
+names $61,296.
+
+The year is also the one key always written. `defaultTaxYear()` follows the
+wall calendar, so a link that left it out would re-price itself the January
+after it was sent, which is the opposite of what a saved link is for.
+Everything else is written only when it differs from what that year opens with,
+so an untouched page reads `?year=2025`. The benefit is the interesting
+omission: left out when it sits on the year's average, because a reader who
+never moved that slider has expressed no opinion about the figure — the rule
+`changeYear` already applies inside the page.
+
+### `replaceState`, never `pushState`
+
+A slider fires a change per notch. Pushing would spend a history entry on every
+$500 of a drag and leave Back scrubbing through it rather than leaving the page.
+A test drags the income slider four notches and asserts `history.length` has
+not moved.
+
+### What a link is not allowed to say
+
+A link is the one input this app has that it did not produce itself, so every
+figure is clamped on the way in against the same bound the page's own control
+would have held it inside — and every clamp leaves a note naming the bound,
+which is the useful half. "Held at $62,172" tells a reader the figure was the
+year's maximum benefit; "we changed your link" tells them nothing. That is what
+the orphaned `src/utils/format.ts` from a previous iteration was for; it is now
+imported by both the module and App.tsx, which drops App's duplicate
+`formatCurrency`.
+
+One clamp is not cosmetic. `MAX_OTHER_INCOME` exists because the income slider
+has no fixed right edge — the axis is sized to the return and the slider
+follows it — so an unbounded link income is an unbounded `marginalRateCurve`
+sweep, which is a hung tab rather than a wrong chart. $1,000,000 clears the
+highest line the page draws (the top IRMAA threshold, $750,000 joint). It also
+needed a fourth rung on `curveStepFor`: the existing table stopped doubling at
+$300,000, which is as wide as any slider can take it, so at $1,000,000 step 2
+would have swept 1,000 points against every other chart's 600. The rung is the
+rule the comment already stated, extended far enough. Step 3's sweep has no
+such table at all — logged in Discovered work, along with why the obvious fix
+is blocked.
+
+The notes render as a dismissible `role="status"` card under the subtitle.
+Dismissible because it describes the *arrival*, not the return: it stops being
+true of what is on screen the moment a control moves, and there is no honest
+way to keep it current.
+
+### Test isolation, which this feature forces
+
+jsdom keeps one `location` per file, so without a reset the return one test
+left in the address becomes the return the next test's `render(<App />)` opens
+with. `setupTests.ts` now resets to `/` in a global `beforeEach`.
+
+### Verified
+
+`npx tsc -b`, `npx eslint src --max-warnings 0`, `npx vitest run` (8 files, 567
+tests, green in 9.5s), `npm run build`. +34 tests: 25 in a new
+`scenarioUrl.test.ts` (round trips, every clamp and its wording, the unknown
+year/status/ceiling fallbacks, negatives, fractions, empty values, and the
+fragment passing through `scenarioUrl`), 9 in App.test.tsx covering the page's
+half — opening on a ten-value link, writing each change back, not pushing,
+surviving an unmount-and-remount, the fragment marking the step and surviving a
+rewrite, and the note card appearing, saying what it swapped, and dismissing.

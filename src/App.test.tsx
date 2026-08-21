@@ -2574,3 +2574,148 @@ describe('the closing answer', () => {
     expect(figure('Effective rate')).not.toHaveTextContent('%');
   });
 });
+
+/**
+ * The return in the address bar.
+ *
+ * Ten `useState` values used to be the whole of it, so a refresh threw the
+ * return away and there was nothing to send to anyone. These are the page's
+ * half of `scenarioUrl` — that the link is read on mount, written on every
+ * change, and never pushed.
+ */
+describe('the return in the address bar', () => {
+  const openAt = (search: string): void => {
+    window.history.replaceState(null, '', `/${search}`);
+  };
+
+  const incomeSlider = (): HTMLElement =>
+    screen.getByRole('slider', { name: /other income \(not social security\)/i });
+
+  it('opens on the return the link names rather than on its own defaults', () => {
+    openAt(
+      '?year=2026&filing=mfj&ss=40000&income=120000&ltcg=25000&senior=1&spouse=1&muni=8000&qcd=15000&ceiling=irmaa1',
+    );
+    render(<App />);
+
+    expect(screen.getByRole('radio', { name: '2026' })).toBeChecked();
+    expect(screen.getByRole('radio', { name: 'Married Filing Jointly' })).toBeChecked();
+    expect(screen.getByRole('slider', { name: /social security benefit/i })).toHaveValue(
+      '40000',
+    );
+    expect(incomeSlider()).toHaveValue('120000');
+    expect(
+      screen.getByRole('slider', { name: /long-term capital gains inside that income/i }),
+    ).toHaveValue('25000');
+    expect(screen.getByRole('checkbox', { name: 'Age 65 or older' })).toBeChecked();
+    expect(
+      screen.getByRole('checkbox', { name: 'Both spouses are 65 or older' }),
+    ).toBeChecked();
+    expect(screen.getByRole('slider', { name: /tax-exempt \(municipal\) interest/i })).toHaveValue(
+      '8000',
+    );
+    expect(
+      screen.getByRole('slider', { name: /qualified charitable distribution/i }),
+    ).toHaveValue('15000');
+    expect(screen.getByRole('radio', { name: /^IRMAA tier 1/ })).toBeChecked();
+  });
+
+  it('writes what the reader moves back into the address', () => {
+    render(<App />);
+    // The opening return is the one default that is always written down.
+    expect(window.location.search).toBe('?year=2025');
+
+    fireEvent.change(incomeSlider(), { target: { value: '90000' } });
+    expect(window.location.search).toBe('?year=2025&income=90000');
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Jointly' }));
+    expect(window.location.search).toBe('?year=2025&filing=mfj&income=90000');
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Age 65 or older' }));
+    expect(window.location.search).toContain('senior=1');
+  });
+
+  /**
+   * The reason it is `replaceState`: a slider fires a change per notch, so
+   * pushing would spend a history entry on every $500 of a drag and leave the
+   * back button scrubbing through it instead of leaving the page.
+   */
+  it('replaces the address rather than pushing an entry per notch', () => {
+    render(<App />);
+    const before = window.history.length;
+    for (const value of ['40000', '50000', '60000', '70000']) {
+      fireEvent.change(incomeSlider(), { target: { value } });
+    }
+    expect(window.location.search).toBe('?year=2025&income=70000');
+    expect(window.history.length).toBe(before);
+  });
+
+  /** What a refresh does, which is the other half of what the bullet asked for. */
+  it('comes back on the same return after the page is thrown away', () => {
+    const first = render(<App />);
+    fireEvent.change(incomeSlider(), { target: { value: '90000' } });
+    fireEvent.click(screen.getByRole('radio', { name: 'Head of Household' }));
+    const survived = window.location.search;
+    first.unmount();
+
+    render(<App />);
+    expect(incomeSlider()).toHaveValue('90000');
+    expect(screen.getByRole('radio', { name: 'Head of Household' })).toBeChecked();
+    expect(window.location.search).toBe(survived);
+  });
+
+  /**
+   * The step is a place on the page, not part of the return, so it rides in
+   * the fragment the browser already scrolls to — and the rewritten address
+   * has to keep it, because `replaceState` takes a whole URL.
+   */
+  it('marks the step the fragment names and keeps the fragment through a change', () => {
+    openAt('#step-conversion');
+    render(<App />);
+    expect(currentStep()).toBe('Roth conversion');
+
+    fireEvent.change(incomeSlider(), { target: { value: '90000' } });
+    expect(window.location.hash).toBe('#step-conversion');
+    expect(window.location.search).toBe('?year=2025&income=90000');
+  });
+
+  it('ignores a fragment that names no step', () => {
+    openAt('#step-medicare');
+    render(<App />);
+    expect(currentStep()).toBe('Your benefit');
+  });
+
+  describe('a link this page could not honour', () => {
+    it('says what it could not give and what it gave instead', () => {
+      openAt('?year=2024&income=99999999&filing=widow');
+      render(<App />);
+
+      const note = screen.getByRole('status');
+      expect(note).toHaveTextContent('This link asked for something this page could not show');
+      expect(note).toHaveTextContent('priced for 2024');
+      expect(note).toHaveTextContent('$1,000,000');
+      expect(note).toHaveTextContent('“widow”');
+
+      // And the page itself is showing exactly what the note says it is.
+      expect(screen.getByRole('radio', { name: '2025' })).toBeChecked();
+      expect(screen.getByRole('radio', { name: 'Single' })).toBeChecked();
+      expect(incomeSlider()).toHaveValue('1000000');
+    });
+
+    /**
+     * Dismissible because it describes the arrival, not the return: it stops
+     * being true of what is on screen the moment a control moves.
+     */
+    it('goes away when dismissed and never appears for a link it wrote itself', () => {
+      openAt('?year=2024');
+      render(<App />);
+      fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+      expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    });
+
+    it('stays out of the way of a link that came through as sent', () => {
+      openAt('?year=2025&income=90000');
+      render(<App />);
+      expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    });
+  });
+});

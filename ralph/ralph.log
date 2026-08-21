@@ -4324,3 +4324,72 @@ One bullet to Discovered work: the old gate bullet named four deferred items,
 and this splits them three-and-one. The three shelf ones stay deferred and are
 now written down where a reader of the code will find them; the 2026 state
 figures bullet is live work, because `stateTax.ts` is on the page.
+
+---
+
+## Iteration: the front door (21 Aug 2026)
+
+`README.md` opened "# Growth Projector — See peaks and valleys of marginal tax
+rates", which is the framing commit d1cf5b3 replaced on the page itself, and
+`package.json`'s `name` was still `growth-projector`. Both now say what the app
+is: a page called "How Much Can You Take Out This Year?", four steps, one
+answer.
+
+### What the README says now
+
+Same order a reader meets the app in. The hook first — one more dollar out of
+an IRA drags Social Security in behind it and shoves a gain out of the 0% band,
+so the cost is nothing like the bracket. Then the four steps with one sentence
+each, then what `tax.ts` prices, then the query-string share format, then the
+commands, then a layout table, then deployment, then the not-tax-advice line
+the page already carries.
+
+Two things earned their own paragraph because a newcomer cannot infer them:
+
+- **The frozen thresholds.** $25k/$34k and $32k/$44k do not index while
+  everything around them does, and that contrast is the reason the year
+  selector exists at all rather than a footnote to it.
+- **The shelf rule.** Nothing outside `src/shelf/` imports from it, a test
+  enforces that, and un-shelving is a `git mv` in the same commit as the
+  section that renders the module. That is the one convention in this repo a
+  contributor can violate without noticing.
+
+### Three claims checked rather than copied
+
+The backlog's original idea dump — which the old README's subtitle came from —
+says LTCG stacking shows "marginal rates over 49%". The page never states that
+figure, so I probed the engine directly with a throwaway test rather than
+repeat it: `marginalRateCurve` peaks at **40.7%** (single, $40k benefit,
+$150k axis) and `ltcgMarginalRateCurve` at **33.7%** (single, $40k other
+income, $40k benefit) — 15% flat for the MFJ case I tried. 22.2% and 40.7% are
+on the page at App.tsx:2108 and reproduce exactly; 49% does not, so the README
+says the compound figure runs "well past the statutory 15%", which is the claim
+step 3's explainer actually makes. Temp test deleted.
+
+Two more, both off by one on a first draft:
+
+- The closing recap has **seven** figures, not six — `Room to convert` is the
+  seventh and it is the one that answers the h1, so leaving it out of the
+  summary was the worst possible omission.
+- **Nine** states taxed benefits in 2025, **eight** in 2026: West Virginia's
+  exempt share phases 35→65→100% and `stateTax.ts:175` says the count drops.
+  A flat "nine" would have been wrong for half the years the page prices.
+
+### The rename
+
+`growth-projector` → `tax-torpedo` in `package.json` and both places in
+`package-lock.json`. Nothing imports the package name — `vite.config.ts`'s
+`base` is `/congenial-octo-spork/`, which is the repo, not the package — so
+this moves no build output.
+
+`npm install` after the rename also pruned 27 `"extraneous": true` lockfile
+entries (esbuild 0.28.2 platform binaries left over from some earlier install).
+Checked the diff line by line: 27 removals, all extraneous, and the only
+additions are the two name lines. Kept rather than hand-reverted, because CI
+runs `npm install` and would prune them anyway.
+
+### Verified
+
+`npx tsc -b`, `npx eslint src --max-warnings 0`, `npx vitest run` (9 files, 581
+tests, green — unchanged, this iteration touched no source), `npm run build`,
+and `npm install` clean against the renamed lockfile.

@@ -1566,20 +1566,6 @@ const App: React.FC = () => {
                 {jointBenefit ? 'couple max' : 'max'})
               </span>
             </div>
-            {jointBenefit && (
-              <p className="field-note">
-                A joint return puts both benefits on one line, so this slider is
-                the pair of them. The right edge is two maximum records each
-                claimed at 70; the marker in the middle is SSA&apos;s average for
-                a couple who both collect, which is well under twice a single
-                worker&apos;s{' '}
-                <strong>
-                  {formatCurrency(avgAnnualSSBenefit(year, 'single'))}
-                </strong>{' '}
-                because the second benefit is so often a spousal one — half the
-                higher earner&apos;s, not a record of its own.
-              </p>
-            )}
           </div>
 
           <details className="advanced-inputs">
@@ -1929,9 +1915,7 @@ const App: React.FC = () => {
               <p className="slider-readout">
                 At {formatCurrency(ordinaryIncome)} of other income the next
                 dollar is taxed at{' '}
-                <strong>{herePoint ? `${herePoint.marginalRate}%` : '\u2014'}</strong>,
-                where the dashed amber line crosses the curve above &mdash; that
-                point on the curve, not the curve itself, is what the slider moves.
+                <strong>{herePoint ? `${herePoint.marginalRate}%` : '\u2014'}</strong>.
                 {herePoint && totalIncome > 0 ? (
                   <>
                     {' '}
@@ -1940,8 +1924,7 @@ const App: React.FC = () => {
                     tax on {formatCurrency(totalIncome)} of total income &mdash; an
                     effective rate of{' '}
                     <strong>{formatPercent(effectiveRateOn(herePoint.totalTax))}</strong>
-                    . That is the average across every dollar of it; the figure
-                    before it is the price of the next one.
+                    .
                   </>
                 ) : null}
               </p>

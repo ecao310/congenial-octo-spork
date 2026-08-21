@@ -348,8 +348,10 @@ describe('the \u201cyou are here\u201d marker', () => {
     expect(container.querySelectorAll('.recharts-wrapper')).toHaveLength(1);
     expect(herePositions(container)).toHaveLength(1);
     // The marker wears the colour of the control that drives it — amber, for
-    // other income — which is what lets the readout under it point at "the
-    // dashed amber line" and be understood.
+    // other income — so the line on the plot and the slider that moves it are
+    // one thing. The readout under the slider used to point at "the dashed
+    // amber line" in words; it no longer does, and the colour is now the only
+    // thing tying the two together.
     expect(
       Array.from(
         container.querySelectorAll('.recharts-reference-line.here-line line'),

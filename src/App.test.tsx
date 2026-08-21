@@ -118,9 +118,6 @@ describe('App', () => {
       expect(
         screen.getByLabelText(/Annual Social Security Benefit \(both spouses\)/),
       ).toBe(slider);
-      expect(within(benefitGroup()).getByText(/well under twice/)).toHaveTextContent(
-        '$24,852',
-      );
     });
 
     /**
@@ -155,7 +152,6 @@ describe('App', () => {
       expect(slider).toHaveValue('62172');
       expect(slider).toHaveAttribute('max', '62172');
       expect(screen.getByText('$24,852 (2026 avg)')).toBeInTheDocument();
-      expect(within(benefitGroup()).queryByText(/well under twice/)).toBeNull();
     });
   });
 
@@ -831,13 +827,28 @@ describe('the total the return owes', () => {
     );
   });
 
-  /** The distinction the whole pairing exists to draw. */
-  it('names the effective rate as the average and the marginal as the next dollar', () => {
+  /**
+   * The two rates are left to stand as figures.
+   *
+   * The paragraph used to gloss both of them. After the marginal rate came
+   * “where the dashed amber line crosses the curve above — that point on the
+   * curve, not the curve itself, is what the slider moves”, which described
+   * the chart's mechanics to a reader who had just moved the slider and
+   * watched it happen. After the effective rate came “that is the average
+   * across every dollar of it; the figure before it is the price of the next
+   * one”, which drew a distinction the sentence around it already draws by
+   * saying “the next dollar” of one and “on $54,852 of total income” of the
+   * other.
+   *
+   * Asserted absent rather than merely untested: this paragraph has grown a
+   * gloss back twice, and a passing test on the figures alone would not
+   * notice a third.
+   */
+  it('leaves the two rates as figures rather than glossing them', () => {
     render(<App />);
     expect(readout('torpedo')).toHaveTextContent('taxed at 22.2%');
-    expect(readout('torpedo')).toHaveTextContent(
-      'the average across every dollar of it; the figure before it is the price of the next one',
-    );
+    expect(readout('torpedo')).not.toHaveTextContent(/what the slider moves/);
+    expect(readout('torpedo')).not.toHaveTextContent(/price of the next one/);
   });
 
   it('moves all three figures when the income does', () => {

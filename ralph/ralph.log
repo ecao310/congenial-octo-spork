@@ -7925,3 +7925,111 @@ amber line crosses the curve above…`, which trims two clauses out of the same
 paragraph this run just edited plus a joint-return sentence elsewhere. Whoever
 takes it should re-read the readout as it stands now — it is one sentence
 shorter than the bullet was written against.
+
+## Backlog 6 · bullet 5 — three glosses off, two paragraphs shorter
+
+`[x] remove these sentences: where the dashed amber line crosses the curve
+above — that point on the curve, not the curve itself, is what the slider
+moves. That is the average across every dollar of it; the figure before it is
+the price of the next one. joint return puts both benefits on one line...`
+
+Three quotes, two of them verbatim and whole, the third truncated with an
+ellipsis. The first two are trailing clauses in the same paragraph the last
+run edited — `.slider-readout`, App.tsx:1915 — and the third is the opening of
+`.field-note` under the benefit slider, App.tsx:1568, which only rendered on a
+joint return.
+
+### What came off
+
+**The readout.** Two cuts, both at the end of a sentence, so the only rewriting
+was punctuation:
+
+```
+-  <strong>{herePoint ? `${herePoint.marginalRate}%` : '—'}</strong>,
+-  where the dashed amber line crosses the curve above &mdash; that
+-  point on the curve, not the curve itself, is what the slider moves.
++  <strong>{herePoint ? `${herePoint.marginalRate}%` : '—'}</strong>.
+```
+
+and the same shape after the effective rate. The paragraph now reads, at the
+default scenario:
+
+> At $30,000 of other income the next dollar is taxed at **22.2%**. The return
+> itself owes **$2,819** in federal tax on **$54,852** of total income — an
+> effective rate of **5.14%**.
+
+Four figures, no commentary. The first clause described the chart's mechanics
+to a reader who had just dragged the slider and watched the marker move; the
+second drew the average/marginal distinction that the sentence around it
+already draws by saying "the next dollar" of one and "on $54,852 of total
+income" of the other.
+
+**The joint field-note.** The whole `{jointBenefit && (<p className="field-note">…)}`
+block, twelve lines. The ellipsis in the bullet is what decided this: the
+other two quotes are complete and this one stops mid-sentence, which reads as
+"and the rest of that", not "and only that clause". The paragraph explained
+why SSA's couple average ($38,496) is well under twice a single worker's
+($24,852) — the second benefit is so often a spousal one. Nothing else on the
+page depended on it; `avgAnnualSSBenefit` is still imported and used three
+other places (App.tsx:861, :862, :884). The slider's own labels still say
+`couple avg` and `couple max` and the field label still says `(both spouses)`,
+verified in the browser on a joint return this run.
+
+### The one "average across every dollar" left standing
+
+`body.innerText` still matches that phrase, at App.tsx:2337 — the close's
+`answer-gloss` under **Effective rate**: "That tax over that income: the
+average across every dollar of it, and the figure to hold against the years
+the same money would otherwise come out in." Left alone deliberately. It is a
+different sentence in a different structure: each closing figure is a bare
+number in a `<dt>`/`<dd>` with a one-line gloss as its only context, so
+removing the glosses would leave the list unreadable rather than terser. The
+bullet quoted the readout's wording, and the readout's wording is gone.
+Whoever wants the close trimmed should say so as its own bullet — the
+neighbouring "The next dollar" gloss ends "where the amber line crosses step
+2's curve", which is the same idea as the first removed clause and would go
+with it.
+
+### Tests
+
+- `App.test.tsx` — replaced `names the effective rate as the average and the
+  marginal as the next dollar` with `leaves the two rates as figures rather
+  than glossing them`. Keeps `toHaveTextContent('taxed at 22.2%')` and adds
+  two negatives: `not.toHaveTextContent(/what the slider moves/)` and
+  `not.toHaveTextContent(/price of the next one/)`. Scoped to the readout
+  element, not the document, for the same reason the last run scoped its
+  assertion there. Mutation-checked: pasting the effective-rate gloss back in
+  turns it red; reverted from a snapshot taken before the edit.
+- `App.test.tsx` — dropped the two `/well under twice/` assertions (:121
+  present-on-joint, :158 absent-on-single) since the text they read is gone.
+  Both tests still assert the ceiling, the average marker and the label.
+- `App.chart.test.tsx:352` — the amber-stroke assertion's comment justified
+  the colour by saying it "lets the readout under it point at 'the dashed
+  amber line' and be understood". The readout no longer points at it, so the
+  comment now says the colour is the only thing tying the line to the slider.
+  Assertion unchanged.
+
+### Verification
+
+`tsc -b`, `eslint . --max-warnings 0`, `npx vitest run` — clean, 662 passed in
+13 files (662 before; one test replaced, two assertions dropped). `npm run
+build`, then a real Chromium via `playwright-core` against `vite preview` on
+4181: zero page errors, `/dashed amber line/`, `/what the slider moves/`,
+`/price of the next one/`, `/both benefits on one line/` and `/well under
+twice/` all absent from `body.innerText` on both Single and MFJ. Preview
+killed and the scratch script deleted on the way out.
+
+Note for the next run: `playwright` is not installed, only `playwright-core`,
+and it does not resolve from `/tmp` — the driver script has to sit in the
+repo root (and be deleted after). `vite preview` serves the app at
+`/congenial-octo-spork/`; `/` 302s there and `/preview/` is a 404.
+
+### Next
+
+The topmost unchecked bullet is the `Lines` dropdown one — move it into the
+corner of the plot, cut it to two checkboxes with no explainer prose, and
+rename it something like "breakpoints". Note that the bullet two below it
+("Every control on this page rides in the link") is about the same two flags
+and argues they should join `scenarioUrl`; whoever takes the dropdown should
+read that one first, because moving the control and changing what it persists
+are cheaper together than apart.

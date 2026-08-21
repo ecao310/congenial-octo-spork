@@ -226,6 +226,14 @@ export interface StrategyProjection {
   /** Years in which the accounts could not fund the spending. */
   shortfallYears: number;
   totalShortfall: number;
+  /**
+   * The first of those years, or null when the accounts funded every one.
+   *
+   * Worth naming rather than counting: once an order runs dry it stays dry —
+   * the balances are zero and the only money arriving is the benefit and the
+   * other income — so this is the year the order stopped being a plan.
+   */
+  firstShortfallYear: number | null;
 }
 
 export interface SequencingComparison {
@@ -252,6 +260,33 @@ export interface SequencingComparison {
   afterTaxSpread: number;
   /** True when any strategy ran out of money before the horizon did. */
   anyShortfall: boolean;
+  /**
+   * True when *every* strategy ran out. The three then finish at the same zero
+   * having spent the same pool, so the comparison is measuring which one got
+   * there fastest rather than which one is cheaper.
+   */
+  allShortfall: boolean;
+  /**
+   * The orders that ran dry, listed in the order the strategies are.
+   *
+   * Some but not all is the case that needs saying out loud, and it is
+   * reachable: the orders spend the same pool but not the same amount of it,
+   * because they do not pay the same tax along the way. Bracket filling in
+   * particular buys IRA dollars early at today's rate, and that tax is cash
+   * leaving the household — so at the margin it can empty the accounts a year
+   * before the conventional order does.
+   */
+  shortfallStrategies: StrategyProjection[];
+  /**
+   * Cheapest order that funded every year, or null when none did.
+   *
+   * `lowestTax` is the cheapest order full stop, and an order that ran out of
+   * money is cheap for the worst possible reason: a household with nothing
+   * left has nothing left to tax, so the years after the money runs out cost
+   * it nothing. Scoring on lifetime tax alone would hand it the win. This is
+   * the figure to compare against instead.
+   */
+  lowestTaxSolvent: StrategyProjection | null;
 }
 
 /* ------------------------------------------------------------------ */
@@ -607,6 +642,7 @@ export function simulateSequencing(
     ),
     shortfallYears: rows.filter((row) => row.shortfall > 0).length,
     totalShortfall: Math.round(rows.reduce((sum, row) => sum + row.shortfall, 0)),
+    firstShortfallYear: rows.find((row) => row.shortfall > 0)?.year ?? null,
   };
 }
 
@@ -653,6 +689,9 @@ export function compareSequencing(
     afterTaxSpread:
       byAfterTax[0].endingAfterTaxReal - byAfterTax[byAfterTax.length - 1].endingAfterTaxReal,
     anyShortfall: strategies.some((s) => s.shortfallYears > 0),
+    allShortfall: strategies.every((s) => s.shortfallYears > 0),
+    shortfallStrategies: strategies.filter((s) => s.shortfallYears > 0),
+    lowestTaxSolvent: byLowestTax.find((s) => s.shortfallYears === 0) ?? null,
   };
 }
 

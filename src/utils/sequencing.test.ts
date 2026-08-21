@@ -407,8 +407,92 @@ describe('withdrawal sequencing', () => {
         },
       );
       expect(c.anyShortfall).toBe(true);
+      expect(c.allShortfall).toBe(true);
+      expect(c.shortfallStrategies).toHaveLength(3);
+      // Nothing lasted, so there is no order to compare the others against.
+      expect(c.lowestTaxSolvent).toBeNull();
       expect(c.strategies.every((s) => s.endingAfterTaxReal === 0)).toBe(true);
       expect(c.scoresDisagree).toBe(false);
+    });
+
+    /**
+     * Some orders running dry while others do not is reachable, and it is the
+     * case the prose used to get wrong: `anyShortfall` drove a sentence that
+     * read as universal.
+     *
+     * The mechanism is that the three do not spend the same pool at the same
+     * rate. They draw on identical balances, but the tax each pays along the
+     * way is cash leaving the household too — and bracket filling pays some of
+     * it years early, by design. At the margin that is the difference between
+     * funding the horizon and not.
+     */
+    it('reports which orders ran dry when only some of them did', () => {
+      const c = compareSequencing(SCENARIO, {
+        ...ASSUMPTIONS,
+        spending: 55_000,
+        taxableBalance: 50_000,
+        traditionalBalance: 200_000,
+        rothBalance: 0,
+      });
+      expect(c.anyShortfall).toBe(true);
+      expect(c.allShortfall).toBe(false);
+      expect(c.shortfallStrategies.map((s) => s.strategy.id)).toEqual(['bracket-fill']);
+      expect(c.shortfallStrategies[0].firstShortfallYear).toBe(2044);
+      expect(
+        c.strategies
+          .filter((s) => s.shortfallYears === 0)
+          .every((s) => s.endingAfterTaxReal > 0),
+      ).toBe(true);
+    });
+
+    /**
+     * And why it matters: the order that ran out posts the *lowest* lifetime
+     * tax, because a household with nothing left has nothing left to tax. Score
+     * on tax alone and the failure wins.
+     */
+    it('does not let an order that ran out of money hold the cheapest score', () => {
+      const c = compareSequencing(SCENARIO, {
+        ...ASSUMPTIONS,
+        spending: 55_000,
+        taxableBalance: 50_000,
+        traditionalBalance: 200_000,
+        rothBalance: 0,
+      });
+      expect(c.lowestTax.strategy.id).toBe('bracket-fill');
+      expect(c.lowestTax.shortfallYears).toBeGreaterThan(0);
+      expect(c.lowestTaxSolvent?.strategy.id).toBe('proportional');
+      expect(c.lowestTaxSolvent!.lifetimeRealTax).toBeGreaterThan(c.lowestTax.lifetimeRealTax);
+      // The order that lasted is behind on tax and ahead on what is left, which
+      // is the only reading that survives the shortfall.
+      expect(c.lowestTaxSolvent!.endingAfterTaxReal).toBeGreaterThan(
+        c.lowestTax.endingAfterTaxReal,
+      );
+      expect(c.mostAfterTax.strategy.id).toBe('proportional');
+    });
+
+    it('dates the shortfall to the first year the money did not stretch', () => {
+      const run = simulateSequencing('taxable-first', { ...SCENARIO, ordinaryIncome: 0, ssBenefit: 24_000 }, {
+        ...ASSUMPTIONS,
+        spending: 90_000,
+        taxableBalance: 100_000,
+        traditionalBalance: 200_000,
+        rothBalance: 50_000,
+        growthPercent: 3,
+      });
+      expect(run.firstShortfallYear).toBe(run.rows.find((row) => row.shortfall > 0)!.year);
+      // Once dry, dry for good: every later year is short too.
+      const from = run.rows.findIndex((row) => row.shortfall > 0);
+      expect(run.rows.slice(from).every((row) => row.shortfall > 0)).toBe(true);
+      expect(run.shortfallYears).toBe(run.rows.length - from);
+    });
+
+    it('leaves the shortfall year null when the accounts funded every year', () => {
+      const c = compareSequencing(SCENARIO, ASSUMPTIONS);
+      expect(c.anyShortfall).toBe(false);
+      expect(c.allShortfall).toBe(false);
+      expect(c.shortfallStrategies).toEqual([]);
+      expect(c.strategies.every((s) => s.firstShortfallYear === null)).toBe(true);
+      expect(c.lowestTaxSolvent).toBe(c.lowestTax);
     });
 
     it('finds bracket filling ahead over a long horizon with a large IRA', () => {

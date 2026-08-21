@@ -1034,6 +1034,27 @@ const App: React.FC = () => {
    * from the orders being close, and the prose below has to make it.
    */
   const seqVoluntary = sequencing.strategies.reduce((t, s) => t + s.voluntaryWithdrawal, 0);
+  /**
+   * The orders that ran out of money, which is not always all of them.
+   *
+   * The three draw on the same accounts, but they do not drain them at the same
+   * rate: the tax each one pays along the way is cash leaving the household too,
+   * and bracket filling deliberately pays some of it early. So at the margin one
+   * order can empty the accounts a year before another funds the horizon out.
+   * That case has to read differently from the one where the spending outruns
+   * every order — and it is also the more dangerous one, because an order with
+   * nothing left has nothing left to tax and can post the lowest lifetime tax
+   * precisely by failing.
+   */
+  const seqDry = sequencing.shortfallStrategies;
+  const seqDryLabels = seqDry.map((s) => s.strategy.label).join(' and ');
+  const seqDryShortfall = seqDry.reduce((t, s) => t + s.totalShortfall, 0);
+  const seqDryYear = seqDry.reduce(
+    (earliest, s) => Math.min(earliest, s.firstShortfallYear ?? sequencing.endYear),
+    sequencing.endYear,
+  );
+  /** Non-null whenever some order lasted, so the partial branch can lean on it. */
+  const seqSolvent = sequencing.lowestTaxSolvent;
   /** Fewer than two and there is no order to choose, only one account to spend. */
   const seqFundedAccounts = [taxableBalance, traditionalBalance, rothBalance].filter(
     (b) => b > 0,
@@ -3399,10 +3420,27 @@ const App: React.FC = () => {
                       </span>
                       <br />
                       <span className="seq-order">{s.strategy.order}</span>
+                      {s.firstShortfallYear !== null && (
+                        <>
+                          <br />
+                          <span className="seq-dry">
+                            Ran out in {s.firstShortfallYear}
+                          </span>
+                        </>
+                      )}
                     </th>
+                    {/*
+                      Compared against the cheapest *solvent* order, not the
+                      cheapest order: running out of money ends the tax bill as
+                      surely as avoiding it does, and highlighting that as the
+                      win would recommend the one outcome the section is warning
+                      about. When no order lasted, nothing is highlighted and the
+                      paragraph above says why the figures are not comparable.
+                    */}
                     <td
                       className={
-                        s.lifetimeRealTax === sequencing.lowestTax.lifetimeRealTax
+                        s.shortfallYears === 0 &&
+                        s.lifetimeRealTax === sequencing.lowestTaxSolvent?.lifetimeRealTax
                           ? 'seq-best'
                           : undefined
                       }
@@ -3411,6 +3449,7 @@ const App: React.FC = () => {
                     </td>
                     <td
                       className={
+                        sequencing.mostAfterTax.endingAfterTaxReal > 0 &&
                         s.endingAfterTaxReal === sequencing.mostAfterTax.endingAfterTaxReal
                           ? 'seq-best'
                           : undefined
@@ -3482,7 +3521,7 @@ const App: React.FC = () => {
               saving it
             </p>
 
-            {sequencing.anyShortfall ? (
+            {sequencing.allShortfall ? (
               <p>
                 <strong>These accounts do not last {horizonYears} years.</strong> At{' '}
                 {formatCurrency(spendingNeed)} of spending a year they run dry, and
@@ -3490,6 +3529,35 @@ const App: React.FC = () => {
                 comparison below is measuring how fast each one got there, not which
                 one is cheaper. Lower the spending, lengthen the balances, or shorten
                 the horizon before reading anything into the figures.
+              </p>
+            ) : sequencing.anyShortfall && seqSolvent ? (
+              <p>
+                <strong>{seqDryLabels} ran out of money in {seqDryYear}.</strong> The
+                other {sequencing.strategies.length - seqDry.length === 1 ? 'order' : 'two orders'}{' '}
+                funded every year to {sequencing.endYear};{' '}
+                {seqDry.length === 1 ? 'this one' : 'these'} left{' '}
+                {formatCurrency(seqDryShortfall)} of spending unfunded. All three draw
+                on the same accounts, but the tax each pays along the way is cash
+                leaving the household too, so they do not drain them at the same rate.{' '}
+                {sequencing.lowestTax.shortfallYears > 0 ? (
+                  <>
+                    Which is why {sequencing.lowestTax.strategy.label.toLowerCase()}{' '}
+                    shows the lowest lifetime tax of the three: from{' '}
+                    {sequencing.lowestTax.firstShortfallYear} on it had nothing left to
+                    withdraw, and nothing withdrawn is nothing taxed. That is not a
+                    saving. The cheapest order that funded the whole horizon is{' '}
+                    <strong>{seqSolvent.strategy.label}</strong> at{' '}
+                    {formatCurrency(seqSolvent.lifetimeRealTax)}, and it is the one to
+                    compare against.
+                  </>
+                ) : (
+                  <>
+                    Read the tax column with that in mind: from the year an order runs
+                    dry it has nothing left to withdraw, and nothing withdrawn is nothing
+                    taxed, so {seqDry.length === 1 ? 'its figure is' : 'those figures are'}{' '}
+                    understated against the orders that funded the whole horizon.
+                  </>
+                )}
               </p>
             ) : seqVoluntary === 0 ? (
               <p>

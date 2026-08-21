@@ -756,6 +756,15 @@ footer p {
   font-weight: 600;
 }
 
+/* An order that ran the accounts dry, said on its own row: the figures beside
+   it are not comparable with the orders that funded the whole horizon. */
+.seq-dry {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: #fca5a5;
+  white-space: normal;
+}
+
 /* The order itself, under the name it goes by. */
 .seq-order {
   font-size: 0.6875rem;

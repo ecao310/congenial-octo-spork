@@ -2383,3 +2383,84 @@ output read end to end to check the new note's wording in place.
 Worth knowing: `App.test.tsx` pins the clock to 2025-07-01, so the default test
 scenario is exactly the case this change affects. Once 2027 figures land, a
 2025 start will read two published years and the note will print a range.
+
+================================================================================
+Branch the shortfall sentence: not every shortfall is every order's
+================================================================================
+
+`compareSequencing` reported `anyShortfall = strategies.some(...)`, and the one
+paragraph hanging off it read as universal: "These accounts do not last 20
+years ... every order is spending the same nothing." The open question was
+whether some-but-not-all was reachable. It is.
+
+### It is reachable, and it is not rare at the margin
+
+Swept 16,128 scenarios (spending x three balances x growth x horizon): 74 came
+back with one or two orders dry and the rest funding the horizon out. The
+mechanism is the one the note guessed at — the three draw on identical accounts
+but do not drain them at the same rate, because the tax each pays along the way
+is cash leaving the household too, and bracket filling pays some of it years
+early by design. Every shape shows up: bracket filling alone dry, conventional
+alone dry, two dry with proportional surviving, and once the reverse — bracket
+filling the only survivor, its early withdrawals having kept the later RMD from
+compounding into a bigger bill.
+
+### The sharper finding: failure was winning
+
+In 49 of those 74, the order that ran out of money posted the *lowest* lifetime
+tax and collected the table's `seq-best` highlight. A household with nothing
+left has nothing left to withdraw, and nothing withdrawn is nothing taxed — so
+running dry ends the tax bill exactly as avoiding it does, and the headline
+score could not tell the two apart. Reachable in three slider moves from the
+app's defaults: taxable $25k, IRA $150k, Roth $0 gives bracket filling $89,677
+against conventional's $91,458, while it is $6,536 short in 2044 and finishes
+at $0 to conventional's $2,996.
+
+That was not in the note's scope, but it is the same defect: `anyShortfall`
+being a `some` meant nothing downstream knew *which* order failed, so nothing
+downstream could refuse to reward it.
+
+### What changed
+
+`StrategyProjection.firstShortfallYear` — the year an order stopped being a
+plan, not just how many years it was short. Once dry it stays dry (a test pins
+that), so the first year is the whole story.
+
+`SequencingComparison` gains `allShortfall`, `shortfallStrategies` and
+`lowestTaxSolvent` — the cheapest order that funded every year, null when none
+did. `lowestTax` is left alone: it is a factual "cheapest of the three" and the
+prose needs both figures to make the contrast.
+
+The prose is now three-armed. All dry keeps the old paragraph. Some dry names
+the orders, dates the failure, sums the unfunded spending, and then splits
+again: if the dry order holds the lowest tax it says so and points at
+`lowestTaxSolvent` as the figure to compare against ("That is not a saving");
+if it does not, it says the figure is understated and leaves it there.
+
+The table stopped rewarding the failure two ways: the best-cell on lifetime tax
+is now the cheapest *solvent* order, and the best-cell on ending value is
+suppressed when every order ends at zero — three winners in a three-way tie at
+nothing is not a reading. A `.seq-dry` line under the order's name says "Ran out
+in 2044" so the table stands up without the paragraph.
+
+### Wording that had to be year-agnostic
+
+First draft said "every year after 2044 cost it nothing" — but the reachable
+default-adjacent case runs dry in the *final* year, so "after" named an empty
+set. Both arms now read "from {year} on", which is true whether the shortfall
+starts in the last year or the tenth.
+
+### Verification
+
+npx tsc -b, npm run lint, npx vitest run (457 passed, up from 449 — five unit
+tests on the partial case, the flattered score, the shortfall dating and the
+solvent-null case, four App tests walking both new arms plus the two highlight
+rules), npm run build — all clean; only the pre-existing >500kB chunk warning.
+Every branch was rendered and read before it was asserted on, which is how the
+"after 2044" slip was caught.
+
+### Logged as discovered work
+
+`totalShortfall` adds nominal dollars across the horizon while the table beside
+it is captioned "both figures are in 2025 dollars" and the chart plots real
+ones. One year of shortfall makes that invisible; ten would not.

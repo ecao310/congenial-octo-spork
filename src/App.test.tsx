@@ -1778,6 +1778,74 @@ describe('withdrawal sequencing', () => {
     expect(section).not.toHaveTextContent('already past');
   });
 
+  /**
+   * Not every shortfall is every order's shortfall. The three draw on the same
+   * accounts but pay different tax along the way, and tax is cash leaving the
+   * household, so one order can empty them while the others fund the horizon —
+   * which is a different sentence from "these accounts do not last 20 years".
+   */
+  it('names the order that ran dry when the others did not', () => {
+    renderTab('Over Time');
+    setSlider(/taxable brokerage account/i, '25000');
+    setSlider(/traditional ira and 401\(k\) balance/i, '150000');
+    setSlider(/roth ira/i, '0');
+    const section = seqSection();
+    expect(section).toHaveTextContent('Bracket filling ran out of money in 2044');
+    expect(section).toHaveTextContent('The other two orders funded every year to 2044');
+    expect(section).toHaveTextContent('left $6,536 of spending unfunded');
+    expect(section).not.toHaveTextContent('These accounts do not last');
+  });
+
+  /**
+   * And the trap in that case: the order that failed posts the lowest lifetime
+   * tax, because from the year it runs dry it has nothing left to withdraw.
+   * Scoring on the tax column alone would recommend the failure.
+   */
+  it('refuses to score running out of money as a saving', () => {
+    renderTab('Over Time');
+    setSlider(/taxable brokerage account/i, '25000');
+    setSlider(/traditional ira and 401\(k\) balance/i, '150000');
+    setSlider(/roth ira/i, '0');
+    const section = seqSection();
+    expect(section).toHaveTextContent(
+      'bracket filling shows the lowest lifetime tax of the three',
+    );
+    expect(section).toHaveTextContent('That is not a saving');
+    expect(section).toHaveTextContent(
+      'The cheapest order that funded the whole horizon is Conventional at $91,458',
+    );
+    // $89,677 is the lowest figure in the table and it is not highlighted: the
+    // cheapest *solvent* order is.
+    const best = Array.from(section.querySelectorAll('td.seq-best')).map((c) => c.textContent);
+    expect(best).toContain('$91,458');
+    expect(best).not.toContain('$89,677');
+    // Said on the row too, so the table stands up on its own.
+    expect(section.querySelector('.seq-dry')).toHaveTextContent('Ran out in 2044');
+  });
+
+  it('still flags the order that ran dry when it is not the cheapest', () => {
+    renderTab('Over Time');
+    setSlider(/after-tax spending each year/i, '88000');
+    setSlider(/traditional ira and 401\(k\) balance/i, '200000');
+    const section = seqSection();
+    expect(section).toHaveTextContent('Bracket filling ran out of money in 2044');
+    // Its $123,681 is the most expensive of the three, so there is no flattered
+    // winner to warn about — only a figure that is not like for like.
+    expect(section).toHaveTextContent('understated against the orders that funded');
+    expect(section).not.toHaveTextContent('That is not a saving');
+  });
+
+  it('highlights nothing when no order lasted the horizon', () => {
+    renderTab('Over Time');
+    setSlider(/after-tax spending each year/i, '150000');
+    const section = seqSection();
+    expect(section).toHaveTextContent('These accounts do not last 20 years');
+    // All three ended at $0 having run dry in the same year. Awarding one of
+    // them a best cell would contradict the paragraph directly above.
+    expect(section.querySelectorAll('td.seq-best')).toHaveLength(0);
+    expect(section.querySelectorAll('.seq-dry')).toHaveLength(3);
+  });
+
   it('re-dates the comparison when the tax year changes', () => {
     renderTab('Over Time');
     fireEvent.click(screen.getByRole('radio', { name: '2026' }));

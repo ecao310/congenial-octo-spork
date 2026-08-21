@@ -12,8 +12,11 @@ import {
   SENIOR_DEDUCTION,
   SENIOR_DEDUCTION_LAST_YEAR,
   SS_BASES,
+  TAX_YEARS,
   avgAnnualSSBenefit,
   filingParams,
+  hasPublishedParams,
+  publishedAnchorYear,
   taxableSocialSecurity,
   totalTax,
 } from './tax';
@@ -124,6 +127,81 @@ describe('projectFilingParams', () => {
   it('dates the projected year off the start year', () => {
     expect(projectYearParams(2026, 'single', 0, 2.5).year).toBe(2026);
     expect(projectYearParams(2026, 'single', 12, 2.5).year).toBe(2038);
+  });
+});
+
+describe('anchoring on published figures', () => {
+  it('reads a published year instead of indexing into it', () => {
+    // 2025 + 1 is 2026, which Rev. Proc. 2025-32 has already priced. The
+    // assumption is deliberately absurd to prove it is not consulted.
+    for (const assumed of [0, 2.5, 40]) {
+      expect(projectYearParams(2025, 'single', 1, assumed).filing).toBe(
+        filingParams(2026, 'single'),
+      );
+    }
+  });
+
+  it('indexes only the years past the last published one', () => {
+    // 2027 is one year past 2026, so it is 2026's $16,100 indexed once, not
+    // 2025's $15,750 indexed twice. At 5% those are $450 apart; at 2.5% they
+    // happen to land on the same figure, which is why the rate here is 5%.
+    const from2025 = projectYearParams(2025, 'single', 2, 5).filing;
+    expect(from2025).toEqual(projectYearParams(2026, 'single', 1, 5).filing);
+    expect(from2025.standardDeduction).toBe(16_900);
+    expect(
+      projectFilingParams(filingParams(2025, 'single'), 'single', 2, 5)
+        .standardDeduction,
+    ).toBe(17_350);
+  });
+
+  it('publishes every year on file and nothing after', () => {
+    expect(hasPublishedParams(2024)).toBe(false);
+    expect(TAX_YEARS.every(hasPublishedParams)).toBe(true);
+    expect(hasPublishedParams(TAX_YEARS[TAX_YEARS.length - 1] + 1)).toBe(false);
+  });
+
+  it('reports how far the published run reaches, and flags those rows', () => {
+    const from2025 = projectYears({ ssBenefit: 20_000, year: 2025 }, {
+      startYear: 2025,
+      years: 5,
+      colaPercent: 2.5,
+    });
+    expect(from2025.publishedThroughYear).toBe(2026);
+    expect(from2025.rows.map((r) => r.figuresPublished)).toEqual([
+      true, true, false, false, false,
+    ]);
+
+    // Started on the newest year on file, so the run is the first year alone
+    // and the sliders own everything after it.
+    const from2026 = projectYears({ ssBenefit: 20_000, year: 2026 }, {
+      startYear: 2026,
+      years: 5,
+      colaPercent: 2.5,
+    });
+    expect(from2026.publishedThroughYear).toBe(2026);
+    expect(from2026.startYear).toBe(2026);
+  });
+
+  it('leaves the taxable share perfectly still at a zero assumption', () => {
+    // The reason the benefit is not anchored the same way the brackets are:
+    // anchoring the brackets moves the tax but not provisional income, so the
+    // section's control case survives it.
+    const p = projectYears(
+      { ordinaryIncome: 30_000, ssBenefit: 24_000, year: 2025 },
+      { startYear: 2025, years: 5, colaPercent: 0, birthYear: 1970 },
+    );
+    expect(new Set(p.rows.map((r) => r.taxableSharePercent)).size).toBe(1);
+    // The published 2026 deduction is the larger one, so the bill falls once.
+    expect(p.rows[1].totalTax).toBeLessThan(p.rows[0].totalTax);
+    expect(p.rows[2].totalTax).toBe(p.rows[1].totalTax);
+  });
+
+  it('anchors on the latest year at or below the target', () => {
+    expect(publishedAnchorYear(2025)).toBe(2025);
+    expect(publishedAnchorYear(2026)).toBe(2026);
+    expect(publishedAnchorYear(2055)).toBe(TAX_YEARS[TAX_YEARS.length - 1]);
+    // Below everything on file there is nothing to anchor on but the first.
+    expect(publishedAnchorYear(1990)).toBe(TAX_YEARS[0]);
   });
 });
 

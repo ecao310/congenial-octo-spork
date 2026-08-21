@@ -467,6 +467,32 @@ export function defaultTaxYear(calendarYear = new Date().getFullYear()): TaxYear
   return TAX_YEARS.find((y) => y === calendarYear) ?? last;
 }
 
+/** Whether this app has published figures for a calendar year. */
+export function hasPublishedParams(year: number): year is TaxYear {
+  return TAX_YEARS.some((y) => y === year);
+}
+
+/**
+ * The latest year with published figures at or below `year`.
+ *
+ * This is the base a projection past `TAX_YEARS` should index forward from:
+ * for a year Congress and the IRS have already priced, the published figure is
+ * not an estimate to be improved on. Scanned rather than compared against the
+ * last element, so a gap in the years on file (2025 and 2027 but not 2026)
+ * anchors on 2025 for 2026 instead of on a year with no parameters behind it.
+ *
+ * Falls back to the earliest year on file for anything below it — unreachable
+ * from the app, whose year selector only offers `TAX_YEARS`, but it keeps the
+ * return type honest.
+ */
+export function publishedAnchorYear(year: number): TaxYear {
+  let anchor = TAX_YEARS[0];
+  for (const y of TAX_YEARS) {
+    if (y <= year) anchor = y;
+  }
+  return anchor;
+}
+
 /** The parameters for one tax year. */
 export function taxYearParams(year: TaxYear = defaultTaxYear()): TaxYearParams {
   return TAX_YEAR_PARAMS[year];

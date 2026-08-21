@@ -2863,6 +2863,21 @@ const App: React.FC = () => {
                 which runs a little lower — so the real ratchet is slightly steeper
                 than this shows, not shallower.
               </p>
+              {projection.publishedThroughYear > projection.startYear && (
+                <p className="field-note">
+                  The slider does not reach{' '}
+                  {projection.publishedThroughYear === projection.startYear + 1
+                    ? projection.publishedThroughYear
+                    : `${projection.startYear + 1}–${projection.publishedThroughYear}`}
+                  : those brackets, standard deductions and capital-gain bands are
+                  already published, so the projection reads them instead of
+                  guessing at them. Expect a bend at{' '}
+                  {projection.publishedThroughYear + 1}, where the assumption takes
+                  over from the law. The benefit does follow the slider throughout —
+                  it is your figure, and holding it to the same rate as your other
+                  income is what keeps real income flat.
+                </p>
+              )}
             </div>
 
             <div className="input-group">
@@ -3081,6 +3096,8 @@ const App: React.FC = () => {
               Tax year &middot; {formatCurrency(ordinaryIncome)} of other income and a{' '}
               {formatCurrency(ssBenefit)} benefit in {projection.startYear}, both
               growing at {colaAssumption}% a year
+              {projection.publishedThroughYear > projection.startYear &&
+                `, against published figures through ${projection.publishedThroughYear}`}
             </p>
 
             <p>

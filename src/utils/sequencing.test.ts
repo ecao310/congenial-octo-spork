@@ -429,25 +429,41 @@ describe('withdrawal sequencing', () => {
   });
 
   describe('holding everything still', () => {
+    const STILL = {
+      years: 4,
+      colaPercent: 0,
+      birthYear: 1970,
+      spending: 0,
+      taxableBalance: 0,
+      traditionalBalance: 0,
+      rothBalance: 0,
+      growthPercent: 0,
+    };
+    const STILL_SCENARIO = { ...SCENARIO, ordinaryIncome: 40_000, ssBenefit: 24_000 };
+
     it('taxes the same amount every year when nothing moves', () => {
-      const run = simulateSequencing(
-        'taxable-first',
-        { ...SCENARIO, ordinaryIncome: 40_000, ssBenefit: 24_000 },
-        {
-          startYear: 2025,
-          years: 4,
-          colaPercent: 0,
-          birthYear: 1970,
-          spending: 0,
-          taxableBalance: 0,
-          traditionalBalance: 0,
-          rothBalance: 0,
-          growthPercent: 0,
-        },
-      );
+      // Started on the newest year on file, so no published Rev. Proc. lands
+      // inside the horizon and the 0% assumption is the only thing indexing.
+      const run = simulateSequencing('taxable-first', { ...STILL_SCENARIO, year: 2026 }, {
+        ...STILL,
+        startYear: 2026,
+      });
       const taxes = run.rows.map((r) => r.totalTax);
       expect(new Set(taxes).size).toBe(1);
       expect(taxes[0]).toBeGreaterThan(0);
+    });
+
+    it('still reads the published figures for a year already priced', () => {
+      // 2025 -> 2028 at a 0% assumption: 2026 is published, so its wider
+      // brackets and larger standard deduction apply however still the sliders
+      // are held, and 2027 and 2028 index from there at 0%.
+      const run = simulateSequencing('taxable-first', STILL_SCENARIO, {
+        ...STILL,
+        startYear: 2025,
+      });
+      const taxes = run.rows.map((r) => r.totalTax);
+      expect(taxes[0]).toBeGreaterThan(taxes[1]);
+      expect(new Set(taxes.slice(1)).size).toBe(1);
     });
 
     it('has no ratchet left to show a separate return', () => {

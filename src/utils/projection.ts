@@ -8,6 +8,8 @@ import {
   agiFor,
   deductionFor,
   filingParams,
+  hasPublishedParams,
+  publishedAnchorYear,
   resolveScenario,
   seniorDeductionFor,
   taxableSocialSecurity,
@@ -80,14 +82,18 @@ export function projectFilingParams(
 }
 
 /**
- * The whole projected year — calendar year plus indexed figures.
+ * The whole projected year — calendar year plus its figures.
  *
- * Indexed from `startYear`'s published figures every time, including for years
- * `TAX_YEAR_PARAMS` already covers: a 2025 projection models 2026 at the user's
- * assumed rate rather than reading Rev. Proc. 2025-32. Deliberate, because the
- * chart answers "what if inflation runs at X%" and a single published year
- * spliced into the middle of that would put a kink in the curve that the
- * assumption does not explain. It does cost a little accuracy in year two.
+ * Anchored on the latest year `TAX_YEAR_PARAMS` covers at or below the target,
+ * and indexed only past that. So a projection that starts in 2025 reads
+ * Rev. Proc. 2025-32 for 2026 rather than guessing at it, and the assumption
+ * slider first bites in 2027.
+ *
+ * The cost is a kink: at an assumed 5% the brackets still widen by the actual
+ * 2.7% in the one year that is already law, and the curve bends where the
+ * assumption takes over. That is worth saying out loud in the UI — see
+ * `Projection.publishedThroughYear` — and it beats reporting a 2026 standard
+ * deduction that is not the one on the form.
  */
 export function projectYearParams(
   startYear: TaxYear,
@@ -95,12 +101,14 @@ export function projectYearParams(
   yearsForward: number,
   inflationPercent: number,
 ): ProjectedYear {
+  const year = startYear + yearsForward;
+  const anchor = publishedAnchorYear(year);
   return {
-    year: startYear + yearsForward,
+    year,
     filing: projectFilingParams(
-      filingParams(startYear, filingStatus),
+      filingParams(anchor, filingStatus),
       filingStatus,
-      yearsForward,
+      year - anchor,
       inflationPercent,
     ),
   };
@@ -240,6 +248,12 @@ export interface ProjectionYearRow {
   effectiveRatePercent: number;
   /** totalTax deflated to first-year dollars. */
   realTotalTax: number;
+  /**
+   * Whether this year's brackets, standard deduction and gain bands are
+   * published figures rather than the inflation slider's work. The benefit is
+   * grown by the slider either way — see `projectYears`.
+   */
+  figuresPublished: boolean;
 }
 
 export interface Projection {
@@ -248,6 +262,13 @@ export interface Projection {
   last: ProjectionYearRow;
   startYear: number;
   endYear: number;
+  /**
+   * The last year of an unbroken run from `startYear` whose figures are
+   * published rather than assumed. Equal to `startYear` whenever the horizon
+   * starts on the newest year on file, which is the ordinary case — so the UI
+   * has something to test before it promises the reader anything.
+   */
+  publishedThroughYear: number;
   birthYear: number;
   applicableAge: number;
   /** First year a distribution is required, when the horizon reaches it. */
@@ -308,6 +329,19 @@ export function seniorsAtAge(
  * equal — the default — and literally the only thing that moves in real terms
  * is IRC 86(c)'s $25,000/$32,000 and $34,000/$44,000, unindexed since 1983 and
  * 1993. The rising taxable share is that and nothing else.
+ *
+ * With one exception, and it is the honest one: any year `TAX_YEAR_PARAMS`
+ * already covers uses its published brackets, standard deduction and gain
+ * bands rather than the inflation slider's guess at them. Those figures are
+ * law. `publishedThroughYear` says how far that reaches.
+ *
+ * The benefit is not anchored the same way, even though the COLA for a
+ * published year is equally announced. `colaPercent` is the reader's own
+ * assumption and the axis the whole section teaches — override year one of it
+ * and "hold your income flat in real terms" stops being true of the chart,
+ * since the filer's other income has no published figure to be anchored to.
+ * Anchoring the brackets costs nothing there: at a flat 0% the taxable share
+ * still sits perfectly still, because provisional income has not moved.
  *
  * Two things then break the smoothness: required distributions switching on at
  * the applicable age, and the OBBBA senior deduction expiring after 2028.
@@ -392,6 +426,7 @@ export function projectYears(
       totalTax: Math.round(tax),
       effectiveRatePercent: grossIncome > 0 ? round2((tax / grossIncome) * 100) : 0,
       realTotalTax: Math.round(tax / inflation ** n),
+      figuresPublished: hasPublishedParams(year),
     });
   }
 
@@ -407,6 +442,13 @@ export function projectYears(
     last,
     startYear,
     endYear: last.year,
+    // Extended one year at a time rather than read off the last published row,
+    // so a gap in `TAX_YEARS` stops the run instead of being jumped over.
+    publishedThroughYear: rows.reduce(
+      (through, row) =>
+        row.year === through + 1 && row.figuresPublished ? row.year : through,
+      startYear as number,
+    ),
     birthYear,
     applicableAge,
     firstRmdYear: yearOf((row) => row.rmd > 0),

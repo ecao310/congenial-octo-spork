@@ -2300,3 +2300,86 @@ markup handles it, the density may not.
 Also flipped the `.tier-table` note to [x]: its one open question was whether
 the state-treatment column should happen on its own merits now the dependency
 had evaporated. It should have, and it has.
+
+================================================================================
+Anchor the projection on published figures instead of indexing into them
+================================================================================
+
+`projectYearParams` indexed forward from the *start* year every time, so a
+projection that started in 2025 modelled 2026 by running the inflation slider
+over Rev. Proc. 2024-40 — while Rev. Proc. 2025-32 sat in `TAX_YEAR_PARAMS`
+unread. At a 0% assumption the section reported a 2026 standard deduction of
+$15,750 when the form says $16,100.
+
+### The fix is three lines
+
+`publishedAnchorYear(year)` returns the latest year in `TAX_YEARS` at or below
+the target; `projectYearParams` reads that year's figures and indexes only
+`year - anchor` years past it. So 2025 -> 2026 is a lookup, not an estimate,
+and the slider first bites in 2027. `sequencing.ts` shares the helper and got
+the fix without a line changing.
+
+Scanned rather than `TAX_YEARS[last]`-compared, so a gap in the years on file
+(2025 and 2027 but not 2026) anchors 2026 on 2025 instead of on a year with no
+parameters behind it. Same reasoning `defaultTaxYear` already used.
+
+### The kink is real and is now said out loud
+
+At an assumed 5% the brackets still widen by the actual ~2.7% in the one year
+that is already law, and the curve bends at 2027. `Projection.publishedThrough
+Year` reports how far the published run reaches — `startYear` when the horizon
+opens on the newest year on file, which is the ordinary case, so the UI has
+something to test before it promises anything. A field note under the COLA
+slider and a clause on the chart caption both hang off it and disappear for a
+2026 start.
+
+Computed by extending one year at a time from `startYear` rather than reading
+the last published row, so a gap stops the run instead of being jumped over.
+
+### The COLA was anchored too, then backed out
+
+First pass added `publishedColaFactor`, growing the benefit by each year's
+published COLA where the SSA has announced one. Same class of correction —
+the January 2026 raise of 2.8% is announced, not assumed — and it looked right
+until the tests showed what it did to the section's control case: at a 0% COLA
+the taxable share went 47.14% -> 47.01%, and the prose branch that says "at a
+0% COLA nothing moves: the taxable share sits at 47.14% for all 20 years"
+became false.
+
+The asymmetry that decided it: the brackets have no user control except through
+the inflation slider, so an assumption there is simply wrong output. The
+benefit is the reader's own figure on their own slider, and the filer's *other*
+income has no published figure to anchor to — so anchoring one and not the
+other stops "hold your income flat in real terms" from being true of the chart.
+Anchoring the brackets costs nothing there, because provisional income does not
+move: a test pins that the taxable share is still perfectly flat at 0%.
+
+Backed out rather than shipped half-argued, and logged as discovered work with
+the argument attached, since deciding it means also deciding what the control
+case should then say.
+
+### Re-baselined figures, and why each moved
+
+Eight assertions moved by a few dollars — the 2026 deduction is larger and the
+brackets wider, so any horizon crossing 2026 from a 2025 start prices
+differently. Lifetime sequencing tax $77,757 -> $77,775, the projection's real
+last-year tax $4,277 -> $4,278, and so on. None of them changed direction or
+crossed a threshold the prose keys off, which is the check that mattered.
+
+One sequencing test needed rewriting rather than re-baselining: "taxes the same
+amount every year when nothing moves" ran 2025-2028 at a 0% COLA and now sees
+two distinct bills. It starts at 2026 instead, where no published Rev. Proc.
+lands inside the horizon — and a second test asserts the 2025 case explicitly:
+the bill falls once at 2026 and is flat from there.
+
+### Verification
+
+npx tsc -b, npm run lint, npx vitest run (449 passed, up from 440 — six new
+unit tests on the anchoring, `publishedThroughYear` and the flat-share
+property, two new App tests on the field note and the published 2026 read),
+npm run build — all clean; only the pre-existing >500kB chunk warning. Rendered
+output read end to end to check the new note's wording in place.
+
+Worth knowing: `App.test.tsx` pins the clock to 2025-07-01, so the default test
+scenario is exactly the case this change affects. Once 2027 figures land, a
+2025 start will read two published years and the note will print a range.

@@ -1442,10 +1442,43 @@ describe('multi-year projection', () => {
     expect(section).toHaveTextContent('to the 85% ceiling in 2035, and stops there');
   });
 
+  it('says which years the assumption does not reach, and drops it when none', () => {
+    // Pinned to 2025, so 2026 sits inside the horizon and is already published.
+    renderTab('Over Time');
+    expect(projectionSection()).toHaveTextContent(
+      'The slider does not reach 2026: those brackets, standard deductions and ' +
+        'capital-gain bands are already published',
+    );
+    expect(projectionSection()).toHaveTextContent('Expect a bend at 2027');
+    expect(projectionSection()).toHaveTextContent(
+      'against published figures through 2026',
+    );
+
+    // Move the whole scenario to the newest year on file and the run is the
+    // first year alone, so there is nothing to warn about.
+    fireEvent.click(screen.getByRole('radio', { name: '2026' }));
+    expect(projectionSection()).not.toHaveTextContent('The slider does not reach');
+    expect(projectionSection()).not.toHaveTextContent('against published figures');
+  });
+
+  it('reads the published 2026 figures rather than indexing 2025 into them', () => {
+    // At a 0% assumption nothing indexes, so a second-year tax that differs
+    // from the first can only have come from Rev. Proc. 2025-32. It falls,
+    // because the 2026 standard deduction is the larger one.
+    renderTab('Over Time');
+    setSlider(/annual cola and inflation/i, '0');
+    setSlider(/traditional ira and 401\(k\) balance/i, '0');
+    expect(projectionSection()).toHaveTextContent('Federal tax in 2025 dollars');
+    // 47.14% of the benefit is taxable in every year — provisional income has
+    // not moved — so the bill falling is the deduction and only the deduction.
+    expect(projectionSection()).toHaveTextContent('47.14% → 47.14%');
+    expect(projectionSection()).toHaveTextContent('The slider does not reach 2026');
+  });
+
   it('quotes the last year’s tax in first-year dollars, not nominal ones', () => {
     renderTab('Over Time');
     expect(projectionSection()).toHaveTextContent('Federal tax in 2025 dollars');
-    expect(projectionSection()).toHaveTextContent('$1,853 → $4,277');
+    expect(projectionSection()).toHaveTextContent('$1,853 → $4,278');
     expect(projectionSection()).toHaveTextContent("2.31x the first year's");
   });
 
@@ -1639,7 +1672,7 @@ describe('withdrawal sequencing', () => {
     renderTab('Over Time');
     const section = seqSection();
     expect(section).toHaveTextContent('Conventional wins both ways');
-    expect(section).toHaveTextContent('$77,757 of lifetime federal tax');
+    expect(section).toHaveTextContent('$77,775 of lifetime federal tax');
     expect(section).toHaveTextContent('Bracket filling works by paying tax earlier');
     expect(section).toHaveTextContent('leaves the IRA at $1 in 2044 rather than $103,372');
   });
@@ -1650,7 +1683,7 @@ describe('withdrawal sequencing', () => {
     setSlider(/years to project/i, '30');
     const section = seqSection();
     expect(section).toHaveTextContent('Bracket filling wins both ways');
-    expect(section).toHaveTextContent('leaves the IRA at $1,002,990 in 2054 rather than $1,036,173');
+    expect(section).toHaveTextContent('leaves the IRA at $1,002,286 in 2054 rather than $1,036,173');
   });
 
   it('blames the deferred IRA when there is a deferred IRA to blame', () => {
@@ -1663,7 +1696,7 @@ describe('withdrawal sequencing', () => {
     const section = seqSection();
     expect(section).toHaveTextContent('Proportional pays the least federal tax over these 10 years');
     expect(section).toHaveTextContent('finishes with less money than Bracket filling');
-    expect(section).toHaveTextContent('$66,231 in the IRA with $13,522 of tax still attached');
+    expect(section).toHaveTextContent('$66,231 in the IRA with $13,441 of tax still attached');
   });
 
   it('names the gain and the Roth instead when there is no IRA to blame', () => {
@@ -1675,9 +1708,9 @@ describe('withdrawal sequencing', () => {
     // IRA with $0 of tax attached", which explains nothing.
     expect(section).toHaveTextContent('Proportional pays the least federal tax');
     expect(section).toHaveTextContent(
-      '$406,835 of unrealised gain in the brokerage account, carrying $58,432 of tax',
+      '$406,818 of unrealised gain in the brokerage account, carrying $58,460 of tax',
     );
-    expect(section).toHaveTextContent('$262,859 left in the Roth against $397,995');
+    expect(section).toHaveTextContent('$262,848 left in the Roth against $397,995');
     expect(section).not.toHaveTextContent('$0 in the IRA');
   });
 
@@ -1708,7 +1741,7 @@ describe('withdrawal sequencing', () => {
     // three orders are the same order. That is a tie for a reason that has
     // nothing to do with sequencing, and it is not "the difference is small".
     expect(section).toHaveTextContent('Nothing here is being sequenced');
-    expect(section).toHaveTextContent('all three post the same $607,770');
+    expect(section).toHaveTextContent('all three post the same $606,630');
     expect(section).not.toHaveTextContent('land within');
   });
 
@@ -1718,7 +1751,7 @@ describe('withdrawal sequencing', () => {
     setSlider(/roth ira/i, '0');
     const section = seqSection();
     expect(section).toHaveTextContent('There is only one account to spend');
-    expect(section).toHaveTextContent('all three land on the same $67,326');
+    expect(section).toHaveTextContent('all three land on the same $67,345');
     expect(section).not.toHaveTextContent('Nothing here is being sequenced');
   });
 

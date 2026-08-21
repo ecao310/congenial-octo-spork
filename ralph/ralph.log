@@ -2627,3 +2627,73 @@ No visual check; the repo has no browser tooling. The two new prose blocks are
 asserted on in App.test.tsx through every branch (no gift, gift priced, no
 balance, too young, constant, curtailed), but their layout is argued rather
 than seen.
+
+
+---
+
+## Splitting the step-by-step rebuild into ten items
+## 2026-08-21
+
+The only task this iteration was the bookkeeping one at the top of Backlog 2:
+split the bullet under it. That bullet was a single paragraph carrying nine
+separate pieces of work — a whole-page restructure, a maths change, two
+deletions, two chart changes and a new piece of prose — and at 1,300 characters
+it was longer than most of the write-ups in this log. Any iteration that picked
+it up would have had to choose its own scope silently.
+
+The original wording, kept verbatim so nothing is lost in the paraphrase:
+
+> Structure as a step by step process. Start with SS benefit slider. then show tax torpedo graph. below that, slider for other income, which draws vertical line on above graph. then the dropdowns explaining tax torpedo. finally, a clickable box to go to the next section for capital gains. at the bottom of each section, have a "next" button that takes you to the next section. each section follows the pattern where a slider below the graph draws a vertical line on the graph, then there's a dropdown to explain the graph, then a clickable box to go to the next section. on capital gains section, redo math to be "of your x other income, choose y on slider for how much is capital gains". this means we can remove the Other ordinary income (non-ltcg, non-ss) slider at top. and the long-term capital gains you plan to realize slider gets moved out of advanced inputs. re-scale x-axes on graphs to showcase more things like the 2025-2028 temporary credit. make the charitable distribution slider up to the irs max, and extend graph's x-axis if the slider is set too large. remove the What the tax exempt interest costs sections. remove the medicare, strategies, over time, and state taxes sections from the site. keep the code around since we'll add it back later. re-add the irmaa cliff vertical lines to the tax torpedo graph. find a way to explain why it's better to either increase or decrease income. make it personalized to where the slider is currently set.
+
+### How it was cut
+
+Ten items, ordered so each one lands on a tree the previous one left working:
+
+1. **Deletions first**, because they shrink what everything after them has to
+   touch — the tax-exempt-interest explainer, then the four tabs (Medicare,
+   Strategies, Over Time, State Taxes).
+2. **The IRMAA lines**, immediately after the tab removal that motivates them.
+   Worth noting for whoever picks it up: the lines are *already* on the torpedo
+   chart today (`cliffsOnChart`, App.tsx:808 and :1516). "Re-add" reads as a
+   description of the state after the Medicare tab goes, so the real work is
+   making them legible without the section that explains what a cliff is.
+3. **The structural rebuild** — tab strip to linear steps with next-boxes, then
+   the per-step shape (chart, slider, dropdowns, next), then the "you are here"
+   vertical. Split three ways because the first is routing, the second is
+   ordering, and the third is a chart change; each is verifiable alone.
+4. **The gains maths**, which is the one item with a correctness risk rather
+   than a layout risk: making LTCG a share of income already entered means
+   ordinary becomes X − LTCG at every `totalTaxWithLTCG` caller, not X.
+5. **The two chart-domain items**, then the personalised advice last, because
+   it reads off whatever the axes end up being.
+
+### Three things checked rather than assumed
+
+- **The QCD ceiling is genuinely clipped.** `qcdSliderMax` is
+  `Math.min(qcdLimit, MAX_INCOME)` (App.tsx:653). For a single filer the 2025
+  limit is $108,000 and the chart's $150,000 domain never binds — but
+  `qcdLimitFor` doubles for MFJ, so a joint return's $216,000 statutory limit
+  is cut by a third by a constant that has nothing to do with the statute.
+  The item says so.
+- **The axis rescale has a specific victim.** MAX_INCOME = 150_000 covers the
+  SS torpedo and the first two IRMAA cliffs, but the 2025-2028 senior
+  deduction phaseout runs to $175,000 single and $250,000 MFJ — so the second
+  hump the app added a whole task for is half off-screen for a joint filer.
+  That probably makes the domain a function of filing status and year rather
+  than a constant, which is worth knowing before starting.
+- **The "you are here" line was already logged.** It sits in Discovered Work
+  from the tab-input move. Both bullets now point at each other so the next
+  iteration strikes them together instead of doing it twice.
+
+### Left standing deliberately
+
+Four Discovered Work items price things on tabs that item 2 removes — the
+nominal-dollar shortfall sum, the COLA anchoring question, the unpriced QCD in
+the sequencing comparison. They are not deleted, because the sections come back
+and the observations stay true when they do. But they should not be picked up
+ahead of the removal.
+
+### Not verified
+
+Nothing to verify — no code changed. `git status` was clean at the start and
+carries only PLAN.md and this log at the end.

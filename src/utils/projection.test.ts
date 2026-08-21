@@ -1,14 +1,18 @@
 import {
+  QCD_FIRST_CERTAIN_AGE,
   RMD_AGE_BEFORE_SECURE_2,
   RMD_RESERVED_BIRTH_YEAR,
   UNIFORM_LIFETIME_DIVISORS,
   projectFilingParams,
+  projectQcdLimit,
   projectYearParams,
   projectYears,
+  qcdInYear,
   rmdApplicableAge,
   rmdDivisor,
 } from './projection';
 import {
+  QCD_MIN_AGE,
   SENIOR_DEDUCTION,
   SENIOR_DEDUCTION_LAST_YEAR,
   SS_BASES,
@@ -17,6 +21,7 @@ import {
   filingParams,
   hasPublishedParams,
   publishedAnchorYear,
+  qcdAnnualLimit,
   taxableSocialSecurity,
   totalTax,
 } from './tax';
@@ -458,5 +463,192 @@ describe('the senior deduction ending', () => {
     expect(p.endYear).toBe(SENIOR_DEDUCTION_LAST_YEAR);
     expect(p.last.seniorDeduction).toBeGreaterThan(0);
     expect(p.seniorDeductionEndsYear).toBeNull();
+  });
+});
+
+describe('projectQcdLimit', () => {
+  it('reads the published limit for a published year and doubles it for a joint return', () => {
+    // 408(d)(8)(A) caps the exclusion per individual, so a joint return where
+    // both spouses give from their own IRA gets it twice.
+    expect(projectQcdLimit(2026, 'single', 0, 2.5)).toBe(qcdAnnualLimit(2026));
+    expect(projectQcdLimit(2026, 'mfj', 0, 2.5)).toBe(2 * qcdAnnualLimit(2026));
+    // And a published year past the start year is read, not indexed into.
+    expect(projectQcdLimit(2025, 'single', 1, 9)).toBe(qcdAnnualLimit(2026));
+  });
+
+  it('rounds the indexed limit to the nearest $1,000, not down to $50', () => {
+    // 1.025^5 x $111,000 = $125,586, which 408(d)(8)(A) rounds up to $126,000.
+    // IRC 1(f)'s rule would have rounded the *increase* down to $125,550.
+    expect(projectQcdLimit(2026, 'single', 5, 2.5)).toBe(126_000);
+    expect(projectQcdLimit(2026, 'mfj', 5, 2.5)).toBe(252_000);
+  });
+
+  it('holds still at zero inflation', () => {
+    expect(projectQcdLimit(2026, 'single', 20, 0)).toBe(qcdAnnualLimit(2026));
+  });
+});
+
+describe('qcdInYear', () => {
+  const at = (age: number, balance: number, asked = 20_000, n = 0) =>
+    qcdInYear(asked, age, balance, 2026, 'single', n, 0);
+
+  it('waits for the first age a birth year can settle 70 1/2 at', () => {
+    expect(QCD_FIRST_CERTAIN_AGE).toBe(Math.ceil(QCD_MIN_AGE));
+    expect(QCD_FIRST_CERTAIN_AGE).toBe(71);
+    // Someone born in January reaches 70 1/2 in the year they turn 70 and
+    // someone born in December not until the year they turn 71, so this errs a
+    // year late rather than letting half of them give a year early.
+    expect(at(70, 500_000)).toBe(0);
+    expect(at(71, 500_000)).toBe(20_000);
+  });
+
+  it('caps at the balance there is to give from', () => {
+    expect(at(75, 8_000)).toBe(8_000);
+    expect(at(75, 0)).toBe(0);
+  });
+
+  it('caps at the statutory limit', () => {
+    expect(at(75, 5_000_000, 400_000)).toBe(qcdAnnualLimit(2026));
+  });
+
+  it('grows the gift with inflation', () => {
+    expect(qcdInYear(20_000, 75, 5_000_000, 2026, 'single', 4, 2.5)).toBeCloseTo(
+      20_000 * 1.025 ** 4,
+      6,
+    );
+  });
+
+  it('gives nothing when nothing was asked for', () => {
+    expect(at(80, 500_000, 0)).toBe(0);
+    expect(at(80, 500_000, -1)).toBe(0);
+  });
+});
+
+describe('projectYears with a recurring charitable gift', () => {
+  const scenario = {
+    ordinaryIncome: 20_000,
+    ssBenefit: avgAnnualSSBenefit(2026),
+    filingStatus: 'single' as const,
+    year: 2026 as const,
+  };
+  // Born 1955, so 71 in 2026 — old enough to give, two years short of the
+  // applicable age of 73. Nothing indexed, so every figure is readable.
+  const flat = {
+    startYear: 2026 as const,
+    years: 10,
+    colaPercent: 0,
+    birthYear: 1955,
+    traditionalBalance: 500_000,
+    balanceGrowthPercent: 0,
+  };
+
+  it('takes the gift out of the balance before anything is required to come out', () => {
+    const p = projectYears(scenario, { ...flat, annualQcd: 20_000 });
+    expect(p.firstQcdYear).toBe(2026);
+    expect(p.firstRmdYear).toBe(2028);
+    const first = p.rows[0];
+    expect(first.age).toBe(71);
+    expect(first.rmd).toBe(0);
+    expect(first.qcd).toBe(20_000);
+    expect(first.balance).toBe(480_000);
+    // And none of it reaches the return: 408(d)(8) excludes it from gross
+    // income, so ordinary income is the other income and nothing else.
+    expect(first.ordinaryIncome).toBe(20_000);
+    expect(first.taxableRmd).toBe(0);
+  });
+
+  it('lets the gift satisfy the required distribution without taxing it', () => {
+    const p = projectYears(scenario, { ...flat, annualQcd: 20_000 });
+    const first = p.rows.find((r) => r.year === 2028)!;
+    // Two gifts have already come out, so the requirement is measured against
+    // $460,000 rather than $500,000.
+    expect(first.age).toBe(73);
+    expect(first.rmd).toBe(Math.round(460_000 / 26.5));
+    // The gift is larger than the requirement, so nothing of it is reportable
+    // and the account gives up the gift rather than the sum of the two.
+    expect(first.qcd).toBe(20_000);
+    expect(first.taxableRmd).toBe(0);
+    expect(first.ordinaryIncome).toBe(20_000);
+    expect(first.balance).toBe(440_000);
+  });
+
+  it('reports only the part of the requirement the gift did not cover', () => {
+    const p = projectYears(scenario, { ...flat, annualQcd: 5_000 });
+    const row = p.rows.find((r) => r.year === 2028)!;
+    const opening = row.openingBalance;
+    expect(row.rmd).toBe(Math.round(opening / 26.5));
+    expect(row.qcd).toBe(5_000);
+    expect(row.taxableRmd).toBe(row.rmd - 5_000);
+    expect(row.ordinaryIncome).toBe(20_000 + row.taxableRmd);
+    // The requirement is larger than the gift, so the requirement is what left
+    // the account.
+    expect(row.balance).toBe(opening - row.rmd);
+  });
+
+  it('taxes less every year and less over the horizon than the same plan without it', () => {
+    const withGift = projectYears(scenario, { ...flat, annualQcd: 20_000 });
+    const without = projectYears(scenario, { ...flat, annualQcd: 0 });
+    expect(without.totalQcd).toBe(0);
+    expect(without.firstQcdYear).toBeNull();
+    expect(withGift.totalQcd).toBe(10 * 20_000);
+    // Nothing is indexed here, so the real total is the nominal one.
+    expect(withGift.totalRealQcd).toBe(withGift.totalQcd);
+    expect(withGift.lifetimeRealTax).toBeLessThan(without.lifetimeRealTax);
+    // And the benefit itself is dragged less far into the base.
+    expect(withGift.last.taxableSharePercent).toBeLessThan(
+      without.last.taxableSharePercent,
+    );
+    for (const row of withGift.rows) {
+      const other = without.rows.find((r) => r.year === row.year)!;
+      expect(row.totalTax).toBeLessThanOrEqual(other.totalTax);
+    }
+  });
+
+  it('sums the lifetime real tax out of the rows it reported', () => {
+    const p = projectYears(scenario, { ...flat, colaPercent: 2.5, annualQcd: 0 });
+    expect(p.lifetimeRealTax).toBe(
+      p.rows.reduce((sum, row) => sum + row.realTotalTax, 0),
+    );
+  });
+
+  it('deflates the charitable total the same way it deflates the tax', () => {
+    const p = projectYears(scenario, { ...flat, colaPercent: 2.5, annualQcd: 10_000 });
+    // The gift grows with inflation, so every year of it is the same $10,000 in
+    // first-year dollars — and the nominal total is larger than the real one.
+    expect(p.totalRealQcd).toBe(10 * 10_000);
+    expect(p.totalQcd).toBeGreaterThan(p.totalRealQcd);
+  });
+
+  it('gives nothing when there is no IRA to give from', () => {
+    const p = projectYears(scenario, {
+      ...flat,
+      traditionalBalance: 0,
+      annualQcd: 20_000,
+    });
+    expect(p.totalQcd).toBe(0);
+    expect(p.firstQcdYear).toBeNull();
+    expect(p.rows.every((r) => r.qcd === 0)).toBe(true);
+  });
+
+  it('gives nothing before the horizon reaches the age', () => {
+    // Born 1970, so 56 in 2026 and 65 at the end of a ten-year run.
+    const p = projectYears(scenario, { ...flat, birthYear: 1970, annualQcd: 20_000 });
+    expect(p.last.age).toBe(65);
+    expect(p.totalQcd).toBe(0);
+    expect(p.firstQcdYear).toBeNull();
+  });
+
+  it('stops when the balance runs out rather than overdrawing it', () => {
+    const p = projectYears(scenario, {
+      ...flat,
+      traditionalBalance: 45_000,
+      annualQcd: 20_000,
+    });
+    expect(p.rows[0].qcd).toBe(20_000);
+    expect(p.rows[1].qcd).toBe(20_000);
+    expect(p.rows[2].qcd).toBe(5_000);
+    expect(p.rows[3].qcd).toBe(0);
+    expect(p.totalQcd).toBe(45_000);
+    expect(p.rows.every((r) => r.balance >= 0)).toBe(true);
   });
 });

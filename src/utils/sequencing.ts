@@ -11,6 +11,7 @@ import {
 } from './tax';
 import {
   projectYearParams,
+  qcdInYear,
   rmdApplicableAge,
   rmdDivisor,
   seniorsAtAge,
@@ -125,6 +126,21 @@ export interface SequencingAssumptions {
   growthPercent?: number;
   /** Which ceiling the bracket-filling strategy aims at. */
   fillCeilingId?: ConversionCeilingId;
+  /**
+   * A qualified charitable distribution repeated every year, in first-year
+   * dollars, growing with inflation like the spending need.
+   *
+   * Every order makes the same gift, and it is not one of the orders. A QCD is
+   * a charitable plan rather than a way of funding a retirement: money given
+   * away is money the household no longer has, so scoring "give from the IRA"
+   * as a fourth strategy against three that keep the money would hand it the
+   * lowest lifetime tax for the one reason that has nothing to do with
+   * sequencing — the same gaming that `deferredTraditionalTax` exists to stop.
+   * Applied to all three equally it stays a constant outflow, the comparison
+   * stays apples to apples, and what changes between the orders is only what
+   * the exclusion is worth against each one's ordinary income.
+   */
+  annualQcd?: number;
 }
 
 export interface SequencingYearRow {
@@ -139,6 +155,16 @@ export interface SequencingYearRow {
   spending: number;
   /** The required minimum distribution, or 0 before the applicable age. */
   rmd: number;
+  /** Paid straight from the IRA to the charity, funding nothing here. */
+  qcd: number;
+  /**
+   * The part of that requirement that still has to come out as cash, once the
+   * gift has counted toward it. Equal to `rmd` when there is no gift, and zero
+   * when the gift covers the whole requirement — which is the case worth
+   * building the section around: the distribution happened, the charity has the
+   * money, and nothing reached the return.
+   */
+  rmdAfterQcd: number;
   withdrawnTaxable: number;
   withdrawnTraditional: number;
   withdrawnRoth: number;
@@ -212,6 +238,16 @@ export interface StrategyProjection {
   /** First year a distribution is required, when the horizon reaches it. */
   firstRmdYear: number | null;
   /**
+   * Every year's charitable gift added up, in nominal dollars.
+   *
+   * Per strategy rather than once for the comparison, because the orders can
+   * fail to give the same amount: the gift is capped by the balance there is to
+   * give from, so an order that empties the IRA first stops being able to make
+   * it. That is worth reporting rather than averaging away — a plan that cannot
+   * fund the gift is not the plan the reader asked for.
+   */
+  totalQcd: number;
+  /**
    * Everything withdrawn by choice over the horizon: the whole of the taxable
    * and Roth withdrawals, plus whatever came out of the traditional account
    * above the required distribution.
@@ -258,6 +294,13 @@ export interface SequencingComparison {
   taxSpread: number;
   /** Most ending after-tax value less the least. */
   afterTaxSpread: number;
+  /**
+   * True when the orders did not all manage the same charitable total, which
+   * only happens when one of them emptied the IRA the gift comes out of. The
+   * comparison stops being apples to apples at that point and the prose has to
+   * say so.
+   */
+  qcdCurtailed: boolean;
   /** True when any strategy ran out of money before the horizon did. */
   anyShortfall: boolean;
   /**
@@ -408,11 +451,19 @@ function planWithdrawals(
  * One retirement, funded one way, year by year.
  *
  * What moves and what does not: the benefit grows at the COLA; other income,
- * tax-exempt interest and the spending need grow at inflation; brackets, the
- * standard deduction and the capital-gain bands index at inflation too — and
- * IRC 86(c)'s provisional-income thresholds do not move at all, which is why
- * the order that defers the most ordinary income is not automatically the one
- * that pays the least.
+ * tax-exempt interest, the spending need and any charitable gift grow at
+ * inflation; brackets, the standard deduction and the capital-gain bands index
+ * at inflation too — and IRC 86(c)'s provisional-income thresholds do not move
+ * at all, which is why the order that defers the most ordinary income is not
+ * automatically the one that pays the least.
+ *
+ * A recurring `annualQcd` is an outflow rather than an order: it leaves the IRA
+ * before any of the three get a say, funds none of the spending, and counts
+ * toward the required distribution, so the orders plan around a smaller balance
+ * and a smaller forced withdrawal. Every order makes the same gift for as long
+ * as it can afford to — see `SequencingAssumptions.annualQcd` for why it is not
+ * a fourth strategy, and `StrategyProjection.totalQcd` for what happens when
+ * one of them cannot.
  *
  * Deliberately outside the model: dividends and interest thrown off by the
  * brokerage account (it is treated as pure appreciation, so it produces income
@@ -439,6 +490,7 @@ export function simulateSequencing(
   const cola = 1 + colaPercent / 100;
   const inflation = 1 + inflationPercent / 100;
   const spending = Math.max(0, assumptions.spending ?? 0);
+  const annualQcd = Math.max(0, assumptions.annualQcd ?? 0);
   const fillCeilingId = assumptions.fillCeilingId ?? 'bracket12';
 
   let taxable = Math.max(0, assumptions.taxableBalance ?? 0);
@@ -476,7 +528,25 @@ export function simulateSequencing(
       openingTaxable > EPSILON ? Math.max(0, 1 - openingBasis / openingTaxable) : 0;
 
     const divisor = age >= applicableAge ? rmdDivisor(age) : null;
-    const rmd = divisor === null ? 0 : openingTraditional / divisor;
+    const required = divisor === null ? 0 : openingTraditional / divisor;
+
+    // The gift is not one of the withdrawals: it leaves the IRA before any of
+    // the orders get a say, produces no cash for the household, and counts
+    // toward the required distribution — so what the orders are left to plan
+    // around is the balance net of it, and the part of the requirement it did
+    // not already cover.
+    const qcd = qcdInYear(
+      annualQcd,
+      age,
+      openingTraditional,
+      startYear,
+      base.filingStatus,
+      n,
+      inflationPercent,
+    );
+    const spendableTraditional = Math.max(0, openingTraditional - qcd);
+    const rmd = Math.min(openingTraditional, required);
+    const rmdAfterQcd = Math.min(spendableTraditional, Math.max(0, required - qcd));
 
     const scenarioFor = (plan: YearPlan): Scenario => ({
       ordinaryIncome: otherIncome + plan.fromTraditional,
@@ -496,10 +566,10 @@ export function simulateSequencing(
 
     const ctx: YearContext = {
       openingTaxable,
-      openingTraditional,
+      openingTraditional: spendableTraditional,
       openingRoth,
       gainFraction,
-      rmd: Math.min(openingTraditional, rmd),
+      rmd: rmdAfterQcd,
       // A voluntary traditional withdrawal is ordinary income in exactly the
       // way a Roth conversion is, so the conversion sizer answers this without
       // modification: how many more ordinary dollars fit under the ceiling.
@@ -507,7 +577,7 @@ export function simulateSequencing(
         maxConversionUnder(
           ceiling,
           {
-            ordinaryIncome: otherIncome + Math.min(openingTraditional, rmd),
+            ordinaryIncome: otherIncome + rmdAfterQcd,
             ssBenefit,
             ltcg: estimatedGain,
             muniInterest,
@@ -516,7 +586,7 @@ export function simulateSequencing(
             year: startYear,
             projected,
           },
-          Math.floor(Math.max(0, openingTraditional - rmd)),
+          Math.floor(Math.max(0, spendableTraditional - rmdAfterQcd)),
         ),
     };
 
@@ -553,7 +623,7 @@ export function simulateSequencing(
     // added after growth: it did not exist until the year closed.
     taxable = remainingTaxable * growth + surplus;
     taxableBasis = basisAfterSale + surplus;
-    traditional = Math.max(0, openingTraditional - plan.fromTraditional) * growth;
+    traditional = Math.max(0, spendableTraditional - plan.fromTraditional) * growth;
     roth = Math.max(0, openingRoth - plan.fromRoth) * growth;
 
     const realTax = tax / inflation ** n;
@@ -566,7 +636,9 @@ export function simulateSequencing(
       otherIncome: Math.round(otherIncome),
       muniInterest: Math.round(muniInterest),
       spending: Math.round(spend),
-      rmd: Math.round(ctx.rmd),
+      rmd: Math.round(rmd),
+      qcd: Math.round(qcd),
+      rmdAfterQcd: Math.round(rmdAfterQcd),
       withdrawnTaxable: Math.round(plan.fromTaxable),
       withdrawnTraditional: Math.round(plan.fromTraditional),
       withdrawnRoth: Math.round(plan.fromRoth),
@@ -630,11 +702,12 @@ export function simulateSequencing(
     deferredGainRate:
       embeddedGain > EPSILON ? round2((deferredGainTax / embeddedGain) * 100) : 0,
     firstRmdYear: rows.find((row) => row.rmd > 0)?.year ?? null,
+    totalQcd: Math.round(rows.reduce((sum, row) => sum + row.qcd, 0)),
     voluntaryWithdrawal: Math.round(
       rows.reduce(
         (sum, row) =>
           sum +
-          Math.max(0, row.withdrawnTraditional - row.rmd) +
+          Math.max(0, row.withdrawnTraditional - row.rmdAfterQcd) +
           row.withdrawnTaxable +
           row.withdrawnRoth,
         0,
@@ -688,6 +761,7 @@ export function compareSequencing(
       byLowestTax[byLowestTax.length - 1].lifetimeRealTax - byLowestTax[0].lifetimeRealTax,
     afterTaxSpread:
       byAfterTax[0].endingAfterTaxReal - byAfterTax[byAfterTax.length - 1].endingAfterTaxReal,
+    qcdCurtailed: strategies.some((s) => s.totalQcd !== strategies[0].totalQcd),
     anyShortfall: strategies.some((s) => s.shortfallYears > 0),
     allShortfall: strategies.every((s) => s.shortfallYears > 0),
     shortfallStrategies: strategies.filter((s) => s.shortfallYears > 0),

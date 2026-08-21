@@ -1435,6 +1435,51 @@ describe('multi-year projection', () => {
     expect(projectionSection()).toHaveTextContent('in 2044');
   });
 
+  it('says nothing about a gift that was never asked for', () => {
+    renderTab('Over Time');
+    expect(projectionSection()).not.toHaveTextContent('goes to charity');
+    expect(projectionSection()).not.toHaveTextContent('does not appear here');
+  });
+
+  it('prices a recurring gift over the whole horizon', () => {
+    render(<App />);
+    fireEvent.change(screen.getByLabelText('Qualified Charitable Distribution'), {
+      target: { value: '10000' },
+    });
+    fireEvent.click(screen.getByRole('tab', { name: 'Over Time' }));
+    const section = projectionSection();
+    // Born 1955, so 70 in 2025 and not certainly 70 1/2 until 2026 — a birth
+    // year cannot resolve the half, so the gift starts the year after.
+    expect(section).toHaveTextContent(/goes to charity between 2026 and 2044/);
+    expect(section).toHaveTextContent(/of federal tax in 2025 dollars/);
+    expect(section).toHaveTextContent(/per dollar given/);
+  });
+
+  it('says why the gift is missing when there is no IRA to give from', () => {
+    render(<App />);
+    fireEvent.change(screen.getByLabelText('Qualified Charitable Distribution'), {
+      target: { value: '10000' },
+    });
+    fireEvent.click(screen.getByRole('tab', { name: 'Over Time' }));
+    setSlider(/traditional ira and 401\(k\) balance/i, '0');
+    expect(projectionSection()).toHaveTextContent(
+      'The $10,000 charitable gift does not appear here.',
+    );
+    expect(projectionSection()).toHaveTextContent('the balance is set to $0');
+  });
+
+  it('says why the gift is missing when the filer is too young for it', () => {
+    render(<App />);
+    fireEvent.change(screen.getByLabelText('Qualified Charitable Distribution'), {
+      target: { value: '10000' },
+    });
+    fireEvent.click(screen.getByRole('tab', { name: 'Over Time' }));
+    // Born 1975, so 50 in 2025 and not certainly 70 1/2 until 2046 — past the
+    // end of even a 30-year horizon that starts in 2025.
+    setSlider(/year you were born/i, '1975');
+    expect(projectionSection()).toHaveTextContent('not certainly there until 2046');
+  });
+
   it('names both frozen thresholds and the years they were frozen in', () => {
     renderTab('Over Time');
     expect(projectionSection()).toHaveTextContent(
@@ -1670,6 +1715,48 @@ describe('withdrawal sequencing', () => {
     // second set: two sections disagreeing about the applicable age would be
     // worse than either being wrong alone.
     expect(section).toHaveTextContent('over 20 years to 2044');
+  });
+
+  it('says nothing about a gift that was never asked for', () => {
+    renderTab('Over Time');
+    expect(seqSection()).not.toHaveTextContent('straight to the charity');
+    expect(seqSection()).not.toHaveTextContent('not a fourth order');
+  });
+
+  it('gives the same gift in all three orders rather than scoring it as one', () => {
+    render(<App />);
+    fireEvent.change(screen.getByLabelText('Qualified Charitable Distribution'), {
+      target: { value: '5000' },
+    });
+    fireEvent.click(screen.getByRole('tab', { name: 'Over Time' }));
+    // A big enough IRA that no order runs it below the gift. At the default
+    // $100,000 balance even $5,000 a year outlasts bracket filling, which is
+    // the branch the next test covers.
+    setSlider(/traditional ira and 401\(k\) balance/i, '1500000');
+    const section = seqSection();
+    expect(section).toHaveTextContent('All three also send $5,000 a year');
+    expect(section).toHaveTextContent('from 2026 on');
+    expect(section).toHaveTextContent('It is not a fourth order');
+    expect(section).toHaveTextContent('Each gives $122,720 over the 20 years');
+    expect(section).not.toHaveTextContent('Not constant here');
+  });
+
+  it('says when an order ran the IRA down too far to keep giving', () => {
+    render(<App />);
+    fireEvent.change(screen.getByLabelText('Qualified Charitable Distribution'), {
+      target: { value: '5000' },
+    });
+    fireEvent.click(screen.getByRole('tab', { name: 'Over Time' }));
+    // Bracket filling exists to empty the IRA early and a recurring gift needs
+    // it to still be there, so at the default $100,000 balance the two are in
+    // direct conflict — and the order that empties it fastest gives the least.
+    const section = seqSection();
+    expect(section).toHaveTextContent('Not constant here, though.');
+    expect(section).toHaveTextContent(
+      'bracket filling runs the balance down too far to keep funding it',
+    );
+    expect(section).toHaveTextContent('from $15,762 to $122,720 over the 20 years');
+    expect(section).toHaveTextContent('Bracket filling is the one to watch');
   });
 
   it('prices the basis slider in cents of realised gain per dollar sold', () => {

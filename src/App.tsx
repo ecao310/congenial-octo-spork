@@ -55,6 +55,7 @@ import {
 } from './utils/tax';
 import {
   projectYears,
+  QCD_FIRST_CERTAIN_AGE,
   rmdApplicableAge,
   RMD_AGE_BEFORE_SECURE_2,
   RMD_RESERVED_BIRTH_YEAR,
@@ -417,10 +418,21 @@ export const ProjectionTooltip: React.FC<ProjectionTooltipProps> = ({
           ? ` — ${formatCurrency(row.realTotalTax)} in ${startYear} dollars`
           : ''}
       </div>
-      {row.rmd > 0 && (
+      {row.taxableRmd > 0 && (
         <div style={{ fontSize: '0.8125rem', color: '#94a3b8' }}>
-          Includes a {formatCurrency(row.rmd)} required distribution, on top of{' '}
-          {formatCurrency(row.otherIncome)} of other income
+          Includes a {formatCurrency(row.taxableRmd)} required distribution, on top
+          of {formatCurrency(row.otherIncome)} of other income
+          {row.qcd > 0 &&
+            ` — the requirement was ${formatCurrency(row.rmd)} before the gift`}
+        </div>
+      )}
+      {row.qcd > 0 && (
+        <div style={{ fontSize: '0.8125rem', color: '#a3e635' }}>
+          {formatCurrency(row.qcd)} given straight to charity, out of gross income
+          and out of the balance
+          {row.taxableRmd === 0 && row.rmd > 0
+            ? ` — it covers the whole ${formatCurrency(row.rmd)} requirement, so none of it reaches the return`
+            : ''}
         </div>
       )}
       {row.muniInterest > 0 && (
@@ -938,42 +950,57 @@ const App: React.FC = () => {
    * Everything the projection needs, and nothing it does not: the planned
    * capital gains are left out, because a one-off realisation repeated for
    * thirty years is not a projection of anything.
+   *
+   * The charitable gift is not left out, and for the same reason: a QCD
+   * repeated for thirty years is exactly what a QCD usually is. It comes out of
+   * the IRA balance here rather than out of the other-income slider, which is
+   * where the single-year section takes it from — see `ProjectionAssumptions`.
    */
-  const projection = useMemo(
-    () =>
-      projectYears(
-        { ordinaryIncome, ssBenefit, muniInterest, filingStatus, seniors, year },
-        {
-          startYear: year,
-          years: horizonYears,
-          colaPercent: colaAssumption,
-          birthYear,
-          traditionalBalance,
-          balanceGrowthPercent: balanceGrowth,
-        },
-      ),
-    [
-      ordinaryIncome,
-      ssBenefit,
-      muniInterest,
-      filingStatus,
-      seniors,
-      year,
-      horizonYears,
-      colaAssumption,
+  const projectionAssumptions = useMemo(
+    () => ({
+      startYear: year,
+      years: horizonYears,
+      colaPercent: colaAssumption,
       birthYear,
       traditionalBalance,
-      balanceGrowth,
-    ],
+      balanceGrowthPercent: balanceGrowth,
+    }),
+    [year, horizonYears, colaAssumption, birthYear, traditionalBalance, balanceGrowth],
+  );
+
+  const projectionScenario = useMemo(
+    () => ({ ordinaryIncome, ssBenefit, muniInterest, filingStatus, seniors, year }),
+    [ordinaryIncome, ssBenefit, muniInterest, filingStatus, seniors, year],
+  );
+
+  const projection = useMemo(
+    () =>
+      projectYears(projectionScenario, { ...projectionAssumptions, annualQcd: qcd }),
+    [projectionScenario, projectionAssumptions, qcd],
+  );
+
+  /**
+   * The same horizon with the gift switched off, so the section can price what
+   * a recurring QCD is worth over the whole of it rather than in the one year
+   * the reader happens to be hovering over.
+   *
+   * Run unconditionally rather than behind `qcd > 0`: it is thirty passes over
+   * the same arithmetic the chart above already does, and a hook that sometimes
+   * runs is worse than one that always does.
+   */
+  const projectionWithoutGift = useMemo(
+    () => projectYears(projectionScenario, { ...projectionAssumptions, annualQcd: 0 }),
+    [projectionScenario, projectionAssumptions],
   );
 
   /**
    * The same retirement the projection above describes, funded three ways.
    *
-   * It shares that section's horizon, COLA, birth year, IRA balance and growth
-   * rate deliberately — two sections disagreeing about when the filer turns 73
-   * would be worse than either of them being wrong on its own. The planned
-   * capital gains stay out for the same reason they stay out of the projection.
+   * It shares that section's horizon, COLA, birth year, IRA balance, growth
+   * rate and charitable gift deliberately — two sections disagreeing about when
+   * the filer turns 73, or about how much of the IRA went to charity, would be
+   * worse than either of them being wrong on its own. The planned capital gains
+   * stay out for the same reason they stay out of the projection.
    */
   const sequencing = useMemo(
     () =>
@@ -991,6 +1018,7 @@ const App: React.FC = () => {
           rothBalance,
           growthPercent: balanceGrowth,
           fillCeilingId,
+          annualQcd: qcd,
         },
       ),
     [
@@ -1010,6 +1038,7 @@ const App: React.FC = () => {
       rothBalance,
       balanceGrowth,
       fillCeilingId,
+      qcd,
     ],
   );
 
@@ -1026,6 +1055,10 @@ const App: React.FC = () => {
     sequencing.strategies.find((s) => s.strategy.id === id) ?? sequencing.strategies[0];
   const seqConventional = seqStrategy('taxable-first');
   const seqBracketFill = seqStrategy('bracket-fill');
+  /** The most any order managed to give — the plan as the reader set it, when
+   * every order could afford it, and the benchmark the others fell short of
+   * when one could not. */
+  const seqMostGiven = Math.max(...sequencing.strategies.map((st) => st.totalQcd));
 
   /**
    * Zero when no order withdrew anything it was not required to — the benefit
@@ -1062,6 +1095,24 @@ const App: React.FC = () => {
 
   const applicableAge = rmdApplicableAge(birthYear);
   const firstRmdRow = projection.rows.find((r) => r.rmd > 0) ?? null;
+
+  /**
+   * What the recurring gift is worth over the whole horizon, against the same
+   * scenario without it. Both figures are in first-year dollars, so the cents
+   * per dollar given is a ratio of like to like.
+   */
+  const giftRealTaxSaved =
+    projectionWithoutGift.lifetimeRealTax - projection.lifetimeRealTax;
+  const giftSavedPerDollar =
+    projection.totalRealQcd > 0
+      ? Math.round((giftRealTaxSaved / projection.totalRealQcd) * 1000) / 10
+      : 0;
+  const giftSharePointsRemoved =
+    Math.round(
+      (projectionWithoutGift.last.taxableSharePercent -
+        projection.last.taxableSharePercent) *
+        100,
+    ) / 100;
   const ageAtStart = year - birthYear;
 
   const measureLabel = CONVERSION_MEASURE_LABELS[sizing.ceiling.measure];
@@ -2380,13 +2431,16 @@ const App: React.FC = () => {
             </p>
 
             <p className="field-note">
-              The multi-year projection and the withdrawal-order comparison under
-          Over Time
-              both leave the gift out. Their ordinary income is inflation-indexed
-              and RMD-driven year by year, and a recurring QCD interacts with the
-              balance those sections track; carrying one number through without
-              modelling that would make two sections disagree about the same
-              retirement.
+              The multi-year projection and the withdrawal-order comparison under{' '}
+              <strong>Over Time</strong> now read this same slider as a gift
+              repeated every year, growing with inflation and capped by the limit
+              as the IRS indexes it. They take it out of the IRA balance those
+              sections track rather than out of the other-income figure above,
+              because they have a balance and this section does not — and that is
+              the whole of the difference between them. Over a horizon the gift
+              compounds: it satisfies each year&apos;s required distribution
+              without entering the tax base, and shrinks the balance every later
+              one is measured against.
             </p>
           </section>
 
@@ -3350,6 +3404,50 @@ const App: React.FC = () => {
               </p>
             )}
 
+            {qcd > 0 && (
+              <p>
+                {projection.totalQcd === 0 ? (
+                  <>
+                    <strong>
+                      The {formatCurrency(qcd)} charitable gift does not appear
+                      here.
+                    </strong>{' '}
+                    {traditionalBalance === 0
+                      ? 'This projection gives it out of the IRA rather than out of the other-income slider, because it is the section that tracks a balance — and the balance is set to $0, so there is nothing to give from. Raise it above and the gift starts coming out of it.'
+                      : `A QCD needs the owner to have reached ${formatHalfAge(QCD_MIN_AGE)}, and this filer is ${ageAtStart} in ${year} — not certainly there until ${birthYear + QCD_FIRST_CERTAIN_AGE}, which is past ${projection.endYear}. Extend the horizon and it appears.`}
+                  </>
+                ) : (
+                  <>
+                    The gift bends the teal line the other way, and it is the only
+                    thing on this chart that does.{' '}
+                    <strong>{formatCurrency(projection.totalQcd)}</strong> goes to
+                    charity between {projection.firstQcdYear} and{' '}
+                    {projection.endYear} — none of it through the return — which
+                    saves{' '}
+                    <strong>{formatCurrency(giftRealTaxSaved)}</strong> of federal
+                    tax in {projection.startYear} dollars,{' '}
+                    <strong>{giftSavedPerDollar}&cent;</strong> per dollar given.
+                    {giftSharePointsRemoved > 0 ? (
+                      <>
+                        {' '}
+                        By {projection.endYear} the taxable share of the benefit is{' '}
+                        <strong>{projection.last.taxableSharePercent}%</strong>{' '}
+                        rather than{' '}
+                        {projectionWithoutGift.last.taxableSharePercent}%.
+                      </>
+                    ) : (
+                      ''
+                    )}{' '}
+                    That rate beats any bracket, because the gift is doing two
+                    things at once: it satisfies the required distribution without
+                    entering the tax base, and it shrinks the balance every later
+                    requirement is measured against — so the effect compounds over
+                    the horizon exactly the way the ratchet does, in reverse.
+                  </>
+                )}
+              </p>
+            )}
+
             {projection.seniorDeductionEndsYear !== null && (
               <p>
                 {/* Not "the second step": the senior deduction can expire either
@@ -3374,6 +3472,9 @@ const App: React.FC = () => {
               set as &ldquo;other income&rdquo; as separate from the balance below
               it — if what you withdraw from the IRA already is your other income,
               the required distribution replaces part of it rather than adding to it.
+              That separation is also why any charitable gift comes out of the
+              balance here and out of the other-income figure on the Strategies
+              tab: this section has a balance to give from and that one does not.
             </p>
           </section>
 
@@ -3395,6 +3496,68 @@ const App: React.FC = () => {
               added up in {year} dollars. Only the ceiling below is theirs alone,
               and only one of the three reads it.
             </p>
+
+            {qcd > 0 && (
+              <p>
+                {sequencing.strategies[0].totalQcd === 0 ? (
+                  <>
+                    <strong>
+                      The {formatCurrency(qcd)} charitable gift does not appear
+                      here either
+                    </strong>{' '}
+                    — same reason as above: this section gives it out of the IRA,
+                    and{' '}
+                    {traditionalBalance === 0
+                      ? 'the IRA balance is $0.'
+                      : `this filer is not certainly ${formatHalfAge(QCD_MIN_AGE)} until ${birthYear + QCD_FIRST_CERTAIN_AGE}, past ${sequencing.endYear}.`}
+                  </>
+                ) : (
+                  <>
+                    All three also send{' '}
+                    <strong>{formatCurrency(qcd)}</strong> a year from the IRA
+                    straight to the charity, growing with inflation, from{' '}
+                    {sequencing.strategies[0].rows.find((r) => r.qcd > 0)?.year} on.
+                    It is not a fourth order and it deliberately is not scored as
+                    one: money given away is money the household no longer has, so
+                    an order that gave would post the lowest lifetime tax for the
+                    one reason that has nothing to do with sequencing. Given by all
+                    three it is a constant outflow, and what it changes between them
+                    is only what the exclusion is worth against each one&apos;s
+                    ordinary income.{' '}
+                    {sequencing.qcdCurtailed ? (
+                      <>
+                        <strong>Not constant here, though.</strong> The gift can only
+                        come out of an IRA that still has it, and{' '}
+                        {sequencing.strategies
+                          .filter((st) => st.totalQcd < seqMostGiven)
+                          .map((st) => st.strategy.label.toLowerCase())
+                          .join(' and ')}{' '}
+                        {sequencing.strategies.filter((st) => st.totalQcd < seqMostGiven)
+                          .length === 1
+                          ? 'runs'
+                          : 'run'}{' '}
+                        the balance down too far to keep funding it — so the totals
+                        given differ, from{' '}
+                        {formatCurrency(
+                          Math.min(...sequencing.strategies.map((st) => st.totalQcd)),
+                        )}{' '}
+                        to {formatCurrency(seqMostGiven)} over the {horizonYears}{' '}
+                        years, and the orders are no longer being scored on the same
+                        charitable plan. Bracket filling is the one to watch: emptying
+                        the IRA early is the whole of its argument, and a recurring
+                        gift needs that balance to still be there.
+                      </>
+                    ) : (
+                      <>
+                        Each gives{' '}
+                        {formatCurrency(sequencing.strategies[0].totalQcd)} over the{' '}
+                        {horizonYears} years.
+                      </>
+                    )}
+                  </>
+                )}
+              </p>
+            )}
 
             <div className="input-group">
               <label htmlFor="sequencing-ceiling">Fill the IRA up to</label>

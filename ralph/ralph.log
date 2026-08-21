@@ -2538,3 +2538,92 @@ plus 33 lines of CSS, so the fieldset/legend rendering is argued rather than
 seen. `display: flex` on a fieldset does change how browsers lay out the
 legend; the border is removed anyway, so the legend should fall in as the
 column's first item.
+
+---
+
+## A recurring gift threaded through both Over Time sections
+## 2026-08-21
+
+Found the working tree dirty again, the same way as last iteration: App.tsx,
+both Over Time utils and all three test files carried a finished-looking
+implementation of the QCD-threading task that never reached a commit. PLAN.md
+in the tree had already flipped the bullet and logged a follow-up. Verified it
+rather than redoing it — `npx tsc -b`, `npm run lint`, `npx vitest run
+src/utils` (324 passed) and `npx vitest run src/App.test.tsx` (175 passed, up
+from 168) and `npm run build` are all clean — so this iteration finished and
+shipped it.
+
+### What the change does
+
+The QCD slider on the Strategies tab priced a single year and said, in a field
+note, that the projection and the sequencing comparison deliberately left it
+out. That note is now false in the right direction: both sections read the same
+slider as a gift repeated every year.
+
+Three things had to be got right for that to mean anything:
+
+- **It comes out of the balance, not out of other income.** The single-year
+  section has no balance, so it reads the whole of other income as IRA money.
+  The two Over Time sections have one, and already treat other income as
+  separate from it. The prose in both places now says which is which rather
+  than leaving the reader to notice they differ.
+- **It counts toward the RMD.** `taxableRmd = max(0, rmd - qcd)` is the whole
+  point of the section — a gift at least as large as the requirement satisfies
+  it and reaches the return as nothing. The account gives up `max(rmd, qcd)`,
+  not the sum.
+- **It compounds.** Every later requirement is measured against a balance the
+  gift already shrank, so the effect runs the same way the torpedo does, in
+  reverse. That is why the projection prices it over the horizon (a second
+  `projectYears` run with `annualQcd: 0`, differenced on the new
+  `lifetimeRealTax`) rather than in the hovered year.
+
+### Two judgement calls worth keeping
+
+**71, not 70.** 408(d)(8)(B)(ii) measures 70 1/2 to the day and these
+projections know only a birth year: a January baby gets there in the year they
+turn 70, a December one not until 71. `QCD_FIRST_CERTAIN_AGE = ceil(70.5)`
+errs a year late for half of filers rather than a year early for the other
+half.
+
+**The gift is not a fourth withdrawal order.** Money given away is money the
+household no longer has, so scoring "give from the IRA" against three orders
+that keep it would hand it the lowest lifetime tax for the one reason that has
+nothing to do with sequencing — the same gaming `deferredTraditionalTax`
+exists to stop. All three make the same gift, it stays a constant outflow, and
+what varies between them is only what the exclusion is worth against each
+one's ordinary income.
+
+Except that it does not always stay constant, which turned out to be the
+interesting case: the gift can only come from an IRA that still has it, and
+bracket filling exists to empty that IRA early. At the default $100,000
+balance the two want the same dollars and the three orders give three
+different totals — $15,762 against $122,720 over twenty years. `qcdCurtailed`
+detects it and the section says so, because an order that looks cheapest
+partly because it gave the least is not a reading.
+
+### The limit indexes on its own rule
+
+408(d)(8)(A) rounds to the *nearest* $1,000; IRC 1(f) rounds the *increase*
+down to $50. Both the step and the direction differ, and the published figures
+bear it out ($105k / $108k / $111k for 2024-26), so `projectQcdLimit` does not
+reuse the bracket indexing. It anchors on the latest published year at or
+below the projected one, like everything else since 4fb01c0 — which matters
+more here than it looks, since a gift growing at inflation against a limit
+held flat would start getting clipped partway through the horizon for no
+reason in the statute. SECURE 2.0 section 307 indexed it precisely so it would
+not.
+
+### Logged as discovered work
+
+The sequencing section now makes the gift in all three orders and reports the
+totals given, but never prices what the gift is *worth* to each one — the
+projection beside it does exactly that by differencing two runs. Three more
+simulations would answer the question the section is actually for: does a
+recurring QCD change which order wins? Bracket filling is the one to check.
+
+### Not verified
+
+No visual check; the repo has no browser tooling. The two new prose blocks are
+asserted on in App.test.tsx through every branch (no gift, gift priced, no
+balance, too young, constant, curtailed), but their layout is argued rather
+than seen.

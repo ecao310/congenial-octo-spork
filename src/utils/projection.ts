@@ -2,6 +2,7 @@ import {
   FilingStatus,
   FilingYearParams,
   ProjectedYear,
+  QCD_MIN_AGE,
   SENIOR_DEDUCTION_LAST_YEAR,
   Scenario,
   TaxYear,
@@ -10,6 +11,7 @@ import {
   filingParams,
   hasPublishedParams,
   publishedAnchorYear,
+  qcdAnnualLimit,
   resolveScenario,
   seniorDeductionFor,
   taxableSocialSecurity,
@@ -114,6 +116,83 @@ export function projectYearParams(
   };
 }
 
+/**
+ * 408(d)(8)(A) rounds its indexed limit "to the nearest multiple of $1,000",
+ * which is neither IRC 1(f)'s step nor its direction — that one rounds the
+ * increase down to $50. The published figures bear the difference out:
+ * $105,000 for 2024, $108,000 for 2025, $111,000 for 2026.
+ */
+const QCD_LIMIT_ROUNDING = 1_000;
+
+/**
+ * The most a return may exclude in a projected year.
+ *
+ * Anchored on published figures and indexed only past them, exactly like the
+ * brackets — which matters more here than it looks. The gift itself grows at
+ * inflation, so a limit held flat would start clipping a real-constant gift
+ * partway through the horizon for no reason in the statute; section 307 of
+ * SECURE 2.0 indexed this limit precisely so that it would not.
+ *
+ * Per individual rather than per return, so a joint return gets it twice — see
+ * `qcdLimitFor`, which makes the same assumption for the same reason.
+ */
+export function projectQcdLimit(
+  startYear: TaxYear,
+  filingStatus: FilingStatus,
+  yearsForward: number,
+  inflationPercent: number,
+): number {
+  const year = startYear + yearsForward;
+  const anchor = publishedAnchorYear(year);
+  const factor = (1 + inflationPercent / 100) ** (year - anchor);
+  const perPerson =
+    Math.round((qcdAnnualLimit(anchor) * factor) / QCD_LIMIT_ROUNDING) *
+    QCD_LIMIT_ROUNDING;
+  return perPerson * (filingStatus === 'mfj' ? 2 : 1);
+}
+
+/**
+ * The first whole age at which a birth *year* settles the 70 1/2 question.
+ *
+ * 408(d)(8)(B)(ii) measures the age to the day and these projections know only
+ * the year: someone born in January reaches 70 1/2 during the year they turn
+ * 70, someone born in December not until the year they turn 71. So 71 is the
+ * first age at which every filer born in a given year has certainly got there,
+ * and starting the gift then errs a year late rather than letting half of them
+ * give a year early.
+ */
+export const QCD_FIRST_CERTAIN_AGE = Math.ceil(QCD_MIN_AGE);
+
+/**
+ * The gift that actually leaves the IRA in one projected year: what was asked
+ * for, grown to that year, and capped by the statutory limit, by the balance
+ * there is to give from, and by the age at which giving becomes possible.
+ *
+ * Shared with `sequencing.ts` for the same reason `seniorsAtAge` is: the two
+ * sections run the same calendar over the same retirement, and a gift that
+ * started in different years in each would make them disagree about it.
+ */
+export function qcdInYear(
+  annualQcd: number,
+  age: number,
+  openingBalance: number,
+  startYear: TaxYear,
+  filingStatus: FilingStatus,
+  yearsForward: number,
+  inflationPercent: number,
+): number {
+  if (annualQcd <= 0 || age < QCD_FIRST_CERTAIN_AGE) return 0;
+  const asked = annualQcd * (1 + inflationPercent / 100) ** yearsForward;
+  return Math.max(
+    0,
+    Math.min(
+      asked,
+      projectQcdLimit(startYear, filingStatus, yearsForward, inflationPercent),
+      openingBalance,
+    ),
+  );
+}
+
 /* ------------------------------------------------------------------ */
 /*  Required minimum distributions                                    */
 /* ------------------------------------------------------------------ */
@@ -210,6 +289,17 @@ export interface ProjectionAssumptions {
   traditionalBalance?: number;
   /** Annual growth on that balance, in percent. */
   balanceGrowthPercent?: number;
+  /**
+   * A qualified charitable distribution repeated every year, in first-year
+   * dollars, growing with inflation like every other real figure here.
+   *
+   * It comes out of the IRA balance rather than out of the other-income slider,
+   * which is where the single-year section on the Strategies tab takes it from.
+   * The two are not in conflict: that section has no balance to give from and
+   * so reads the whole of other income as IRA money, while this one is built
+   * around a balance and already treats other income as separate from it.
+   */
+  annualQcd?: number;
 }
 
 export interface ProjectionYearRow {
@@ -223,15 +313,31 @@ export interface ProjectionYearRow {
   /** The required minimum distribution, or 0 before the applicable age. */
   rmd: number;
   /**
+   * Paid straight from the IRA to the charity: the annual gift, capped by the
+   * statutory limit and by the balance, and zero before the filer has certainly
+   * reached 70 1/2. See `qcdInYear`.
+   */
+  qcd: number;
+  /**
+   * The part of the required distribution still in the tax base. A QCD counts
+   * toward the required amount, so a gift at least as large as the requirement
+   * leaves nothing of it to report — which is the one move that satisfies the
+   * RMD and skips the torpedo at the same time.
+   */
+  taxableRmd: number;
+  /**
    * The balance the year opened with — 31 December of the year before, which is
    * the figure the Uniform Lifetime Table divides. Not `balance` of the
    * previous row minus anything: that one has already been grown.
    */
   openingBalance: number;
-  /** otherIncome + rmd. */
+  /** otherIncome + taxableRmd: ordinary income as the return reports it. */
   ordinaryIncome: number;
   muniInterest: number;
-  /** Traditional balance at the end of the year, after the RMD and growth. */
+  /**
+   * Traditional balance at the end of the year, after the gift, the rest of the
+   * distribution, and growth.
+   */
   balance: number;
   provisionalIncome: number;
   taxableSS: number;
@@ -241,7 +347,12 @@ export interface ProjectionYearRow {
   deduction: number;
   /** The OBBBA senior deduction alone — zero once it expires after 2028. */
   seniorDeduction: number;
-  /** Benefit + other income + the RMD + tax-exempt interest. */
+  /**
+   * Benefit + other income + the reportable distribution + tax-exempt interest.
+   *
+   * The gift is absent, and by statute rather than by choice: 408(d)(8) keeps a
+   * QCD out of gross income entirely, and the filer never had it to receive.
+   */
   grossIncome: number;
   totalTax: number;
   /** totalTax over grossIncome, in percent. */
@@ -273,6 +384,19 @@ export interface Projection {
   applicableAge: number;
   /** First year a distribution is required, when the horizon reaches it. */
   firstRmdYear: number | null;
+  /**
+   * First year the gift actually leaves the IRA, or null when none ever does —
+   * because none was asked for, because the horizon ends before the filer is
+   * certainly 70 1/2, or because there is no balance to give from.
+   */
+  firstQcdYear: number | null;
+  /** Every year's gift added up, in nominal dollars. */
+  totalQcd: number;
+  /**
+   * The same, each year deflated to first-year dollars — the figure to divide
+   * `lifetimeRealTax` savings by, since both sides then carry the same dollars.
+   */
+  totalRealQcd: number;
   /** First year any of the benefit is taxable. */
   firstTaxedYear: number | null;
   /** First year the 85% cap binds — the ratchet's ceiling. */
@@ -286,6 +410,14 @@ export interface Projection {
    * priced into the curve rather than being a step in it.
    */
   seniorDeductionEndsYear: number | null;
+  /**
+   * Every year's federal tax, each deflated to first-year dollars and added up.
+   *
+   * The figure to difference against another run of the same scenario: it is
+   * what a recurring gift, or a different COLA, is worth over the whole horizon
+   * rather than in whichever year the reader is hovering over.
+   */
+  lifetimeRealTax: number;
   /** Last year's real tax over the first year's, or `null` if that was zero. */
   realTaxMultiple: number | null;
   /**
@@ -346,6 +478,12 @@ export function seniorsAtAge(
  * Two things then break the smoothness: required distributions switching on at
  * the applicable age, and the OBBBA senior deduction expiring after 2028.
  *
+ * A recurring `annualQcd` bends it a third way, and the only way any of this
+ * can be bent downward: the gift satisfies the required distribution without
+ * entering the tax base, and it shrinks the balance that every later
+ * requirement is measured against — so its effect compounds over a horizon in
+ * the same way the torpedo does, in the opposite direction.
+ *
  * Deliberately outside the model: capital gains, which are realised once rather
  * than every year for thirty; IRMAA, whose thresholds *are* indexed, so it
  * would blur the point rather than sharpen it; and state tax, which nine states
@@ -363,6 +501,7 @@ export function projectYears(
   const birthYear = assumptions.birthYear ?? startYear - 70;
   const applicableAge = rmdApplicableAge(birthYear);
   const growth = 1 + (assumptions.balanceGrowthPercent ?? 5) / 100;
+  const annualQcd = Math.max(0, assumptions.annualQcd ?? 0);
   const cola = 1 + colaPercent / 100;
   const inflation = 1 + inflationPercent / 100;
 
@@ -378,13 +517,33 @@ export function projectYears(
     const priorYearEndBalance = balance;
     const divisor = age >= applicableAge ? rmdDivisor(age) : null;
     const rmd = divisor === null ? 0 : priorYearEndBalance / divisor;
-    balance = Math.max(0, priorYearEndBalance - rmd) * growth;
+
+    // The gift leaves the IRA whether or not anything is required to, and
+    // counts toward the requirement when something is. So what the account
+    // gives up is the larger of the two, and what reaches the return is only
+    // whatever is left of the requirement once the gift has covered its share.
+    const qcd = qcdInYear(
+      annualQcd,
+      age,
+      priorYearEndBalance,
+      startYear,
+      base.filingStatus,
+      n,
+      inflationPercent,
+    );
+    const taxableRmd = Math.max(0, rmd - qcd);
+    balance = Math.max(0, priorYearEndBalance - Math.max(rmd, qcd)) * growth;
 
     const ssBenefit = base.ssBenefit * cola ** n;
     const otherIncome = base.ordinaryIncome * inflation ** n;
     const muniInterest = base.muniInterest * inflation ** n;
-    const ordinaryIncome = otherIncome + rmd;
+    const ordinaryIncome = otherIncome + taxableRmd;
 
+    // `ordinaryIncome` is already net of the gift, and the scenario's own `qcd`
+    // field is deliberately left alone: it re-applies `qcdLimitFor`, which reads
+    // the *start* year's published limit, and would clip a gift that the
+    // projected year's indexed limit allows. The cap has been applied once, at
+    // the right year, in `qcdInYear`.
     const yearScenario: Scenario = {
       ordinaryIncome,
       ssBenefit,
@@ -413,6 +572,8 @@ export function projectYears(
       ssBenefit: Math.round(ssBenefit),
       otherIncome: Math.round(otherIncome),
       rmd: Math.round(rmd),
+      qcd: Math.round(qcd),
+      taxableRmd: Math.round(taxableRmd),
       openingBalance: Math.round(priorYearEndBalance),
       ordinaryIncome: Math.round(ordinaryIncome),
       muniInterest: Math.round(muniInterest),
@@ -452,6 +613,11 @@ export function projectYears(
     birthYear,
     applicableAge,
     firstRmdYear: yearOf((row) => row.rmd > 0),
+    firstQcdYear: yearOf((row) => row.qcd > 0),
+    totalQcd: Math.round(rows.reduce((sum, row) => sum + row.qcd, 0)),
+    totalRealQcd: Math.round(
+      rows.reduce((sum, row, i) => sum + row.qcd / inflation ** i, 0),
+    ),
     firstTaxedYear: yearOf((row) => row.taxableSS > 0),
     // Rounded to the cent before comparing, so a share that lands on 85% only
     // after floating-point noise still counts as the cap binding.
@@ -462,6 +628,7 @@ export function projectYears(
         row.year === SENIOR_DEDUCTION_LAST_YEAR + 1 &&
         rows[i - 1].seniorDeduction > 0,
     ),
+    lifetimeRealTax: Math.round(rows.reduce((sum, row) => sum + row.realTotalTax, 0)),
     realTaxMultiple:
       first.totalTax > 0 ? round2(last.realTotalTax / first.totalTax) : null,
     realTaxIncrease: last.realTotalTax - first.totalTax,

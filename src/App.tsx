@@ -22,7 +22,6 @@ import {
   SS_BASE85_ENACTED,
   TAX_YEARS,
   defaultTaxYear,
-  taxYearParams,
   filingParams,
   FilingStatus,
   segmentCurve,
@@ -591,7 +590,6 @@ const App: React.FC = () => {
    */
   const statesMoving = statesWithMovingTests(year);
   const statesFrozen = statesTaxing.length - statesMoving.length;
-  const yearParams = taxYearParams(year);
   const yearFiling = filingParams(year, filingStatus);
   /**
    * The single filer's figures, kept alongside the selected status's so the
@@ -716,21 +714,6 @@ const App: React.FC = () => {
 
   // Never read off the tax year: IRC 86(c) has never been indexed. See SS_BASES.
   const { ssBase50, ssBase85 } = SS_BASES[filingStatus];
-
-  const bracket12Top = yearFiling.brackets.find((b) => b.rate === 0.12)?.upTo ?? 0;
-  const ltcg0Top = yearFiling.ltcgBrackets[0].upTo;
-
-  /**
-   * How much other income each year's *average* retired-worker benefit leaves
-   * before any of that benefit becomes taxable: the 50% base, less the half of
-   * the benefit that provisional income already counts. The base has not moved
-   * since {@link SS_BASE50_ENACTED} and the benefit rises with every COLA, so
-   * this shrinks year over year without anyone changing the law. Meaningless at
-   * the $0 bases of a separate return, where it is never rendered.
-   */
-  const frozenBaseHeadroom = TAX_YEARS.map(
-    (y) => `${formatCurrency(ssBase50 - 0.5 * avgAnnualSSBenefit(y))} in ${y}`,
-  ).join(', ');
 
   // With both bases at $0 the 85% cap binds as soon as provisional income
   // reaches the benefit itself — other income + muni + half the benefit >=
@@ -1163,41 +1146,6 @@ const App: React.FC = () => {
             </label>
           ))}
         </div>
-        <p className="field-note">
-          {yearParams.source}. Standard deduction{' '}
-          <strong>{formatCurrency(yearFiling.standardDeduction)}</strong>, 12%
-          bracket to {formatCurrency(bracket12Top)}, 0% capital-gain band to{' '}
-          {formatCurrency(ltcg0Top)}, average retired-worker benefit{' '}
-          {formatCurrency(avgAnnualSSBenefit(year))} after the{' '}
-          {yearParams.colaPercent}% COLA.
-        </p>
-        <p className="field-note">
-          <strong>The Social Security thresholds are not on that list.</strong>{' '}
-          Every other figure here — brackets, standard deduction, capital-gain
-          bands, the benefit itself — is adjusted for inflation every year. The
-          provisional-income thresholds in IRC 86(c) never have been.
-        </p>
-        {ssBase50 > 0 ? (
-          <p className="field-note">
-            Congress set {formatCurrency(ssBase50)} in {SS_BASE50_ENACTED} and{' '}
-            {formatCurrency(ssBase85)} in {SS_BASE85_ENACTED} and has not
-            touched either since. Half the benefit counts toward provisional
-            income, so every COLA eats into that {formatCurrency(ssBase50)} base
-            from the inside: at each year&apos;s average retired-worker benefit,
-            the other income you can have before <em>any</em> benefit is taxable
-            comes to <strong>{frozenBaseHeadroom}</strong>. Same real income,
-            more tax, every year — and the share of beneficiaries owing tax on
-            benefits ratchets up without Congress ever voting on it.
-          </p>
-        ) : (
-          <p className="field-note">
-            On a separate return that lived with the spouse, 86(c)(1)(C) sets
-            both thresholds to {formatCurrency(0)} outright rather than freezing
-            them somewhere. There is no headroom for a COLA to erode: the
-            benefit is in the tax base from the first dollar, in every year on
-            offer.
-          </p>
-        )}
       </fieldset>
 
       <fieldset className="input-group filing-status">
@@ -1274,11 +1222,12 @@ const App: React.FC = () => {
 
       <fieldset className="input-group filing-status">
         <legend>Age</legend>
-        <div className="checkbox-group">
+        <div className="checkbox-group hint-anchor">
           <label className="checkbox-option">
             <input
               type="checkbox"
               checked={isSenior}
+              aria-describedby="senior-deduction-hint"
               onChange={(e) => setIsSenior(e.target.checked)}
             />
             <span>Age 65 or older</span>
@@ -1289,55 +1238,62 @@ const App: React.FC = () => {
                 type="checkbox"
                 checked={spouseIsSenior}
                 disabled={!isSenior}
+                aria-describedby="senior-deduction-hint"
                 onChange={(e) => setSpouseIsSenior(e.target.checked)}
               />
               <span>Both spouses are 65 or older</span>
             </label>
           )}
+          {/* One bubble for the whole group: both checkboxes describe the same
+              two deductions, and a copy per checkbox would just duplicate it. */}
+          <div className="hint-bubble" id="senior-deduction-hint" role="tooltip">
+            <p className="field-note">
+              Standard deduction{' '}
+              <strong>{formatCurrency(standardDeduction)}</strong>
+              {seniorAddition > 0
+                ? ` — ${formatCurrency(baseDeduction)} base plus ${formatCurrency(seniorAddition)} for age 65 or older.`
+                : `. Turning 65 adds ${formatCurrency(yearFiling.additionalStdDeduction65)}${
+                    filingStatus === 'mfj' ? ' per qualifying spouse' : ''
+                  }.`}{' '}
+              The addition widens the 0%-rate valley to the left of the
+              torpedo: taxable income stays at zero for that much longer, so
+              the whole curve shifts right.
+            </p>
+            <p className="field-note">
+              {phaseoutStart === null || phaseoutEnd === null ? (
+                <>
+                  No senior deduction on a separate return: section
+                  151(d)(5)(C)(v) allows the temporary{' '}
+                  {formatCurrency(SENIOR_DEDUCTION)} only if a married
+                  taxpayer files jointly. There is no halved amount and no
+                  halved threshold — separate filers get nothing.
+                </>
+              ) : seniors > 0 ? (
+                <>
+                  Senior deduction{' '}
+                  <strong>{formatCurrency(seniorDeductionMax)}</strong>
+                  {seniors > 1
+                    ? ` (${formatCurrency(SENIOR_DEDUCTION)} per spouse)`
+                    : ''}{' '}
+                  on top of that, shrinking by {formatCents(phaseoutRate)} per
+                  dollar of MAGI above {formatCurrency(phaseoutStart)}
+                  {seniors > 1
+                    ? ` (${formatCents(SENIOR_DEDUCTION_PHASEOUT_RATE)} for each spouse)`
+                    : ''}{' '}
+                  and gone at {formatCurrency(phaseoutEnd)}. It expires after
+                  tax year {SENIOR_DEDUCTION_LAST_YEAR}.
+                </>
+              ) : (
+                <>
+                  Filers 65 or older also get the temporary senior deduction
+                  — {formatCurrency(SENIOR_DEDUCTION)} each, for tax years{' '}
+                  {SENIOR_DEDUCTION_FIRST_YEAR}&ndash;
+                  {SENIOR_DEDUCTION_LAST_YEAR} only.
+                </>
+              )}
+            </p>
+          </div>
         </div>
-        <p className="field-note">
-          Standard deduction <strong>{formatCurrency(standardDeduction)}</strong>
-          {seniorAddition > 0
-            ? ` — ${formatCurrency(baseDeduction)} base plus ${formatCurrency(seniorAddition)} for age 65 or older.`
-            : `. Turning 65 adds ${formatCurrency(yearFiling.additionalStdDeduction65)}${
-                filingStatus === 'mfj' ? ' per qualifying spouse' : ''
-              }.`}{' '}
-          The addition widens the 0%-rate valley to the left of the torpedo:
-          taxable income stays at zero for that much longer, so the whole curve
-          shifts right.
-        </p>
-        <p className="field-note">
-          {phaseoutStart === null || phaseoutEnd === null ? (
-            <>
-              No senior deduction on a separate return: section 151(d)(5)(C)(v)
-              allows the temporary {formatCurrency(SENIOR_DEDUCTION)} only if a
-              married taxpayer files jointly. There is no halved amount and no
-              halved threshold — separate filers get nothing.
-            </>
-          ) : seniors > 0 ? (
-            <>
-              Senior deduction{' '}
-              <strong>{formatCurrency(seniorDeductionMax)}</strong>
-              {seniors > 1
-                ? ` (${formatCurrency(SENIOR_DEDUCTION)} per spouse)`
-                : ''}{' '}
-              on top of that, shrinking by {formatCents(phaseoutRate)} per dollar
-              of MAGI above {formatCurrency(phaseoutStart)}
-              {seniors > 1
-                ? ` (${formatCents(SENIOR_DEDUCTION_PHASEOUT_RATE)} for each spouse)`
-                : ''}{' '}
-              and gone at {formatCurrency(phaseoutEnd)}. It expires after tax
-              year {SENIOR_DEDUCTION_LAST_YEAR}.
-            </>
-          ) : (
-            <>
-              Filers 65 or older also get the temporary senior deduction —{' '}
-              {formatCurrency(SENIOR_DEDUCTION)} each, for tax years{' '}
-              {SENIOR_DEDUCTION_FIRST_YEAR}&ndash;{SENIOR_DEDUCTION_LAST_YEAR}{' '}
-              only.
-            </>
-          )}
-        </p>
       </fieldset>
 
       <div className="input-group">

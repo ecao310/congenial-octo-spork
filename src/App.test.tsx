@@ -1084,11 +1084,10 @@ describe('tax year selector', () => {
     expect(screen.getByRole('group', { name: /tax year/i })).toBeInTheDocument();
     expect(yearRadio(2025)).toBeChecked();
     expect(yearRadio(2026)).not.toBeChecked();
-    expect(screen.getByText(/Rev\. Proc\. 2024-40/)).toBeInTheDocument();
     expect(screen.getByText(/2025 brackets, standard deduction/)).toBeInTheDocument();
   });
 
-  it('re-prices deduction, brackets, gain band and benefit for 2026', () => {
+  it('re-prices the standard deduction for 2026', () => {
     render(<App />);
     expect(screen.getByText(/^Standard deduction/)).toHaveTextContent(
       'Standard deduction $15,750. Turning 65 adds $2,000.',
@@ -1099,13 +1098,9 @@ describe('tax year selector', () => {
     expect(yearRadio(2025)).not.toBeChecked();
 
     expect(screen.getByText(/2026 brackets, standard deduction/)).toBeInTheDocument();
-    expect(screen.getByText(/Rev\. Proc\. 2025-32/)).toBeInTheDocument();
     expect(screen.getByText(/^Standard deduction/)).toHaveTextContent(
       'Standard deduction $16,100. Turning 65 adds $2,050.',
     );
-    // 12% bracket top and 0% capital-gain band, both from Rev. Proc. 2025-32.
-    expect(screen.getByText(/12% bracket to \$50,400/)).toBeInTheDocument();
-    expect(screen.getByText(/0% capital-gain band to \$49,450/)).toBeInTheDocument();
   });
 
   it('moves an untouched benefit slider onto the new year’s average and max', () => {
@@ -1136,31 +1131,6 @@ describe('tax year selector', () => {
     fireEvent.change(slider, { target: { value: '62172' } });
     fireEvent.click(yearRadio(2025));
     expect(slider).toHaveValue('61296');
-  });
-
-  it('shows the frozen thresholds eating into the benefit year by year', () => {
-    render(<App />);
-    expect(
-      screen.getByText(/The Social Security thresholds are not on that list\./),
-    ).toBeInTheDocument();
-    // $25,000 base less half of each year's average benefit.
-    expect(screen.getByText('$13,144 in 2025, $12,574 in 2026')).toBeInTheDocument();
-    expect(screen.getByText(/set \$25,000 in 1983 and \$34,000 in 1993/)).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Jointly' }));
-    expect(screen.getByText('$20,144 in 2025, $19,574 in 2026')).toBeInTheDocument();
-    expect(screen.getByText(/set \$32,000 in 1983 and \$44,000 in 1993/)).toBeInTheDocument();
-  });
-
-  it('says a separate return has no headroom to erode rather than showing one', () => {
-    render(<App />);
-    fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Separately' }));
-    expect(
-      screen.queryByText(/\$[\d,]+ in 2025, \$[\d,]+ in 2026/),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.getByText(/sets both thresholds to \$0 outright/),
-    ).toBeInTheDocument();
   });
 
   it('opens on a year it actually has figures for, under the real clock', () => {

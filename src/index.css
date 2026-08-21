@@ -198,6 +198,59 @@ fieldset.filing-status legend {
   cursor: not-allowed;
 }
 
+/* Applied to the checkbox group itself, so the one bubble is positioned
+   against the group rather than against either checkbox. */
+.hint-anchor {
+  position: relative;
+}
+
+/* Hidden with visibility rather than display so the copy stays in the
+   accessibility tree for the aria-describedby on the checkbox. */
+.hint-bubble {
+  position: absolute;
+  top: calc(100% + 0.625rem);
+  left: 0;
+  z-index: 30;
+  width: max-content;
+  max-width: min(26rem, calc(100vw - 3rem));
+  padding: 0.75rem 0.875rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 0.75rem;
+  background: #0f172a;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-0.25rem);
+  transition:
+    opacity 0.15s ease,
+    transform 0.15s ease,
+    visibility 0.15s;
+  pointer-events: none;
+}
+
+/* Hovering a label, not the gaps between them or the group's padding. */
+.hint-anchor:has(.checkbox-option:hover) .hint-bubble,
+.hint-anchor:focus-within .hint-bubble {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
+.hint-bubble .field-note {
+  margin: 0;
+}
+
+.hint-bubble .field-note + .field-note {
+  margin-top: 0.625rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hint-bubble {
+    transition: none;
+    transform: none;
+  }
+}
+
 .warning-note {
   margin: 0.75rem 0 0;
   padding: 0.75rem 0.875rem;

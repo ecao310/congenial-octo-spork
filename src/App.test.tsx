@@ -183,17 +183,19 @@ describe('App', () => {
     });
   });
 
-  it('updates the value, readout, and total income formula when moved', () => {
+  it('updates the value, readout, and the axis the chart is drawn in', () => {
     render(<App />);
     const slider = screen.getByRole('slider', { name: /social security benefit/i });
+    // The axis is total income, so the benefit is the fixed half of every
+    // figure on it and the caption is where that half is named in dollars.
     expect(
-      screen.getByText(/total income = other income \+ \$24,852 ss/i),
+      screen.getByText(/total income \(\$\) · \$24,852 social security \+ \$0 to/i),
     ).toBeInTheDocument();
     fireEvent.change(slider, { target: { value: '36000' } });
     expect(slider).toHaveValue('36000');
     expect(within(benefitGroup()).getByText('$36,000')).toBeInTheDocument();
     expect(
-      screen.getByText(/total income = other income \+ \$36,000 ss/i),
+      screen.getByText(/total income \(\$\) · \$36,000 social security \+ \$0 to/i),
     ).toBeInTheDocument();
   });
 
@@ -507,7 +509,7 @@ describe('App', () => {
     ).toBeInTheDocument();
   });
 
-  it('adds the tax-exempt interest to the chart\u2019s total-income formula', () => {
+  it('adds the tax-exempt interest to the chart\u2019s axis caption', () => {
     render(<App />);
     fireEvent.change(
       screen.getByRole('slider', { name: /tax-exempt \(municipal\) interest/i }),
@@ -516,7 +518,7 @@ describe('App', () => {
 
     expect(
       screen.getByText(
-        /total income = other income \+ \$24,852 SS \+ \$5,000 tax-exempt interest/i,
+        /\$24,852 Social Security \+ \$0 to \$150,000 of other income \+ \$5,000 tax-exempt interest/i,
       ),
     ).toBeInTheDocument();
   });
@@ -915,16 +917,22 @@ describe('the charts as images', () => {
     expect(document.querySelector('figcaption')).toBeNull();
   });
 
-  it('names the axis it plots and the right edge it stops at', () => {
+  it('names the axis it plots, both halves of it, and where it stops', () => {
     render(<App />);
+    // The axis is total income, so the name has to say what a figure on it is
+    // made of: a benefit that stays put and other income that the slider
+    // moves. Reading "$24,852 to $174,852" alone tells a listener nothing
+    // about which of the two they control.
     expect(chart('torpedo').getAttribute('aria-label')).toBe(
-      'Chart: the marginal tax rate on the next dollar of other income, plotted from $0 to $150,000.',
+      'Chart: the marginal tax rate on the next dollar of other income, ' +
+        'plotted against total income from $24,852 to $174,852 — a fixed ' +
+        '$24,852 of Social Security plus $0 to $150,000 of other income.',
     );
     // The axis is sized to the return, and the label follows it out — here by
     // the senior deduction's phaseout, which runs to $175,000 of MAGI.
     fireEvent.click(screen.getByRole('checkbox', { name: /65 or older/i }));
     expect(chart('torpedo').getAttribute('aria-label')).toMatch(
-      /plotted from \$0 to \$1(7|8)\d,\d{3}\.$/,
+      /plus \$0 to \$1(7|8)\d,\d{3} of other income\.$/,
     );
   });
 });
@@ -1169,7 +1177,11 @@ describe('Tooltip Recommendations', () => {
           segments={mockOrdinarySegments}
         />,
       );
-      expect(screen.getByText(/Other income \$20,000/)).toBeInTheDocument();
+      // The head names the axis figure and then takes it apart, because the
+      // chart's x is total income and neither half is readable off it.
+      expect(
+        screen.getByText(/Total income \$44,852 · \$24,852 SS \+ \$20,000 other income/),
+      ).toBeInTheDocument();
       expect(screen.getByText(/Marginal Rate:/)).toBeInTheDocument();
       expect(screen.queryByText(/Consider avoiding/)).not.toBeInTheDocument();
       expect(screen.queryByText(/Consider filling out/)).not.toBeInTheDocument();
@@ -1595,12 +1607,14 @@ describe('qualified charitable distribution', () => {
   it('takes the gift back out of the axis label', () => {
     render(<App />);
     expect(
-      screen.getByText(/total income = other income \+ \$24,852 ss$/i),
+      screen.getByText(
+        /\$24,852 social security \+ \$0 to \$150,000 of other income$/i,
+      ),
     ).toBeInTheDocument();
     setSlider(/qualified charitable distribution/i, '10000');
     expect(
       screen.getByText(
-        /total income = other income \+ \$24,852 ss \u2212 \$10,000 given straight to charity/i,
+        /of other income \u2212 \$10,000 given straight to charity$/i,
       ),
     ).toBeInTheDocument();
   });
@@ -2069,7 +2083,7 @@ describe('the torpedo chart’s right edge', () => {
   it('stays where it was for a filer with only one hump to show', () => {
     render(<App />);
     expect(incomeSlider()).toHaveAttribute('max', '150000');
-    expect(stepIntro()).toHaveTextContent('every income from $0 to $150,000');
+    expect(stepIntro()).toHaveTextContent('$0 to $150,000 of other income');
   });
 
   it('widens to fit the senior deduction phaseout when it is claimed', () => {
@@ -2078,13 +2092,13 @@ describe('the torpedo chart’s right edge', () => {
     // $175,000 of MAGI, less the $20,155.20 of benefit already in AGI, is
     // $154,845 of other income — past the old fixed edge, and now inside.
     expect(incomeSlider()).toHaveAttribute('max', '175000');
-    expect(stepIntro()).toHaveTextContent('every income from $0 to $175,000');
+    expect(stepIntro()).toHaveTextContent('$0 to $175,000 of other income');
 
     fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Jointly' }));
     // The joint phaseout starts $75,000 higher and ends $250,000 of MAGI, so
     // the axis has to reach $229,845 of other income.
     expect(incomeSlider()).toHaveAttribute('max', '250000');
-    expect(stepIntro()).toHaveTextContent('every income from $0 to $250,000');
+    expect(stepIntro()).toHaveTextContent('$0 to $250,000 of other income');
   });
 
   /**

@@ -425,6 +425,58 @@ describe('marginalRateCurve', () => {
     // benefits fully taxed (cap hit near $51,941), back to the plain 12% rate
     expect(at(60000)).toBeCloseTo(12, 1);
   });
+
+  /**
+   * The axis the chart is drawn in.
+   *
+   * The sweep is other income, because that is the one figure the reader sets
+   * — but a point on it is not what the return takes in, and plotting the
+   * hump at "$41,000" while the filer also has a benefit was only ever half an
+   * answer. So each sample carries its own total, and the page reads the axis
+   * off the curve rather than re-deriving it point by point.
+   */
+  describe('the total income each sample stands for', () => {
+    it('carries the whole benefit and the tax-exempt interest, taxed or not', () => {
+      const data = marginalRateCurve(
+        { ssBenefit: 30_000, muniInterest: 5_000 },
+        { maxIncome: 100_000, step: 1_000 },
+      );
+      const at = (income: number) =>
+        data.find((d) => d.income === income)!.totalIncome;
+      // Nothing but the benefit and the interest, whatever 86(a) makes of it.
+      expect(at(0)).toBe(35_000);
+      // And then dollar for dollar with the sweep.
+      expect(at(40_000)).toBe(75_000);
+      expect(at(100_000)).toBe(135_000);
+    });
+
+    it('leaves out what went straight to charity, so the excluded run is one point', () => {
+      const data = marginalRateCurve(
+        { ssBenefit: 30_000, qcd: 10_000 },
+        { maxIncome: 60_000, step: 1_000 },
+      );
+      const at = (income: number) =>
+        data.find((d) => d.income === income)!.totalIncome;
+      // A gift that never reaches the filer is not income to plot, so the
+      // whole $0-to-$10,000 stretch stands at the same place on the axis.
+      expect(at(0)).toBe(30_000);
+      expect(at(5_000)).toBe(30_000);
+      expect(at(10_000)).toBe(30_000);
+      // Past the gift the axis moves again, one dollar at a time.
+      expect(at(25_000)).toBe(45_000);
+    });
+
+    it('rises with the sweep and never falls', () => {
+      const data = marginalRateCurve(
+        { ssBenefit: 24_852, seniors: 1, muniInterest: 3_000, qcd: 7_500 },
+        { maxIncome: 150_000, step: 500 },
+      );
+      for (let i = 1; i < data.length; i += 1) {
+        expect(data[i].totalIncome).toBeGreaterThanOrEqual(data[i - 1].totalIncome);
+      }
+      expect(data[0].totalIncome).toBe(27_852);
+    });
+  });
 });
 
 describe('totalTax with capital gains stacked on top', () => {

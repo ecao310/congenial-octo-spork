@@ -22,13 +22,17 @@ step.
    collects. A joint return puts both spouses' benefits on one line, so the
    slider's ceiling and the average marked under it are a couple's there and
    one worker's everywhere else.
-2. **The tax torpedo** — marginal rate against every dollar that is not Social
-   Security. The senior-deduction phaseout is in the curve, because it is tax.
-   The IRMAA cliffs and the 400% poverty-line cliff are not: they are a
-   Medicare premium and a Marketplace credit, so they are priced for the
-   reader's own income in the chart's tooltip and drawn across the axis only
-   when the **Lines** button above the plot is asked for them. Every figure
-   under it is a federal one.
+2. **The tax torpedo** — the marginal rate on the next dollar of other income,
+   plotted against **total income**: the benefit set in step 1, which the
+   slider cannot move, plus the other income it can. The slider is still in
+   other income, so the axis and the control are in different units, and the
+   marker, the tooltip and the caption under the plot all name both halves in
+   dollars rather than leaving the split to be inferred from a position. The
+   senior-deduction phaseout is in the curve, because it is tax. The IRMAA
+   cliffs and the 400% poverty-line cliff are not: they are a Medicare premium
+   and a Marketplace credit, so they are priced for the reader's own income in
+   the chart's tooltip and drawn across the axis only when the **Lines** button
+   above the plot is asked for them. Every figure under it is a federal one.
 
 Two more steps stood here — Capital gains stacking, which split the income
 already entered into ordinary and long-term halves, and Sizing the conversion,

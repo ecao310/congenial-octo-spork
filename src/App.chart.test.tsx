@@ -22,7 +22,12 @@ vi.mock('recharts', async () => {
 
 import App from './App';
 import { CHART } from './palette';
-import { FPL_YEAR_PARAMS, PAGE_TAX_YEAR } from './utils/tax';
+import {
+  avgAnnualSSBenefit,
+  FPL_YEAR_PARAMS,
+  irmaaCliffs,
+  PAGE_TAX_YEAR,
+} from './utils/tax';
 
 /**
  * The page prices `PAGE_TAX_YEAR` and has no control that changes it, so every
@@ -213,6 +218,48 @@ describe('IRMAA cliffs on the ordinary-income chart', () => {
     expect(screen.queryByText('IRMAA 3')).not.toBeInTheDocument();
   });
 
+  /**
+   * The axis is drawn in total income and a cliff knows only the *other*
+   * income that reaches it, so every line on the plot is placed through one
+   * conversion. Get that wrong and nothing looks broken: the lines still
+   * appear, still sit in tier order, still fall inside the plot — they are
+   * simply a benefit's worth of pixels to the left of the income they name,
+   * which is the one error every other test in this file would pass.
+   *
+   * So this one measures. The marker is the axis made visible — it stands at
+   * the reader's own total income — so two marker readings give the scale of
+   * the plot in pixels per dollar, and the cliff has to land where that scale
+   * says its own income is.
+   */
+  it('places the cliffs on the same axis the marker stands on', () => {
+    const { container } = render(<App />);
+    showBothThresholds();
+    const markerAt = (income: number): number => {
+      fireEvent.change(
+        screen.getByRole('slider', { name: /other income \(not social security\)/i }),
+        { target: { value: String(income) } },
+      );
+      return herePositions(container)[0];
+    };
+    // Both inside the default $150,000 axis, so neither reading widens it.
+    const left = markerAt(0);
+    const pxPerDollar = (markerAt(100_000) - left) / 100_000;
+
+    const defaults = {
+      ssBenefit: avgAnnualSSBenefit(PINNED_YEAR, 'single'),
+      filingStatus: 'single' as const,
+      year: PINNED_YEAR,
+    };
+    const expected = irmaaCliffs(defaults)
+      .filter((c) => c.otherIncome > 0 && c.otherIncome <= 150_000)
+      .map((c) => left + pxPerDollar * c.otherIncome);
+
+    expect(expected).toHaveLength(3);
+    cliffPositions(container).forEach((x, i) => {
+      expect(x).toBeCloseTo(expected[i], 1);
+    });
+  });
+
   it('drops the lines entirely when no cliff fits on the axis', () => {
     const { container } = render(<App />);
     showBothThresholds();
@@ -325,19 +372,32 @@ describe('the “you are here” marker', () => {
    */
   const hereLabels = (container: HTMLElement): SVGTextElement[] =>
     Array.from(container.querySelectorAll('.recharts-wrapper')).map((chart) => {
-      const label = Array.from(
-        chart.querySelectorAll<SVGTextElement>('text.recharts-label'),
-      ).find((t) => t.textContent === 'You are here');
+      const label = chart.querySelector<SVGTextElement>('text.here-label');
       if (!label) throw new Error('a chart has no “you are here” label');
       return label;
     });
+
+  /**
+   * The marker's label is stacked — the words, then each of the two figures
+   * the axis position is made of — so it is read as a list of `tspan`s rather
+   * than as one string. `textContent` runs them together with nothing between.
+   */
+  const hereLabelLines = (container: HTMLElement): string[] =>
+    Array.from(hereLabels(container)[0].querySelectorAll('tspan')).map(
+      (t) => t.textContent ?? '',
+    );
 
   it('puts one labelled marker on the page\u2019s one chart', () => {
     const { container } = render(<App />);
     expect(container.querySelectorAll('.recharts-wrapper')).toHaveLength(1);
     expect(herePositions(container)).toHaveLength(1);
-    expect(hereLabels(container).map((t) => t.textContent)).toEqual([
+    // The axis is total income, so the marker is where both halves of that
+    // figure are named: the benefit the slider cannot move, and the other
+    // income it can. $24,852 is the default single benefit for the year.
+    expect(hereLabelLines(container)).toEqual([
       'You are here',
+      '$24,852 SS',
+      '+ $30,000 other',
     ]);
     // The marker wears the colour of the control that drives it — amber, for
     // other income — which is what lets the readout under it point at "the
@@ -388,6 +448,38 @@ describe('the “you are here” marker', () => {
     );
     // Near the right edge it runs leftwards instead, or it would be clipped.
     expect(hereLabels(container)[0]).toHaveAttribute('text-anchor', 'end');
+  });
+
+  it('names both halves of the axis figure, and moves the one its slider owns', () => {
+    const { container } = render(<App />);
+    const figures = (): string => hereLabelLines(container).slice(1).join(' ');
+    expect(figures()).toBe('$24,852 SS + $30,000 other');
+
+    fireEvent.change(
+      screen.getByRole('slider', { name: /other income \(not social security\)/i }),
+      { target: { value: '60000' } },
+    );
+    expect(figures()).toBe('$24,852 SS + $60,000 other');
+
+    // And the benefit is the half the *other* slider owns. Raising it carries
+    // the whole axis right — both ends of the domain are the benefit plus
+    // something — so the marker keeps its place on screen while the figures
+    // under it all change. That standstill is exactly why the label has to
+    // name both halves: nothing about the picture says a benefit moved.
+    const before = herePositions(container)[0];
+    // recharts lifts tick labels out of the axis layer, so they are found by
+    // their own class rather than under `.recharts-xAxis`.
+    const firstTick = (): string | null =>
+      container.querySelector('.recharts-cartesian-axis-tick-value')
+        ?.textContent ?? null;
+    const tickBefore = firstTick();
+    fireEvent.change(
+      screen.getByRole('slider', { name: /annual social security benefit/i }),
+      { target: { value: '36000' } },
+    );
+    expect(figures()).toBe('$36,000 SS + $60,000 other');
+    expect(herePositions(container)[0]).toBe(before);
+    expect(firstTick()).not.toBe(tickBefore);
   });
 });
 

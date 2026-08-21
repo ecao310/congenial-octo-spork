@@ -6570,3 +6570,67 @@ then `npx vitest run`, before picking a task. Five runs in a row have opened
 dirty. A dirty tree on its own tells you nothing — this one held finished work
 one number away from green, the last one held two thirds of a task with six
 tests red — and the suite is what tells the two apart.
+
+---
+
+## 21 Aug 2026 — Draw the axis in what the return takes in
+
+Task: "tax torpedo graph axis should be total income. dynamic labels should
+display $ numbers for both SS and other income."
+
+The tree opened dirty for the sixth run running, and this time the whole task
+was in it and green: 655 tests passing, PLAN.md unmarked, ralph.log unwritten.
+So this run's first two acts — `git status --porcelain`, then `npx vitest run`,
+the pair the last four notes have asked for — turned a task into a
+verification. Read the diff, verified it end to end, landed it.
+
+### What was there
+
+- `MarginalRatePoint.totalIncome`, filled by `marginalRateCurve` from
+  `totalIncomeFor` at each sample. The sweep is still other income, because
+  that is the figure the reader sets and every threshold on the page is
+  measured in it; only the axis changed. Carried on the point rather than
+  re-derived by the chart, so the axis cannot span anything the plot does not.
+- `axisDomain` read off the curve's own two ends, `dataKey="totalIncome"`, and
+  every mark that knows only an other-income figure — both IRMAA lines, the
+  400% line, the marker — placed through `totalIncomeAt`.
+- The marker's label stacked into three `tspan`s: "You are here", the benefit,
+  the other income. As one line it is ~250px at 13px and the plot on a 420px
+  screen is ~275px, so it was clipped; three short lines clear half the plot,
+  which is what the left/right flip needs to have somewhere to put it.
+- The tooltip head, the step intro, the axis caption and the `aria-label` all
+  name both halves in dollars.
+
+### Verified
+
+- 655 tests, `tsc -b`, `eslint .`, `vite build` — all clean.
+- Real Chromium at 1280 and 420, built page under preview: first tick reads
+  `24.9K` and the last `174.9K`, so the axis is drawn in total income; caption
+  and aria-label agree; marker reads `You are here / $24,852 SS / +$30,000
+  other`; at the slider's max it flips to `text-anchor: end` and still fits
+  inside the plot at both widths; no page errors.
+- The two tests worth naming, because they are the ones that would have caught
+  a half-done version: the chart test that measures pixels-per-dollar off two
+  marker readings and asserts each IRMAA line lands where that scale says its
+  own income is — a benefit's worth of leftward drift is invisible to every
+  other test in the file — and the one that raises the benefit slider and
+  asserts the marker does *not* move while the first tick does, which is the
+  standstill the two-figure label exists to explain.
+
+### Note for the next run
+
+Standing browser note, amended. `pkill -f "vite preview"` first, port off
+preview's own output, Chromium build 1228 at
+`~/Library/Caches/ms-playwright/chromium_headless_shell-1228/
+chrome-headless-shell-mac-arm64/chrome-headless-shell`, served under
+`/congenial-octo-spork/`. The script has to sit in the project root for the
+bare `playwright-core` import to resolve — but it does not have to *stay*
+there: write it to `/tmp`, then `cp /tmp/x.mjs ./x-tmp.mjs && node ./x-tmp.mjs;
+rm -f ./x-tmp.mjs` in one command line and the root is clean whatever happens.
+Did that this run; nothing was left behind. The previous run's `drive.mjs` is
+still untracked in the root and was left alone — it is another run's work.
+
+And the guard, for the fifth note running: `git status --porcelain` then
+`npx vitest run`, before picking a task. Six runs in a row have opened dirty.
+Writing it here again has not worked; there is now a bullet under Discovered
+Work asking for it to go in the loop prompt or a `prepare` script instead.

@@ -197,22 +197,62 @@ function pointAt<P>(
  * A plain function, not a component: recharts identifies its children by
  * element type, and a wrapper component would render as an unknown child.
  */
-const hereLine = (value: number, axisMax: number, colour: string) => (
-  <ReferenceLine
-    className="here-line"
-    x={value}
-    stroke={colour}
-    strokeDasharray="6 4"
-    strokeWidth={CHART.rule}
-    label={{
-      value: 'You are here',
-      position: value > axisMax * 0.6 ? 'insideTopRight' : 'insideTopLeft',
-      fill: colour,
-      fontSize: CHART.label,
-      fontWeight: 600,
-    }}
-  />
-);
+/**
+ * The reader's own place on the chart, drawn as a labelled vertical.
+ *
+ * The label says where they are in words *and* in dollars, because the axis
+ * beneath it no longer answers that on its own: it is drawn in total income,
+ * and a point on it splits into a benefit that does not move and other income
+ * that does. Reading one figure off the axis and being unable to say which
+ * half of it the slider controls is the thing this label exists to prevent.
+ *
+ * Stacked rather than run together, and drawn here rather than handed to
+ * recharts as a string, because as one line it is about 250px wide at 13px and
+ * the whole plot on a 420px screen is about 275px: it was clipped mid-figure
+ * by the right edge. The measured constraint is that the widest line has to
+ * clear half the plot, or there is a band either side of the flip below where
+ * the label fits on neither side of its own line — which is what three short
+ * lines buy over two longer ones.
+ *
+ * Which side of the line the words run on is a fraction of the *span* rather
+ * than of the top of it, because the left edge of this axis is the benefit
+ * rather than zero. Half rather than the old three fifths, since the label is
+ * wider than it was.
+ */
+const hereLine = (
+  value: number,
+  [from, to]: readonly [number, number],
+  colour: string,
+  lines: readonly string[],
+) => {
+  const nearRight = value > from + (to - from) * 0.5;
+  const gap = nearRight ? -8 : 8;
+  return (
+    <ReferenceLine
+      className="here-line"
+      x={value}
+      stroke={colour}
+      strokeDasharray="6 4"
+      strokeWidth={CHART.rule}
+      label={({ viewBox }: { viewBox: { x: number; y: number } }) => (
+        <text
+          className="recharts-label here-label"
+          y={viewBox.y}
+          textAnchor={nearRight ? 'end' : 'start'}
+          fill={colour}
+          fontSize={CHART.label}
+          fontWeight={600}
+        >
+          {lines.map((line, i) => (
+            <tspan key={line} x={viewBox.x + gap} dy={i === 0 ? 14 : CHART.label + 3}>
+              {line}
+            </tspan>
+          ))}
+        </text>
+      )}
+    />
+  );
+};
 
 /**
  * How the axis on the page's one chart is drawn, in one object rather than
@@ -342,7 +382,8 @@ export const CustomTooltip: React.FC<CustomTooltipProps> = ({
   return (
     <div className="chart-tooltip">
       <div className="chart-tooltip-head">
-        Other income {formatCurrency(point.income)} · Total income {formatCurrency(totalIncome)}
+        Total income {formatCurrency(totalIncome)} · {formatCurrency(ssBenefit)}{' '}
+        SS + {formatCurrency(point.income)} other income
       </div>
       {given > 0 && (
         <div style={{ color: PALETTE.lime }}>
@@ -1057,6 +1098,25 @@ const App: React.FC = () => {
     [curve],
   );
 
+  /**
+   * The chart's x-axis, in the income the return actually takes in.
+   *
+   * The sweep is still every dollar of *other* income from nothing to the
+   * right edge — that is the one figure the reader sets, and the slider, the
+   * segments and every threshold on the page are still measured in it. What
+   * changed is what the axis is drawn in: a reader looking at the hump wants
+   * to know what income puts them on it, and "$41,000" was only ever half an
+   * answer, because the benefit sitting underneath it is income too.
+   *
+   * Read off the curve's own ends rather than recomputed, so the axis cannot
+   * span anything the plot does not. See `MarginalRatePoint.totalIncome` for
+   * what a charitable gift does to the left of it.
+   */
+  const axisDomain: [number, number] = [
+    curve[0].totalIncome,
+    curve[curve.length - 1].totalIncome,
+  ];
+
   // Never read off the tax year: IRC 86(c) has never been indexed. See SS_BASES.
   const { ssBase50, ssBase85 } = SS_BASES[filingStatus];
 
@@ -1128,6 +1188,36 @@ const App: React.FC = () => {
    * says why the whole benefit counts and the charitable gift does not.
    */
   const totalIncome = totalIncomeFor(hereScenario);
+
+  /**
+   * The same question asked about a point that is not the reader's own: what
+   * this return takes in when its other income is `income`.
+   *
+   * Every mark the chart places by other income goes through here, because the
+   * axis those marks land on is drawn in total income. Rounded to match the
+   * curve's own `totalIncome`, so a threshold at the sample the reader is
+   * standing on shares its x with them rather than missing it by cents.
+   */
+  const totalIncomeAt = (income: number): number =>
+    Math.round(totalIncomeFor({ ...hereScenario, ordinaryIncome: income }));
+
+  /**
+   * What the marker on the chart says, which is the axis figure taken back
+   * apart.
+   *
+   * Both halves in dollars, because on a total-income axis neither is legible
+   * from the position of the line: the benefit is the part that does not move
+   * when the slider does, and the other income is the part that does, and a
+   * reader who cannot tell which is which cannot tell what the slider is for.
+   * Named here rather than written into the chart because it is prose, and
+   * prose belongs with the rest of what the page derives. Stacked short,
+   * because one line of it is too wide for a narrow plot — see `hereLine`.
+   */
+  const hereLabel: string[] = [
+    'You are here',
+    `${formatCurrency(ssBenefit)} SS`,
+    `+ ${formatCurrency(ordinaryIncome)} other`,
+  ];
 
   /**
    * The average rate, for reading next to the marginal one.
@@ -1862,10 +1952,12 @@ const App: React.FC = () => {
               The tax torpedo
             </h2>
             <p className="step-intro">
-              The chart prices every income from $0 to{' '}
-              {formatCurrency(axisMax)} &mdash; far enough right to reach the last
-              thing that happens to this return; the slider says which point along
-              it is yours.
+              The chart prices every total income from{' '}
+              {formatCurrency(axisDomain[0])} to {formatCurrency(axisDomain[1])}{' '}
+              &mdash; the {formatCurrency(ssBenefit)} benefit set above, which
+              does not move, plus $0 to {formatCurrency(axisMax)} of other
+              income, far enough right to reach the last thing that happens to
+              this return. The slider says which point along it is yours.
             </p>
 
             <figure className="chart-figure">
@@ -1941,7 +2033,11 @@ const App: React.FC = () => {
               <div
                 className="chart-container"
                 role="img"
-                aria-label={`Chart: the marginal tax rate on the next dollar of other income, plotted from $0 to ${formatCurrency(axisMax)}.`}
+                aria-label={`Chart: the marginal tax rate on the next dollar of other income, plotted against total income from ${formatCurrency(
+                  axisDomain[0],
+                )} to ${formatCurrency(axisDomain[1])} — a fixed ${formatCurrency(
+                  ssBenefit,
+                )} of Social Security plus $0 to ${formatCurrency(axisMax)} of other income.`}
               >
                 <ResponsiveContainer width="100%" height="100%">
                   <AreaChart
@@ -1961,9 +2057,9 @@ const App: React.FC = () => {
                     />
                     <XAxis
                       {...AXIS_PROPS}
-                      dataKey="income"
+                      dataKey="totalIncome"
                       type="number"
-                      domain={[0, axisMax]}
+                      domain={axisDomain}
                       tickFormatter={formatCompact}
                     />
                     <YAxis
@@ -1992,7 +2088,7 @@ const App: React.FC = () => {
                         <ReferenceLine
                           className="irmaa-cliff"
                           key={cliff.tier}
-                          x={cliff.otherIncome}
+                          x={totalIncomeAt(cliff.otherIncome)}
                           stroke={PALETTE.rose}
                           strokeDasharray="4 4"
                           strokeWidth={CHART.rule}
@@ -2015,7 +2111,7 @@ const App: React.FC = () => {
                     {showSubsidyLine && subsidyCliffOnChart && (
                       <ReferenceLine
                         className="subsidy-cliff"
-                        x={subsidyCliffOnChart.otherIncome}
+                        x={totalIncomeAt(subsidyCliffOnChart.otherIncome)}
                         stroke={PALETTE.fuchsia}
                         strokeDasharray="4 4"
                         strokeWidth={CHART.rule}
@@ -2027,7 +2123,7 @@ const App: React.FC = () => {
                         }}
                       />
                     )}
-                    {hereLine(ordinaryIncome, axisMax, PALETTE.amber)}
+                    {hereLine(totalIncome, axisDomain, PALETTE.amber, hereLabel)}
                     <Area
                       type="stepAfter"
                       dataKey="marginalRate"
@@ -2041,7 +2137,8 @@ const App: React.FC = () => {
                 </ResponsiveContainer>
               </div>
               <p className="chart-axis-label">
-                Other Income ($) &middot; Total income = Other income + {formatCurrency(ssBenefit)} SS
+                Total income ($) &middot; {formatCurrency(ssBenefit)} Social
+                Security + $0 to {formatCurrency(axisMax)} of other income
                 {muniInterest > 0
                   ? ` + ${formatCurrency(muniInterest)} tax-exempt interest`
                   : ''}

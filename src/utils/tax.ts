@@ -1,5 +1,17 @@
 export interface MarginalRatePoint {
   income: number;
+  /**
+   * Everything the return takes in at this point on the sweep: `totalIncomeFor`
+   * of the same scenario, so the whole benefit and any tax-exempt interest are
+   * in it and a charitable distribution is not.
+   *
+   * The swept `income` is what the reader sets; this is what they have. The
+   * chart plots against it, so the two are carried together rather than the
+   * page re-deriving one from the other point by point — and the flat run a
+   * charitable gift buys collapses to a single x, which is the honest reading:
+   * a dollar given straight away was never income to plot.
+   */
+  totalIncome: number;
   marginalRate: number;
   /**
    * Total federal tax (whole dollars) at this income level: `totalFederalTax`,
@@ -1253,6 +1265,7 @@ export function marginalRateCurve(
     const rate = totalFederalTax(at(income + 1)) - taxHere;
     data.push({
       income,
+      totalIncome: Math.round(totalIncomeFor(at(income))),
       marginalRate: Math.round(rate * 10_000) / 100,
       totalTax: Math.round(taxHere),
     });

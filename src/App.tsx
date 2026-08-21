@@ -1918,9 +1918,17 @@ const App: React.FC = () => {
                 <span>{formatCurrency(axisMax)}</span>
               </div>
 
+              {/* No "You are here." lead. Three things already say that this
+                  sentence is about the reader's own point and not the chart's:
+                  the dashed amber marker, the amber slider directly above, and
+                  the amber figure beside its label — and the sentence names
+                  the income the reader set in its first five words. The label
+                  was a fourth telling, and it was set in the same bold as the
+                  three figures below it, so the one phrase the paragraph
+                  stressed hardest was the one carrying no figure at all. */}
               <p className="slider-readout">
-                <strong>You are here.</strong> At {formatCurrency(ordinaryIncome)} of
-                other income the next dollar is taxed at{' '}
+                At {formatCurrency(ordinaryIncome)} of other income the next
+                dollar is taxed at{' '}
                 <strong>{herePoint ? `${herePoint.marginalRate}%` : '\u2014'}</strong>,
                 where the dashed amber line crosses the curve above &mdash; that
                 point on the curve, not the curve itself, is what the slider moves.

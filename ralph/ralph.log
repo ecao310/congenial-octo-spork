@@ -7835,3 +7835,93 @@ label is gone from the plot and the caption reads `Total income ($) including
 $24,852 of Social Security` (verified in the browser this run), so whatever is
 being asked for is something else — worth re-reading the bullet against the
 screenshot before changing anything.
+
+## Backlog 6 · bullet 4 (reopened) — the label was still under the graph, in bold
+
+`[x] remove "You are here label" on graph. x-label should say total income ($)
+including $z social security.`
+
+### Why this bullet came back
+
+A human unchecked it after the run logged at line 7602. That run took the
+three stacked `tspan`s out of the plot and rewrote `.chart-axis-label`, and
+both of those hold: driven in Chromium this run, the chart's only `<text>`
+nodes are `24.9K … 174.9K` and `0% … 24%`, and the caption reads
+`Total income ($) including $24,852 of Social Security` — the second clause of
+the bullet, verbatim.
+
+What that run missed is that the phrase was in two places. The paragraph
+directly under the slider — `.slider-readout`, App.tsx:1921 — opened
+`<strong>You are here.</strong> At $30,000 of other income…`. In the
+screenshot it sits about 160px below the plot with nothing between them but
+the slider, which is close enough to "on graph" for a reader who does not know
+the label used to be inside the axes. `body.innerText` on arrival still
+matched /You are here/ exactly once, and this was it.
+
+### What came off
+
+Just the lead. The sentence already started with a capital `At`, so nothing
+had to be rewritten around it:
+
+```
+-  <strong>You are here.</strong> At {formatCurrency(ordinaryIncome)} of
+-  other income the next dollar is taxed at{' '}
++  At {formatCurrency(ordinaryIncome)} of other income the next
++  dollar is taxed at{' '}
+```
+
+The argument, left in a comment above the `<p>`: four things on this screen
+already say the paragraph is about the reader's own point rather than the
+chart's — the dashed amber marker, the amber slider directly above, the amber
+figure beside the slider's label, and the sentence's own first five words,
+which name the income the reader set. The label was the fifth, and because
+`.slider-readout strong` is the styling the rate, the tax and the effective
+rate all share, the phrase the paragraph stressed hardest was the only one
+with no figure in it.
+
+### The other "You are here." was left alone, deliberately
+
+App.tsx:2153 opens a paragraph in the 400% FPL explainer the same way. It
+stays: it is a section lead inside a closed `<details>`, sitting among three
+other bold leads that read the same way (`It is not Medicare's line`, `The
+cliff is back`, `Who this is not for`), and it is nowhere near the plot. That
+is why the new test anchors on the readout element instead of asserting the
+phrase is absent from the document — a document-wide assertion would have to
+be walked back the moment anyone opens that explainer's prose again.
+
+### Test
+
+One added to `describe('the torpedo slider')` in App.test.tsx —
+`opens on the reader's income rather than a label for it`:
+
+- `expect(readout).toHaveTextContent(/^At \$30,000 of other income/)` — the
+  `^` is the whole point; without it the assertion passes with any lead.
+- `expect(readout.querySelector('strong')).toHaveTextContent('22.2%')` — the
+  *first* bold in the paragraph is now a figure. This is the half that catches
+  a differently-worded label coming back in the same slot.
+
+Mutation-checked: pasting `<strong>You are here.</strong>` back in front of the
+sentence turns it red on the first assertion. Reverted from a snapshot taken
+before the edit, per the standing caution about editing `src/App.tsx` while a
+human may have it open.
+
+### Verification
+
+`tsc -b`, `eslint . --max-warnings 0` and `npx vitest run` all clean — 662
+passed in 13 files, 661 before. `npm run build`, then a real Chromium against
+`vite preview` at 1200×1400: zero page errors, `body.innerText` matches
+/You are here/ nowhere, the readout starts `At $30,000 of other income`, the
+caption is unchanged, and the plot still carries only tick labels. Preview
+server on 4180 killed on the way out.
+
+Note for the next run: port **4173** was already held on arrival by a
+`vite preview` this run did not start — the situation bullet 142 describes,
+left alone rather than killed because it may be a human's.
+
+### Next
+
+The topmost unchecked bullet is now `remove these sentences: where the dashed
+amber line crosses the curve above…`, which trims two clauses out of the same
+paragraph this run just edited plus a joint-return sentence elsewhere. Whoever
+takes it should re-read the readout as it stands now — it is one sentence
+shorter than the bullet was written against.

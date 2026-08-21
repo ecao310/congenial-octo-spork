@@ -610,6 +610,29 @@ describe('the shape every step shares', () => {
     expect(readout()).toHaveTextContent('At $90,000 of other income');
     expect(readout()).toHaveTextContent(/taxed at\s+\d+(\.\d+)?%/);
   });
+
+  /**
+   * The readout opens on the figure, not on a label for it.
+   *
+   * "You are here." led this paragraph for as long as it existed, and it was
+   * the third thing on screen saying so: the dashed amber marker crosses the
+   * curve at this point, the amber slider sits directly above, and the amber
+   * figure beside the slider's label names the same income. Worse, it was
+   * bold — the same weight as the rate, the tax and the effective rate — so
+   * the phrase the paragraph stressed hardest was the only one with no figure
+   * in it.
+   *
+   * Anchored at the start rather than asserted absent from the document: the
+   * 400% explainer opens a paragraph the same way about a MAGI figure, and it
+   * is a section lead inside a disclosure rather than a label on the chart.
+   */
+  it('opens on the reader\u2019s income rather than a label for it', () => {
+    render(<App />);
+    const readout =
+      document.querySelector('#step-torpedo .slider-readout') as HTMLElement;
+    expect(readout).toHaveTextContent(/^At \$30,000 of other income/);
+    expect(readout.querySelector('strong')).toHaveTextContent('22.2%');
+  });
 });
 
 /**

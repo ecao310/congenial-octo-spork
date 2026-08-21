@@ -83,7 +83,7 @@ describe('encodeScenario', () => {
 
   it('round-trips a return that moved every control', () => {
     const everything = moved({
-      filingStatus: 'hoh',
+      filingStatus: 'mfj',
       ssBenefit: 31_000,
       ordinaryIncome: 120_000,
       isSenior: true,
@@ -162,10 +162,28 @@ describe('decodeScenario', () => {
       avgAnnualSSBenefit(PAGE_TAX_YEAR, 'mfj'),
     );
     expect(decodeScenario('filing=mfj').scenario.ssBenefit).toBe(38_496);
-    for (const status of ['mfs', 'hoh']) {
-      expect(decodeScenario(`filing=${status}`).scenario.ssBenefit).toBe(
-        avgAnnualSSBenefit(PAGE_TAX_YEAR),
-      );
+    expect(decodeScenario('').scenario.ssBenefit).toBe(
+      avgAnnualSSBenefit(PAGE_TAX_YEAR),
+    );
+  });
+
+  /**
+   * The two statuses that came off the page are the two an old link is most
+   * likely to name, because every link this app wrote while they were on the
+   * strip could carry one. They are answered the way `?filing=widow` is
+   * answered rather than read past in silence like `?state=VT`: a filing
+   * status moves every figure on the page, so a reader who asked for a head
+   * of household and got a single filer's return has to be told which return
+   * they are looking at.
+   */
+  it('tells a link naming a status that came off the page what it got', () => {
+    for (const status of ['hoh', 'mfs']) {
+      const { scenario, notes } = decodeScenario(`filing=${status}`);
+      expect(scenario.filingStatus).toBe('single');
+      expect(scenario.ssBenefit).toBe(avgAnnualSSBenefit(PAGE_TAX_YEAR));
+      expect(notes).toHaveLength(1);
+      expect(notes[0]).toContain(`“${status}”`);
+      expect(notes[0]).toContain('a single filer');
     }
   });
 

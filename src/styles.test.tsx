@@ -623,7 +623,8 @@ const leftBorders = (
  * So: a margin rule is 2px, and its colour is either the page's hairline or a
  * data token at exactly half alpha. A note box is the other shape — 3px of a
  * solid token down the side of something with a fill and a border of its own,
- * which is `.link-note` and `.warning-note` — and it is allowed for
+ * which is now only `.link-note`, the separate return's rose `.warning-note`
+ * having left with the status that raised it — and it is allowed for
  * explicitly rather than by omission, because the difference between the two
  * is the whole point: one is a rule beside prose, the other is a box.
  */

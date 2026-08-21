@@ -660,7 +660,7 @@ export const SENIOR_DEDUCTION_PHASEOUT_RATE = 0.06;
  * separate return therefore gets nothing — not a halved amount, not a halved
  * threshold — which is why `mfs` is null rather than $75,000.
  */
-export const SENIOR_DEDUCTION_PHASEOUT_START: Record<FilingStatus, number | null> = {
+export const SENIOR_DEDUCTION_PHASEOUT_START = {
   single: 75_000,
   mfj: 150_000,
   mfs: null,
@@ -669,7 +669,10 @@ export const SENIOR_DEDUCTION_PHASEOUT_START: Record<FilingStatus, number | null
   // married individual, so clause (v) never bites and the deduction is
   // available in full at the unmarried threshold.
   hoh: 75_000,
-};
+  // `satisfies` rather than an annotation, so the table keeps saying *which*
+  // status is the null one. A caller naming a status with a threshold gets a
+  // number without a check for a case the statute does not give it.
+} satisfies Record<FilingStatus, number | null>;
 
 /** Whether a filing status can claim the senior deduction at all. */
 export function seniorDeductionAllowed(filingStatus: FilingStatus): boolean {
@@ -679,8 +682,14 @@ export function seniorDeductionAllowed(filingStatus: FilingStatus): boolean {
 /**
  * MAGI at which the senior deduction is gone: $175,000 single, $250,000 MFJ.
  * Independent of how many spouses qualify, because the phaseout applies to each
- * one's $6,000 separately. `null` for a separate return, which never had one.
+ * one's $6,000 separately. `null` for a separate return, which never had one —
+ * and the overloads say so, so only a caller that could be handed that status
+ * has a null to answer for.
  */
+export function seniorDeductionPhaseoutEnd(
+  filingStatus?: 'single' | 'mfj' | 'hoh',
+): number;
+export function seniorDeductionPhaseoutEnd(filingStatus: FilingStatus): number | null;
 export function seniorDeductionPhaseoutEnd(
   filingStatus: FilingStatus = 'single',
 ): number | null {

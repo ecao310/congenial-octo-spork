@@ -50,18 +50,34 @@
  * did not produce itself.
  */
 import {
-  SS_BASES,
   PAGE_TAX_YEAR,
   avgAnnualSSBenefit,
   maxAnnualSSBenefit,
   qcdLimitFor,
 } from './tax';
-import type { FilingStatus } from './tax';
 import { formatCurrency } from './format';
+
+/**
+ * The statuses this page asks about, which is no longer every status the tax
+ * code has.
+ *
+ * `FilingStatus` still names four and `tax.ts` still prices all four: IRC
+ * 86(c) gives a base amount to each, and the engine's own tests exercise
+ * them. What narrowed is the question the page asks. Single and a joint
+ * return are nearly every reader it has, and the two that came off — head of
+ * household, and a separate return that lived with the spouse — each cost a
+ * note of their own under the control and a branch of their own in three
+ * explainers, to price a return almost nobody who opens this page files.
+ *
+ * So the narrowing is stated here, once, and the page and the link both read
+ * it: the strip is built from `PAGE_FILING_STATUSES` and a link naming
+ * anything else is told what it got. See `decodeScenario`.
+ */
+export type PageFilingStatus = 'single' | 'mfj';
 
 /** The whole return the page prices, and the whole of what a link carries. */
 export interface PageScenario {
-  filingStatus: FilingStatus;
+  filingStatus: PageFilingStatus;
   ssBenefit: number;
   ordinaryIncome: number;
   isSenior: boolean;
@@ -92,19 +108,23 @@ export const MAX_MUNI_INTEREST = 50_000;
 export const MAX_OTHER_INCOME = 1_000_000;
 
 /**
- * The four statuses, taken from the table that has to list all of them
- * anyway. IRC 86(c) gives every filing status a provisional-income base, so
- * `SS_BASES` is the one record in the app that cannot fall out of step with
- * `FilingStatus` without failing to compile.
+ * The statuses a link may name, in the order the strip offers them.
+ *
+ * This used to be `Object.keys(SS_BASES)` — every status the tax code has,
+ * because the page offered every status the tax code has. Now that it offers
+ * two, `hoh` and `mfs` are values a link can say and this page cannot show,
+ * which puts them in the same position as `state` and `ltcg`. They are
+ * answered differently, though: those keys are read past in silence because
+ * no figure on the page moves with them, and a filing status moves every
+ * figure there is. A reader arriving on `?filing=hoh` is looking at a single
+ * filer's return, and has to be told that is what they got.
  */
-const FILING_STATUSES = Object.keys(SS_BASES) as FilingStatus[];
+export const PAGE_FILING_STATUSES: PageFilingStatus[] = ['single', 'mfj'];
 
 /** How each status is named back to a reader whose link asked for it. */
-const FILING_STATUS_SHORT: Record<FilingStatus, string> = {
+const FILING_STATUS_SHORT: Record<PageFilingStatus, string> = {
   single: 'a single filer',
   mfj: 'married filing jointly',
-  mfs: 'married filing separately',
-  hoh: 'head of household',
 };
 
 /** The page as it opens, before the reader touches anything. */
@@ -251,13 +271,13 @@ export function decodeScenario(search: string): DecodedScenario {
   const flag = (key: string): boolean => params.get(key) === '1';
 
   const rawFiling = params.get('filing');
-  let filingStatus: FilingStatus = 'single';
+  let filingStatus: PageFilingStatus = 'single';
   if (rawFiling !== null && rawFiling.trim() !== '') {
-    if ((FILING_STATUSES as string[]).includes(rawFiling)) {
-      filingStatus = rawFiling as FilingStatus;
+    if ((PAGE_FILING_STATUSES as string[]).includes(rawFiling)) {
+      filingStatus = rawFiling as PageFilingStatus;
     } else {
       notes.push(
-        `This link names a filing status this page does not offer (“${rawFiling}”), so it is showing ${FILING_STATUS_SHORT.single}.`,
+        `This link names a filing status this page does not offer (“${rawFiling}”), so it is showing ${FILING_STATUS_SHORT[filingStatus]}.`,
       );
     }
   }

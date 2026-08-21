@@ -36,7 +36,6 @@ import {
   SENIOR_DEDUCTION_PHASEOUT_RATE,
   SENIOR_DEDUCTION_PHASEOUT_START,
   seniorDeductionPhaseoutEnd,
-  seniorDeductionAllowed,
   irmaaMagi,
   irmaaFor,
   irmaaCliffs,
@@ -53,8 +52,10 @@ import {
 import {
   decodeScenario,
   scenarioUrl,
+  PAGE_FILING_STATUSES,
   MAX_MUNI_INTEREST,
 } from './utils/scenarioUrl';
+import type { PageFilingStatus } from './utils/scenarioUrl';
 import { formatCurrency } from './utils/format';
 import { CHART, PALETTE } from './palette';
 import type {
@@ -119,39 +120,32 @@ const STEPS = ['benefit', 'torpedo'] as const;
 type StepId = (typeof STEPS)[number];
 
 /**
- * The strip, and the menu beside it.
+ * The strip, and the two statuses that used to sit beside it.
  *
- * Four statuses, and two of them are almost every reader this page has. Head
- * of household and a separate return are priced exactly as carefully — each
- * one has a note of its own under the control, and the separate return has
- * the loudest warning on the page — but a four-option strip spends the widest
- * row in step 1 restating two answers most readers scroll straight past, and
- * `Married Filing Separately` is the longest label of the four. So the common
- * pair rides the strip and the other two sit in a menu next to it: one click
- * for the reader who needs them, no row at all for the reader who does not.
+ * The page asked all four for a long time — a strip of four, then a strip of
+ * two with head of household and a separate return in a menu next to it — and
+ * the cost was never the row. It was everything downstream: a note under the
+ * control for each, a separate return's alternate opening for the torpedo
+ * explainer, its alternate IRMAA schedule sentence, its "not on this return"
+ * senior deduction, and a mitigation bullet nobody else saw. Six branches of
+ * prose, priced and tested to the dollar, for two returns almost nobody who
+ * opens this page files.
  *
- * They stay one answer. The strip is a radio group over the first list and
- * the menu is a `<select>` over the second, and whichever holds the current
- * status is the one showing it — when the menu holds it the strip has nothing
- * checked, which is what a radio group whose answer is elsewhere looks like,
- * and the menu is showing that answer in words rather than a placeholder.
+ * So the page asks the question it can answer plainly and `tax.ts` keeps all
+ * four, because the tax code has four and the engine is not the page. The
+ * labels are here and the values are `PAGE_FILING_STATUSES`, which is also
+ * what a link is read against — one list, so the strip and the address bar
+ * cannot disagree about what this page offers.
  */
-const FILING_STATUS_STRIP: { value: FilingStatus; label: string }[] = [
-  { value: 'single', label: 'Single' },
-  { value: 'mfj', label: 'Married Filing Jointly' },
-];
-
-const FILING_STATUS_MENU: { value: FilingStatus; label: string }[] = [
-  { value: 'hoh', label: 'Head of Household' },
-  { value: 'mfs', label: 'Married Filing Separately' },
-];
+const FILING_STATUS_LABELS: Record<PageFilingStatus, string> = {
+  single: 'Single',
+  mfj: 'Married Filing Jointly',
+};
 
 /** How each status reads inside a sentence. */
-const FILING_STATUS_PROSE: Record<FilingStatus, string> = {
+const FILING_STATUS_PROSE: Record<PageFilingStatus, string> = {
   single: 'a single filer',
   mfj: 'a married couple filing jointly',
-  mfs: 'a married filer filing separately who lived with their spouse',
-  hoh: 'a head of household',
 };
 
 /** A rate given as a fraction, rendered the way the chart axis renders it. */
@@ -669,7 +663,7 @@ const App: React.FC = () => {
    */
   const year = PAGE_TAX_YEAR;
   const [ssBenefit, setSsBenefit] = useState<number>(opening.ssBenefit);
-  const [filingStatus, setFilingStatus] = useState<FilingStatus>(opening.filingStatus);
+  const [filingStatus, setFilingStatus] = useState<PageFilingStatus>(opening.filingStatus);
   const [ordinaryIncome, setOrdinaryIncome] = useState<number>(opening.ordinaryIncome);
   const [isSenior, setIsSenior] = useState<boolean>(opening.isSenior);
   const [spouseIsSenior, setSpouseIsSenior] = useState<boolean>(opening.spouseIsSenior);
@@ -840,24 +834,6 @@ const App: React.FC = () => {
   ]);
 
   const yearFiling = filingParams(year, filingStatus);
-  /**
-   * The single filer's figures, kept alongside the selected status's so the
-   * two notes that compare against them — head of household's wider bands, a
-   * separate return's identical ones — can name real numbers for the year on
-   * screen rather than a figure written down when the note was.
-   */
-  const singleFiling = filingParams(year, 'single');
-  /**
-   * Where a separate return's rate schedule stops matching a single filer's.
-   *
-   * IRC 1(j)(2)(D) halves the joint brackets to make the separate ones, which
-   * leaves them identical to the single schedule right up until the separate
-   * 35% band ends and jumps to 37% while a single filer still has room. That
-   * is the second-to-last threshold, and it moves every year: $375,800 in
-   * 2025, $384,350 in 2026.
-   */
-  const mfsBrackets = filingParams(year, 'mfs').brackets;
-  const mfsSingleDivergence = mfsBrackets[mfsBrackets.length - 2].upTo;
 
   const changeOrdinaryIncome = (next: number): void => {
     setOrdinaryIncome(next);
@@ -879,7 +855,7 @@ const App: React.FC = () => {
    * where they started. Anywhere else on the slider is a figure they set, and
    * it stays set.
    */
-  const changeFilingStatus = (next: FilingStatus): void => {
+  const changeFilingStatus = (next: PageFilingStatus): void => {
     setQcd((current) => Math.min(current, qcdLimitFor({ filingStatus: next, year })));
     setSsBenefit((current) =>
       current === avgAnnualSSBenefit(year, filingStatus)
@@ -889,9 +865,6 @@ const App: React.FC = () => {
     setFilingStatus(next);
     announce('benefit');
   };
-
-  /** The status the menu is holding, or undefined while the strip holds it. */
-  const menuStatus = FILING_STATUS_MENU.find((option) => option.value === filingStatus);
 
   // Only a joint return can claim the addition twice, and the spouse's
   // checkbox is meaningless until the filer's is on.
@@ -996,10 +969,14 @@ const App: React.FC = () => {
   const standardDeduction = standardDeductionFor({ filingStatus, seniors, year });
   const seniorAddition = standardDeduction - baseDeduction;
 
-  // The OBBBA senior deduction, before its phaseout eats into it. A separate
-  // return cannot claim it at all, so every figure derived from it is null.
-  const seniorDeductionOk = seniorDeductionAllowed(filingStatus);
-  const seniorDeductionMax = seniorDeductionOk ? seniors * SENIOR_DEDUCTION : 0;
+  // The OBBBA senior deduction, before its phaseout eats into it, and the band
+  // it shrinks across. 151(d)(5)(C)(v) denies the deduction to exactly one
+  // status — a married taxpayer filing separately — and that is not a status
+  // this page offers, so on every return it can show there is a deduction and
+  // there are both ends of a band. The tax code keeps the exclusion and the
+  // types keep saying which status it is; the strip is what keeps it off this
+  // page. See `FILING_STATUS_LABELS`.
+  const seniorDeductionMax = seniors * SENIOR_DEDUCTION;
   const phaseoutStart = SENIOR_DEDUCTION_PHASEOUT_START[filingStatus];
   const phaseoutEnd = seniorDeductionPhaseoutEnd(filingStatus);
   // With the age toggle off there is nothing to phase out, but the explainer
@@ -1070,19 +1047,6 @@ const App: React.FC = () => {
 
   // Never read off the tax year: IRC 86(c) has never been indexed. See SS_BASES.
   const { ssBase50, ssBase85 } = SS_BASES[filingStatus];
-
-  // With both bases at $0 the 85% cap binds as soon as provisional income
-  // reaches the benefit itself — other income + muni + half the benefit >=
-  // the benefit — so the whole torpedo is over by half the benefit, less
-  // whatever tax-exempt interest has already been counted.
-  const capBindsAt = Math.max(0, 0.5 * ssBenefit - muniInterest);
-  const taxableSSAtZeroIncome = taxableSocialSecurity({
-    ssBenefit,
-    ordinaryIncome: 0,
-    filingStatus,
-    muniInterest,
-    year,
-  });
 
   /**
    * Where the reader is standing on the chart: the slider is a point on the
@@ -1482,103 +1446,20 @@ const App: React.FC = () => {
 
           <fieldset className="input-group filing-status">
             <legend>Filing Status</legend>
-            <div className="filing-choices">
-              <div className="segmented">
-                {FILING_STATUS_STRIP.map(({ value, label }) => (
-                  <label key={value} className="segmented-option">
-                    <input
-                      type="radio"
-                      name="filing-status"
-                      value={value}
-                      checked={filingStatus === value}
-                      onChange={() => changeFilingStatus(value)}
-                    />
-                    <span>{label}</span>
-                  </label>
-                ))}
-              </div>
-              {/* The placeholder is what the menu shows while the strip holds
-                  the answer, and it is `disabled` so that it cannot be chosen
-                  back — there is no such status, and the way out of the menu
-                  is the strip, which is right beside it. `onChange` looks its
-                  value up in the list rather than casting the string to a
-                  `FilingStatus`, so nothing but one of these two can be set
-                  from here however the event arrives. */}
-              <select
-                className={`filing-more${menuStatus ? ' filing-more-chosen' : ''}`}
-                aria-label="More filing statuses"
-                value={menuStatus?.value ?? ''}
-                onChange={(event) => {
-                  const chosen = FILING_STATUS_MENU.find(
-                    (option) => option.value === event.target.value,
-                  );
-                  if (chosen) changeFilingStatus(chosen.value);
-                }}
-              >
-                <option value="" disabled>
-                  More statuses…
-                </option>
-                {FILING_STATUS_MENU.map(({ value, label }) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </select>
+            <div className="segmented">
+              {PAGE_FILING_STATUSES.map((value) => (
+                <label key={value} className="segmented-option">
+                  <input
+                    type="radio"
+                    name="filing-status"
+                    value={value}
+                    checked={filingStatus === value}
+                    onChange={() => changeFilingStatus(value)}
+                  />
+                  <span>{FILING_STATUS_LABELS[value]}</span>
+                </label>
+              ))}
             </div>
-            {filingStatus === 'mfs' && (
-              <p className="warning-note" role="note">
-                <strong>Filing separately zeroes out both thresholds.</strong> IRC
-                86(c) sets the base <em>and</em> the adjusted base amount to{' '}
-                <strong>$0</strong> for a married taxpayer who files separately and
-                lived with their spouse at any point in the year. There is no 50%
-                tier at all:{' '}
-                <strong>{formatCurrency(taxableSSAtZeroIncome)}</strong> of the{' '}
-                {formatCurrency(ssBenefit)} benefit is taxable before any other
-                income arrives, and the 85% cap binds at{' '}
-                <strong>{formatCurrency(capBindsAt)}</strong> of other income. The
-                torpedo is not removed, it is compressed — the whole of it is
-                crammed into the left edge of the chart instead of spread across the
-                band a single filer sees.{' '}
-                <em>
-                  If you lived apart from your spouse for the entire year, 86(c)
-                  treats you as unmarried — use Single instead, or Head of
-                  Household if a qualifying person lives with you. The separate and
-                  single brackets and standard deduction are identical up to{' '}
-                  {formatCurrency(mfsSingleDivergence)} of taxable income; head of
-                  household is better than either from the first dollar.
-                </em>
-              </p>
-            )}
-            {filingStatus === 'hoh' && (
-              <p className="field-note" role="note">
-                <strong>
-                  Head of household keeps a single filer&apos;s thresholds and
-                  improves everything else.
-                </strong>{' '}
-                IRC 86(c) names only two special base amounts —{' '}
-                {formatCurrency(SS_BASES.mfj.ssBase50)} on a joint return and{' '}
-                {formatCurrency(SS_BASES.mfs.ssBase50)} on a separate one that lived
-                together — so a head of household takes the default,{' '}
-                {formatCurrency(ssBase50)} and {formatCurrency(ssBase85)}, which is
-                exactly what Single uses. What changes is downstream: a{' '}
-                {formatCurrency(yearFiling.standardDeduction)} standard deduction
-                against {formatCurrency(singleFiling.standardDeduction)}, and a 12%
-                band running to {formatCurrency(yearFiling.brackets[1].upTo)} instead
-                of {formatCurrency(singleFiling.brackets[1].upTo)}. The torpedo
-                starts at the same provisional income and costs less the whole way
-                through.{' '}
-                <em>
-                  Qualifying is the hard part in retirement: unmarried at year end,
-                  paying more than half the cost of keeping up your home, and a
-                  qualifying person living with you more than half the year — a
-                  dependent parent being the one exception, who need not live with
-                  you. A recent widow or widower is not here automatically. The year
-                  of death is still a joint return, and the two years after it are
-                  Qualifying Surviving Spouse, which pairs joint brackets with these
-                  same {formatCurrency(ssBase50)} thresholds and is not on this menu.
-                </em>
-              </p>
-            )}
           </fieldset>
 
           <fieldset className="input-group filing-status">
@@ -1626,15 +1507,7 @@ const App: React.FC = () => {
                   the whole curve shifts right.
                 </p>
                 <p className="field-note">
-                  {phaseoutStart === null || phaseoutEnd === null ? (
-                    <>
-                      No senior deduction on a separate return: section
-                      151(d)(5)(C)(v) allows the temporary{' '}
-                      {formatCurrency(SENIOR_DEDUCTION)} only if a married
-                      taxpayer files jointly. There is no halved amount and no
-                      halved threshold — separate filers get nothing.
-                    </>
-                  ) : seniors > 0 ? (
+                  {seniors > 0 ? (
                     <>
                       Senior deduction{' '}
                       <strong>{formatCurrency(seniorDeductionMax)}</strong>
@@ -2076,23 +1949,11 @@ const App: React.FC = () => {
                 <p>
                   Social Security benefits are not taxed dollar-for-dollar. The taxable
                   share depends on <strong>provisional income</strong> — other income
-                  plus half of your benefits.{' '}
-                  {ssBase85 > 0 ? (
-                    <>
-                      Once provisional income passes {formatCurrency(ssBase50)}, each
-                      extra dollar of other income also drags up to 50&cent; of
-                      benefits into taxable income; past {formatCurrency(ssBase85)}, it
-                      drags in up to 85&cent;. (The thresholds shown are for the filing
-                      status selected above.)
-                    </>
-                  ) : (
-                    <>
-                      On the separate return selected above both thresholds are $0, so
-                      there is nothing to pass: every dollar of provisional income
-                      brings 85&cent; of benefits with it from the very first one,
-                      until the 85% cap stops it.
-                    </>
-                  )}
+                  plus half of your benefits. Once provisional income passes{' '}
+                  {formatCurrency(ssBase50)}, each extra dollar of other income also
+                  drags up to 50&cent; of benefits into taxable income; past{' '}
+                  {formatCurrency(ssBase85)}, it drags in up to 85&cent;. (The
+                  thresholds shown are for the filing status selected above.)
                 </p>
                 <p>
                   So one more dollar earned can raise taxable income by as much as
@@ -2157,19 +2018,6 @@ const App: React.FC = () => {
                     into a single year can cost less than sitting in the middle of the
                     spike year after year.
                   </li>
-                  {filingStatus === 'mfs' && (
-                    <li>
-                      <strong>Price out filing jointly.</strong> A separate return
-                      that lived with the spouse gives up the{' '}
-                      {formatCurrency(SS_BASES.mfj.ssBase50)} and{' '}
-                      {formatCurrency(SS_BASES.mfj.ssBase85)} thresholds, the{' '}
-                      {formatCurrency(SENIOR_DEDUCTION)} senior deduction, and the
-                      lower IRMAA tiers all at once. Separate filing is usually driven
-                      by something else — income-driven student-loan repayment, a
-                      spouse&apos;s liability, an ongoing separation — so compare the
-                      two returns before assuming it still pays.
-                    </li>
-                  )}
                 </ul>
                 <p>
                   The right mix depends on account balances, Medicare premium
@@ -2199,9 +2047,6 @@ const App: React.FC = () => {
                   <strong>{formatCurrency(cliffs[0].step)}</strong> a year
                   {beneficiaries > 1 ? ' for the two of you' : ''} &mdash; on a single
                   dollar of income.
-                  {cliffs[0].tier > 1
-                    ? ` A separate return has no access to tiers 1 through 3: 42 U.S.C. 1395r(i)(3)(C) gives it a two-step schedule of its own, so its first cliff is tier ${cliffs[0].tier} and the whole surcharge lands at once.`
-                    : ''}
                 </p>
                 <p>
                   The lines sit at less other income than their MAGI figures suggest,
@@ -2354,72 +2199,57 @@ const App: React.FC = () => {
                 </h2>
               </summary>
               <div className="explainer-content">
-                {phaseoutStart === null || phaseoutEnd === null ? (
-                  <p>
-                    Not on this return. Section 151(d)(5)(C)(v) makes the temporary{' '}
-                    {formatCurrency(SENIOR_DEDUCTION)} deduction conditional on a married
-                    taxpayer filing jointly, so a separate filer gets none of it — no
-                    halved amount, no halved {formatCurrency(75_000)} threshold, nothing.
-                    Between that and the $0 Social Security bases, filing separately
-                    while living together costs a retired couple the deduction and the
-                    thresholds at once. Switch to Married Filing Jointly above to see
-                    what the phaseout looks like when it applies.
-                  </p>
-                ) : (
-                  <>
-                    <p>
-                      For tax years {SENIOR_DEDUCTION_FIRST_YEAR} through{' '}
-                      {SENIOR_DEDUCTION_LAST_YEAR} only, anyone who reaches age 65 gets an
-                      extra <strong>{formatCurrency(SENIOR_DEDUCTION)}</strong> deduction —
-                      on top of the standard deduction, on top of the age-65 addition to
-                      it, and whether or not they itemize. A couple filing jointly with
-                      both spouses over 65 gets {formatCurrency(2 * SENIOR_DEDUCTION)}.
-                    </p>
-                    <p>
-                      The catch is the phaseout. Each qualifying person&apos;s{' '}
-                      {formatCurrency(SENIOR_DEDUCTION)} shrinks by{' '}
-                      {formatCents(SENIOR_DEDUCTION_PHASEOUT_RATE)} for every dollar of
-                      MAGI above {formatCurrency(phaseoutStart)}, so it is gone at{' '}
-                      {formatCurrency(phaseoutEnd)} — exactly $100,000 later, for every
-                      status that has one, because a couple where both spouses qualify has
-                      twice as much deduction to lose and loses it twice as fast.
-                    </p>
-                    <p>
-                      Inside that range every extra dollar of income does double duty: it
-                      is taxed, and it destroys {formatCents(phaseoutRate)} of deduction.
-                      Taxable income therefore rises by{' '}
-                      <strong>${taxableIncomePerDollar.toFixed(2)}</strong> per dollar
-                      earned, and the 22% bracket bites at{' '}
-                      <strong>{formatPercent(0.22 * taxableIncomePerDollar)}</strong>. That
-                      is a surtax that appears nowhere on the rate schedule.
-                    </p>
-                    <p>
-                      Worse, the two humps multiply. MAGI is AGI, which already includes
-                      whatever share of your benefits the torpedo has dragged into taxable
-                      income — so where the torpedo and the phaseout overlap, one extra
-                      dollar raises taxable income by 1.85 &times;{' '}
-                      {taxableIncomePerDollar.toFixed(2)} ={' '}
-                      <strong>${(1.85 * taxableIncomePerDollar).toFixed(2)}</strong>, and
-                      22% becomes{' '}
-                      <strong>
-                        {formatPercent(0.22 * 1.85 * taxableIncomePerDollar)}
-                      </strong>
-                      .
-                    </p>
-                    <p>
-                      On the chart above, the second hump starts where MAGI clears{' '}
-                      {formatCurrency(phaseoutStart)} — at less of your own income than
-                      that, since the taxable part of your benefits counts toward MAGI too.
-                      The rate falls back once the deduction is fully gone at{' '}
-                      {formatCurrency(phaseoutEnd)} of MAGI, which{' '}
-                      {phaseoutEndsOnChart
-                        ? 'is inside the chart at the benefit selected above'
-                        : 'sits past the right edge of the chart at the benefit selected above'}
-                      . Note that tax-exempt interest is <em>not</em> added back for this
-                      phaseout, unlike the MAGI Medicare uses for IRMAA.
-                    </p>
-                  </>
-                )}
+                <p>
+                  For tax years {SENIOR_DEDUCTION_FIRST_YEAR} through{' '}
+                  {SENIOR_DEDUCTION_LAST_YEAR} only, anyone who reaches age 65 gets an
+                  extra <strong>{formatCurrency(SENIOR_DEDUCTION)}</strong> deduction —
+                  on top of the standard deduction, on top of the age-65 addition to
+                  it, and whether or not they itemize. A couple filing jointly with
+                  both spouses over 65 gets {formatCurrency(2 * SENIOR_DEDUCTION)}.
+                </p>
+                <p>
+                  The catch is the phaseout. Each qualifying person&apos;s{' '}
+                  {formatCurrency(SENIOR_DEDUCTION)} shrinks by{' '}
+                  {formatCents(SENIOR_DEDUCTION_PHASEOUT_RATE)} for every dollar of
+                  MAGI above {formatCurrency(phaseoutStart)}, so it is gone at{' '}
+                  {formatCurrency(phaseoutEnd)} — exactly $100,000 later, for every
+                  status that has one, because a couple where both spouses qualify has
+                  twice as much deduction to lose and loses it twice as fast.
+                </p>
+                <p>
+                  Inside that range every extra dollar of income does double duty: it
+                  is taxed, and it destroys {formatCents(phaseoutRate)} of deduction.
+                  Taxable income therefore rises by{' '}
+                  <strong>${taxableIncomePerDollar.toFixed(2)}</strong> per dollar
+                  earned, and the 22% bracket bites at{' '}
+                  <strong>{formatPercent(0.22 * taxableIncomePerDollar)}</strong>. That
+                  is a surtax that appears nowhere on the rate schedule.
+                </p>
+                <p>
+                  Worse, the two humps multiply. MAGI is AGI, which already includes
+                  whatever share of your benefits the torpedo has dragged into taxable
+                  income — so where the torpedo and the phaseout overlap, one extra
+                  dollar raises taxable income by 1.85 &times;{' '}
+                  {taxableIncomePerDollar.toFixed(2)} ={' '}
+                  <strong>${(1.85 * taxableIncomePerDollar).toFixed(2)}</strong>, and
+                  22% becomes{' '}
+                  <strong>
+                    {formatPercent(0.22 * 1.85 * taxableIncomePerDollar)}
+                  </strong>
+                  .
+                </p>
+                <p>
+                  On the chart above, the second hump starts where MAGI clears{' '}
+                  {formatCurrency(phaseoutStart)} — at less of your own income than
+                  that, since the taxable part of your benefits counts toward MAGI too.
+                  The rate falls back once the deduction is fully gone at{' '}
+                  {formatCurrency(phaseoutEnd)} of MAGI, which{' '}
+                  {phaseoutEndsOnChart
+                    ? 'is inside the chart at the benefit selected above'
+                    : 'sits past the right edge of the chart at the benefit selected above'}
+                  . Note that tax-exempt interest is <em>not</em> added back for this
+                  phaseout, unlike the MAGI Medicare uses for IRMAA.
+                </p>
               </div>
             </details>
           </section>

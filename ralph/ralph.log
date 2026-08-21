@@ -7704,3 +7704,134 @@ added for it, and the `chooseFilingStatus` test helper all come back out — and
 `FilingStatus` in tax.ts keeps all four, since the tax code has four and only
 the page is narrowing. Worth checking what `hoh` and `mfs` are load-bearing for
 in tax.ts's own tests before deleting anything above them.
+
+## 2026-08-21 — Task: filing status keeps Single and MFJ; head of household and a separate return come off the page
+
+### What the bullet asked for, second time round
+
+`bf5346d` (last run but one) read the bullet as written and built the strip +
+menu split. A human then reopened the bullet with "actually remove the less
+common 2 statuses completely" appended, so this run took the two statuses off
+the page instead. Everything that landed in `bf5346d` came back out —
+`FILING_STATUS_MENU`, `menuStatus`, the `<select>`, `.filing-choices`,
+`.filing-more*` and its print rule, the `filingMenu`/`chooseFilingStatus`
+test helpers' menu half.
+
+### Where the line between "the page" and "the engine" got drawn
+
+`tax.ts` keeps all four statuses and every figure it prices for them: the tax
+code has four, its own tests exercise four, and `src/shelf/` reads them. What
+narrowed is the question the page asks. That narrowing is stated once, in
+`scenarioUrl.ts`:
+
+- `export type PageFilingStatus = 'single' | 'mfj'` — `PageScenario.filingStatus`
+  is now this, so App's state, `changeFilingStatus`, `FILING_STATUS_LABELS` and
+  `FILING_STATUS_PROSE` all narrow with it and a fifth mention of a removed
+  status is a compile error rather than dead prose.
+- `PAGE_FILING_STATUSES` replaces `Object.keys(SS_BASES)` as what a link is
+  validated against, and App builds the strip from the same array. One list,
+  so the strip and the address bar cannot disagree.
+
+`?filing=hoh` therefore takes the route `?filing=widow` already took: falls
+back to a single filer **with** a note ("This link names a filing status this
+page does not offer (“hoh”), so it is showing a single filer."). Deliberately
+not the silent `?state=VT` / `?ltcg=` route — those keys move no figure on the
+page and a filing status moves every one, so a reader arriving on an old link
+has to be told which return they are looking at. Confirmed in Chromium: the
+banner renders and the strip shows Single.
+
+### Six branches of prose that had no way to be reached, deleted
+
+Each of these was live only for `mfs` or `hoh`:
+
+| where | what went |
+| --- | --- |
+| filing fieldset | the rose `warning-note` for a separate return, and the head-of-household `field-note` |
+| torpedo explainer | the `ssBase85 > 0` fork — "both thresholds are $0, so there is nothing to pass" |
+| mitigation list | the "Price out filing jointly" bullet |
+| IRMAA explainer | the `cliffs[0].tier > 1` clause about the two-step schedule |
+| senior deduction hint | "No senior deduction on a separate return" |
+| senior deduction explainer | the whole "Not on this return" opening |
+
+With them went `capBindsAt`, `taxableSSAtZeroIncome`, `singleFiling`,
+`mfsBrackets`/`mfsSingleDivergence`, `seniorDeductionOk` (always true now), and
+the `.warning-note` CSS block, whose only user was the separate-return warning.
+The comment in styles.test.tsx that named it as one of the two note-box shapes
+now names only `.link-note`.
+
+### The one tax.ts change, and why it is not a narrowing
+
+Deleting the two null-branches left `phaseoutStart` and `phaseoutEnd` typed
+`number | null` at four call sites that can no longer be null. Rather than
+guard for a case the strip makes unreachable, the table now says which status
+is the null one:
+
+- `SENIOR_DEDUCTION_PHASEOUT_START` is `satisfies Record<FilingStatus, number | null>`
+  instead of annotated, so `mfs` keeps type `null` and the other three keep
+  `number` — indexing it with a `PageFilingStatus` yields `number`.
+- `seniorDeductionPhaseoutEnd` gains two overload signatures: `'single' | 'mfj' | 'hoh'`
+  → `number`, general `FilingStatus` → `number | null`. `incomeAxisFeatures`
+  (tax.ts:1136) still takes the second and still handles its null.
+
+No value or behaviour changed for any status; tax.test.ts is untouched and green.
+
+### Tests
+
+661 passed in 13 files (677 before: 17 removed, 1 added). Removed with the
+statuses they exercised — the whole `Married filing separately` block (5), the
+`head of household` describe (6), the strip/menu handoff pair, the IRMAA
+separate-tier pair, the divergence-figure describe, and
+`draws a separate return a single line` in App.chart.test.tsx. Every claim
+worth keeping already had a single-or-joint counterpart: the spouse toggle's
+absence (`offers the second spouse toggle only for MFJ`), the unmarried
+age-65 wording and the $25,000/$34,000 thresholds in the explainer.
+
+Two rewritten, one new:
+
+- `keeps two statuses on the strip and the other two in the menu` →
+  `offers two statuses and no way to reach the other two`. Asserts the radio
+  values in order, that the page has no `combobox` at all, and that
+  /head of household/, /filing separately/ and /separate return/ match nothing
+  in the document. The last part is the guard that matters: the failure worth
+  catching is an explainer branch outliving the option that reached it.
+- `leaves every other status setting one person's benefit` folded into
+  `leaves a figure the reader set alone, and re-caps it on the way back`,
+  which now comes back from mfj to Single for the re-cap.
+- New in scenarioUrl.test.ts: `tells a link naming a status that came off the
+  page what it got`, over both `hoh` and `mfs`.
+
+### Mutation-checked four ways, each reverted
+
+| mutation | result |
+| --- | --- |
+| a `<select>` with a Head of Household option put back in the fieldset | red: `offers two statuses…` |
+| `PAGE_FILING_STATUSES` accepts `'hoh'` again | red: `tells a link naming a status…` |
+| strip order reversed to `['mfj', 'single']` | red: `offers two statuses…` |
+| `changeFilingStatus` stops re-capping the benefit | red: `leaves a figure the reader set alone…` |
+
+Snapshot-before / restore-after for each, per the standing caution about
+editing `src/App.tsx` while a human may be in it.
+
+### Verification
+
+`tsc -b`, `eslint . --max-warnings 0`, `npx vitest run` and `npm run build` all
+clean. Driven in a real Chromium (`playwright-core` + the cached 1228
+headless shell) against `vite preview`: two radios and zero `<select>`s on the
+page, none of the four removed phrases anywhere in `body.innerText`, the strip
+245×43 and fitting at a 420px viewport, `?filing=mfj` in the address bar after
+a click, the senior explainer naming $150,000 and $250,000 for a joint return
+and never "Not on this return", the `?filing=hoh` banner as quoted above, and
+zero page errors.
+
+### PLAN.md was edited by a human mid-run again
+
+Between this run's first read and its commit, `remove "You are here label" on
+graph…` went from `[x]` back to `[ ]` — so last run's work on it is being
+asked for again — and "also call the dropdown something different like
+'breakpoints'" was appended to the Lines bullet. Both carried into this commit
+untouched; the only PLAN.md change of mine is my own bullet's `[ ]` → `[x]`.
+**The topmost unchecked bullet is now the reopened "You are here" one.** Its
+label is gone from the plot and the caption reads `Total income ($) including
+$24,852 of Social Security` (verified in the browser this run), so whatever is
+being asked for is something else — worth re-reading the bullet against the
+screenshot before changing anything.

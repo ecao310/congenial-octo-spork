@@ -1,6 +1,6 @@
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import { render, screen, fireEvent, within, act } from '@testing-library/react';
 import { vi } from 'vitest';
-import App, { CustomTooltip, LTCGTooltip } from './App';
+import App, { CustomTooltip, LTCGTooltip, READING_SETTLE_MS } from './App';
 import { TAX_YEAR_PARAMS, TAX_YEARS, defaultTaxYear } from './utils/tax';
 import type { TaxYear } from './utils/tax';
 
@@ -3229,5 +3229,161 @@ describe('the return in the address bar', () => {
       render(<App />);
       expect(screen.queryByRole('status')).not.toBeInTheDocument();
     });
+  });
+});
+
+
+/**
+ * The one thing on this page that is heard rather than read.
+ *
+ * Every readout here was silent: a range input announces its own new value and
+ * nothing else, so the "you are here" sentence, the advice under it, the
+ * effective rate and the seven closing figures all changed under a screen
+ * reader without a word. What is asserted below is as much about what the
+ * region does *not* say — nothing on arrival, nothing mid-drag, and never two
+ * steps' readings for one control — as about what it does.
+ */
+describe('the live reading under the controls', () => {
+  /**
+   * Full fake timers here, where the rest of the file fakes only the clock:
+   * the settle delay is the subject, so it has to be advanced rather than
+   * waited out. The system time still has to be set, because the app opens on
+   * whatever year the calendar says.
+   */
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(`${PINNED_YEAR}-07-01T00:00:00Z`));
+  });
+
+  const region = (): HTMLElement =>
+    document.querySelector('.live-reading') as HTMLElement;
+
+  /** Let whatever was last moved come to rest. */
+  const settle = (): void => {
+    act(() => {
+      vi.advanceTimersByTime(READING_SETTLE_MS);
+    });
+  };
+
+  /** A notch of a drag: not enough stillness to be read out. */
+  const nudge = (): void => {
+    act(() => {
+      vi.advanceTimersByTime(READING_SETTLE_MS - 100);
+    });
+  };
+
+  const slider = (name: RegExp): HTMLElement => screen.getByRole('slider', { name });
+  const set = (name: RegExp, value: number): void => {
+    fireEvent.change(slider(name), { target: { value: String(value) } });
+  };
+  const income = /other income \(not social security\)/i;
+  const benefit = /social security benefit/i;
+  const gains = /long-term capital gains/i;
+
+  it('is on the page before it has anything to say', () => {
+    render(<App />);
+    expect(region()).toBeInTheDocument();
+    expect(region()).toHaveAttribute('aria-live', 'polite');
+    expect(region()).toHaveAttribute('aria-atomic', 'true');
+    expect(region().textContent).toBe('');
+  });
+
+  /**
+   * A page that announces itself on arrival talks over the reader's own walk
+   * down it. The close is meant to be read on the way past, not shouted on
+   * the way in.
+   */
+  it('says nothing on arrival', () => {
+    render(<App />);
+    settle();
+    expect(region().textContent).toBe('');
+  });
+
+  it('reads step 2 back once the income slider has settled', () => {
+    render(<App />);
+    set(income, 10_000);
+    expect(region().textContent).toBe('');
+    settle();
+    expect(region()).toHaveTextContent(
+      'At $10,000 of other income the next dollar is taxed at 0%',
+    );
+    expect(region()).toHaveTextContent('an effective rate of');
+    expect(region()).toHaveTextContent('You are on the valley floor.');
+  });
+
+  /**
+   * The reason for the delay: a range input fires a change per notch, and a
+   * polite region reads each one out in full before it looks at the next. A
+   * drag across the axis has to be one sentence, and it has to be the sentence
+   * about where the reader stopped.
+   */
+  it('reads the end of a drag rather than every notch of it', () => {
+    render(<App />);
+    set(income, 10_000);
+    nudge();
+    set(income, 20_000);
+    nudge();
+    set(income, 30_000);
+    expect(region().textContent).toBe('');
+    settle();
+    expect(region()).toHaveTextContent('At $30,000 of other income');
+    expect(region()).not.toHaveTextContent('$10,000 of other income');
+    expect(region()).not.toHaveTextContent('$20,000 of other income');
+  });
+
+  /**
+   * One region, carrying the step whose control moved. Step 1's benefit moves
+   * every reading on the page, so a region per step would queue four
+   * announcements for one drag — the noise this is built to avoid.
+   */
+  it('carries the reading of the step whose control moved, and only that one', () => {
+    render(<App />);
+    set(benefit, 30_000);
+    settle();
+    expect(region()).toHaveTextContent(
+      '2025 brackets, a single filer, under 65, collecting $30,000 of Social Security a year.',
+    );
+    expect(region()).not.toHaveTextContent('the next dollar is taxed at');
+
+    set(income, 50_000);
+    settle();
+    expect(region()).toHaveTextContent('At $50,000 of other income');
+    expect(region()).not.toHaveTextContent('brackets, a single filer');
+  });
+
+  it('names the advanced inputs the recap on screen only points at', () => {
+    render(<App />);
+    fireEvent.click(screen.getByText('Advanced inputs'));
+    set(/tax-exempt \(municipal\) interest/i, 10_000);
+    settle();
+    expect(region()).toHaveTextContent('Muni interest $10,000.');
+  });
+
+  it('reads step 3 back off the gain slider', () => {
+    render(<App />);
+    set(gains, 10_000);
+    settle();
+    expect(region()).toHaveTextContent(
+      'With $10,000 of your $30,000 coming from long-term gains, the next dollar of gain is taxed at',
+    );
+  });
+
+  it('reads step 4 back off the ceiling picker', () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole('radio', { name: /Top of the 22% bracket/ }));
+    settle();
+    expect(region()).toHaveTextContent(/\$[\d,]+ fits under Top of the 22% bracket/);
+    expect(region()).toHaveTextContent('in federal tax, an average of');
+  });
+
+  /**
+   * The state selector is the one control here that feeds nothing: it moves no
+   * figure, and a `<select>` already announces the option it lands on.
+   */
+  it('stays quiet for the control that moves no figure', () => {
+    render(<App />);
+    fireEvent.change(screen.getByLabelText('State'), { target: { value: 'CO' } });
+    settle();
+    expect(region().textContent).toBe('');
   });
 });

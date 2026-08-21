@@ -579,6 +579,30 @@ export const LTCGTooltip: React.FC<LTCGTooltipProps> = ({
   );
 };
 
+/**
+ * Which of the five things `StandingNote` is about to say at length, in the
+ * one sentence that opens it.
+ *
+ * Lifted out because the live region reads it too — the advice paragraph is
+ * five sentences of arithmetic, which is the right length to read and the
+ * wrong length to have read aloud on every notch of a drag, so the region
+ * takes this line and leaves the rest on the page. Sharing it is what keeps
+ * the two from drifting: the branches below select on the same conditions in
+ * the same order, and there is nowhere for a sixth position to be added to
+ * one and not the other.
+ */
+const standingHeadline = (
+  standing: CurveStanding<MarginalRatePoint> | null,
+): string => {
+  if (!standing) return '';
+  const { kind, next, hump } = standing;
+  if (kind === 'peak' && hump) return 'You are standing on the hump.';
+  if (kind === 'climbing' && hump) return 'You are on the climb.';
+  if (kind === 'valley' && next) return 'You are on the valley floor.';
+  if (kind === 'past' && hump) return 'The hump is behind you.';
+  return 'This return has no hump.';
+};
+
 interface StandingNoteProps {
   /** Where the reader is standing on step 2's curve. Null before it is drawn. */
   standing: CurveStanding<MarginalRatePoint> | null;
@@ -617,7 +641,7 @@ export const StandingNote: React.FC<StandingNoteProps> = ({ standing, at }) => {
     ) : null;
     return (
       <p className="slider-advice">
-        <strong>You are standing on the hump.</strong> The next dollar costs{' '}
+        <strong>{standingHeadline(standing)}</strong> The next dollar costs{' '}
         {rate} &mdash; the highest rate this chart reaches, and it holds from{' '}
         {formatCurrency(hump.start)} to {formatCurrency(hump.end)}.{' '}
         {prev ? (
@@ -646,7 +670,7 @@ export const StandingNote: React.FC<StandingNoteProps> = ({ standing, at }) => {
   if (kind === 'climbing' && hump) {
     return (
       <p className="slider-advice">
-        <strong>You are on the climb.</strong> The next dollar costs {rate}, and{' '}
+        <strong>{standingHeadline(standing)}</strong> The next dollar costs {rate}, and{' '}
         {formatCurrency(hump.start - at)} further on &mdash; at{' '}
         {formatCurrency(hump.start)} &mdash; the rate reaches {hump.rate}% and
         holds to {formatCurrency(hump.end)}, the dearest stretch on this chart.
@@ -660,7 +684,7 @@ export const StandingNote: React.FC<StandingNoteProps> = ({ standing, at }) => {
   if (kind === 'valley' && next) {
     return (
       <p className="slider-advice">
-        <strong>You are on the valley floor.</strong> The next dollar costs{' '}
+        <strong>{standingHeadline(standing)}</strong> The next dollar costs{' '}
         {rate}, and so does every dollar up to {formatCurrency(next.start)}{' '}
         &mdash; {formatCurrency(next.start - at)} of room from here &mdash;
         after which the rate steps to {next.rate}%
@@ -683,7 +707,7 @@ export const StandingNote: React.FC<StandingNoteProps> = ({ standing, at }) => {
   if (kind === 'past' && hump) {
     return (
       <p className="slider-advice">
-        <strong>The hump is behind you.</strong> The next dollar costs {rate},
+        <strong>{standingHeadline(standing)}</strong> The next dollar costs {rate},
         against {hump.rate}% back between {formatCurrency(hump.start)} and{' '}
         {formatCurrency(hump.end)}
         {next
@@ -714,7 +738,7 @@ export const StandingNote: React.FC<StandingNoteProps> = ({ standing, at }) => {
 
   return (
     <p className="slider-advice">
-      <strong>This return has no hump.</strong> The next dollar costs {rate}
+      <strong>{standingHeadline(standing)}</strong> The next dollar costs {rate}
       {next
         ? `, and holds there to ${formatCurrency(next.start)}, where it steps to ${next.rate}%`
         : ''}
@@ -756,6 +780,45 @@ const curveStepFor = (axisMax: number): number =>
 const stepFromHash = (hash: string): StepId | null => {
   const id = hash.replace(/^#step-/, '');
   return STEPS.some((s) => s.id === id) ? (id as StepId) : null;
+};
+
+/**
+ * How long a control has to sit still before the live region takes its new
+ * reading, in milliseconds.
+ *
+ * Long enough that a drag across the whole axis is one announcement rather
+ * than sixty — a range input fires a change per notch, and every one of them
+ * would otherwise queue a sentence a polite region reads out in full before
+ * it looks at the next. Short enough that a reader who moves one notch and
+ * stops is not left wondering whether anything happened.
+ */
+export const READING_SETTLE_MS = 700;
+
+/**
+ * A reading that lags its input: it takes a new value only once that value
+ * has held still for `delay`, and the visible page never waits on it.
+ *
+ * This is the whole of the debounce the live region needs. It is not a
+ * throttle — a throttle would read out the middle of a drag, which is a
+ * figure the reader was passing through rather than one they chose — and it
+ * deliberately drops everything before the last value rather than queueing
+ * it.
+ *
+ * Mounting takes the reading as it stands rather than scheduling it: content
+ * already inside a live region when the page loads is not announced, so there
+ * is nothing to wait for and nothing to interrupt the reader's own walk down
+ * the page with.
+ */
+const useSettledReading = (
+  reading: string,
+  delay: number = READING_SETTLE_MS,
+): string => {
+  const [settled, setSettled] = useState(reading);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setSettled(reading), delay);
+    return () => window.clearTimeout(timer);
+  }, [reading, delay]);
+  return settled;
 };
 
 const App: React.FC = () => {
@@ -807,6 +870,31 @@ const App: React.FC = () => {
    * means this selects a paragraph under step 2's chart and nothing else.
    */
   const [homeState, setHomeState] = useState<string>(opening.homeState);
+
+  /**
+   * Whose reading the live region is carrying, or null before the reader has
+   * moved anything.
+   *
+   * Every readout on this page is silent to a screen reader: moving a slider
+   * announces the slider's own value and nothing else, so the "you are here"
+   * sentence, the advice under it and the effective rate all change unheard.
+   * A live region fixes that, and the whole difficulty is how much to put in
+   * one — the seven closing figures read out on every notch of a drag would be
+   * worse than the silence they replaced. So the region carries exactly one
+   * step's reading: the step whose control was last touched.
+   *
+   * Keyed to the control rather than to the step the nav marks current,
+   * because every step is mounted at once and a reader can be working step 3's
+   * slider with the nav still on step 1. And one region rather than four,
+   * because step 1's benefit moves all four readings — four regions would
+   * queue four announcements for one drag, which is the noise this is trying
+   * to avoid.
+   *
+   * Null at mount is what keeps the page quiet on arrival: a region with
+   * nothing in it announces nothing, and the close is meant to be read on the
+   * way down rather than shouted on the way in.
+   */
+  const [announceFrom, announce] = useState<StepId | null>(null);
 
   /**
    * Whether this browser will hand a page the clipboard.
@@ -953,6 +1041,7 @@ const App: React.FC = () => {
       Math.min(current, qcdLimitFor({ filingStatus, year: next })),
     );
     setYear(next);
+    announce('benefit');
   };
 
   /**
@@ -964,6 +1053,7 @@ const App: React.FC = () => {
   const changeOrdinaryIncome = (next: number): void => {
     setPlannedLtcg((current) => Math.min(current, next));
     setOrdinaryIncome(next);
+    announce('torpedo');
   };
 
   /**
@@ -974,6 +1064,7 @@ const App: React.FC = () => {
   const changeFilingStatus = (next: FilingStatus): void => {
     setQcd((current) => Math.min(current, qcdLimitFor({ filingStatus: next, year })));
     setFilingStatus(next);
+    announce('benefit');
   };
 
   // Only a joint return can claim the addition twice, and the spouse's
@@ -1413,6 +1504,86 @@ const App: React.FC = () => {
   /** What the ceiling caps, spelled out for the sentence that quotes it. */
   const ceilingMeasure = CONVERSION_MEASURE_LABELS[ceiling.measure];
 
+  /**
+   * What the live region will read out, once whatever changed it has settled.
+   *
+   * One step's reading each, written to be listened to rather than looked at:
+   * plain sentences with no markup to flatten, no em dashes, and the figures
+   * in the order the eye takes them off the page. It says what that step's own
+   * readout says and stops there: the rest of the advice paragraph stays on
+   * the page, and so do all seven of the closing figures, for a reader who
+   * goes and reads them.
+   *
+   * Not memoised: it is four string concatenations on a component that has
+   * already swept a curve, and holding it as a plain value is what lets the
+   * settle hook below compare readings by their text rather than by identity.
+   */
+  const reading = ((): string => {
+    switch (announceFrom) {
+      case 'benefit': {
+        const collecting =
+          ssBenefit > 0
+            ? `collecting ${formatCurrency(ssBenefit)} of Social Security a year`
+            : 'collecting no Social Security';
+        /* The recap on screen says "plus whatever is set under Advanced
+           inputs", which is a pointer, and a pointer is no use to someone who
+           has just moved one of them. So the reading names them. */
+        const extras = advancedSet
+          .map(({ label, value }) => `${label} ${formatCurrency(value)}`)
+          .join(', ');
+        return `${year} brackets, ${FILING_STATUS_PROSE[filingStatus]}, ${ageProse}, ${collecting}.${
+          extras ? ` ${extras}.` : ''
+        }`;
+      }
+      case 'torpedo':
+        return herePoint
+          ? `At ${formatCurrency(ordinaryIncome)} of other income the next dollar is taxed at ${
+              herePoint.marginalRate
+            }%. Federal tax ${formatCurrency(herePoint.totalTax)} on ${formatCurrency(
+              totalIncome,
+            )} of total income, an effective rate of ${formatPercent(
+              effectiveRateOn(herePoint.totalTax),
+            )}. ${standingHeadline(standing)}`
+          : '';
+      case 'gains':
+        return hereGainPoint
+          ? `With ${formatCurrency(plannedLtcg)} of your ${formatCurrency(
+              ordinaryIncome,
+            )} coming from long-term gains, the next dollar of gain is taxed at ${
+              hereGainPoint.marginalRate
+            }%. Federal tax ${formatCurrency(
+              hereGainPoint.totalTax,
+            )} on the same ${formatCurrency(
+              totalIncome,
+            )} of total income, an effective rate of ${formatPercent(
+              effectiveRateOn(hereGainPoint.totalTax),
+            )}.`
+          : '';
+      case 'conversion': {
+        const line = `${ceiling.label}, ${formatCurrency(ceiling.amount)} of ${ceilingMeasure}`;
+        if (conversionFits)
+          return `${formatCurrency(
+            sizing.conversion,
+          )} fits under ${line}. It costs ${formatCurrency(
+            sizing.taxCost,
+          )} in federal tax, an average of ${sizing.costPerDollar}% on every dollar converted.`;
+        return sizing.alreadyOver
+          ? `Nothing fits under ${line}. This return is already ${formatCurrency(
+              Math.round(-sizing.headroom),
+            )} past it.`
+          : `Nothing fits under ${line}. This return sits within a dollar of it.`;
+      }
+      default:
+        return '';
+    }
+  })();
+
+  /**
+   * The same reading, held back until the control that changed it has stopped
+   * moving. What the page shows never waits on this; only what it says does.
+   */
+  const announcement = useSettledReading(reading);
+
   /* ───── The close: what the four steps add up to ───── */
 
   /**
@@ -1561,6 +1732,22 @@ const App: React.FC = () => {
         </div>
       )}
 
+      {/* What a screen reader hears when a control moves, and the only thing
+          on this page that is heard rather than read. Rendered always and
+          empty until there is something to say, because a live region has to
+          be on the page before the message lands in it to be read out
+          reliably — the same reason the copy-link status is. `aria-atomic`
+          because each reading is one sentence that replaces the last rather
+          than an addition to it.
+
+          Where it sits changes nothing about when it is read, so it sits
+          above the steps rather than below them: the close is the last thing
+          on this page before the disclaimer, and that adjacency is part of
+          the shape. Empty and a pixel wide, it interrupts nothing here. */}
+      <p className="live-reading" aria-live="polite" aria-atomic="true">
+        {announcement}
+      </p>
+
       <div
         className="step-nav"
         role="toolbar"
@@ -1703,7 +1890,10 @@ const App: React.FC = () => {
                 type="checkbox"
                 checked={isSenior}
                 aria-describedby="senior-deduction-hint"
-                onChange={(e) => setIsSenior(e.target.checked)}
+                onChange={(e) => {
+                  setIsSenior(e.target.checked);
+                  announce('benefit');
+                }}
               />
               <span>Age 65 or older</span>
             </label>
@@ -1714,7 +1904,10 @@ const App: React.FC = () => {
                   checked={spouseIsSenior}
                   disabled={!isSenior}
                   aria-describedby="senior-deduction-hint"
-                  onChange={(e) => setSpouseIsSenior(e.target.checked)}
+                  onChange={(e) => {
+                    setSpouseIsSenior(e.target.checked);
+                    announce('benefit');
+                  }}
                 />
                 <span>Both spouses are 65 or older</span>
               </label>
@@ -1783,7 +1976,10 @@ const App: React.FC = () => {
             max={maxAnnualSSBenefit(year)}
             step={12}
             value={ssBenefit}
-            onChange={(e) => setSsBenefit(Number(e.target.value))}
+            onChange={(e) => {
+              setSsBenefit(Number(e.target.value));
+              announce('benefit');
+            }}
           />
           <div className="slider-range-labels">
             <span>$0</span>
@@ -1807,6 +2003,11 @@ const App: React.FC = () => {
             id="home-state"
             className="state-select"
             value={homeState}
+            /* The one control here that does not feed the live region. It
+               moves no figure — it selects the footnote under step 2's chart —
+               and a select announces its own new option, so the only thing
+               left to read out would be the whole footnote. See
+               `announceFrom`. */
             onChange={(e) => setHomeState(e.target.value)}
           >
             <option value="">Somewhere else \u2014 or rather not say</option>
@@ -1869,7 +2070,10 @@ const App: React.FC = () => {
               max={MAX_MUNI_INTEREST}
               step={250}
               value={muniInterest}
-              onChange={(e) => setMuniInterest(Number(e.target.value))}
+              onChange={(e) => {
+                setMuniInterest(Number(e.target.value));
+                announce('benefit');
+              }}
               className="slider-violet"
             />
             <div className="slider-range-labels">
@@ -1896,7 +2100,10 @@ const App: React.FC = () => {
               max={qcdLimit}
               step={250}
               value={qcd}
-              onChange={(e) => setQcd(Number(e.target.value))}
+              onChange={(e) => {
+                setQcd(Number(e.target.value));
+                announce('benefit');
+              }}
               className="slider-lime"
             />
             <div className="slider-range-labels">
@@ -2551,7 +2758,10 @@ const App: React.FC = () => {
               max={gainsAxisMax}
               step={500}
               value={plannedLtcg}
-              onChange={(e) => setPlannedLtcg(Number(e.target.value))}
+              onChange={(e) => {
+                setPlannedLtcg(Number(e.target.value));
+                announce('gains');
+              }}
               className="slider-emerald"
             />
             <div className="slider-range-labels">
@@ -2866,7 +3076,10 @@ const App: React.FC = () => {
                   name="conversion-ceiling"
                   value={id}
                   checked={ceiling.id === id}
-                  onChange={() => setCeilingId(id)}
+                  onChange={() => {
+                    setCeilingId(id);
+                    announce('conversion');
+                  }}
                 />
                 <span>
                   {label}

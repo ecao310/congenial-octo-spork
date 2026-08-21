@@ -4911,3 +4911,108 @@ line's own colour at 11px, which is 2–3:1 on white. They are inline SVG `fill`
 attributes written per chart in App.tsx, so CSS can only flatten all of them
 to one colour — which would cost the tie between each label and the line it
 names. Left alone deliberately; it wants a decision in App.tsx, not a rule.
+
+## 2026-08-21 — Task: No readout on the page is a live region
+
+Every readout here was silent. A range input announces its own new value and
+nothing else, so the "you are here" sentence, the advice paragraph under it,
+the effective rate and all seven closing figures changed under a screen reader
+without a word. `aria-live` appeared once on the page — the copy-link status
+added last iteration — and `role="status"` once, on the link warning.
+
+### The decision the bullet left open: how much to announce
+
+The bullet's own warning is the design constraint. A polite region reads each
+change out *in full* before it looks at the next, so the size of the reading
+and the rate of change multiply: seven closing figures × sixty notches of a
+drag is not an improvement on silence.
+
+Three calls came out of that:
+
+- **One region, not four.** Four regions — one per step — look right until you
+  notice that step 1's benefit slider moves all four readings. One drag would
+  queue four announcements. So there is a single region, and what it carries is
+  the reading of the step whose control was last touched: `announceFrom`, a
+  `StepId | null` that every control sets in its own `onChange`.
+- **Keyed to the control, not to the nav.** Every step is mounted at once, so a
+  reader can be working step 3's slider with the nav still marking step 1.
+- **Debounced, not throttled.** A throttle reads out the middle of a drag,
+  which is a figure the reader was passing *through* rather than one they
+  chose. `useSettledReading` takes a new value only once it has held still for
+  `READING_SETTLE_MS` (700), and drops everything before the last one.
+
+Nothing is announced on arrival, which the bullet asked for and which falls out
+of `announceFrom` starting null: the region renders empty, and content already
+inside a live region at load is never announced. The visible page never waits
+on any of this — only what the page *says* is delayed.
+
+### What each reading says
+
+One step's own readout, rewritten to be listened to rather than looked at:
+plain sentences, no markup to flatten, no em dashes, figures in the order the
+eye takes them off the page.
+
+- **benefit** — the recap that closes step 1. It names the advanced inputs,
+  where the recap on screen only points at them ("plus whatever is set under
+  Advanced inputs"), because a pointer is no use to someone who has just moved
+  one.
+- **torpedo** — income, marginal rate, total tax, effective rate, then the
+  standing headline.
+- **gains** — the split, the rate on the next dollar of gain, tax and effective
+  rate on the same total income.
+- **conversion** — what fits under the chosen line and what it costs, or which
+  of the two ways nothing fits.
+
+### `standingHeadline`
+
+The advice paragraph is five sentences of arithmetic: the right length to read,
+the wrong length to hear on every notch. So its opening sentence was lifted out
+into `standingHeadline(standing)` and both call it — `StandingNote` renders it
+inside the `<strong>` each branch already had, and the torpedo reading appends
+it. The branches select on the same conditions in the same order, so a sixth
+position cannot be added to one and not the other. The existing "moves the
+reader through all four positions on one curve" test already asserts on that
+`<strong>`, so the refactor was covered before it was made.
+
+### The state selector is deliberately left out
+
+It moves no figure — it selects the footnote under step 2's chart — and a
+`<select>` announces the option it lands on, so the only thing left to read
+would be the whole footnote. Said so at the `onChange`, and logged in PLAN.md's
+Discovered Work as the decision it is rather than the omission it looks like.
+
+### Placement
+
+Above the steps, not below them. Where a live region sits changes nothing about
+when it is read, and the close is the last thing on this page before the
+disclaimer — an invariant `the closing answer` already asserts
+(`answer().nextElementSibling?.tagName === 'FOOTER'`). Putting the region at the
+end broke that test, which was the test doing its job.
+
+### Hiding it
+
+`.live-reading` is clipped rather than hidden. Neither `display: none` nor
+`visibility: hidden` will do — both take the element out of the accessibility
+tree along with the layout, and a region that is not in the tree is never read.
+
+### Verified
+
+- `npx tsc -b`, `npx eslint src --max-warnings 0`, `npx vitest run`
+  (10 files, 634 tests — nine new), `npm run build`, and read `.live-reading`
+  back out of the minified `dist` CSS.
+- Both mechanical claims falsified once each, to check the tests bite:
+  dropping the `clearTimeout` in the hook fails "reads the end of a drag rather
+  than every notch of it"; pointing the benefit slider at `'torpedo'` fails
+  "carries the reading of the step whose control moved, and only that one".
+- The new describe uses full fake timers where the rest of the file fakes only
+  the clock — the settle delay is the subject, so it is advanced rather than
+  waited out. `READING_SETTLE_MS` is exported for that.
+- No screen reader in this repo. What is verifiable here is the markup, the
+  timing and the text; that VoiceOver or NVDA reads it as intended is reasoned
+  about rather than heard.
+
+### Discovered work
+
+One new bullet in PLAN.md: the state selector's silence, and whether a reading
+that *summarises* rather than repeats belongs in a region whose premise so far
+is that it says what the page says.

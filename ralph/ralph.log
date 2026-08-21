@@ -3183,3 +3183,105 @@ Two gotchas worth keeping:
 SVG attributes. JS bundle 554.28 kB. No headless browser in the project, so
 the geometry is asserted in jsdom rather than seen; that is what the fraction
 and anchor tests are for.
+
+## 2026-08-21 — Task: Re-do the capital gains step as a share of income
+
+Struck two bullets: the Backlog-2 item and the `plannedLtcg`-reaches-no-chart
+bullet in Discovered Work. They were the same change seen from two sides — the
+backlog item's "audit every caller, ordinary becomes X − LTCG" *is* the
+threading the Discovered Work bullet asked for.
+
+The task wording predates two iterations: step 3's own ordinary-income slider
+and the LTCG slider's place in the advanced disclosure were both gone already,
+and `totalTaxWithLTCG` is now `totalTax(scenario)`. What was left is the whole
+of it: a gain stops being additive.
+
+### The model
+
+The reader's non-Social-Security income is **one number**, and its composition
+is **one more number**. Step 2 sweeps the total holding the split; step 3
+sweeps the split holding the total. Two perpendicular cuts through the same
+scenario, meeting at the reader's own point — where both charts now report the
+same total tax ($543 at the defaults with a $20,000 gain, checked both ways).
+
+`splitOtherIncome(otherIncome, ltcg)` in tax.ts is the whole of the arithmetic:
+`{ ordinaryIncome: X − g, ltcg: g }`, with `g` clamped to `X` because there is
+no $10,000 gain inside $5,000 of income.
+
+Both sweeps take a `gainsWithinIncome` flag, off by default. Off is the
+statute's reading — ordinary income and gains are separate line items and
+nothing stops a filer having both — which is why every existing tax.test.ts
+case stayed green untouched. On is what a chart wants when the reader has been
+asked for one income figure and then asked how much of it is gain.
+
+`otherIncomeAtIrmaaMagi` needed no flag: it solves on the chart's axis, so it
+just honours the scenario's `ltcg` as a share. No caller passed one before.
+
+### What changed on screen
+
+- **Step 2's curve now honours the gain**, which changes its shape rather than
+  its labels. At $60,000 with a $20,000 gain the next dollar costs 27%, not
+  22% — the ordinary dollar lifts the gain stack across the 0%/15% line. The
+  stacking effect, showing up on the torpedo chart. At $30,000 it runs the
+  other way: 22.2% → 18.5%.
+- **Step 3's axis ends at the reader's own income**, and `MAX_LTCG` is gone —
+  there is nothing left for a constant to bound. The slider's range labels read
+  "None of it" / "All $30,000 of it".
+- **A new readout sentence** prices the split against the all-ordinary version
+  of the same income: at the defaults, $20,000 of the $30,000 taken as gain
+  saves $2,270. That figure is the point of the whole reframing and neither
+  chart shows it — both ends are points on the gains curve, so it costs no
+  extra arithmetic.
+- **Pulling the income slider under a gain drags the gain with it**, the same
+  re-cap the charitable gift already got when its limit falls.
+- **An empty state at $0 of other income**: the axis has no width, the slider
+  no travel and the curve one point, so say "nothing to split yet" rather than
+  draw it.
+
+### Two consequences worth knowing
+
+**IRMAA got simpler, not harder.** The Discovered Work bullet worried that
+"IRMAA MAGI is AGI, and AGI includes capital gains, so the cliffs are the wrong
+ones by the full amount of the gain". Under the non-additive model that
+dissolves: AGI counts both halves at face value and so does provisional income,
+so MAGI — and every cliff on the axis — is blind to the split. The complaint
+was an artefact of gains being additive.
+
+**Except through the charitable gift.** `qcdFor` caps the exclusion by the
+ordinary income there is to exclude it from, and a gain is a sale, not a
+distribution. So a large enough gain crowds the gift out and *does* move the
+cliffs left. That is the one place the split reaches MAGI, it has a test, and
+the field note under the QCD slider now says so.
+
+### Tests
+
++18 cases, 416 → 434.
+
+tax.test.ts, new `describe('gains carved out of income rather than stacked on
+top')`: `splitOtherIncome` (carve, clamp, never negative); the two sweeps under
+the flag, each pinned against a hand-built `totalTax` call at the same point,
+and each shown to differ from the additive default; the taxable benefit
+unchanged across the whole gains axis (the property that makes that chart
+readable); total tax non-increasing as the gain share grows — true because the
+preferential rate is below the ordinary one at every position in the stack, and
+qualified with why a QCD breaks it; and the two IRMAA cases above.
+
+App.test.tsx, new `describe('a gain is a share of the income, not an addition
+to it')`: the axis tracks the income slider, the gain gets dragged down, the
+torpedo readout re-prices (22.2% → 18.5%), the saving sentence reads $2,270,
+and the $0 empty state. Renamed selectors across both test files for the two
+new slider labels — "Other Income (not Social Security)" and "Long-Term Capital
+Gains Inside That Income".
+
+### Verified
+
+`npx tsc -b`, `npx eslint src --max-warnings 0`, `npx vitest run` (7 files, 434
+tests, green in 4.4s), `npm run build`. No CSS change — the empty state reuses
+`.step-prose`.
+
+### Logged, not fixed
+
+Two new Discovered Work bullets: step 3's curve is still drawn in step 2's
+amber, which reads as "same chart rescaled" when the two are now perpendicular
+sweeps; and the advanced-inputs summary line reports the charitable gift as set
+rather than as allowed, which a large gain can now cut into.

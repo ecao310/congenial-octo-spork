@@ -20,6 +20,7 @@ import {
   filingParams,
   FilingStatus,
   segmentCurve,
+  splitOtherIncome,
   standardDeductionFor,
   taxableSocialSecurity,
   qcdLimitFor,
@@ -45,16 +46,21 @@ import type {
 } from './utils/tax';
 
 const MAX_INCOME = 150_000;
-const MAX_LTCG = 200_000;
 const DEFAULT_ORDINARY_INCOME = 30_000;
 /** Roughly a $1.4M muni ladder at 2025 yields — well past any realistic retiree. */
 const MAX_MUNI_INTEREST = 50_000;
 
 /**
  * One worked example in three steps, in the order a reader builds it: the
- * benefit they will collect, what their other income does to it, and what a
- * realized capital gain does on top of both. Every step prices the same
+ * benefit they will collect, what the rest of their income does to it, and how
+ * much of that rest is a long-term capital gain. Every step prices the same
  * return, so a figure set in step 1 is still set in step 3.
+ *
+ * A gain is a *share* of the income entered in step 2, never something added
+ * on top of it — see `splitOtherIncome`. So the reader's total income is one
+ * number they set once, and step 3 moves only its composition. That is what
+ * lets the two charts price the same return: step 2 sweeps the total holding
+ * the split, step 3 sweeps the split holding the total.
  *
  * The steps stay mounted and the page scrolls, where the tab strip this
  * replaced swapped one panel for another. Three reasons to scroll: a step you
@@ -98,14 +104,14 @@ const STEPS = [
     navLabel: 'The tax torpedo',
     heading: 'The tax torpedo',
     blurb:
-      'Add the income that is not Social Security, and see what the next dollar of it really costs.',
+      'Add everything that is not Social Security, and see what the next dollar of it really costs.',
   },
   {
     id: 'gains',
     navLabel: 'Capital gains',
     heading: 'Capital Gains Stacking',
     blurb:
-      'Realize a long-term gain on top of all that, and watch the two effects stack.',
+      'Say how much of that income is a long-term gain, and watch the two effects stack.',
   },
 ] as const;
 
@@ -174,9 +180,9 @@ function pointAt<P>(
  * The dashed vertical marking the reader's own place on a chart.
  *
  * The slider under each chart is a *position* on a curve that is already
- * drawn, not an input to it, and nothing on screen said so: an "Other Ordinary
- * Income" slider sitting under a chart whose x-axis is other ordinary income
- * reads as the control that draws the curve. The line is what says otherwise.
+ * drawn, not an input to it, and nothing on screen said so: an "Other Income"
+ * slider sitting under a chart whose x-axis is other income reads as the
+ * control that draws the curve. The line is what says otherwise.
  * It takes the colour of the slider that drives it — amber on step 2, emerald
  * on step 3 — so the pairing is legible without reading either label, and a
  * heavier dash than the IRMAA cliffs it shares step 2 with.
@@ -231,6 +237,8 @@ interface CustomTooltipProps {
   muniInterest?: number;
   /** Charitable distribution excluded from the x-axis income, if any. */
   qcd?: number;
+  /** How much of the x-axis income is a long-term gain rather than ordinary. */
+  ltcg?: number;
   /** How many people on the return are enrolled in Medicare. */
   beneficiaries?: number;
   /** Which year's premium schedule prices the IRMAA line. */
@@ -245,6 +253,7 @@ export const CustomTooltip: React.FC<CustomTooltipProps> = ({
   filingStatus = 'single',
   muniInterest = 0,
   qcd = 0,
+  ltcg = 0,
   beneficiaries = 1,
   year = defaultTaxYear(),
 }) => {
@@ -253,21 +262,31 @@ export const CustomTooltip: React.FC<CustomTooltipProps> = ({
   const segment = segments.find(
     (seg) => point.income >= seg.start && point.income <= seg.end,
   );
+  // The axis is every dollar that is not Social Security, gains included, so
+  // the hovered income has to be split before anything is priced off it.
+  const split = splitOtherIncome(point.income, ltcg);
   // Medicare reads a wider MAGI than the tax chain does — tax-exempt interest
   // is added back — so it has to be recomputed here rather than read off the
   // curve, which only carries taxable figures.
   const irmaa = irmaaFor(
-    irmaaMagi({ ordinaryIncome: point.income, ssBenefit, ltcg: 0, filingStatus, muniInterest, qcd }),
+    irmaaMagi({ ...split, ssBenefit, filingStatus, muniInterest, qcd }),
     { filingStatus, beneficiaries, year },
   );
   // The x-axis is income before the gift, so the charitable exclusion has to
-  // come back out of the total the header quotes.
-  const given = Math.min(qcd, point.income);
+  // come back out of the total the header quotes. A gift can only be excluded
+  // from the ordinary half — the gain is a sale, not a distribution.
+  const given = Math.min(qcd, split.ordinaryIncome);
   return (
     <div style={TOOLTIP_STYLE}>
       <div style={{ fontWeight: 600, marginBottom: '0.25rem' }}>
         Other income {formatCurrency(point.income)} · Total income {formatCurrency(point.income + ssBenefit)}
       </div>
+      {split.ltcg > 0 && (
+        <div style={{ fontSize: '0.8125rem', color: '#34d399' }}>
+          Of which {formatCurrency(split.ltcg)} is a long-term gain —{' '}
+          {formatCurrency(split.ordinaryIncome)} is ordinary
+        </div>
+      )}
       {given > 0 && (
         <div style={{ fontSize: '0.8125rem', color: '#a3e635' }}>
           Less {formatCurrency(given)} given straight to charity —{' '}
@@ -310,6 +329,11 @@ export const CustomTooltip: React.FC<CustomTooltipProps> = ({
 interface LTCGTooltipProps {
   active?: boolean;
   payload?: Array<{ payload: LTCGMarginalRatePoint }>;
+  /**
+   * The whole other-income figure the swept gain is carved *out of*, not a
+   * figure the gain sits on top of. It is the same at every point on the axis;
+   * only how much of it is gain moves.
+   */
   ordinaryIncome: number;
   ssBenefit: number;
   segments: CurveSegment<LTCGMarginalRatePoint>[];
@@ -330,7 +354,7 @@ export const LTCGTooltip: React.FC<LTCGTooltipProps> = ({
   return (
     <div style={TOOLTIP_STYLE}>
       <div style={{ fontWeight: 600, marginBottom: '0.25rem' }}>
-        LTCG {formatCurrency(point.ltcg)} · Total income {formatCurrency(point.ltcg + ordinaryIncome + ssBenefit)}
+        {formatCurrency(point.ltcg)} of {formatCurrency(ordinaryIncome)} is gain · Total income {formatCurrency(ordinaryIncome + ssBenefit)}
       </div>
       <div>
         Marginal Rate: <strong style={{ color: '#f59e0b' }}>{point.marginalRate}%</strong>
@@ -407,6 +431,17 @@ const App: React.FC = () => {
   };
 
   /**
+   * The gain is a share of the other income, so it can never be more than
+   * there is. Pulling the income slider down under a gain already set drags
+   * the gain down with it rather than leaving it standing past its own
+   * ceiling — the same re-cap the charitable gift gets when the limit falls.
+   */
+  const changeOrdinaryIncome = (next: number): void => {
+    setPlannedLtcg((current) => Math.min(current, next));
+    setOrdinaryIncome(next);
+  };
+
+  /**
    * The charitable limit is per individual, so it halves on the way from a
    * joint return to any other one. Re-cap the gift rather than leaving the
    * slider parked past its own right edge.
@@ -467,7 +502,7 @@ const App: React.FC = () => {
     MAX_INCOME +
       taxableSocialSecurity({
         ssBenefit,
-        ordinaryIncome: MAX_INCOME,
+        ...splitOtherIncome(MAX_INCOME, plannedLtcg),
         filingStatus,
         muniInterest,
         qcd,
@@ -475,13 +510,24 @@ const App: React.FC = () => {
       }) >
       phaseoutEnd;
 
+  /**
+   * Step 2's curve. The axis is every dollar that is not Social Security, and
+   * `gainsWithinIncome` says the planned gain is part of it rather than piled
+   * on top — so the reader who says $12,000 of their income is a gain gets a
+   * curve where, at every income from $12,000 up, $12,000 of it is charged
+   * under the capital-gain schedule and the rest under the ordinary one.
+   *
+   * That changes the chart's shape, not just its labels: the next dollar of
+   * ordinary income can shove the gain stack across the 0%/15% line, which is
+   * the stacking effect step 3 is named for, showing up on step 2's chart.
+   */
   const curve = useMemo(
     () =>
       marginalRateCurve(
-        { ssBenefit, filingStatus, seniors, muniInterest, qcd, year },
-        { maxIncome: MAX_INCOME, step: 250 },
+        { ssBenefit, filingStatus, seniors, muniInterest, qcd, year, ltcg: plannedLtcg },
+        { maxIncome: MAX_INCOME, step: 250, gainsWithinIncome: true },
       ),
-    [ssBenefit, filingStatus, seniors, muniInterest, qcd, year],
+    [ssBenefit, filingStatus, seniors, muniInterest, qcd, year, plannedLtcg],
   );
 
   const segments = useMemo(
@@ -505,13 +551,28 @@ const App: React.FC = () => {
     year,
   });
 
+  /**
+   * Step 3's axis: how much of the other income already entered is a gain, from
+   * none of it to all of it. It ends where that income ends, because a gain
+   * bigger than the income it came out of is not a scenario.
+   */
+  const gainsAxisMax = ordinaryIncome;
+
+  /**
+   * The mirror of `curve`: the same return, swept the other way. Total income
+   * is held still at every point and only the split moves, which means
+   * provisional income — and so the taxable share of the benefit — is fixed
+   * across the whole axis. What is left varying is which rate schedule each
+   * dollar is charged under, and where the gain stack sits against the
+   * 0%/15%/20% bands.
+   */
   const ltcgCurve = useMemo(
     () =>
       ltcgMarginalRateCurve(
         { ssBenefit, ordinaryIncome, filingStatus, seniors, muniInterest, qcd, year },
-        { maxLTCG: MAX_LTCG, step: 250 },
+        { maxLTCG: gainsAxisMax, step: 250, gainsWithinIncome: true },
       ),
-    [ssBenefit, ordinaryIncome, filingStatus, seniors, muniInterest, qcd, year],
+    [ssBenefit, ordinaryIncome, filingStatus, seniors, muniInterest, qcd, year, gainsAxisMax],
   );
 
   const ltcgSegments = useMemo(
@@ -533,6 +594,21 @@ const App: React.FC = () => {
     [ltcgCurve, plannedLtcg],
   );
 
+  /**
+   * What the reader's split is worth against the all-ordinary version of the
+   * same income — the figure the non-additive framing exists to produce, and
+   * the one no chart on the page shows on its own. Both ends are points on the
+   * gains curve, so it costs no extra arithmetic: the left edge is every
+   * dollar taken as ordinary income, and the reader stands wherever they stand.
+   *
+   * Null until a gain is set, because at $0 the comparison is between the
+   * scenario and itself.
+   */
+  const mixSaving =
+    plannedLtcg > 0 && hereGainPoint && ltcgCurve.length > 0
+      ? ltcgCurve[0].totalTax - hereGainPoint.totalTax
+      : null;
+
   // Medicare is per enrollee, so a joint return with both spouses over 65 pays
   // every surcharge twice off one MAGI figure. Below 65 nobody is enrolled yet,
   // but the two-year lookback means this year's income still sets the first
@@ -540,8 +616,17 @@ const App: React.FC = () => {
   const beneficiaries = filingStatus === 'mfj' && seniors === 2 ? 2 : 1;
 
   const cliffs = useMemo(
-    () => irmaaCliffs({ ssBenefit, filingStatus, muniInterest, qcd, beneficiaries, year }),
-    [ssBenefit, filingStatus, muniInterest, qcd, beneficiaries, year],
+    () =>
+      irmaaCliffs({
+        ssBenefit,
+        filingStatus,
+        muniInterest,
+        qcd,
+        beneficiaries,
+        year,
+        ltcg: plannedLtcg,
+      }),
+    [ssBenefit, filingStatus, muniInterest, qcd, beneficiaries, year, plannedLtcg],
   );
 
   /** The cliffs that actually land inside the chart's x-axis. */
@@ -951,7 +1036,10 @@ const App: React.FC = () => {
               other income set in step 2 rather than on top of it, because the
               gift is a distribution that would otherwise have been reported — so it
               moves the whole curve to the right, exactly as far as tax-exempt
-              interest moves it to the left. Capped at{' '}
+              interest moves it to the left. Out of the ordinary half of that
+              income, at that: a long-term gain is a sale rather than a
+              distribution, so whatever step 3 marks as gain is income this gift
+              cannot be excluded from. Capped at{' '}
               <strong>{formatCurrency(qcdLimit)}</strong> for {year}
               {filingStatus === 'mfj'
                 ? ' \u2014 408(d)(8)(A) caps it per individual, so a joint return where both spouses have reached 70\u00BD and each gives from their own IRA gets it twice. The slider stops at the chart\u2019s own right edge rather than at that figure.'
@@ -1013,6 +1101,7 @@ const App: React.FC = () => {
                     filingStatus={filingStatus}
                     muniInterest={muniInterest}
                     qcd={qcd}
+                    ltcg={plannedLtcg}
                     beneficiaries={beneficiaries}
                     year={year}
                   />
@@ -1045,6 +1134,9 @@ const App: React.FC = () => {
         </div>
         <p className="chart-axis-label">
           Other Income ($) &middot; Total income = Other income + {formatCurrency(ssBenefit)} SS
+          {plannedLtcg > 0
+            ? `, of which ${formatCurrency(plannedLtcg)} is long-term gain`
+            : ''}
           {muniInterest > 0
             ? ` + ${formatCurrency(muniInterest)} tax-exempt interest`
             : ''}
@@ -1085,7 +1177,7 @@ const App: React.FC = () => {
 
         <div className="input-group chart-slider">
           <div className="slider-header">
-            <label htmlFor="ordinary-income">Other Ordinary Income (non-LTCG, non-SS)</label>
+            <label htmlFor="ordinary-income">Other Income (not Social Security)</label>
             <span className="slider-value amber">{formatCurrency(ordinaryIncome)}</span>
           </div>
           <input
@@ -1095,7 +1187,7 @@ const App: React.FC = () => {
             max={MAX_INCOME}
             step={500}
             value={ordinaryIncome}
-            onChange={(e) => setOrdinaryIncome(Number(e.target.value))}
+            onChange={(e) => changeOrdinaryIncome(Number(e.target.value))}
             className="slider-amber"
           />
           <div className="slider-range-labels">
@@ -1109,6 +1201,9 @@ const App: React.FC = () => {
             <strong>{herePoint ? `${herePoint.marginalRate}%` : '\u2014'}</strong>,
             where the dashed amber line crosses the curve above &mdash; that
             point on the curve, not the curve itself, is what the slider moves.
+            {plannedLtcg > 0
+              ? ` Step 3 has ${formatCurrency(plannedLtcg)} of this coming from long-term gains, which is priced into the curve rather than added to it.`
+              : ''}
           </p>
         </div>
 
@@ -1338,7 +1433,7 @@ const App: React.FC = () => {
         {nextStepBox(1)}
       </section>
 
-      {/* ───── Step 3: a realized gain on top of both ───── */}
+      {/* ───── Step 3: what kind of income the step-2 figure is ───── */}
       <section
         className="step"
         id="step-gains"
@@ -1354,95 +1449,131 @@ const App: React.FC = () => {
         </h2>
 
         <p className="step-intro">
-          The chart prices every realized gain from $0 to{' '}
-          {formatCurrency(MAX_LTCG)} on top of the return you have already set;
-          the slider says which one is yours.
+          Step 2 asked how much income you have. This step asks what kind it
+          is: how much of that {formatCurrency(ordinaryIncome)} is a long-term
+          capital gain? A gain is part of that figure, not another figure on
+          top of it &mdash; so the chart holds your total income still and moves
+          only the split.
         </p>
 
-        <div className="chart-container">
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart
-              data={ltcgCurve}
-              margin={{ top: 10, right: 10, left: 10, bottom: 0 }}
-            >
-              <defs>
-                <linearGradient id="ltcgGradient" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.5} />
-                  <stop offset="95%" stopColor="#f59e0b" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255, 255, 255, 0.1)" />
-              <XAxis
-                dataKey="ltcg"
-                type="number"
-                domain={[0, MAX_LTCG]}
-                tickFormatter={formatCompact}
-                stroke="#94a3b8"
-              />
-              <YAxis
-                stroke="#94a3b8"
-                tickFormatter={(value) => `${value}%`}
-                width={70}
-                domain={[0, 'auto']}
-              />
-              <Tooltip
-                content={
-                  <LTCGTooltip
-                    ordinaryIncome={ordinaryIncome}
-                    ssBenefit={ssBenefit}
-                    segments={ltcgSegments}
-                  />
-                }
-              />
-              {hereLine(plannedLtcg, MAX_LTCG, '#34d399')}
-              <Area
-                type="stepAfter"
-                dataKey="marginalRate"
-                stroke="#f59e0b"
-                strokeWidth={2}
-                fill="url(#ltcgGradient)"
-              />
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
-        <p className="chart-axis-label">
-          Long-Term Capital Gains ($) &middot; Ordinary income {formatCurrency(ordinaryIncome)} + {formatCurrency(ssBenefit)} SS
-        </p>
-
-        <div className="input-group chart-slider">
-          <div className="slider-header">
-            <label htmlFor="planned-ltcg">
-              Long-Term Capital Gains You Plan to Realize
-            </label>
-            <span className="slider-value emerald">{formatCurrency(plannedLtcg)}</span>
-          </div>
-          <input
-            id="planned-ltcg"
-            type="range"
-            min={0}
-            max={MAX_LTCG}
-            step={500}
-            value={plannedLtcg}
-            onChange={(e) => setPlannedLtcg(Number(e.target.value))}
-            className="slider-emerald"
-          />
-          <div className="slider-range-labels">
-            <span>$0</span>
-            <span>{formatCurrency(MAX_LTCG)}</span>
-          </div>
-
-          <p className="slider-readout">
-            <strong>You are here.</strong> At {formatCurrency(plannedLtcg)} of
-            realized gains the next dollar of gain is taxed at{' '}
-            <strong>
-              {hereGainPoint ? `${hereGainPoint.marginalRate}%` : '\u2014'}
-            </strong>
-            , where the dashed emerald line crosses the curve above
-            {hereGainPoint && hereGainPoint.marginalRate > 20
-              ? ' \u2014 past the 20% ceiling a gain can be charged on its own, so the rest of it is benefit being dragged into the tax base alongside the gain.'
-              : '.'}
+        {/* A gain is a share of the income entered in step 2, so with that
+            income at $0 there is nothing to take a share of: the axis has no
+            width, the slider has no travel and the curve has one point. Say so
+            rather than draw it. */}
+        {gainsAxisMax === 0 ? (
+          <p className="step-prose">
+            <strong>Nothing to split yet.</strong> Step 2 has your other income
+            at $0. A long-term gain is a share of the income you have rather
+            than an addition to it, so there is no axis to draw until something
+            is set there — move the other-income slider on step 2 and this
+            step comes back.
           </p>
-        </div>
+        ) : (
+          <>
+          <div className="chart-container">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart
+                data={ltcgCurve}
+                margin={{ top: 10, right: 10, left: 10, bottom: 0 }}
+              >
+                <defs>
+                  <linearGradient id="ltcgGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.5} />
+                    <stop offset="95%" stopColor="#f59e0b" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255, 255, 255, 0.1)" />
+                <XAxis
+                  dataKey="ltcg"
+                  type="number"
+                  domain={[0, gainsAxisMax]}
+                  tickFormatter={formatCompact}
+                  stroke="#94a3b8"
+                />
+                <YAxis
+                  stroke="#94a3b8"
+                  tickFormatter={(value) => `${value}%`}
+                  width={70}
+                  domain={[0, 'auto']}
+                />
+                <Tooltip
+                  content={
+                    <LTCGTooltip
+                      ordinaryIncome={ordinaryIncome}
+                      ssBenefit={ssBenefit}
+                      segments={ltcgSegments}
+                    />
+                  }
+                />
+                {hereLine(plannedLtcg, gainsAxisMax, '#34d399')}
+                <Area
+                  type="stepAfter"
+                  dataKey="marginalRate"
+                  stroke="#f59e0b"
+                  strokeWidth={2}
+                  fill="url(#ltcgGradient)"
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+          <p className="chart-axis-label">
+            Long-Term Capital Gains, out of {formatCurrency(ordinaryIncome)} of
+            other income ($) &middot; Total income{' '}
+            {formatCurrency(ordinaryIncome + ssBenefit)} at every point on this
+            axis
+          </p>
+
+          <div className="input-group chart-slider">
+            <div className="slider-header">
+              <label htmlFor="planned-ltcg">
+                Long-Term Capital Gains Inside That Income
+              </label>
+              <span className="slider-value emerald">{formatCurrency(plannedLtcg)}</span>
+            </div>
+            <input
+              id="planned-ltcg"
+              type="range"
+              min={0}
+              max={gainsAxisMax}
+              step={500}
+              value={plannedLtcg}
+              onChange={(e) => setPlannedLtcg(Number(e.target.value))}
+              className="slider-emerald"
+            />
+            <div className="slider-range-labels">
+              <span>None of it</span>
+              <span>All {formatCurrency(gainsAxisMax)} of it</span>
+            </div>
+
+            <p className="slider-readout">
+              <strong>You are here.</strong> With {formatCurrency(plannedLtcg)} of
+              your {formatCurrency(ordinaryIncome)} coming from long-term gains,
+              the next dollar of gain is taxed at{' '}
+              <strong>
+                {hereGainPoint ? `${hereGainPoint.marginalRate}%` : '\u2014'}
+              </strong>
+              , where the dashed emerald line crosses the curve above
+              {hereGainPoint && hereGainPoint.marginalRate > 20
+                ? ' \u2014 past the 20% ceiling a gain can be charged on its own, so the rest of it is benefit being dragged into the tax base alongside the gain.'
+                : '.'}{' '}
+              {mixSaving === null ? null : mixSaving > 0 ? (
+                <>
+                  Splitting the same {formatCurrency(ordinaryIncome)} this way
+                  rather than taking all of it as ordinary income saves{' '}
+                  <strong>{formatCurrency(mixSaving)}</strong> in federal tax.
+                </>
+              ) : (
+                <>
+                  Splitting the same {formatCurrency(ordinaryIncome)} this way
+                  rather than taking all of it as ordinary income changes the
+                  federal tax by nothing at all &mdash; at this income the
+                  ordinary schedule and the capital-gain one charge the same.
+                </>
+              )}
+            </p>
+          </div>
+          </>
+        )}
 
         <details className="explainer">
           <summary>
@@ -1458,15 +1589,26 @@ const App: React.FC = () => {
               0% bracket into 15%&nbsp;— stacking two effects at once.
             </p>
             <p>
-              The chart shows the <strong>effective marginal tax rate</strong> on
-              each additional dollar of long-term capital gains, given the
-              ordinary income and Social Security benefit set above. Because
-              LTCG raises provisional income, it can drag Social Security
-              benefits into taxable territory (taxed at ordinary rates) while
-              simultaneously pushing the gains themselves from the 0% bracket
-              to 15%. In the worst zone, a single dollar of LTCG can trigger
-              both effects, producing combined marginal rates that far exceed
-              the statutory 15% capital-gains rate.
+              The axis above is the <strong>split</strong>, not the size. Every
+              point on it prices the same{' '}
+              {formatCurrency(ordinaryIncome + ssBenefit)} of total income and
+              differs only in how much of it is gain. That holds provisional
+              income still — a dollar of gain and a dollar of ordinary income
+              raise it identically — so the taxable share of your benefit is the
+              same all the way across, and what moves is which rate schedule
+              each dollar is charged under and how much of the gain fits below
+              the 0% ceiling.
+            </p>
+            <p>
+              The <em>height</em> of the curve answers the other question: what
+              the next dollar of gain would cost on top of everything. That is
+              where the two effects compound — the dollar is charged its own
+              preferential rate <em>and</em> drags up to 85&cent; of benefit
+              into the tax base at ordinary rates, so the combined figure can
+              run well past the statutory 15%. The same compounding shows up on
+              step 2&apos;s chart from the other side: with a gain set, the next
+              dollar of ordinary income lifts the whole gain stack with it, and
+              can shove part of it out of the 0% band into 15%.
             </p>
           </div>
         </details>

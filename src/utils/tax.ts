@@ -848,6 +848,30 @@ export function agiFor(scenario: Scenario = {}): number {
 }
 
 /**
+ * Split a point on an other-income axis into the two halves the tax chain
+ * wants: what is charged under the ordinary rate schedule, and what is charged
+ * under the capital-gain one.
+ *
+ * A gain is a *share* of the income a filer has, not something stacked on top
+ * of it — the $12,000 of stock they sold is part of the $60,000 they lived on,
+ * not $12,000 more. Both halves reach provisional income identically, so the
+ * split is invisible to the Social Security torpedo; where it shows up is the
+ * rate schedule each half is charged under, and the charitable exclusion,
+ * which has only the ordinary half to come out of (see `qcdFor`).
+ *
+ * A gain larger than the income it is carved from is clamped rather than
+ * driving the ordinary half negative: there is no $10,000 gain inside $5,000
+ * of income.
+ */
+export function splitOtherIncome(
+  otherIncome: number,
+  ltcg = 0,
+): { ordinaryIncome: number; ltcg: number } {
+  const gain = Math.min(Math.max(0, ltcg), Math.max(0, otherIncome));
+  return { ordinaryIncome: Math.max(0, otherIncome) - gain, ltcg: gain };
+}
+
+/**
  * Marginal tax rate (in percent) on the next dollar of ordinary income, plus
  * the total federal tax at each level, sampled from $0 to `maxIncome`.
  *
@@ -860,16 +884,38 @@ export interface IncomeCurveRange {
   maxIncome?: number;
   /** Sampling interval, in dollars. */
   step?: number;
+  /**
+   * Read the scenario's `ltcg` as a share *of* the swept income rather than a
+   * gain stacked on top of it, so the axis is every dollar that is not Social
+   * Security and the composition — how much of it is gain — is held fixed
+   * across the sweep. See `splitOtherIncome`.
+   *
+   * Off by default, which is the additive reading the statute takes: gains and
+   * ordinary income are separate line items and nothing stops a filer having
+   * both. On is what a chart wants when the reader has been asked for one
+   * income figure and then asked how much of it is gain.
+   *
+   * The marginal dollar follows the same rule. Above the gain the next dollar
+   * of income is ordinary, because the gain is already fully counted; below it
+   * the next dollar is gain, because at that income there is nothing else it
+   * could be.
+   */
+  gainsWithinIncome?: boolean;
 }
 
 export function marginalRateCurve(
   scenario: Scenario = {},
-  { maxIncome = 150_000, step = 250 }: IncomeCurveRange = {},
+  { maxIncome = 150_000, step = 250, gainsWithinIncome = false }: IncomeCurveRange = {},
 ): MarginalRatePoint[] {
+  const gain = resolveScenario(scenario).ltcg;
+  const at = (income: number): Scenario =>
+    gainsWithinIncome
+      ? { ...scenario, ...splitOtherIncome(income, gain) }
+      : { ...scenario, ordinaryIncome: income };
   const data: MarginalRatePoint[] = [];
   for (let income = 0; income <= maxIncome; income += step) {
-    const taxHere = totalTax({ ...scenario, ordinaryIncome: income });
-    const rate = totalTax({ ...scenario, ordinaryIncome: income + 1 }) - taxHere;
+    const taxHere = totalTax(at(income));
+    const rate = totalTax(at(income + 1)) - taxHere;
     data.push({
       income,
       marginalRate: Math.round(rate * 10_000) / 100,
@@ -954,16 +1000,41 @@ export interface LtcgCurveRange {
   maxLTCG?: number;
   /** Sampling interval, in dollars. */
   step?: number;
+  /**
+   * Carve the swept gain out of the scenario's `ordinaryIncome` instead of
+   * stacking it on top, so the axis stops being "how much gain do you add" and
+   * becomes "how much of the income you already have is gain". Total income is
+   * then the same at every point on the sweep and only its composition moves.
+   * See `splitOtherIncome`.
+   *
+   * Provisional income does not move either — a dollar of gain and a dollar of
+   * ordinary income raise it identically — so the swept axis holds the taxable
+   * share of the benefit fixed, and what is left varying is which rate
+   * schedule the dollar is charged under and where the gain stack sits against
+   * the 0%/15%/20% bands.
+   *
+   * The reported rate is still the cost of the *next* dollar realized as a
+   * gain, on top of everything: the axis says how the income already there is
+   * split, the rate says what one more gain dollar would cost given that
+   * split. Off by default, which is the additive reading.
+   */
+  gainsWithinIncome?: boolean;
 }
 
 export function ltcgMarginalRateCurve(
   scenario: Scenario = {},
-  { maxLTCG = 200_000, step = 250 }: LtcgCurveRange = {},
+  { maxLTCG = 200_000, step = 250, gainsWithinIncome = false }: LtcgCurveRange = {},
 ): LTCGMarginalRatePoint[] {
+  const otherIncome = resolveScenario(scenario).ordinaryIncome;
+  const at = (gain: number): Scenario =>
+    gainsWithinIncome
+      ? { ...scenario, ...splitOtherIncome(otherIncome, gain) }
+      : { ...scenario, ltcg: gain };
   const data: LTCGMarginalRatePoint[] = [];
   for (let ltcg = 0; ltcg <= maxLTCG; ltcg += step) {
-    const taxHere = totalTax({ ...scenario, ltcg });
-    const rate = totalTax({ ...scenario, ltcg: ltcg + 1 }) - taxHere;
+    const here = at(ltcg);
+    const taxHere = totalTax(here);
+    const rate = totalTax({ ...here, ltcg: (here.ltcg ?? 0) + 1 }) - taxHere;
     data.push({
       ltcg,
       marginalRate: Math.round(rate * 10_000) / 100,
@@ -1594,10 +1665,18 @@ export function otherIncomeAtIrmaaMagi(
   targetMagi: number,
   scenario: Scenario = {},
 ): number {
-  // Solves on the chart's x-axis, which is ordinary income with no gains on it,
-  // so the scenario's `ordinaryIncome` and `ltcg` are both overwritten.
+  // Solves on the chart's x-axis, which is every dollar that is not Social
+  // Security, so the scenario's `ordinaryIncome` is overwritten and its `ltcg`
+  // is read as a share of the swept figure rather than a gain on top of it —
+  // the same reading the charts take. See `splitOtherIncome`.
+  //
+  // MAGI is very nearly blind to that split, because AGI counts both halves at
+  // face value and provisional income does too. The one place it shows is the
+  // charitable exclusion, which has only the ordinary half to come out of: a
+  // gift bigger than what is left after the gain cannot be excluded in full,
+  // and the cliff arrives earlier for it.
   const magiAt = (income: number): number =>
-    irmaaMagi({ ...scenario, ordinaryIncome: income, ltcg: 0 });
+    irmaaMagi({ ...scenario, ...splitOtherIncome(income, resolveScenario(scenario).ltcg) });
   if (magiAt(0) >= targetMagi) return 0;
   // MAGI is never below other income *less the QCD excluded from it*, so
   // targetMagi plus the allowed gift always overshoots. Without that term the

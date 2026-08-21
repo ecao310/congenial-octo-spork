@@ -276,7 +276,7 @@ describe('App', () => {
   it('renders the ordinary income slider defaulting to $30,000', () => {
     render(<App />);
     const slider = screen.getByRole('slider', {
-      name: /other ordinary income/i,
+      name: /other income \(not social security\)/i,
     });
     expect(slider).toHaveValue('30000');
     expect(slider).toHaveAttribute('min', '0');
@@ -401,7 +401,7 @@ describe('App', () => {
   it('updates the ordinary income slider readout when moved', () => {
     render(<App />);
     const slider = screen.getByRole('slider', {
-      name: /other ordinary income/i,
+      name: /other income \(not social security\)/i,
     });
     fireEvent.change(slider, { target: { value: '50000' } });
     expect(slider).toHaveValue('50000');
@@ -548,7 +548,7 @@ describe('the step flow', () => {
    */
   it('keeps every input mounted as the reader steps through', () => {
     render(<App />);
-    const income = screen.getByRole('slider', { name: /other ordinary income/i });
+    const income = screen.getByRole('slider', { name: /other income \(not social security\)/i });
     fireEvent.change(income, { target: { value: '90000' } });
 
     for (const name of stepNames) {
@@ -557,7 +557,7 @@ describe('the step flow', () => {
         screen.getByRole('slider', { name: /social security benefit/i }),
       ).toBeInTheDocument();
       expect(
-        screen.getByRole('slider', { name: /other ordinary income/i }),
+        screen.getByRole('slider', { name: /other income \(not social security\)/i }),
       ).toHaveValue('90000');
       expect(screen.getByRole('radio', { name: 'Single' })).toBeChecked();
     }
@@ -622,8 +622,8 @@ describe('the shape every step shares', () => {
   it('puts each step\u2019s slider on the axis its own chart sweeps', () => {
     render(<App />);
     for (const [id, name] of [
-      ['step-torpedo', /other ordinary income/i],
-      ['step-gains', /long-term capital gains you plan to realize/i],
+      ['step-torpedo', /other income \(not social security\)/i],
+      ['step-gains', /long-term capital gains inside that income/i],
     ] as const) {
       const slider = screen.getByRole('slider', { name });
       expect(document.getElementById(id)?.contains(slider)).toBe(true);
@@ -642,27 +642,110 @@ describe('the shape every step shares', () => {
     expect(readout()).toHaveTextContent('At $30,000 of other income');
 
     fireEvent.change(
-      screen.getByRole('slider', { name: /other ordinary income/i }),
+      screen.getByRole('slider', { name: /other income \(not social security\)/i }),
       { target: { value: '90000' } },
     );
     expect(readout()).toHaveTextContent('At $90,000 of other income');
     expect(readout()).toHaveTextContent(/taxed at\s+\d+(\.\d+)?%/);
   });
 
-  it('reads the gains curve back at the reader\u2019s own gain', () => {
+  it('reads the gains curve back at the reader\u2019s own share of it', () => {
     render(<App />);
     const readout = (): HTMLElement =>
       document.querySelector('#step-gains .slider-readout') as HTMLElement;
-    expect(readout()).toHaveTextContent('At $0 of realized gains');
+    expect(readout()).toHaveTextContent(
+      'With $0 of your $30,000 coming from long-term gains',
+    );
 
     fireEvent.change(
       screen.getByRole('slider', {
-        name: /long-term capital gains you plan to realize/i,
+        name: /long-term capital gains inside that income/i,
       }),
-      { target: { value: '40000' } },
+      { target: { value: '20000' } },
     );
-    expect(readout()).toHaveTextContent('At $40,000 of realized gains');
+    expect(readout()).toHaveTextContent(
+      'With $20,000 of your $30,000 coming from long-term gains',
+    );
     expect(readout()).toHaveTextContent(/taxed at\s+\d+(\.\d+)?%/);
+  });
+});
+
+/**
+ * The step-3 rewrite: a long-term gain is a share of the income entered in
+ * step 2, never a second figure stacked on top of it. So the reader's total
+ * income is one number set once, step 3 moves only its composition, and both
+ * charts price the same return.
+ */
+describe('a gain is a share of the income, not an addition to it', () => {
+  const incomeSlider = (): HTMLElement =>
+    screen.getByRole('slider', { name: /other income \(not social security\)/i });
+  const gainSlider = (): HTMLElement =>
+    screen.getByRole('slider', {
+      name: /long-term capital gains inside that income/i,
+    });
+  const readout = (step: string): HTMLElement =>
+    document.querySelector(`#step-${step} .slider-readout`) as HTMLElement;
+
+  it('ends the gains axis where the reader\u2019s own income ends', () => {
+    render(<App />);
+    expect(gainSlider()).toHaveAttribute('max', '30000');
+
+    fireEvent.change(incomeSlider(), { target: { value: '90000' } });
+    expect(gainSlider()).toHaveAttribute('max', '90000');
+  });
+
+  it('drags the gain down when the income it came out of falls under it', () => {
+    render(<App />);
+    fireEvent.change(incomeSlider(), { target: { value: '90000' } });
+    fireEvent.change(gainSlider(), { target: { value: '60000' } });
+    expect(gainSlider()).toHaveValue('60000');
+
+    fireEvent.change(incomeSlider(), { target: { value: '40000' } });
+    expect(gainSlider()).toHaveValue('40000');
+  });
+
+  /**
+   * The centrepiece chart honours the split too, and this is the proof: the
+   * same $30,000 of income, with $20,000 of it charged under the capital-gain
+   * schedule instead of the ordinary one, makes the next dollar cheaper. Under
+   * the old additive reading the gain reached no chart at all and this figure
+   * never moved.
+   */
+  it('re-prices the torpedo curve when the split changes', () => {
+    render(<App />);
+    expect(readout('torpedo')).toHaveTextContent('taxed at 22.2%');
+
+    fireEvent.change(gainSlider(), { target: { value: '20000' } });
+    expect(readout('torpedo')).toHaveTextContent('taxed at 18.5%');
+    expect(readout('torpedo')).toHaveTextContent(
+      '$20,000 of this coming from long-term gains',
+    );
+  });
+
+  /**
+   * The figure the non-additive framing exists to produce, and the one neither
+   * chart shows on its own: what taking part of the same income as a gain is
+   * worth against taking all of it as ordinary income.
+   */
+  it('prices the split against the all-ordinary version of the same income', () => {
+    render(<App />);
+    expect(readout('gains')).not.toHaveTextContent('saves');
+
+    fireEvent.change(gainSlider(), { target: { value: '20000' } });
+    expect(readout('gains')).toHaveTextContent(
+      'rather than taking all of it as ordinary income saves $2,270',
+    );
+  });
+
+  it('says there is nothing to split when the income is $0', () => {
+    render(<App />);
+    fireEvent.change(incomeSlider(), { target: { value: '0' } });
+    expect(screen.getByText(/Nothing to split yet/)).toBeInTheDocument();
+    expect(
+      screen.queryByRole('slider', {
+        name: /long-term capital gains inside that income/i,
+      }),
+    ).toBeNull();
   });
 });
 
@@ -713,7 +796,7 @@ describe('advanced inputs', () => {
       '0',
     );
     expect(
-      inside.queryByLabelText('Long-Term Capital Gains You Plan to Realize'),
+      inside.queryByLabelText('Long-Term Capital Gains Inside That Income'),
     ).toBeNull();
   });
 
@@ -728,8 +811,8 @@ describe('advanced inputs', () => {
     render(<App />);
     for (const label of [
       'Annual Social Security Benefit',
-      'Other Ordinary Income (non-LTCG, non-SS)',
-      'Long-Term Capital Gains You Plan to Realize',
+      'Other Income (not Social Security)',
+      'Long-Term Capital Gains Inside That Income',
     ]) {
       expect(screen.getByLabelText(label).closest('details')).toBeNull();
     }

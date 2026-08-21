@@ -7,6 +7,7 @@ import {
   taxableSocialSecurity,
   totalTax,
   segmentCurve,
+  splitOtherIncome,
   conversionCeilings,
   conversionMeasureValue,
   maxConversionUnder,
@@ -576,6 +577,206 @@ describe('ltcgMarginalRateCurve', () => {
     const singleFirstNonZero = dataSingle.find((d) => d.marginalRate > 0)!.ltcg;
     const mfjFirstNonZero = dataMfj.find((d) => d.marginalRate > 0)!.ltcg;
     expect(mfjFirstNonZero).toBeGreaterThan(singleFirstNonZero);
+  });
+});
+
+/**
+ * The app asks for one income figure and then asks how much of it is a
+ * long-term gain, so a gain is a share of the income a filer has rather than
+ * something stacked on top of it. The statute takes the additive reading —
+ * ordinary income and gains are separate line items — which is why the sweeps
+ * keep it as their default and `gainsWithinIncome` is what opts out.
+ */
+describe('gains carved out of income rather than stacked on top', () => {
+  describe('splitOtherIncome', () => {
+    it('takes the gain out of the income rather than adding to it', () => {
+      expect(splitOtherIncome(60_000, 20_000)).toEqual({
+        ordinaryIncome: 40_000,
+        ltcg: 20_000,
+      });
+    });
+
+    it('leaves the whole figure ordinary when there is no gain', () => {
+      expect(splitOtherIncome(60_000)).toEqual({
+        ordinaryIncome: 60_000,
+        ltcg: 0,
+      });
+      expect(splitOtherIncome(60_000, 0)).toEqual({
+        ordinaryIncome: 60_000,
+        ltcg: 0,
+      });
+    });
+
+    /** There is no $10,000 gain inside $5,000 of income. */
+    it('clamps a gain bigger than the income it came out of', () => {
+      expect(splitOtherIncome(5_000, 10_000)).toEqual({
+        ordinaryIncome: 0,
+        ltcg: 5_000,
+      });
+    });
+
+    it('never drives either half negative', () => {
+      expect(splitOtherIncome(0, 10_000)).toEqual({ ordinaryIncome: 0, ltcg: 0 });
+      expect(splitOtherIncome(-5_000, -5_000)).toEqual({
+        ordinaryIncome: 0,
+        ltcg: 0,
+      });
+    });
+  });
+
+  describe('marginalRateCurve with gainsWithinIncome', () => {
+    const scenario = { ssBenefit: 0, ltcg: 20_000 };
+
+    it('prices the axis value as the whole of the income, gain included', () => {
+      const within = marginalRateCurve(scenario, {
+        maxIncome: 100_000,
+        step: 1_000,
+        gainsWithinIncome: true,
+      });
+      const at = (income: number): number =>
+        within.find((d) => d.income === income)!.totalTax;
+      expect(at(60_000)).toBe(
+        Math.round(totalTax({ ordinaryIncome: 40_000, ltcg: 20_000 })),
+      );
+      // The default reading puts the same gain on top of the same axis value,
+      // so it prices $20,000 more income at every point.
+      const stacked = marginalRateCurve(scenario, {
+        maxIncome: 100_000,
+        step: 1_000,
+      });
+      expect(stacked.find((d) => d.income === 60_000)!.totalTax).toBe(
+        Math.round(totalTax({ ordinaryIncome: 60_000, ltcg: 20_000 })),
+      );
+      expect(at(60_000)).toBeLessThan(
+        stacked.find((d) => d.income === 60_000)!.totalTax,
+      );
+    });
+
+    it('is the plain ordinary curve where the axis is under the gain', () => {
+      const within = marginalRateCurve(scenario, {
+        maxIncome: 100_000,
+        step: 1_000,
+        gainsWithinIncome: true,
+      });
+      // At $12,000 of income there is nothing but gain to have — the $20,000
+      // does not fit inside it — so the point prices $12,000 of pure gain.
+      expect(within.find((d) => d.income === 12_000)!.totalTax).toBe(
+        Math.round(totalTax({ ordinaryIncome: 0, ltcg: 12_000 })),
+      );
+    });
+
+    /**
+     * The stacking effect, showing up on the ordinary-income chart: the next
+     * dollar of ordinary income lifts the gain stack with it, and can shove
+     * part of it out of the 0% band into 15%. Nothing about that dollar is
+     * different — what it costs is.
+     */
+    it('charges more for a dollar of income when a gain is stacked above it', () => {
+      const withGain = marginalRateCurve(
+        { ssBenefit: 0, ltcg: 30_000 },
+        { maxIncome: 100_000, step: 250, gainsWithinIncome: true },
+      );
+      const withoutGain = marginalRateCurve(
+        { ssBenefit: 0 },
+        { maxIncome: 100_000, step: 250 },
+      );
+      const dearer = withGain.filter((point, i) => {
+        // Only where the gain actually fits inside the income; below that the
+        // two curves are pricing different things.
+        return point.income > 30_000 && point.marginalRate > withoutGain[i].marginalRate;
+      });
+      expect(dearer.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('ltcgMarginalRateCurve with gainsWithinIncome', () => {
+    const scenario = { ssBenefit: 24_000, ordinaryIncome: 60_000 };
+
+    it('holds total income still and moves only the split', () => {
+      const curve = ltcgMarginalRateCurve(scenario, {
+        maxLTCG: 60_000,
+        step: 1_000,
+        gainsWithinIncome: true,
+      });
+      const at = (gain: number): number =>
+        curve.find((d) => d.ltcg === gain)!.totalTax;
+      expect(at(0)).toBe(Math.round(totalTax(scenario)));
+      expect(at(20_000)).toBe(
+        Math.round(totalTax({ ...scenario, ordinaryIncome: 40_000, ltcg: 20_000 })),
+      );
+      expect(at(60_000)).toBe(
+        Math.round(totalTax({ ...scenario, ordinaryIncome: 0, ltcg: 60_000 })),
+      );
+    });
+
+    /**
+     * A dollar of gain and a dollar of ordinary income raise provisional
+     * income identically, so the taxable share of the benefit is the same at
+     * every point on this axis. That is what makes the curve readable: the
+     * torpedo is held fixed and only the rate schedule each dollar is charged
+     * under is moving.
+     */
+    it('leaves the taxable benefit untouched across the whole axis', () => {
+      const taxable = (gain: number): number =>
+        taxableSocialSecurity({ ...scenario, ...splitOtherIncome(60_000, gain) });
+      expect(taxable(20_000)).toBeCloseTo(taxable(0), 6);
+      expect(taxable(60_000)).toBeCloseTo(taxable(0), 6);
+    });
+
+    /**
+     * The preferential rate is below the ordinary one at every position in the
+     * stack, so re-labelling a dollar of the same income as a gain can never
+     * cost more. (With a charitable distribution in play it can, because the
+     * gift has only the ordinary half to come out of — hence no QCD here.)
+     */
+    it('never charges more for the same income as the gain share grows', () => {
+      const curve = ltcgMarginalRateCurve(scenario, {
+        maxLTCG: 60_000,
+        step: 500,
+        gainsWithinIncome: true,
+      });
+      for (let i = 1; i < curve.length; i += 1) {
+        expect(curve[i].totalTax).toBeLessThanOrEqual(curve[i - 1].totalTax);
+      }
+      expect(curve[curve.length - 1].totalTax).toBeLessThan(curve[0].totalTax);
+    });
+
+    it('still stacks on top when the flag is left off', () => {
+      const stacked = ltcgMarginalRateCurve(scenario, {
+        maxLTCG: 60_000,
+        step: 1_000,
+      });
+      expect(stacked.find((d) => d.ltcg === 20_000)!.totalTax).toBe(
+        Math.round(totalTax({ ...scenario, ltcg: 20_000 })),
+      );
+    });
+  });
+
+  describe('otherIncomeAtIrmaaMagi with a gain inside the axis', () => {
+    /**
+     * MAGI counts a gain and an ordinary dollar at face value, and provisional
+     * income does too, so where a cliff lands on the other-income axis does not
+     * depend on how that income is split.
+     */
+    it('puts the cliff in the same place whatever the split', () => {
+      const base = { ssBenefit: 24_000 };
+      expect(otherIncomeAtIrmaaMagi(106_000, { ...base, ltcg: 40_000 })).toBeCloseTo(
+        otherIncomeAtIrmaaMagi(106_000, base),
+        4,
+      );
+    });
+
+    /**
+     * The one exception: a charitable distribution is an exclusion of an IRA
+     * distribution, so it has only the ordinary half to come out of. Make the
+     * gain big enough and part of the gift can no longer be excluded, which
+     * brings the cliff nearer.
+     */
+    it('brings the cliff nearer when a gain crowds out the charitable gift', () => {
+      const base = { ssBenefit: 24_000, qcd: 30_000 };
+      const crowded = otherIncomeAtIrmaaMagi(106_000, { ...base, ltcg: 100_000 });
+      expect(crowded).toBeLessThan(otherIncomeAtIrmaaMagi(106_000, base));
+    });
   });
 });
 

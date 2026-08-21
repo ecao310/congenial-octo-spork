@@ -1,7 +1,7 @@
 Backlog 2 (21 Aug)
 [x] Split the below backlog action into multiple.
 [x] Remove the "What the tax-exempt interest costs" section. The muni slider itself stays — tax-exempt interest moves provisional income, so every chart reads it — it is the priced-out explainer block under the torpedo chart (App.tsx:1551) that goes.
-[ ] Remove the Medicare, Strategies, Over Time and State Taxes tabs from the site, leaving Tax Torpedo and Capital Gains. Keep the code: irmaa/projection/sequencing/lumpSum/stateTax and their 1,000-odd tests stay compiling and green, because these sections come back later. This is a render-layer deletion, not a code deletion.
+[x] Remove the Medicare, Strategies, Over Time and State Taxes tabs from the site, leaving Tax Torpedo and Capital Gains. Keep the code: irmaa/projection/sequencing/lumpSum/stateTax and their 1,000-odd tests stay compiling and green, because these sections come back later. This is a render-layer deletion, not a code deletion.
 [ ] Re-add the IRMAA cliff vertical lines to the tax torpedo graph. `cliffsOnChart` is derived at App.tsx:808 and drawn at :1516 today, but the Medicare tab removal takes away the section that explains what a cliff is — so the lines need enough label on the torpedo chart to stand alone, or they read as unexplained red dashes.
 [ ] Replace the tab strip with a linear step-by-step flow. Step 1 is the SS benefit slider, step 2 the tax torpedo, step 3 capital gains. One page, sections in order, each ending in a clickable box that moves the reader to the next step. Decide whether the steps stay mounted (scroll) or swap (the tab strip's current behaviour) and keep the keyboard handling the strip has today.
 [ ] Give every step the same shape: chart first, then the one slider that moves the reader's position along it, then the collapsed explainer dropdowns, then the next-step box. Today the shared scenario block sits above the tab strip and the explainers sit under the chart, so this is the reordering that makes a "you are here" line below the chart legible.
@@ -10,6 +10,7 @@ Backlog 2 (21 Aug)
 [ ] Re-scale the chart x-axes so the features worth seeing fit on screen. MAX_INCOME is 150_000, which shows the SS torpedo and the first two IRMAA cliffs but cuts the 2025-2028 senior deduction phaseout in half for a joint filer (it runs $150k–$250k MFJ, $75k–$175k single). The domain probably has to depend on filing status and year rather than stay a constant.
 [ ] Raise the charitable distribution slider to the IRS annual maximum and extend the chart x-axis when a slider is set past the right edge. `qcdSliderMax` is `Math.min(qcdLimit, MAX_INCOME)` (App.tsx:653), so a joint return — whose 408(d)(8) limit is doubled, $216,000 for 2025 — is clipped to $150,000 by the chart's domain rather than by the statute.
 [ ] Say why this particular reader should move income up or down, keyed to where their slider sits: on the valley floor, climbing the hump, at the peak, or past it. The tooltip already computes "fill this valley at $x" / "stay under $y or over $z" for the hovered point (App.tsx:325-378); this is the same arithmetic as always-on prose keyed to the slider instead.
+[ ] Update title and hero text to be what the tool is useful for, instead of what the current parameters are set to.
 
 Backlog
 [x] Get IRS worksheet. Create test cases for the calculation.

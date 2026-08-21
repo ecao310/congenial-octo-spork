@@ -2750,3 +2750,89 @@ The `muniSection()` helper itself went with them.
 `npx tsc -b`, `npx eslint src --max-warnings 0`, `npx vitest run` (7 files,
 500 tests, all green — 22s, no flake this run), `npm run build`. Test count is
 down 1 from 501: two tests merged into one, one deleted.
+
+## 2026-08-21 — Task: Remove the Medicare, Strategies, Over Time and State Taxes tabs
+
+Second of the ten items the step-by-step rebuild bullet was cut into. A
+render-layer deletion: the strip goes from six tabs to two, and every module
+those four tabs read from stays in `utils/`, still exported and still under
+test.
+
+### What went, from src/App.tsx
+
+- The four `{tab === '…' && (…)}` panels — 2,094 lines: the IRMAA section, the
+  Roth-sizing / QCD-pricing / lump-sum sections, the shared "your accounts and
+  your horizon" input block with the projection and sequencing charts under it,
+  and the state-treatment table.
+- Four of the six `TABS` entries.
+- Three tooltip components rendered only by those charts, with their prop
+  interfaces: `ProjectionTooltip`, `SequencingTooltip`, `BackPayTooltip`.
+  `CustomTooltip` and `LTCGTooltip` stay — the two surviving charts use them.
+- 13 `useState` pairs (horizon, COLA, birth year, three account balances, basis
+  percent, growth, spending, both fill/conversion ceiling ids, both back-pay
+  inputs) and every derivation that fed only a deleted section: `sizing`,
+  `ceilings`, `qcdSwing`, `deductionTotal`, `ssCapPercent`, `awardScenario`,
+  `backPay*`, `projection*`, `sequencing*`, the eleven `seq*` values,
+  `applicableAge`, `firstRmdRow`, the three `gift*` figures, `ageAtStart`,
+  `measureLabel`, `statesTaxing/Moving/Frozen`, `scenarioMagi`, `irmaa`.
+- 17 constants (MIN/MAX_HORIZON, the birth-year range, MAX_CONVERSION, the
+  balance and spending ceilings, the back-pay defaults, BACK_PAY_COLORS,
+  SEQUENCING_COLORS), three formatters (`formatHalfAge`, `formatCurrencyCents`,
+  `formatNameList`), and the six now-unused import declarations.
+
+`noUnusedLocals` did most of the finding: delete the panels, run `tsc -b`, and
+it names every orphan in turn until the file is clean.
+
+### What stayed, deliberately
+
+- `utils/tax.ts` (irmaa*, conversionCeilings, sizeConversion, qcdEffect),
+  `utils/projection.ts`, `utils/sequencing.ts`, `utils/lumpSum.ts` and
+  `utils/stateTax.ts` — untouched, along with all five test files. `git status`
+  lists no file under `src/utils/`.
+- The IRMAA cliff `ReferenceLine`s on the torpedo chart and the IRMAA row in
+  `CustomTooltip`. `cliffsOnChart` and `beneficiaries` are still live, and
+  `App.chart.test.tsx` still asserts on all four of their cases. The next
+  backlog item is about *labelling* those lines now that the section explaining
+  what a cliff is has gone — not about re-drawing them.
+- All eight shared inputs above the strip, including the QCD slider: a gift
+  still moves provisional income, so it still moves both surviving charts.
+
+### src/index.css
+
+394 lines: every rule whose selector could no longer match. Found by extracting
+each class token from the stylesheet and checking it against App.tsx, then
+deleting a rule only when *every* selector in its list contained a dead token —
+which is why `.slider-value.emerald` survives (the LTCG slider) while
+`.section-heading-emerald` does not (the Roth section's h2). The CSS bundle is
+down from 15.4 kB to 9.13 kB.
+
+### Tests
+
+395 pass, down from 500. 105 went with the sections they asserted on: eight
+whole describes (`IRMAA cliffs`, `state treatment`, `multi-year projection`,
+`withdrawal sequencing`, `SequencingTooltip`, `retroactive awards and the
+lump-sum election`, `BackPayTooltip`, `Over Time tab inputs`) and 24 individual
+`it`s scattered through `App`, `tax year selector`, `qualified charitable
+distribution` and `head of household`.
+
+The QCD describe was split rather than deleted: its four slider tests (range,
+the joint doubling, re-pricing on a year change, clamping) and its three
+chart tests (axis label, tooltip exclusion, the gift capped at the income on
+the axis) all assert on things still on screen and stay. Only the tests reading
+the deleted pricing section went. `re-prices both limits when the tax year
+changes` lost its second subject and is now `re-prices the limit …`.
+
+`tabNames`, `TabName` and the three strip tests that named a removed tab were
+re-pointed at Capital Gains.
+
+### Verified
+
+`npx tsc -b`, `npx eslint src --max-warnings 0`, `npx vitest run` (7 files, 395
+tests, green in 7s — no flake this run), `npm run build`. App.tsx is 1,151 lines,
+down from 3,895.
+
+### Noticed, not acted on
+
+A human added `[ ] Update title and hero text to be what the tool is useful for,
+instead of what the current parameters are set to.` to Backlog 2 while this
+iteration was running. Left where it was put.

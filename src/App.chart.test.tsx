@@ -25,9 +25,9 @@ import App from './App';
 /**
  * The x-coordinates of the reference lines drawn on the first chart.
  *
- * Scoped to that chart rather than the whole page: the multi-year projection
- * further down draws reference lines of its own, and an unscoped query picks
- * up both charts' worth.
+ * Scoped to that chart rather than the whole page: it is the only one drawing
+ * reference lines today, but the tabs that did so too are coming back, and an
+ * unscoped query would then pick up more than one chart's worth.
  */
 const cliffPositions = (container: HTMLElement): number[] => {
   const ordinaryIncomeChart = container.querySelector('.recharts-wrapper');

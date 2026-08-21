@@ -1004,10 +1004,29 @@ fieldset.ceiling-picker {
   min-width: 0;
 }
 
+/* A row in an accordion, not a section of its own.
+ *
+ * These were spaced for the border they used to have — a 10%-alpha slate that
+ * came to almost nothing over the old ground — so each one carried 2.5rem of
+ * margin and 2rem of padding around a rule nobody could see. `--edge` is a
+ * real hairline, and at that spacing a step with five collapsed explainers
+ * read as five sections stacked rather than as one list of things a reader
+ * may open. The rule is now close to the heading it separates, which is what
+ * makes it a divider instead of a break, and the break above the group is the
+ * only place the old air is still spent.
+ */
 .explainer {
-  margin-top: 2.5rem;
-  padding-top: 2rem;
+  margin-top: 1.25rem;
+  padding-top: 1.25rem;
   border-top: 1px solid var(--edge);
+}
+
+/* Every explainer on this page is a `<details>` and nothing else in a step
+   is, so `:first-of-type` is the head of the group wherever the group starts.
+   It is the one that has to clear the chart, the slider and the advice above
+   it rather than the heading of another explainer. */
+.explainer:first-of-type {
+  margin-top: 2.5rem;
 }
 
 /* The tier under a step heading rather than level with one: these sit inside
@@ -1254,10 +1273,16 @@ footer p {
   scroll-margin-top: 4.25rem;
 }
 
+/* The heaviest rule on the page, and the only one drawn in the stronger edge.
+   It was `--edge` — the same hairline the explainers inside a step take — so
+   a step boundary and a disclosure boundary were painted identically and the
+   page had two levels of structure in one weight. `--edge-strong` is already
+   declared and until now was spent only on controls; a rule that separates
+   two whole steps is the other thing it is for. */
 .step + .step {
   margin-top: 3rem;
   padding-top: 2.5rem;
-  border-top: 1px solid var(--edge);
+  border-top: 1px solid var(--edge-strong);
 }
 
 /* Arriving at a step focuses it, so it has to show where it landed — but only
@@ -1322,7 +1347,15 @@ footer p {
 }
 
 /* The one control that carries a reader forward without the nav, so it is
-   sized as the end of a step rather than as a widget inside one. */
+   sized as the end of a step rather than as a widget inside one.
+ *
+ * A hairline on a raised surface, which is the register every other box on
+ * this page came down to in the ground pass. It was an accent wash inside an
+ * accent border at 25% alpha — a tint, which is the old card's idiom and the
+ * one thing the flat near-black ground has no other example of. What carries
+ * the accent instead is the kicker and the arrow, which is where FI Calc
+ * spends it: on the words that say what the box is for, not on the box.
+ */
 .next-step {
   display: grid;
   grid-template-columns: 1fr auto;
@@ -1337,16 +1370,16 @@ footer p {
   padding: 1.25rem 1.5rem;
   text-align: left;
   font: inherit;
-  background: rgba(var(--accent-rgb), 0.06);
-  border: 1px solid rgba(var(--accent-rgb), 0.25);
+  background: var(--surface-raised);
+  border: 1px solid var(--edge);
   border-radius: var(--radius-lg);
   cursor: pointer;
   transition: background 0.2s ease, border-color 0.2s ease;
 }
 
 .next-step:hover {
-  background: rgba(var(--accent-rgb), 0.12);
-  border-color: rgba(var(--accent-rgb), 0.5);
+  background: var(--surface-hover);
+  border-color: var(--edge-strong);
 }
 
 .next-step:focus-visible {
@@ -1394,13 +1427,17 @@ footer p {
  * because it summarises inputs already on screen. This one is a card, because
  * it is the page's answer and the thing a reader would screenshot — and it
  * takes `.next-step`'s treatment exactly, since that is the shape the flow has
- * taught for "this is the end of a section, and here is where it goes".
+ * taught for "this is the end of a section, and here is where it goes". Which
+ * now means a hairline on a raised surface rather than a wash of the accent:
+ * the two came off the tint together, because the whole reason the close
+ * takes the next-step box's treatment is that they are the same object at
+ * different scales.
  */
 .answer {
   margin-top: 2.5rem;
   padding: 1.5rem;
-  background: rgba(var(--accent-rgb), 0.06);
-  border: 1px solid rgba(var(--accent-rgb), 0.25);
+  background: var(--surface-raised);
+  border: 1px solid var(--edge);
   border-radius: var(--radius-lg);
 }
 
@@ -1438,10 +1475,14 @@ footer p {
   margin: 1.5rem 0 0;
 }
 
+/* At the page's one alpha for a rule in the margin, which was the only thing
+   about these that was its own: 0.35 where `.scenario-recap`, `.slider-advice`
+   and `.conversion-advice` are all 0.5. `the margin rules` in styles.test.tsx
+   holds the four of them to one value. */
 .answer-figure {
   min-width: 0;
   padding-left: 0.875rem;
-  border-left: 2px solid rgba(var(--accent-rgb), 0.35);
+  border-left: 2px solid rgba(var(--accent-rgb), 0.5);
 }
 
 .answer-figure dt {
@@ -1724,14 +1765,38 @@ footer p {
 
 /* ───── Print ───────────────────────────────────────────────────────────────
  *
- * This page is built to be looked at on a screen and screenshotted. Cmd-P
- * today gives white text on white paper: `:root` sets `color-scheme: dark`
- * and lays `--surface` under it, and every colour below is picked to sit on
- * that. What follows takes it all back off — by overriding the rules rather
- * than by re-pointing the tokens, because a light `--surface` would drag the
- * whole ink ramp with it and the ramp is not what wants inverting.
+ * The same page on paper, and paper is the other ground.
  *
- * Two decisions, worth writing down because neither reads off the rules.
+ * This block used to override the rules one at a time: forty-odd selectors
+ * each restating a screen rule in a slate literal, because "a light
+ * `--surface` would drag the whole ink ramp with it and the ramp is not what
+ * wants inverting". That was true of a stylesheet whose colours were written
+ * where they were used. It stopped being true in the ground pass, which put
+ * every colour in `:root` — and re-pointing `:root` is now the cheapest thing
+ * this sheet can do and the only one that cannot go stale.
+ *
+ * So the ramp *is* what wants inverting, and what follows inverts it: five
+ * tiers of ink, two edges, one accent and the eight data hues, re-derived for
+ * white rather than re-chosen for it. Every rule in the screen half then
+ * paints itself. `the print stylesheet` in styles.test.tsx holds the same
+ * line here that `the screen stylesheet` holds above: a colour written
+ * anywhere but this `:root` fails.
+ *
+ * What stays below the tokens is the part that is about paper rather than
+ * about colour — the sheet's shape, the things a sheet cannot be, the charts,
+ * and the pagination.
+ *
+ * Three decisions, worth writing down because none reads off the rules.
+ *
+ * *A fill is a thing a printer may drop; a border is not.* Chrome and Safari
+ * both print without background graphics unless the reader asks otherwise, so
+ * anything whose meaning is carried by a fill has to carry it another way
+ * here. That is why the chosen segmented option is re-drawn as a border and
+ * why the checkbox's tick is inked in the accent — an unticked box on a
+ * printed return is not a cosmetic fault, it is the wrong answer to "are you
+ * 65". The tinted panels need nothing: their washes are 6–8% alpha, which
+ * over white is already nothing, and their borders were always what drew
+ * them.
  *
  * *The whole walk prints, not only the close.* The close holds every figure a
  * reader leaves with and restates the return that produced them, so it is the
@@ -1761,18 +1826,108 @@ footer p {
     margin: 0.6in;
   }
 
-  /* ── The ground ── */
-
+  /* ───── The paper ground ──────────────────────────────────────────────────
+   *
+   * Every token the screen half declares, re-derived for white. Read this
+   * against the block at the top of the file: the names, the jobs and the
+   * relationships are the same, and only the direction is reversed.
+   *
+   * *The ink ramp keeps its five tiers and floors them higher.* On screen the
+   * five run 15.5:1 down to 4.7:1 against `--surface`; here they run 21:1 down
+   * to 7.3:1 against white. The tiers stay apart — a heading, an emphasis
+   * inside prose, prose, a label and a footnote are still five distinct greys
+   * — but the bottom of the range comes up, because the two media fail in
+   * opposite directions. Ink that is too light on a screen glares; ink that is
+   * too light on paper is not there, and it gets lighter again through a
+   * photocopier. 4.7:1 is a floor for something backlit, not for a footnote in
+   * 12px on a sheet somebody was handed.
+   *
+   * *`-bright` means further from the ground, so on paper it means darker.*
+   * `--ink-bright`, `--accent-bright` and the six `-bright` hues are each a
+   * step *up* in lightness on a near-black page and a step *down* here. The
+   * name is about contrast, not about luminance, and this is the one place
+   * that distinction shows.
+   *
+   * *The data hues keep their identities.* Amber is still the marker, rose is
+   * still a Medicare cliff, fuchsia is still the subsidy cliff and indigo is
+   * still the conversion band — a reader matches a swatch in the key to a
+   * line in the chart by hue, and that has to survive the printer. Each is the
+   * 700 or 800 step of the same hue rather than a different colour, and each
+   * clears 4.5:1 on white so it can carry the text it does in the keys.
+   *
+   * One thing this cannot reach: the reference-line labels inside the plots
+   * are SVG `fill` attributes written from `palette.ts` in App.tsx, and a
+   * custom property in a stylesheet is not a place an attribute reads from.
+   * They print in their screen colours, which is a backlog item of its own.
+   */
   :root {
     color-scheme: light;
-    color: #000;
-    background: #fff;
+
+    /* Surfaces. There is one, and it is the sheet. */
+    --surface: #ffffff;
+    --surface-raised: #ffffff;
+    --surface-sunken: #ffffff;
+    --surface-hover: #ffffff;
+    --surface-control: #ffffff;
+
+    /* Edges. The screen's two read 1.5:1 and 2.1:1 against their ground;
+       these read 1.5:1 and 2.6:1 against theirs. The stronger one is stronger
+       than its screen counterpart on purpose — a hairline is the one thing a
+       printer is most likely to lose. */
+    --edge: #cbd5e1;
+    --edge-strong: #94a3b8;
+
+    /* Ink, darkest first: 21:1, 17:1, 12.5:1, 9.5:1, 7.3:1. */
+    --ink-bright: #000000;
+    --ink: #1c1c22;
+    --ink-soft: #33333c;
+    --ink-muted: #45454f;
+    --ink-dim: #56565f;
+
+    /* The one accent. 5.9:1 and 7.6:1. */
+    --accent: #0369a1;
+    --accent-bright: #075985;
+    --accent-rgb: 3, 105, 161;
+
+    /* Never seen: it is the fill under a chosen segmented option, and the
+       rule below re-draws that as a border precisely because the fill is the
+       thing a printer drops. Declared anyway, so the paper ground answers
+       for every name the screen ground does. */
+    --accent-muted: #0369a1;
+
+    /* What each curve, cliff and marker means. */
+    --amber: #b45309;
+    --amber-bright: #92400e;
+    --amber-rgb: 180, 83, 9;
+    --orange: #c2410c;
+    --rose: #be123c;
+    --rose-bright: #9f1239;
+    --rose-rgb: 190, 18, 60;
+    --fuchsia: #a21caf;
+    --fuchsia-bright: #86198f;
+    --indigo: #4338ca;
+    --indigo-bright: #3730a3;
+    --indigo-rgb: 67, 56, 202;
+    --violet: #6d28d9;
+    --violet-deep: #5b21b6;
+    --lime: #4d7c0f;
+    --lime-deep: #3f6212;
+    --emerald: #047857;
+    --emerald-deep: #065f46;
+
+    /* Nothing floats on paper. The one thing that took this is the chart
+       tooltip, which follows a pointer there is none of here. */
+    --shadow-float: none;
   }
+
+  /* ── The sheet ──
+     Paper is one column and scrolls nowhere, so the shell is neither a grid
+     nor sticky nor a scroll container. Step 1 prints first, ahead of the walk
+     it configures, exactly as it reads on a narrow screen. */
 
   body {
     display: block;
     min-height: 0;
-    background: #fff;
   }
 
   #root {
@@ -1784,9 +1939,6 @@ footer p {
     padding: 0;
   }
 
-  /* Paper is one column and scrolls nowhere, so the shell is neither a grid
-     nor sticky nor a scroll container. Step 1 prints first, ahead of the walk
-     it configures, exactly as it reads on a narrow screen. */
   .shell {
     display: block;
   }
@@ -1796,204 +1948,6 @@ footer p {
     max-height: none;
     overflow: visible;
     padding: 0;
-  }
-
-  /* The title keeps its accent on paper and nothing else about it changes:
-     1.75rem is already a printable heading, and there is no gradient
-     knockout left here to undo. */
-  h1 {
-    color: #0c4a6e;
-  }
-
-  /* ── Text ──
-     Two groups: what was set bright to carry against a dark ground, and what
-     was set slate to recede from it. On paper they become black and dark
-     grey, which is the same two-step relationship. */
-
-  .step-heading,
-  .answer-heading,
-  .explainer h2,
-  .advanced-label,
-  .next-step-title,
-  .answer-figure dd strong,
-  .slider-readout strong,
-  .scenario-recap strong,
-  .step-prose strong,
-  .explainer strong,
-  .answer-share-line strong,
-  .chart-caption strong,
-  .state-footnote strong,
-  .state-footnote em {
-    color: #000;
-  }
-
-  label,
-  .subtitle,
-  .step-kicker,
-  .step-intro,
-  .step-prose,
-  .scenario-recap,
-  .checkbox-option,
-  .field-note,
-  .slider-readout,
-  .slider-advice,
-  .slider-range-labels,
-  .chart-axis-label,
-  .chart-key,
-  .chart-caption,
-  .state-footnote,
-  .state-source,
-  .explainer p,
-  .explainer ul,
-  .answer-intro,
-  .answer-figure dt,
-  .answer-gloss,
-  .answer-share-line,
-  .answer-note,
-  .advanced-state,
-  .link-note,
-  .warning-note,
-  footer p {
-    color: #333;
-  }
-
-  /* The accents, darkened rather than dropped: each one ties a figure to a
-     line on a chart or to the box it sits in, so hue is the information. */
-  .answer-kicker,
-  .slider-value {
-    color: #0369a1;
-  }
-
-  .slider-value.amber,
-  .slider-advice strong,
-  .link-note strong {
-    color: #b45309;
-  }
-
-  .slider-value.emerald,
-  .advanced-state-set {
-    color: #047857;
-  }
-
-  .slider-value.violet {
-    color: #6d28d9;
-  }
-
-  .slider-value.lime {
-    color: #4d7c0f;
-  }
-
-  .chart-key strong,
-  .warning-note strong {
-    color: #be123c;
-  }
-
-  /* After the rule above, not before it: same specificity, so the second cliff
-     keeps its own colour on paper only because it is written second. */
-  .chart-key-subsidy strong {
-    color: #a21caf;
-  }
-
-  .chart-key-swatch-subsidy {
-    border-top-color: #a21caf;
-  }
-
-  /* ── Boxes ──
-     Every tinted panel here is an rgba wash that a browser printing without
-     background graphics drops. The border is what carries them, so the wash
-     goes and the border stays — solid, since alpha over white is nearly
-     nothing. */
-
-  .link-note,
-  .warning-note,
-  .answer {
-    background: none;
-  }
-
-  .link-note {
-    border-color: #d97706;
-  }
-
-  .warning-note {
-    border-color: #e11d48;
-  }
-
-  .state-footnote,
-  .scenario-recap,
-  .slider-advice,
-  .answer-figure {
-    border-color: #94a3b8;
-  }
-
-  .answer {
-    border-color: #64748b;
-    padding: 0;
-  }
-
-  .segmented {
-    background: none;
-    border-color: #94a3b8;
-  }
-
-  .segmented-option span {
-    color: #64748b;
-  }
-
-  /* The radio itself is `opacity: 0` and the choice is shown with a fill, so
-     on paper the selection is unmarked. Border and weight instead — and the
-     border comes out of the padding rather than adding to it, so marking the
-     selection cannot be what wraps the last option onto a second row. */
-  .segmented-option input[type='radio']:checked + span {
-    background: none;
-    border: 1px solid #0369a1;
-    padding: calc(0.375rem - 1px) calc(0.75rem - 1px);
-    color: #0c4a6e;
-    font-weight: 700;
-  }
-
-  /* The checkbox is drawn rather than native as of the controls pass, so what
-     prints is whatever these rules say. Its tick is two borders of a rotated
-     square precisely so that it prints: a browser dropping background graphics
-     drops a fill, and an unticked box on a printed return is not a cosmetic
-     fault — it is the wrong answer to "are you 65". */
-  .checkbox-option input[type='checkbox'] {
-    background: none;
-    border-color: #64748b;
-  }
-
-  .checkbox-option input[type='checkbox']:checked {
-    background: none;
-    border-color: #0369a1;
-  }
-
-  .checkbox-option input[type='checkbox']::after {
-    border-right-color: #0369a1;
-    border-bottom-color: #0369a1;
-  }
-
-  /* White on a dark ground, with a chevron drawn in two gradients that only
-     mean something next to a menu that opens. */
-  .state-select {
-    padding: 0.35rem 0.5rem;
-    border-color: #94a3b8;
-    background: none;
-    color: #000;
-  }
-
-  .step,
-  .explainer,
-  .answer-note,
-  footer {
-    border-top-color: #cbd5e1;
-  }
-
-  .advanced-inputs {
-    background: none;
-    border-color: #cbd5e1;
-  }
-
-  .advanced-inputs[open] > summary {
-    border-bottom-color: #cbd5e1;
   }
 
   /* ── What a sheet of paper cannot be ──
@@ -2023,51 +1977,82 @@ footer p {
     cursor: default;
   }
 
-  /* ── The charts ──
-     recharts sizes its wrapper and its `<svg>` in pixels off a screen
-     measurement it will not repeat for the printer, so a chart laid out for a
-     900px column overflows a 6.5in page. The `viewBox` recharts already puts
-     on the surface is what makes `width: 100%; height: auto` scale the whole
-     plot rather than crop it.
-
-     Rooted with `>` rather than as a plain descendant on purpose: recharts
-     renders nothing at all under jsdom, where `ResponsiveContainer` measures
-     its parent as zero, so a `.chart-container .recharts-wrapper` would be a
-     dead selector to the guard in `styles.test.tsx` — which is exactly the
-     child-arrangement case that guard documents itself as leaving out. */
-  .chart-container,
-  .chart-container > .recharts-responsive-container,
-  .chart-container > .recharts-responsive-container > .recharts-wrapper {
-    width: 100% !important;
-    max-width: 100% !important;
-    height: auto !important;
+  /* The chevron is two gradients that only mean something beside a menu that
+     opens, and without it the field's right padding is dead space. */
+  .state-select {
+    padding: 0.35rem 0.5rem;
+    background-image: none;
   }
 
-  /* On the container only. The two recharts divs above are in the same rule
-     because they take the same sizing, but a margin on either of them is
-     space inside the plot rather than above it. */
+  /* ── What a fill was carrying ──
+     Two controls state their answer with a background colour, which is the
+     one thing on this page that may not reach the paper. Both restate it
+     with ink instead.
+
+     The chosen option's border comes out of the padding rather than adding to
+     it, so marking the selection cannot be what wraps the last option onto a
+     second row. */
+
+  .segmented-option input[type='radio']:checked + span {
+    background: none;
+    border: 1px solid var(--accent);
+    padding: calc(0.375rem - 1px) calc(0.75rem - 1px);
+    color: var(--accent);
+    font-weight: 700;
+  }
+
+  .checkbox-option input[type='checkbox'],
+  .checkbox-option input[type='checkbox']:checked {
+    background: none;
+  }
+
+  /* The tick is two borders of a rotated square precisely so that it prints —
+     a printer that drops the fill still draws a border — but on screen those
+     borders are `--surface`, which is the colour it is knocked out of. Here
+     that would be white on white, so it takes the accent the box is drawn in. */
+  .checkbox-option input[type='checkbox']::after {
+    border-right-color: var(--accent);
+    border-bottom-color: var(--accent);
+  }
+
+  /* ── The charts ──
+     `ResponsiveContainer` measures the box it is handed and renders nothing
+     at all when that box is zero high — so the one thing this block may not
+     do is take the height away. It did: `height: auto !important` on the
+     container and on both recharts divs collapsed all three to nothing, the
+     observer fired, and every chart came off the printer as its axis label,
+     its key and its caption with no plot between them. Thirty tick values on
+     screen, none on paper, and nothing anywhere reported it.
+
+     What it wants instead is a height chosen for paper. recharts does
+     re-measure for the printer — the plots re-render at the width of the
+     sheet rather than the width of the reading column — so nothing here has
+     to scale an SVG that was laid out for the screen, which is what the
+     `width: 100% !important` and the `viewBox` trick beside it were for.
+     300px is 3.1in, which leaves a chart and everything written under it on
+     one sheet. */
   .chart-container {
+    height: 300px;
     margin-top: 1rem;
   }
 
-  .chart-container svg {
-    width: 100% !important;
-    height: auto !important;
-  }
-
-  /* The grid is white at 10% alpha — on paper it is nothing at all — and the
-     axis was picked to be quiet against slate, not against white. */
+  /* The three tiers of chart chrome the screen half draws, re-derived here
+     the same way everything above is: the frame is the stronger edge, the
+     mesh behind it is the hairline, the words are muted ink. They are set as
+     CSS rather than left to the tokens because recharts writes them as SVG
+     presentation attributes from `palette.ts`, and a rule beats an
+     attribute. */
   .chart-container svg .recharts-cartesian-grid line {
-    stroke: #d4d4d8;
+    stroke: var(--edge);
   }
 
   .chart-container svg .recharts-cartesian-axis-line,
   .chart-container svg .recharts-cartesian-axis-tick-line {
-    stroke: #64748b;
+    stroke: var(--edge-strong);
   }
 
   .chart-container svg .recharts-cartesian-axis-tick-value {
-    fill: #334155;
+    fill: var(--ink-muted);
   }
 
   /* ── Pagination ──

@@ -5680,3 +5680,170 @@ Step 3's amber wash reads warmer than the other two at the same 0.2, because
 amber is a brighter hue than the accent, not because the alpha differs. Left
 alone — a later bullet already asks whether step 3 should have a hue of its
 own, and that is where a per-curve alpha would be argued if it is wanted.
+
+## 2026-08-21 — Task: Re-derive the close, the explainers and the print sheet from the new ground
+
+The tree opened dirty again, and this time with most of this bullet already
+in it: `src/index.css` and `src/styles.test.tsx` carried an unfinished pass
+and `shot.mjs`/`probe.mjs` were the scratch drivers written for it. So this
+run is the second half — read what was there, finish it, verify all of it,
+commit it as one thing. Noted in Discovered Work as a repeat, because it is
+now three runs in a row and the write-up for the middle one says the same.
+
+### The close and the boxes
+
+`.answer` and `.next-step` were an accent wash inside an accent border at 25%
+alpha. A tint is the old card's idiom — it was how a panel separated itself
+from a slate gradient — and the flat near-black ground has no other example
+of one. Both come down to `--surface-raised` and a hairline `--edge`, which
+is what every other box on the page became in the ground pass. The accent
+moves to the kicker and the arrow, which is where FI Calc spends it: on the
+words that say what a box is for, not on the box.
+
+They came off the tint together on purpose. The whole reason the close takes
+the next-step box's treatment is that they are the same object at two scales
+— "this is the end of a section, and here is where it goes".
+
+`.answer-figure`'s left rule was `rgba(--accent-rgb, 0.35)` where
+`.scenario-recap`, `.slider-advice` and `.conversion-advice` are all 0.5. One
+number, one place, and now guarded.
+
+### The explainers
+
+2.5rem of margin over 2rem of padding around a rule nobody could see. That
+spacing was chosen for a 10%-alpha slate border that came to almost nothing
+over the old ground; `--edge` is a real hairline, and at that spacing a step
+with five collapsed explainers read as five sections rather than one list.
+Both come to 1.25rem, so the rule sits close to the heading it divides. The
+old air is spent once, on `:first-of-type`, which is the one that has to
+clear the chart and the slider above it. Every explainer on this page is a
+`<details>` and nothing else in a step is, so `:first-of-type` finds the head
+of the group wherever the group starts.
+
+`.step + .step` was `--edge` — the same hairline as an explainer boundary, so
+a step break and a disclosure break were painted identically and the page had
+two levels of structure at one weight. It takes `--edge-strong`, which until
+now was spent only on controls.
+
+### The print sheet
+
+It was forty-odd selectors each restating a screen rule in a slate literal,
+because when it was written the colours were spelled where they were used and
+there was nothing else to re-point. The ground pass put them all in `:root`.
+So the paper half is now a `:root` of its own — five tiers of ink, two edges,
+one accent, the eight data hues — and every rule in the screen half paints
+itself. The block went from 256 lines to 241 while covering strictly more.
+
+Three things that do not read off the rules, and are written above them:
+
+- **The ink ramp keeps its five tiers and floors them higher.** 15.5:1 down to
+  4.7:1 on screen; 21:1 down to 7.3:1 here. The two media fail in opposite
+  directions — ink too light on a screen glares, ink too light on paper is
+  not there, and it gets lighter again through a photocopier.
+- **`-bright` means further from the ground, so on paper it means darker.**
+  The name is about contrast, not luminance, and this is the one place the
+  distinction shows.
+- **The data hues keep their identities.** Amber is still the marker, rose is
+  still an IRMAA cliff. Each is the 700/800 step of the same hue and each
+  clears 4.5:1 on white, because they carry the text in the keys.
+
+What stays below the tokens is the part that is about paper rather than about
+colour: the sheet's shape, what a sheet cannot be, the charts, the
+pagination. Two controls needed keeping — the chosen segmented option and the
+checkbox tick both state their answer with a fill, and a fill is the one thing
+a printer may drop, so both restate it in ink. An unticked box on a printed
+return is not a cosmetic fault, it is the wrong answer to "are you 65".
+
+### The charts on paper (the second bullet, struck with this one)
+
+`height: auto !important` on `.chart-container` and both recharts divs was
+there to scale a screen-sized SVG down to the sheet via its `viewBox`.
+`ResponsiveContainer` measured the change, got zero, and unmounted all three
+plots. Thirty tick values on screen, none on paper, and what printed was an
+axis label, a key and a caption with nothing between them.
+
+It wants a height chosen for paper instead, and nothing else: recharts does
+re-measure for the printer, so the plots re-render at the width of the sheet
+and there is no screen-sized SVG left to scale. `height: 300px` — 3.1in,
+which leaves a chart and everything under it on one sheet. Confirmed on a
+built page: 10 ticks per plot at both 1440px and 701px (7.3in of Letter),
+SVG width tracking the sheet, no overflow at either.
+
+### The guards
+
+- **`the print stylesheet`** (2 new). The same line the screen half is held
+  to — a colour written anywhere but `:root` fails — plus the one that is
+  specific to having two grounds: every colour token the screen declares must
+  be *declared* on paper too. That second one is the new failure mode this
+  design trades into. The old sheet went stale by a screen rule changing and
+  its print twin not; this one goes stale by a token being added to the screen
+  ground and not to the paper one, which is silent in exactly the same way,
+  because a custom property paper never re-points still resolves — to the
+  near-black value. `--surface-control` unanswered is a #31333f block on white
+  paper. Only colour tokens are checked: `--measure` and the three corners
+  mean the same on either ground.
+- **`the print sheet's charts`** (2 new). The print sheet may resize a chart
+  and may not take its height away. Nothing reported the bug and nothing
+  could — recharts renders nothing under jsdom either, so no render-based test
+  can tell a chart missing from paper apart from one missing from the test.
+  What is checkable is the rule that did it.
+- **`the margin rules`** (1 new). This page sets something apart in the margin
+  more often than it does anything else — the recap, the advice under each
+  slider, the state footnote, the eight closing figures — and they had drifted
+  into two alphas. A margin rule is 2px and either `--edge` or a data token at
+  exactly half alpha; a note box is 3px solid down the side of something with
+  a fill of its own, and is allowed for explicitly rather than by omission,
+  because the difference between a rule beside prose and a box is the point.
+
+### Verified
+
+- `npx tsc -b`, `npx eslint src --max-warnings 0`, `npx vitest run`
+  (11 files, 690 tests — +5, all five new), `npm run build`.
+- All five falsified once each: a `color: #333` inside `@media print` fails
+  the one-place claim; deleting `--surface-control` from the paper ground
+  fails the answers-for-every-token claim; `height: auto` back on
+  `.chart-container` fails both chart claims; and `.answer-figure` at either
+  0.35 alpha or 3px fails the margin-rule claim. `src/index.css` diffed clean
+  against its backup afterwards.
+- Rendered rather than reasoned about. Built, `vite preview`, drove Chromium
+  through `playwright-core`. On screen: the close and the next-step box both
+  `rgb(32,33,36)` on `rgb(52,57,64)`, every margin rule 2px at 0.5 (or
+  `--edge` for the state footnote), the first explainer at 40px/20px and the
+  rest at 20px/20px, `.step + .step` at 1px `rgb(74,80,89)` = `--edge-strong`,
+  no horizontal scroll at 1440 or 420, zero page errors.
+- Under `emulateMedia({ media: 'print' })` at 1440 and at 701: 30 tick values,
+  3 SVGs, grid `--edge`, axis `--edge-strong`, ticks `--ink-muted`, body
+  `rgb(28,28,34)` on white, **zero** elements anywhere on the page still
+  painted a dark background, zero elements wider than the sheet, and the
+  checked segmented option drawn as an accent border with no fill.
+  Screenshotted step 2 and the close at paper width and read them.
+
+### Left standing, and why
+
+Everything App.tsx writes from `PALETTE` prints in its screen colour — the
+curve, the washes, and every in-plot label. Measured: `400% FPL` at 1.9:1 on
+white, `You are here` at 2.1:1, the conversion figure at 2.2:1, step 3's
+marker at 1.8:1. Those are the words that name every cliff and they are the
+faintest thing on the sheet.
+
+Not fixed here, and not because it is small. A blanket CSS override cannot do
+it: `hereLine` takes the colour of the slider that drives it — amber on steps
+2 and 4, emerald on step 3 — and step 3's own prose says "where the dashed
+emerald line crosses the curve", so one `.here-line text { fill }` would make
+that sentence wrong. The fix that scales is to stop writing colour into
+attributes at all, which is a pass over `palette.ts` and every `<Area>`,
+`<ReferenceLine>` and `<ReferenceArea>` in App.tsx, and it carries a decision
+about whether `palette.ts` stays the SVG's source of truth or becomes a
+second name for `:root`. Logged in Discovered Work with the measurements.
+
+### Note for the next run
+
+`playwright-core` note still holds and gained a clause: cached Chromium build
+1228 against `playwright-core` 1.62.1, so `chromium.launch()` needs
+`executablePath` at
+`~/Library/Caches/ms-playwright/chromium_headless_shell-1228/chrome-headless-shell-mac-arm64/chrome-headless-shell`,
+and the driving script has to sit in the project root for the bare import to
+resolve. New: `vite preview` serves under the repo's base path, so the URL is
+`http://localhost:<port>/congenial-octo-spork/` — a bare `/` 302s — and ports
+4173-4175 were already held by preview servers left running by earlier runs,
+so read the port off preview's own output rather than assuming 4173.

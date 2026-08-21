@@ -154,6 +154,117 @@ describe('the screen stylesheet', () => {
 });
 
 /**
+ * Every custom property a `:root` block declares, and — of those — the ones
+ * whose value is a colour.
+ *
+ * `--accent-rgb` is a colour and `--measure` is not: the first is a colour
+ * written as three numbers so an `rgba()` can take an alpha to it, the second
+ * is a length. Which side a token falls on is the difference between
+ * something that has to be re-derived for paper and something that means the
+ * same on either ground.
+ *
+ * The two are asymmetric on purpose. What paper *owes* an answer for is every
+ * screen token holding a colour; what counts as an answer is the name being
+ * declared at all, whatever it is set to. `--shadow-float` is why: on paper
+ * it is `none`, which is the right answer and not a colour.
+ */
+const tokenNames = (css: string): string[] =>
+  (css.match(/:root\s*\{[^}]*\}/g) ?? []).flatMap((block) =>
+    Array.from(block.matchAll(/(--[\w-]+):/g)).map(([, name]) => name),
+  );
+
+const colourTokens = (css: string): string[] =>
+  (css.match(/:root\s*\{[^}]*\}/g) ?? []).flatMap((block) =>
+    Array.from(block.matchAll(/(--[\w-]+):\s*([^;]+);/g))
+      .filter(([, name, value]) => /-rgb$/.test(name) || looseColours(value).length > 0)
+      .map(([, name]) => name),
+  );
+
+/**
+ * The paper half, held to the same line as the screen half.
+ *
+ * The print sheet used to override the screen's rules one at a time — forty
+ * selectors, each restating a rule in a slate literal — because when it was
+ * written the colours were spelled where they were used and there was nothing
+ * else to re-point. The ground pass put them all in `:root`, and this pass
+ * spends that: paper re-declares the tokens and every rule above paints
+ * itself.
+ *
+ * That trades one failure for another, and this is the one it trades to. The
+ * old sheet went stale by a screen rule changing and its print twin not; the
+ * new one goes stale by a *token* being added to the screen ground and not to
+ * the paper one — which is silent in exactly the same way, because a
+ * custom property that paper never re-points still resolves, to whatever
+ * value the near-black register gave it. `--surface-control` on a printed
+ * page would be a #31333f block.
+ *
+ * So the second `it` is the one that matters, and the first is what keeps the
+ * `:root` block the only place worth looking. Only the colour tokens are
+ * checked: `--measure`, `--gutter` and the three corners mean the same thing
+ * on either ground, and `#root` drops the measures on paper outright.
+ */
+describe('the print stylesheet', () => {
+  it('writes every colour it paints with in :root and nowhere else', () => {
+    const print = printBlock(stylesheet);
+    // Guards the extractor: an empty block would make both checks vacuous.
+    expect(print.length).toBeGreaterThan(500);
+
+    const declared = print.match(/:root\s*\{[^}]*\}/g) ?? [];
+    expect(declared).toHaveLength(1);
+    expect(looseColours(declared.join('\n')).length).toBeGreaterThan(20);
+
+    const used = declared.reduce((css, block) => css.replace(block, ''), print);
+    expect(looseColours(used)).toEqual([]);
+  });
+
+  it('answers for every token the screen ground declares', () => {
+    const screen = colourTokens(screenBlock(stylesheet));
+    // Guards the extractor itself: an empty list would pass vacuously.
+    expect(screen.length).toBeGreaterThan(20);
+
+    const paper = new Set(tokenNames(printBlock(stylesheet)));
+    expect(screen.filter((name) => !paper.has(name))).toEqual([]);
+  });
+});
+
+/**
+ * `ResponsiveContainer` measures the box it is handed and renders nothing at
+ * all when that box is zero high. The print sheet used to hand it zero: it set
+ * `height: auto !important` on `.chart-container` and on both recharts divs
+ * to scale a screen-sized SVG down to the sheet, the observer fired on the
+ * change, and all three chart plots unmounted. Thirty tick values on screen,
+ * none on paper — the axis, both sets of tick values and the grid gone, and
+ * what printed was an axis label, a key and a caption with nothing between
+ * them.
+ *
+ * Nothing reported it, and nothing could: recharts renders nothing under
+ * jsdom either, so no render-based test can tell a chart that is missing from
+ * paper apart from one that is missing from the test. What can be checked is
+ * the rule that did it, which is the claim here: the print sheet may resize a
+ * chart, and may not take its height away.
+ */
+describe('the print sheet’s charts', () => {
+  const chartRules = () =>
+    leafRules(printBlock(stylesheet)).filter((rule) =>
+      rule.selectors.some((selector) => /chart-container|recharts/.test(selector)),
+    );
+
+  it('hands the plot a height it can measure', () => {
+    const sized = chartRules().filter((rule) => /(?:^|[;\s])height:/.test(rule.body));
+    expect(sized).toHaveLength(1);
+    expect(/height:\s*([^;}]+)/.exec(sized[0].body)?.[1].trim()).toMatch(/^\d+px$/);
+  });
+
+  it('never resolves that height to nothing', () => {
+    const zeroed = chartRules()
+      .filter((rule) => /(?:^|[;\s])(?:height|max-height):\s*(auto|0)\b/.test(rule.body))
+      .flatMap((rule) => rule.selectors);
+
+    expect(zeroed).toEqual([]);
+  });
+});
+
+/**
  * `palette.ts` and `:root` are the same palette written twice, once for CSS
  * and once for SVG. Two copies drift — silently, because a stale colour still
  * renders — so the only thing keeping them one palette is this.
@@ -359,16 +470,18 @@ describe('the controls', () => {
 });
 
 /**
- * The body of the one `@media` block that collapses the two columns into one.
+ * The body of one `@media` block, named by its prelude.
  *
- * Found by name and read by balancing braces rather than by regex, because a
- * media block is the one thing in this file that nests — `leafRules` walks
- * straight past the prelude and into the rules inside, which is exactly what
- * is wanted everywhere else and not here.
+ * Read by balancing braces rather than by regex, because a media block is the
+ * one thing in this file that nests — `leafRules` walks straight past the
+ * prelude and into the rules inside, which is exactly what is wanted
+ * everywhere else and not here. `@media print` nests twice over, holding an
+ * `@page` of its own, which is the other reason this counts rather than
+ * matching.
  */
-const collapseBlock = (css: string): string => {
+const mediaBlock = (css: string, prelude: string): string => {
   const stripped = css.replace(/\/\*[\s\S]*?\*\//g, '');
-  const at = stripped.indexOf('@media (max-width: 992px)');
+  const at = stripped.indexOf(prelude);
   if (at === -1) return '';
   const open = stripped.indexOf('{', at);
   let depth = 0;
@@ -381,6 +494,13 @@ const collapseBlock = (css: string): string => {
   }
   return '';
 };
+
+/** The block that collapses the two columns into one. */
+const collapseBlock = (css: string): string =>
+  mediaBlock(css, '@media (max-width: 992px)');
+
+/** The other ground: the same page on paper. */
+const printBlock = (css: string): string => mediaBlock(css, '@media print');
 
 /**
  * Every `width` and `max-width` the screen half sets, with what set it.
@@ -469,6 +589,61 @@ describe('the shell', () => {
       .flatMap((rule) => rule.selectors);
 
     expect(pinned.filter((selector) => !released.includes(selector))).toEqual([]);
+  });
+});
+
+/** Every left border the screen half draws, with what drew it. */
+const leftBorders = (
+  css: string,
+): { selectors: string[]; property: string; value: string }[] =>
+  leafRules(css).flatMap((rule) =>
+    Array.from(
+      rule.body.matchAll(/(?:^|[;\s])(border-left(?:-color)?):\s*([^;}]+)/g),
+    ).map(([, property, value]) => ({
+      selectors: rule.selectors,
+      property,
+      value: value.trim(),
+    })),
+  );
+
+/**
+ * Two shapes of left border, and no third.
+ *
+ * This page sets something apart in the margin rather than in a box more
+ * often than it does anything else: the recap that closes step 1, the advice
+ * under each slider, the state footnote under step 2's chart and each of the
+ * eight closing figures are all a rule and an indent. They arrived one at a
+ * time and had drifted into three alphas — 0.5 under the sliders, 0.5 under
+ * the recap, 0.35 beside the figures — which is the same drift `the corners`
+ * and `the type scale` were written for, in the one dimension neither of them
+ * watches.
+ *
+ * So: a margin rule is 2px, and its colour is either the page's hairline or a
+ * data token at exactly half alpha. A note box is the other shape — 3px of a
+ * solid token down the side of something with a fill and a border of its own,
+ * which is `.link-note` and `.warning-note` — and it is allowed for
+ * explicitly rather than by omission, because the difference between the two
+ * is the whole point: one is a rule beside prose, the other is a box.
+ */
+describe('the margin rules', () => {
+  const RULE = /^2px solid (var\(--edge\)|rgba\(var\(--[\w-]+-rgb\), 0\.5\))$/;
+  const COLOUR = /^(var\(--edge\)|rgba\(var\(--[\w-]+-rgb\), 0\.5\))$/;
+  const BOX = /^3px solid var\(--[\w-]+\)$/;
+
+  it('draws every one of them at one weight and one alpha', () => {
+    const drawn = leftBorders(screenBlock(stylesheet));
+    // Guards the extractor itself: an empty list would pass vacuously.
+    expect(drawn.length).toBeGreaterThan(5);
+
+    const odd = drawn
+      .filter((border) =>
+        border.property === 'border-left-color'
+          ? !COLOUR.test(border.value)
+          : !RULE.test(border.value) && !BOX.test(border.value),
+      )
+      .map((border) => `${border.selectors.join(', ')} { ${border.property}: ${border.value} }`);
+
+    expect(odd).toEqual([]);
   });
 });
 

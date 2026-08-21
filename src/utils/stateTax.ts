@@ -1,5 +1,5 @@
 import type { TaxYear } from './tax';
-import { defaultTaxYear } from './tax';
+import { TAX_YEARS, defaultTaxYear } from './tax';
 
 /**
  * State treatment of Social Security benefits — a lookup table, not a
@@ -190,6 +190,62 @@ export function statesTaxingSocialSecurity(
 ): StateSSRule[] {
   return STATE_SS_RULES.filter(
     (rule) => rule.exemptFrom === null || year < rule.exemptFrom,
+  );
+}
+
+/**
+ * One other selectable tax year whose income test reads differently from the
+ * year on screen.
+ */
+export interface StateTestDelta {
+  /** The year being compared against the one on screen. */
+  year: TaxYear;
+  /** That year's income test, as display text. */
+  test: string;
+  /** Whether that year falls before or after the one on screen. */
+  direction: 'earlier' | 'later';
+}
+
+/**
+ * Every selectable tax year whose income test differs from `year`'s, in year
+ * order.
+ *
+ * The table prints one year at a time, which buries the contrast that the year
+ * selector exists to show. Most of these state thresholds are as frozen as the
+ * federal $25,000 and read identically whichever year is picked — but not all:
+ * Minnesota re-indexes annually, Rhode Island indexes a year behind and has not
+ * published the next set, and West Virginia's phase-out finishes. Those three
+ * differences are invisible unless both years are on screen at once, so this
+ * returns the other years' wording for the table to print beneath the
+ * selected one.
+ *
+ * Comparison is on the display string, not on parsed figures. That is the
+ * point: a state whose statute changed shape but kept its numbers still reads
+ * differently, and a state that reprints the same sentence has not moved
+ * regardless of what happened in its legislature.
+ */
+export function stateTestDeltas(
+  rule: StateSSRule,
+  year: TaxYear = defaultTaxYear(),
+): StateTestDelta[] {
+  return TAX_YEARS.filter(
+    (other) => other !== year && rule.test[other] !== rule.test[year],
+  ).map((other) => ({
+    year: other,
+    test: rule.test[other],
+    direction: other < year ? 'earlier' : 'later',
+  }));
+}
+
+/**
+ * The states on `year`'s list whose income test differs in some other year the
+ * app can price — the ones the table has to show twice.
+ */
+export function statesWithMovingTests(
+  year: TaxYear = defaultTaxYear(),
+): StateSSRule[] {
+  return statesTaxingSocialSecurity(year).filter(
+    (rule) => stateTestDeltas(rule, year).length > 0,
   );
 }
 

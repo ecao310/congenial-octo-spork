@@ -1224,6 +1224,30 @@ describe('state treatment', () => {
       (cell) => cell.textContent ?? '',
     );
 
+  /**
+   * One state's income-test cell, split into the selected year's wording and
+   * the other years' printed beneath it. Kept apart deliberately: several of
+   * these assertions turn on which of the two a figure appears in, and reading
+   * the cell's whole `textContent` cannot tell them apart.
+   */
+  const stateTest = (state: string): { current: string; deltas: string[] } => {
+    const row = Array.from(
+      stateSection()!.querySelectorAll('tbody tr'),
+    ).find((tr) => tr.querySelector('th')?.textContent === state);
+    if (!row) throw new Error(`no row for ${state}`);
+    return {
+      current: row.querySelector('.state-test-current')?.textContent ?? '',
+      deltas: Array.from(row.querySelectorAll('.state-test-delta')).map(
+        (delta) => delta.textContent ?? '',
+      ),
+    };
+  };
+
+  const movingRows = (): string[] =>
+    Array.from(stateSection()!.querySelectorAll('tbody tr'))
+      .filter((tr) => tr.querySelector('.state-test-delta'))
+      .map((tr) => tr.querySelector('th')?.textContent ?? '');
+
   it('names the nine states that taxed benefits in 2025, and no others', () => {
     renderTab('State Taxes');
     expect(stateRows()).toEqual([
@@ -1258,10 +1282,17 @@ describe('state treatment', () => {
     expect(section).toHaveTextContent(
       'AGI ≤ $50,000 single / $100,000 joint: exempt',
     );
-    // Nine states, three columns of prose, no empty cells.
+    // Nine states, three columns of prose, no empty cells. The comparison
+    // years live inside the income-test cell rather than in a fourth column,
+    // which is why this is still 18 and not 27.
     const cells = Array.from(section!.querySelectorAll('tbody td'));
     expect(cells).toHaveLength(18);
     for (const cell of cells) expect(cell.textContent).not.toBe('');
+    for (const cell of Array.from(
+      section!.querySelectorAll('.state-test-current'),
+    )) {
+      expect(cell.textContent).not.toBe('');
+    }
   });
 
   it('drops West Virginia and re-prices the indexed states for 2026', () => {
@@ -1275,15 +1306,76 @@ describe('state treatment', () => {
     expect(section).toHaveTextContent('West Virginia finished phasing its tax out');
     expect(section).toHaveTextContent('Income test (2026)');
 
-    // Minnesota indexes annually, so its figures move with the year; Vermont
-    // does not, so its must not.
-    expect(section).toHaveTextContent('< $110,780 joint');
-    expect(section).not.toHaveTextContent('$108,320');
-    expect(section).toHaveTextContent('≤ $55,000 single/HOH, ≤ $70,000 joint');
+    // Minnesota indexes annually, so the selected year's cell must carry the
+    // 2026 figures and 2025's must appear only as the comparison beneath it —
+    // never the other way round, which is how a stale copy-paste would read.
+    expect(stateTest('Minnesota').current).toContain('< $110,780 joint');
+    expect(stateTest('Minnesota').current).not.toContain('$108,320');
+    expect(stateTest('Minnesota').deltas).toEqual([
+      expect.stringContaining('$108,320'),
+    ]);
+    // Vermont does not index, so it gets one line and no comparison at all.
+    expect(stateTest('Vermont').current).toContain(
+      '≤ $55,000 single/HOH, ≤ $70,000 joint',
+    );
+    expect(stateTest('Vermont').deltas).toEqual([]);
     // Rhode Island has not published 2026 figures, and says so rather than
-    // reprinting 2025's under a 2026 heading.
-    expect(section).toHaveTextContent('Not published yet');
-    expect(section).not.toHaveTextContent('$133,750');
+    // reprinting 2025's under a 2026 heading — but 2025's are still reachable,
+    // labelled with the year they belong to.
+    expect(stateTest('Rhode Island').current).toMatch(/Not published yet/);
+    expect(stateTest('Rhode Island').current).not.toContain('$133,750');
+    expect(stateTest('Rhode Island').deltas).toEqual([
+      expect.stringContaining('$133,750'),
+    ]);
+  });
+
+  it('prints both years only for the states whose test actually moves', () => {
+    renderTab('State Taxes');
+    // 2025: Minnesota re-indexes, Rhode Island's next set is unpublished, and
+    // West Virginia's exemption completes. The other six read identically.
+    expect(movingRows()).toEqual([
+      'Minnesota',
+      'Rhode Island',
+      'West Virginia',
+    ]);
+    expect(stateSection()).toHaveTextContent(
+      '6 of the 9 rules below read word for word the same in 2025 as in 2026',
+    );
+    expect(stateSection()).toHaveTextContent(
+      'Minnesota, Rhode Island and West Virginia',
+    );
+
+    // Each comparison line opens with the year it belongs to, so a reader never
+    // has to infer which figure is which. The space after the year is asserted
+    // because JSX drops whitespace-only lines between elements — without an
+    // explicit one the year runs into the wording it labels, which looks fine
+    // under the CSS margin and reads as "2026Full" to a screen reader.
+    expect(stateTest('Minnesota').deltas).toHaveLength(1);
+    expect(stateTest('Minnesota').deltas[0]).toMatch(/^2026 Full: /);
+    expect(stateTest('Minnesota').deltas[0]).toContain('$110,780');
+    expect(stateTest('Minnesota').current).toContain('$108,320');
+    // West Virginia's own comparison is the phase-out finishing, which is the
+    // same fact the prose above states — shown here against its 2025 rule.
+    expect(stateTest('West Virginia').deltas[0]).toBe(
+      '2026 Exempt at every income',
+    );
+    expect(stateTest('Montana').deltas).toEqual([]);
+  });
+
+  it('drops the vanished state from the comparison count for 2026', () => {
+    renderTab('State Taxes');
+    fireEvent.click(screen.getByRole('radio', { name: '2026' }));
+    // West Virginia is off the table entirely by 2026, so it can no longer be
+    // one of the rows shown twice — two move, not three.
+    expect(movingRows()).toEqual(['Minnesota', 'Rhode Island']);
+    expect(stateSection()).toHaveTextContent(
+      '6 of the 8 rules below read word for word the same',
+    );
+    expect(stateSection()).toHaveTextContent('The 2 that move are');
+    expect(stateSection()).toHaveTextContent('Minnesota and Rhode Island');
+    expect(stateSection()).not.toHaveTextContent(
+      'Minnesota, Rhode Island and West Virginia',
+    );
   });
 
   it('keeps the full rules collapsed but cites a source for each', () => {

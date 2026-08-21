@@ -2195,3 +2195,108 @@ npm run build — all clean; only the pre-existing >500kB chunk warning.
 The prose is now the heaviest thing above the fold — Tax Year carries three
 paragraphs and Age two, all always-on. The same page-load test that sorted the
 sliders sorts the paragraphs too.
+
+---
+
+## Both years in the state table
+## 2026-08-20
+
+The state-treatment table printed one year's income test at a time, which hid
+the contrast the year selector exists to create. Nine rules, and switching the
+selector changed exactly two cells — but you could only find that out by
+flipping back and forth and holding the old wording in your head.
+
+### A delta line, not a second column
+
+The backlog note offered both. A second column would have been blank for six of
+the nine rows, and both columns carry sentences rather than figures, so the
+table would have doubled in width to say nothing new most of the time.
+
+Instead each income-test cell now prints the selected year's wording and, only
+where some other selectable year reads differently, that year's underneath —
+set back behind a rule and dimmed, because the selected year is the answer and
+the other is the comparison. The `tbody td` count stays at 18 rather than 27,
+which is a fact one existing test already asserted and now asserts on purpose.
+
+### The count is the point, not a footnote
+
+`statesWithMovingTests(year)` drives a new lead sentence: *"Most of these are as
+frozen as the federal $25,000: 6 of the 9 rules below read word for word the
+same in 2025 as in 2026."* That sentence is the whole reason the section exists
+on a page about frozen thresholds — the federal $25,000 has not moved since
+1983, and neither have six of the nine states that still reach the benefit.
+
+The three that do move for 2025 move for three different reasons, and the delta
+line shows each without the prose having to enumerate them:
+
+- **Minnesota** re-indexes annually — $108,320 joint becomes $110,780.
+- **Rhode Island** indexes a year behind and has not published the next set, so
+  the 2026 cell says so and the 2025 figures survive only as the comparison
+  beneath it. That is the one row where the delta carries the only numbers on
+  screen.
+- **West Virginia** is not a threshold move at all: its phase-out completes, so
+  the 2025 row reads "AGI ≤ $50,000 single / $100,000 joint: exempt" over
+  "2026 Exempt at every income".
+
+That last one is why the lead sentence says "rules" and not "thresholds" —
+West Virginia's threshold does not move, its rule does. First draft said
+thresholds and was quietly wrong about a third of its own example set.
+
+### The count changes with the year, and had to
+
+For 2026 the moving set is two, not three: West Virginia has left the table
+entirely by then, so it cannot be one of the rows shown twice. `stateTestDeltas`
+is computed per rule against `TAX_YEARS`, but `statesWithMovingTests` filters
+through `statesTaxingSocialSecurity(year)` first, which is what keeps the prose
+count and the rendered rows in agreement. A test asserts exactly that — that
+nothing is ever flagged as moving in a year it is not listed in.
+
+### Comparison is on the display string
+
+Not on parsed figures. A state whose statute changed shape but kept its numbers
+still reads differently and should be shown twice; a state that reprints the
+same sentence has not moved for the reader's purposes regardless of what its
+legislature did. The existing `moves the thresholds of exactly the states that
+index them` unit test already relied on that equality, so this is the same
+notion of "moved" the data layer already had, now surfaced.
+
+### The JSX whitespace trap
+
+`<span>{delta.year}</span>` followed by `{delta.test}` on the next line renders
+as `2026Full: AGI < $110,780...`. JSX drops whitespace-only lines between
+elements, and the CSS `margin-right` on the year hides it completely from the
+eye — it is only wrong to anything reading `textContent`, which includes screen
+readers. Fixed with an explicit `{' '}` and pinned by `toMatch(/^2026 Full: /)`
+so it cannot come back.
+
+### Two existing assertions had to go, and that was the deliverable
+
+`drops West Virginia and re-prices the indexed states for 2026` asserted
+`not.toHaveTextContent('$108,320')` and `not.toHaveTextContent('$133,750')` —
+i.e. that the previous year's figures appear nowhere in the section. Making
+them appear *is* this change. They are now scoped: the selected year's figure
+must be in `.state-test-current` and must **not** be, and the previous year's
+must be in `.state-test-delta` and must **not** be in the current cell. That is
+strictly stronger than the old blanket `not` — a stale copy-paste in either
+direction now fails, where before only one direction did.
+
+### Verification
+
+npx tsc -b, npm run lint, npx vitest run (440 passed, up from 431 — seven new
+unit tests on `stateTestDeltas` / `statesWithMovingTests`, two new App tests on
+which rows print twice), npm run build — all clean; only the pre-existing
+>500kB chunk warning. Rendered output dumped and read end to end, which is how
+the "thresholds"/"rules" slip and the missing space were caught.
+
+### Logged as discovered work
+
+The calendar has reached 2026, so the Rhode Island "Not published yet" line was
+written about a year that is now in progress — that entry, Minnesota's 2026
+figures and West Virginia's completed phase-out all want re-reading against the
+source publications, and 2027 is now a plausible third `TAX_YEARS` entry. Worth
+noting a third year would put two delta lines under every moving row; the
+markup handles it, the density may not.
+
+Also flipped the `.tier-table` note to [x]: its one open question was whether
+the state-treatment column should happen on its own merits now the dependency
+had evaporated. It should have, and it has.

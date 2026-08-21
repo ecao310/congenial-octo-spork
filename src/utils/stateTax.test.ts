@@ -2,7 +2,9 @@ import { describe, it, expect } from 'vitest';
 import {
   STATE_SS_RULES,
   statesTaxingSocialSecurity,
+  statesWithMovingTests,
   stateSSRule,
+  stateTestDeltas,
 } from './stateTax';
 import { TAX_YEARS } from './tax';
 
@@ -106,5 +108,79 @@ describe('state treatment of Social Security benefits', () => {
     const mt = stateSSRule('MT')!;
     expect(mt.mechanism).toMatch(/none/i);
     expect(mt.test[2025]).toMatch(/no income test/i);
+  });
+});
+
+describe('year-over-year movement in the state tests', () => {
+  it('reports no delta for a state whose rule is frozen', () => {
+    const vt = stateSSRule('VT')!;
+    for (const year of TAX_YEARS) {
+      expect(stateTestDeltas(vt, year), `VT ${year}`).toEqual([]);
+    }
+  });
+
+  it('reports Minnesota’s indexing in whichever direction is being viewed', () => {
+    const mn = stateSSRule('MN')!;
+
+    const from2025 = stateTestDeltas(mn, 2025);
+    expect(from2025).toHaveLength(1);
+    expect(from2025[0].year).toBe(2026);
+    expect(from2025[0].direction).toBe('later');
+    expect(from2025[0].test).toContain('$110,780');
+
+    const from2026 = stateTestDeltas(mn, 2026);
+    expect(from2026).toHaveLength(1);
+    expect(from2026[0].year).toBe(2025);
+    expect(from2026[0].direction).toBe('earlier');
+    expect(from2026[0].test).toContain('$108,320');
+  });
+
+  it('surfaces Rhode Island’s unpublished year as the delta, not a blank', () => {
+    // The 2026 cell says the figures do not exist yet, so the only place a
+    // reader can see a Rhode Island number at all is the 2025 delta beneath it.
+    const [delta] = stateTestDeltas(stateSSRule('RI')!, 2026);
+    expect(delta.year).toBe(2025);
+    expect(delta.test).toContain('$107,000');
+    expect(delta.test).toContain('$133,750');
+  });
+
+  it('shows West Virginia’s phase-out completing, in the year it still taxes', () => {
+    const wv = stateSSRule('WV')!;
+    const [delta] = stateTestDeltas(wv, 2025);
+    expect(delta.year).toBe(2026);
+    expect(delta.test).toMatch(/exempt at every income/i);
+  });
+
+  it('never compares a year against itself', () => {
+    for (const rule of STATE_SS_RULES) {
+      for (const year of TAX_YEARS) {
+        for (const delta of stateTestDeltas(rule, year)) {
+          expect(delta.year, rule.abbr).not.toBe(year);
+          expect(delta.test, rule.abbr).not.toBe(rule.test[year]);
+        }
+      }
+    }
+  });
+
+  it('flags three moving states for 2025 and two for 2026', () => {
+    // West Virginia moves — it stops taxing — but by 2026 it is off the list
+    // entirely, so it can no longer be one of the rows shown twice.
+    expect(statesWithMovingTests(2025).map((r) => r.abbr)).toEqual([
+      'MN',
+      'RI',
+      'WV',
+    ]);
+    expect(statesWithMovingTests(2026).map((r) => r.abbr)).toEqual(['MN', 'RI']);
+  });
+
+  it('only ever flags states that tax benefits in the year asked about', () => {
+    for (const year of TAX_YEARS) {
+      const taxing = new Set(
+        statesTaxingSocialSecurity(year).map((r) => r.abbr),
+      );
+      for (const rule of statesWithMovingTests(year)) {
+        expect(taxing.has(rule.abbr), `${rule.abbr} ${year}`).toBe(true);
+      }
+    }
   });
 });

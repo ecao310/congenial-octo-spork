@@ -80,7 +80,11 @@ import {
   splitBackPay,
 } from './utils/lumpSum';
 import type { BackPayCurvePoint, LumpSumElection } from './utils/lumpSum';
-import { statesTaxingSocialSecurity } from './utils/stateTax';
+import {
+  stateTestDeltas,
+  statesTaxingSocialSecurity,
+  statesWithMovingTests,
+} from './utils/stateTax';
 import type {
   TaxYear,
   LTCGMarginalRatePoint,
@@ -217,6 +221,15 @@ const formatCurrencyCents = (value: number): string =>
     currency: 'USD',
     minimumFractionDigits: 2,
   }).format(value);
+
+/**
+ * "Minnesota and Rhode Island", "Minnesota, Rhode Island and West Virginia" —
+ * a prose list, not a `join(', ')`, because these appear mid-sentence.
+ */
+const formatNameList = (names: string[]): string =>
+  names.length <= 1
+    ? (names[0] ?? '')
+    : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
 
 const formatCompact = (value: number): string =>
   new Intl.NumberFormat('en-US', {
@@ -556,6 +569,16 @@ const App: React.FC = () => {
   const [backPayIncome, setBackPayIncome] = useState<number>(DEFAULT_BACK_PAY_INCOME);
 
   const statesTaxing = statesTaxingSocialSecurity(year);
+  /**
+   * The subset of those whose income test reads differently in the other year
+   * the app can price. Three of the nine in 2025 — Minnesota re-indexes, Rhode
+   * Island has not published the next set, West Virginia finishes phasing out —
+   * and two of the eight in 2026, since West Virginia has left the table by
+   * then. The table prints both years for these and the selected year alone for
+   * the rest, so the count carries the point: most of them are frozen too.
+   */
+  const statesMoving = statesWithMovingTests(year);
+  const statesFrozen = statesTaxing.length - statesMoving.length;
   const yearParams = taxYearParams(year);
   const yearFiling = filingParams(year, filingStatus);
   /**
@@ -3639,11 +3662,32 @@ const App: React.FC = () => {
               computation would be worse than an accurate pointer.
             </p>
 
+            <p>
+              Most of these are as frozen as the federal $25,000:{' '}
+              <strong>{statesFrozen}</strong> of the {statesTaxing.length} rules
+              below read word for word the same in {TAX_YEARS[0]} as in{' '}
+              {TAX_YEARS[TAX_YEARS.length - 1]}.{' '}
+              {statesMoving.length > 0 ? (
+                <>
+                  The{' '}
+                  {statesMoving.length === 1
+                    ? 'one that moves is'
+                    : `${statesMoving.length} that move are`}{' '}
+                  {formatNameList(statesMoving.map((rule) => rule.state))}. The
+                  table prints both years for those, so the change is visible
+                  without flipping the year selector and trying to remember what
+                  was there before.
+                </>
+              ) : null}
+            </p>
+
             <table className="state-table">
               <caption>
                 Rules and figures for tax year {year}, from each state&apos;s own
                 statute or revenue department. AGI means federal adjusted gross
-                income unless the rule says otherwise.
+                income unless the rule says otherwise. Where a state&apos;s test
+                differs in another year this page can price, that year&apos;s
+                wording is printed underneath in grey.
               </caption>
               <thead>
                 <tr>
@@ -3657,7 +3701,19 @@ const App: React.FC = () => {
                   <tr key={rule.abbr}>
                     <th scope="row">{rule.state}</th>
                     <td>{rule.mechanism}</td>
-                    <td>{rule.test[year]}</td>
+                    <td>
+                      <span className="state-test-current">
+                        {rule.test[year]}
+                      </span>
+                      {stateTestDeltas(rule, year).map((delta) => (
+                        <span className="state-test-delta" key={delta.year}>
+                          <span className="state-test-delta-year">
+                            {delta.year}
+                          </span>{' '}
+                          {delta.test}
+                        </span>
+                      ))}
+                    </td>
                   </tr>
                 ))}
               </tbody>

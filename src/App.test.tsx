@@ -78,12 +78,6 @@ describe('App', () => {
       .getByRole('slider', { name: /social security benefit/i })
       .closest('.input-group') as HTMLElement;
 
-  /** The tax-exempt interest section, so figures can be asserted in context. */
-  const muniSection = (): HTMLElement | null =>
-    screen
-      .getByRole('heading', { name: /what the tax-exempt interest costs/i })
-      .closest('section');
-
   it('renders the heading', () => {
     render(<App />);
     expect(screen.getByRole('heading', { name: /marginal tax rate/i })).toBeInTheDocument();
@@ -504,48 +498,20 @@ describe('App', () => {
     expect(
       screen.getByText(/^Municipal bond interest never enters taxable income/),
     ).toBeInTheDocument();
-    // Nothing to price yet, so the section prompts rather than reporting zeros.
-    expect(muniSection()).toHaveTextContent(
-      'Open Advanced inputs above and move the tax-exempt interest slider',
-    );
   });
 
-  it('prices the muni interest against the taxable share of benefits', () => {
+  it('adds the tax-exempt interest to the chart\u2019s total-income formula', () => {
     render(<App />);
     fireEvent.change(
       screen.getByRole('slider', { name: /tax-exempt \(municipal\) interest/i }),
       { target: { value: '5000' } },
     );
 
-    // At the default $30,000 of other income the 85% band already applies, so
-    // $5,000 of "tax-free" interest drags in $4,250 of benefits, taxed at 12%
-    // for $510 - 10.2 cents per dollar of interest, now and on the next dollar.
-    expect(muniSection()).toHaveTextContent('$4,250');
-    expect(muniSection()).toHaveTextContent('$510');
-    expect(muniSection()).toHaveTextContent('$15,428 taxable, up from $11,178');
-    expect(muniSection()).toHaveTextContent('$3,323 total, up from $2,813');
-    // Both stat tiles plus the sentence beneath them.
-    expect(screen.getAllByText('10.2%')).toHaveLength(3);
-    expect(muniSection()).toHaveTextContent('10.2¢ per dollar of interest');
-
     expect(
       screen.getByText(
         /total income = other income \+ \$23,712 SS \+ \$5,000 tax-exempt interest/i,
       ),
     ).toBeInTheDocument();
-  });
-
-  it('reports muni interest as free once the 85% cap already binds', () => {
-    render(<App />);
-    fireEvent.change(screen.getByRole('slider', { name: /other ordinary income/i }), {
-      target: { value: '100000' },
-    });
-    fireEvent.change(
-      screen.getByRole('slider', { name: /tax-exempt \(municipal\) interest/i }),
-      { target: { value: '10000' } },
-    );
-    expect(muniSection()).toHaveTextContent('really is free');
-    expect(muniSection()).toHaveTextContent('no benefits left to drag in');
   });
 
   it('feeds the muni interest into the conversion sizing', () => {

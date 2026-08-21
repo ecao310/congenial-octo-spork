@@ -2697,3 +2697,56 @@ ahead of the removal.
 
 Nothing to verify — no code changed. `git status` was clean at the start and
 carries only PLAN.md and this log at the end.
+
+## 2026-08-21 — Task: Remove the "What the tax-exempt interest costs" section
+
+First of the ten items the previous iteration cut out of the step-by-step
+rebuild bullet. A render-layer deletion: the muni slider stays, the priced-out
+explainer block under the torpedo chart goes.
+
+### What went
+
+- `src/App.tsx` — the whole `<section aria-labelledby="muni-interest-heading">`
+  (86 lines: the four-tile stat grid, the three-way conditional prose, and the
+  closing "flipping that slider on and off" paragraph).
+- `src/App.tsx` — the `muniEffect` useMemo that fed only that section, and the
+  now-unused `muniInterestEffect` import.
+- `src/index.css` — `.section-heading-violet`, whose only consumer was that
+  section's `<h2>`. Checked before deleting: `.slider-value.violet` and
+  `.slider-violet` are still used by the slider itself and stay.
+
+### What stayed, deliberately
+
+- `muniInterestEffect` in `src/utils/tax.ts` and its seven tests in
+  `tax.test.ts`. Nothing renders it today, but the sections come back later and
+  the same standing instruction that keeps irmaa/projection/sequencing
+  compiling applies here — this was a render-layer deletion, not a code one.
+- The muni slider, its "Municipal bond interest never enters taxable income"
+  helper text, the `+ $5,000 tax-exempt interest` suffix on the chart's
+  total-income line, and the `Plus $X of tax-exempt interest` tooltip row
+  (App.tsx:437). Tax-exempt interest still moves provisional income, so it
+  still moves every curve on the page — only the block that *priced* it went.
+
+### Tests
+
+Three tests read the removed section through a `muniSection()` helper:
+
+- *renders a tax-exempt interest slider defaulting to zero* — kept, minus its
+  trailing assertion on the section's "Open Advanced inputs" prompt.
+- *prices the muni interest against the taxable share of benefits* — its five
+  stat-grid assertions had no subject left. The one assertion that survives the
+  deletion is the total-income formula, so the test was narrowed to that and
+  renamed *adds the tax-exempt interest to the chart's total-income formula*.
+- *reports muni interest as free once the 85% cap already binds* — deleted
+  outright. Its subject was the "really is free" prose. The behaviour it
+  covered is not lost: `tax.test.ts:1378` ("is all zeros once the 85% cap
+  already binds") asserts the same case at the same inputs ($100k ordinary,
+  $10k muni) against `muniInterestEffect` directly.
+
+The `muniSection()` helper itself went with them.
+
+### Verified
+
+`npx tsc -b`, `npx eslint src --max-warnings 0`, `npx vitest run` (7 files,
+500 tests, all green — 22s, no flake this run), `npm run build`. Test count is
+down 1 from 501: two tests merged into one, one deleted.

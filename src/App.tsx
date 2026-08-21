@@ -31,7 +31,6 @@ import {
   standardDeductionFor,
   deductionFor,
   taxableSocialSecurity,
-  muniInterestEffect,
   qcdEffect,
   qcdLimitFor,
   qcdSplitInterestLimit,
@@ -777,21 +776,6 @@ const App: React.FC = () => {
     qcd,
     year,
   ]);
-
-  const muniEffect = useMemo(
-    () =>
-      muniInterestEffect({
-        muniInterest,
-        ordinaryIncome,
-        ssBenefit,
-        ltcg: plannedLtcg,
-        filingStatus,
-        seniors,
-        qcd,
-        year,
-      }),
-    [muniInterest, ordinaryIncome, ssBenefit, plannedLtcg, filingStatus, seniors, qcd, year],
-  );
 
   // Medicare is per enrollee, so a joint return with both spouses over 65 pays
   // every surcharge twice off one MAGI figure. Below 65 nobody is enrolled yet,
@@ -1546,92 +1530,6 @@ const App: React.FC = () => {
               ? ` \u2212 ${formatCurrency(qcd)} given straight to charity`
               : ''}
           </p>
-
-          {/* ───── Tax-exempt interest ───── */}
-          <section className="explainer" aria-labelledby="muni-interest-heading">
-            <h2 id="muni-interest-heading" className="section-heading-violet">
-              What the tax-exempt interest costs
-            </h2>
-            <p>
-              Priced at {formatCurrency(ordinaryIncome)} of other ordinary income
-              {plannedLtcg > 0
-                ? ` and ${formatCurrency(plannedLtcg)} of long-term gains`
-                : ''}{' '}
-              (the sliders above) plus the{' '}
-              {formatCurrency(ssBenefit)} benefit above.
-            </p>
-
-            <dl className="stat-grid">
-              <div className="stat">
-                <dt>Benefits it pulls into taxable income</dt>
-                <dd className="stat-value violet">
-                  {formatCurrency(muniEffect.taxableSSDelta)}
-                </dd>
-                <dd className="stat-note">
-                  {formatCurrency(muniEffect.taxableSSWith)} taxable, up from{' '}
-                  {formatCurrency(muniEffect.taxableSSWithout)}
-                </dd>
-              </div>
-              <div className="stat">
-                <dt>Extra federal tax</dt>
-                <dd className="stat-value">{formatCurrency(muniEffect.taxCost)}</dd>
-                <dd className="stat-note">
-                  {formatCurrency(muniEffect.taxWith)} total, up from{' '}
-                  {formatCurrency(muniEffect.taxWithout)}
-                </dd>
-              </div>
-              <div className="stat">
-                <dt>Cost per muni dollar</dt>
-                <dd className="stat-value">{muniEffect.costPerDollar}%</dd>
-              </div>
-              <div className="stat">
-                <dt>Tax on the next muni dollar</dt>
-                <dd className="stat-value">{muniEffect.ratePerNextDollar}%</dd>
-              </div>
-            </dl>
-
-            {muniInterest === 0 ? (
-              <p>
-                Open <strong>Advanced inputs</strong> above and move the
-                tax-exempt interest slider to price it. Municipal interest cannot
-                land in taxable income itself, so the only line it can move is
-                Social Security — which is exactly why the cost is so easy to
-                miss.
-              </p>
-            ) : muniEffect.taxCost === 0 ? (
-              <p>
-                Here the {formatCurrency(muniInterest)} really is free.{' '}
-                {muniEffect.taxableSSDelta === 0
-                  ? 'Provisional income stays clear of the thresholds — either below the first one, or far enough past the 85% cap that there are no benefits left to drag in.'
-                  : 'It does pull benefits into taxable income, but deductions still absorb them before any bracket applies.'}
-              </p>
-            ) : (
-              <p>
-                That {formatCurrency(muniInterest)} of &ldquo;tax-free&rdquo;
-                interest drags{' '}
-                <strong>{formatCurrency(muniEffect.taxableSSDelta)}</strong> of
-                Social Security benefits into taxable income and costs{' '}
-                <strong>{formatCurrency(muniEffect.taxCost)}</strong> in federal tax
-                — <strong>{muniEffect.costPerDollar}&cent;</strong> per dollar of
-                interest, with the next dollar taxed at{' '}
-                <strong>{muniEffect.ratePerNextDollar}%</strong>. None of that
-                appears next to the bonds on the return; it shows up on line 6b,
-                attached to benefits.
-              </p>
-            )}
-
-            <p>
-              Flipping that slider on and off is the cleanest way to see the torpedo
-              in isolation: nothing about the ordinary tax base changes, so every
-              dollar of tax it adds is the Social Security inclusion rules and
-              nothing else. It also cuts the other way — a retiree sitting inside the
-              torpedo can be better off in taxable bonds at a higher stated yield,
-              and swapping munis for Roth withdrawals or return-of-basis removes the
-              provisional income entirely. Note that tax-exempt interest is also
-              added back for Medicare&apos;s IRMAA MAGI, but <em>not</em> for the
-              senior deduction&apos;s.
-            </p>
-          </section>
 
           <details className="explainer">
             <summary>

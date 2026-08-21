@@ -1374,9 +1374,13 @@ describe('the IRMAA cliff lines on the torpedo chart', () => {
     fireEvent.click(
       screen.getByRole('checkbox', { name: /both spouses are 65 or older/i }),
     );
-    // IRMAA is charged per enrollee off one household MAGI figure.
+    // Both cliffs are drawn here where the same return without the age toggle
+    // gets neither: claiming the senior deduction stretches the axis to
+    // $250,000 to fit its phaseout, and the joint cliffs come along with it.
+    // IRMAA is charged per enrollee off one household MAGI figure, so both
+    // steps are twice what a single filer pays.
     expect(chartKey(container)).toHaveTextContent(
-      '$2,105/yr in Medicare premiums for the two of you',
+      'IRMAA 1 at $191,845 costs $2,105/yr; IRMAA 2 at $245,845 another $3,182/yr, for the two of you.',
     );
   });
 
@@ -1430,3 +1434,80 @@ describe('separate-return divergence figure', () => {
 /* ------------------------------------------------------------------ */
 /*  Retroactive awards and the lump-sum election                      */
 /* ------------------------------------------------------------------ */
+
+/* ------------------------------------------------------------------ */
+/*  The chart's right edge                                            */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The torpedo chart's x-axis used to stop at a fixed $150,000, which cut the
+ * senior deduction's phaseout in half: it does not finish until $175,000 of
+ * MAGI on an unmarried return and $250,000 on a joint one, so the second hump
+ * the explainer describes had no right-hand side on the chart. The axis is now
+ * derived from the return, and the slider under it shares the edge.
+ */
+describe('the torpedo chart’s right edge', () => {
+  const incomeSlider = (): HTMLElement =>
+    screen.getByRole('slider', { name: /other income \(not social security\)/i });
+
+  const stepIntro = (): HTMLElement =>
+    screen
+      .getByRole('heading', { name: 'The tax torpedo' })
+      .closest('section')!
+      .querySelector('.step-intro') as HTMLElement;
+
+  it('stays where it was for a filer with only one hump to show', () => {
+    render(<App />);
+    expect(incomeSlider()).toHaveAttribute('max', '150000');
+    expect(stepIntro()).toHaveTextContent('every income from $0 to $150,000');
+  });
+
+  it('widens to fit the senior deduction phaseout when it is claimed', () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Age 65 or older' }));
+    // $175,000 of MAGI, less the $20,155.20 of benefit already in AGI, is
+    // $154,845 of other income — past the old fixed edge, and now inside.
+    expect(incomeSlider()).toHaveAttribute('max', '175000');
+    expect(stepIntro()).toHaveTextContent('every income from $0 to $175,000');
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Jointly' }));
+    // The joint phaseout starts $75,000 higher and ends $250,000 of MAGI, so
+    // the axis has to reach $229,845 of other income.
+    expect(incomeSlider()).toHaveAttribute('max', '250000');
+    expect(stepIntro()).toHaveTextContent('every income from $0 to $250,000');
+  });
+
+  /**
+   * The phaseout is worth axis space only when there is a deduction to phase
+   * out, so an under-65 filer keeps the narrow chart — and the explainer's own
+   * sentence about the far side of the phaseout has to follow the same edge.
+   */
+  it('flips the explainer’s off-chart caveat when the edge moves', () => {
+    render(<App />);
+    const explainer = (): HTMLElement =>
+      screen
+        .getByRole('heading', { name: /the senior deduction phaseout/i })
+        .closest('details') as HTMLElement;
+    expect(explainer()).toHaveTextContent('sits past the right edge of the chart');
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Age 65 or older' }));
+    expect(explainer()).toHaveTextContent('is inside the chart');
+  });
+
+  /**
+   * The axis takes the reader's own income as a floor, so it can only ever
+   * grow out from under the slider — never in behind it. Without that, taking
+   * the age toggle back off would leave a marker standing past the edge.
+   */
+  it('never pulls in behind where the reader is standing', () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Age 65 or older' }));
+    fireEvent.change(incomeSlider(), { target: { value: '175000' } });
+    expect(incomeSlider()).toHaveValue('175000');
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Age 65 or older' }));
+    // The second hump is gone, but the reader is still out at $175,000.
+    expect(incomeSlider()).toHaveAttribute('max', '175000');
+    expect(incomeSlider()).toHaveValue('175000');
+  });
+});

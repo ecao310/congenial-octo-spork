@@ -102,6 +102,43 @@ describe('IRMAA cliffs on the ordinary-income chart', () => {
     expect(screen.getByText('IRMAA 1')).toBeInTheDocument();
   });
 
+  /**
+   * The lines are drawn in dollars on an axis whose width in dollars now moves
+   * with the return. Nothing about where the cliffs *are* changes when the age
+   * toggle goes on, but the plot they are drawn on grows from $150,000 to
+   * $175,000 to fit the senior deduction's phaseout, so each one sits a smaller
+   * fraction of the way across it.
+   */
+  it('slides the lines left as the axis widens for the senior deduction', () => {
+    const { container } = render(<App />);
+    const before = cliffPositions(container);
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Age 65 or older' }));
+    const after = cliffPositions(container);
+    expect(after).toHaveLength(3);
+    after.forEach((x, i) => expect(x).toBeLessThan(before[i]));
+    // The gap between two lines is their gap in dollars over the axis in
+    // dollars, so at an unchanged plot width the gaps shrink by exactly the
+    // ratio of the two axes — no need to know where the plot starts.
+    expect((after[1] - after[0]) / (before[1] - before[0])).toBeCloseTo(150 / 175, 6);
+    expect((after[2] - after[1]) / (before[2] - before[1])).toBeCloseTo(150 / 175, 6);
+  });
+
+  it('brings a joint return\u2019s first cliff onto the chart when the axis grows', () => {
+    const { container } = render(<App />);
+    fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Jointly' }));
+    // A joint tier-1 threshold is past a $150,000 axis, so nothing is drawn.
+    expect(cliffPositions(container)).toHaveLength(0);
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Age 65 or older' }));
+    // Claiming the senior deduction stretches the axis to $250,000 to fit a
+    // phaseout that ends at $228,876 of other income, and the first cliff is
+    // inside it. The second, at $252,876, misses by $2,876 — the axis is sized
+    // by what the curve does, and cliffs ride along or they do not.
+    expect(cliffPositions(container)).toHaveLength(1);
+    expect(screen.getByText('IRMAA 1')).toBeInTheDocument();
+    expect(screen.queryByText('IRMAA 2')).not.toBeInTheDocument();
+  });
+
   it('drops the lines entirely when no cliff fits on the axis', () => {
     const { container } = render(<App />);
     fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Jointly' }));

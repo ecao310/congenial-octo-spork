@@ -21,6 +21,9 @@ import {
   FilingStatus,
   segmentCurve,
   splitOtherIncome,
+  incomeAxisMax,
+  incomeAxisFeatures,
+  MIN_INCOME_AXIS,
   standardDeductionFor,
   taxableSocialSecurity,
   qcdLimitFor,
@@ -45,7 +48,6 @@ import type {
   IrmaaCliff,
 } from './utils/tax';
 
-const MAX_INCOME = 150_000;
 const DEFAULT_ORDINARY_INCOME = 30_000;
 /** Roughly a $1.4M muni ladder at 2025 yields — well past any realistic retiree. */
 const MAX_MUNI_INTEREST = 50_000;
@@ -161,7 +163,8 @@ const formatCompact = (value: number): string =>
  * not an input to it. Reading the curve back at that place is what turns the
  * slider from an inert control into a position. The sweep ascends, so the last
  * sampled point at or below the value is the one — the sliders step in $500
- * and the curves sample every $250, so in practice it is an exact hit.
+ * and the curves sample every $250 or $500 depending on how wide the axis has
+ * had to grow, so in practice it is an exact hit.
  */
 function pointAt<P>(
   curve: P[],
@@ -454,6 +457,38 @@ const App: React.FC = () => {
   // Only a joint return can claim the addition twice, and the spouse's
   // checkbox is meaningless until the filer's is on.
   const seniors = isSenior ? (filingStatus === 'mfj' && spouseIsSenior ? 2 : 1) : 0;
+
+  /**
+   * The right edge of step 2's chart, and of the slider under it.
+   *
+   * Sized to this return rather than fixed, because what there is to see moves
+   * with it: the torpedo is over by about $41,000 of other income, but a
+   * return claiming the senior deduction has a second hump that does not
+   * finish until $154,000 — $230,000 on a joint return — and the old fixed
+   * $150,000 cut it in half. It never narrows below that figure, only widens
+   * past it. See `incomeAxisMax`.
+   *
+   * The reader's own income is passed as the floor so the axis always contains
+   * where they are standing. Without it, turning the age toggle back off would
+   * pull the right edge in behind a slider left out at $170,000.
+   */
+  const axisMax = useMemo(
+    () =>
+      incomeAxisMax(
+        { ssBenefit, filingStatus, seniors, muniInterest, qcd, year, ltcg: plannedLtcg },
+        { minimum: Math.max(MIN_INCOME_AXIS, ordinaryIncome) },
+      ),
+    [ssBenefit, filingStatus, seniors, muniInterest, qcd, year, plannedLtcg, ordinaryIncome],
+  );
+
+  /**
+   * Sampling interval for the swept curve. One point per $250 up to the axis's
+   * old fixed width and one per $500 past it, so the widest chart this app can
+   * draw samples no more points than the narrowest one always did — and the
+   * slider's own $500 step lands on a sampled point either way.
+   */
+  const curveStep = axisMax > 150_000 ? 500 : 250;
+
   /**
    * The statutory annual QCD limit for this return, and the right edge of the
    * slider. They differ only on a joint return, whose $216,000 limit is far
@@ -461,7 +496,7 @@ const App: React.FC = () => {
    * note under it states the statutory figure either way.
    */
   const qcdLimit = qcdLimitFor({ filingStatus, year });
-  const qcdSliderMax = Math.min(qcdLimit, MAX_INCOME);
+  const qcdSliderMax = Math.min(qcdLimit, axisMax);
 
   /**
    * The two inputs the page does not open with.
@@ -495,20 +530,24 @@ const App: React.FC = () => {
   // still needs a rate to talk about, so describe one qualifying person.
   const phaseoutRate = SENIOR_DEDUCTION_PHASEOUT_RATE * Math.max(1, seniors);
   const taxableIncomePerDollar = 1 + phaseoutRate;
-  // Whether the far side of the phaseout is inside the chart's x-axis depends on
-  // how much of the benefit is taxable, so work it out rather than guess.
+  /**
+   * Where the far side of the phaseout lands on the chart's own axis, and
+   * whether it fits. It is inside by construction whenever the deduction is
+   * actually claimed — that is what sizes the axis — so this is really about
+   * the reader who has not ticked the age box, and is reading the explainer to
+   * find out what they would be looking at if they had.
+   */
+  const phaseoutEndOnAxis = incomeAxisFeatures({
+    ssBenefit,
+    filingStatus,
+    seniors: Math.max(1, seniors),
+    muniInterest,
+    qcd,
+    year,
+    ltcg: plannedLtcg,
+  }).seniorPhaseoutEnd;
   const phaseoutEndsOnChart =
-    phaseoutEnd !== null &&
-    MAX_INCOME +
-      taxableSocialSecurity({
-        ssBenefit,
-        ...splitOtherIncome(MAX_INCOME, plannedLtcg),
-        filingStatus,
-        muniInterest,
-        qcd,
-        year,
-      }) >
-      phaseoutEnd;
+    phaseoutEndOnAxis !== null && phaseoutEndOnAxis <= axisMax;
 
   /**
    * Step 2's curve. The axis is every dollar that is not Social Security, and
@@ -525,9 +564,9 @@ const App: React.FC = () => {
     () =>
       marginalRateCurve(
         { ssBenefit, filingStatus, seniors, muniInterest, qcd, year, ltcg: plannedLtcg },
-        { maxIncome: MAX_INCOME, step: 250, gainsWithinIncome: true },
+        { maxIncome: axisMax, step: curveStep, gainsWithinIncome: true },
       ),
-    [ssBenefit, filingStatus, seniors, muniInterest, qcd, year, plannedLtcg],
+    [ssBenefit, filingStatus, seniors, muniInterest, qcd, year, plannedLtcg, axisMax, curveStep],
   );
 
   const segments = useMemo(
@@ -631,7 +670,7 @@ const App: React.FC = () => {
 
   /** The cliffs that actually land inside the chart's x-axis. */
   const cliffsOnChart: IrmaaCliff[] = cliffs.filter(
-    (c) => c.otherIncome > 0 && c.otherIncome <= MAX_INCOME,
+    (c) => c.otherIncome > 0 && c.otherIncome <= axisMax,
   );
 
   /**
@@ -639,7 +678,7 @@ const App: React.FC = () => {
    * "no line is drawn" is only useful next to where the nearest one would be.
    */
   const firstCliffPastAxis: IrmaaCliff | undefined = cliffs.find(
-    (c) => c.otherIncome > MAX_INCOME,
+    (c) => c.otherIncome > axisMax,
   );
 
   /**
@@ -1063,8 +1102,10 @@ const App: React.FC = () => {
           The tax torpedo
         </h2>
         <p className="step-intro">
-          The chart prices every income from $0 to {formatCurrency(MAX_INCOME)};
-          the slider says which point along it is yours.
+          The chart prices every income from $0 to{' '}
+          {formatCurrency(axisMax)} &mdash; far enough right to reach the last
+          thing that happens to this return; the slider says which point along
+          it is yours.
         </p>
 
         <div className="chart-container">
@@ -1083,7 +1124,7 @@ const App: React.FC = () => {
               <XAxis
                 dataKey="income"
                 type="number"
-                domain={[0, MAX_INCOME]}
+                domain={[0, axisMax]}
                 tickFormatter={formatCompact}
                 stroke="#94a3b8"
               />
@@ -1121,7 +1162,7 @@ const App: React.FC = () => {
                   }}
                 />
               ))}
-              {hereLine(ordinaryIncome, MAX_INCOME, '#f59e0b')}
+              {hereLine(ordinaryIncome, axisMax, '#f59e0b')}
               <Area
                 type="stepAfter"
                 dataKey="marginalRate"
@@ -1184,7 +1225,7 @@ const App: React.FC = () => {
             id="ordinary-income"
             type="range"
             min={0}
-            max={MAX_INCOME}
+            max={axisMax}
             step={500}
             value={ordinaryIncome}
             onChange={(e) => changeOrdinaryIncome(Number(e.target.value))}
@@ -1192,7 +1233,7 @@ const App: React.FC = () => {
           />
           <div className="slider-range-labels">
             <span>$0</span>
-            <span>{formatCurrency(MAX_INCOME)}</span>
+            <span>{formatCurrency(axisMax)}</span>
           </div>
 
           <p className="slider-readout">

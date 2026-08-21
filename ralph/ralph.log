@@ -3285,3 +3285,105 @@ Two new Discovered Work bullets: step 3's curve is still drawn in step 2's
 amber, which reads as "same chart rescaled" when the two are now perpendicular
 sweeps; and the advanced-inputs summary line reports the charitable gift as set
 rather than as allowed, which a large gain can now cut into.
+
+================================================================
+Re-scale the chart x-axes so the features worth seeing fit
+================================================================
+
+The complaint was specific: `MAX_INCOME = 150_000` cut the senior deduction's
+phaseout in half. The phaseout ends at $175,000 of MAGI unmarried and $250,000
+joint, which is $154,845 and $229,845 of *other* income once a typical benefit
+is in AGI — so the second hump the explainer spends four paragraphs on had no
+right-hand side on the chart, and the prose had to say "sits past the right
+edge of the chart" instead.
+
+### What the axis is now
+
+`incomeAxisMax(scenario, { minimum })` in tax.ts. It ends a little past the
+last thing that happens on the curve:
+
+  max(MIN_INCOME_AXIS, lastFeature * 1.05), rounded up to $25,000
+
+where the features are the two humps' right-hand *feet* — past them the curve
+is a flat rate schedule that says nothing new:
+
+- `otherIncomeAtTaxableSSCap` — where 85% of the benefit is in the tax base and
+  no further dollar can drag in a cent more. $40,562 single, $48,797 joint,
+  $11,856 (half the benefit) on a separate return.
+- `otherIncomeAtAgi(phaseoutEnd)` — the senior deduction's far side, null when
+  there is no deduction to phase out (under 65, separate return, year outside
+  2025-2028), because then there is no second hump to make room for.
+
+Both invert a monotone income definition by bisection, sharing one private
+`otherIncomeAt` helper with `otherIncomeAtIrmaaMagi`'s existing approach.
+
+Result, at the average benefit: $150,000 for anyone under 65 (unchanged),
+$175,000 single/HOH 65+, $250,000 joint 65+.
+
+### The floor is the interesting decision
+
+I first floored it at $100,000 and let the axis *shrink* for a filer under 65 —
+the torpedo would have filled 41% of the plot rather than 27%. Backed it out.
+The slider under the chart shares the axis's right edge, so narrowing the axis
+takes away the reader's reach: a joint filer could no longer model $130,000 of
+income. And $150,000 is what puts an unmarried return's first three IRMAA
+cliffs on screen. The task's own wording treats both as things $150,000 gets
+right. So `MIN_INCOME_AXIS = 150_000` and the axis only ever grows. Logged the
+road not taken under Discovered Work.
+
+The other floor: App passes `minimum: max(MIN_INCOME_AXIS, ordinaryIncome)`, so
+the axis can never pull in behind the reader's own marker. Without it, ticking
+65+, sliding out to $170,000 and unticking would strand the marker past the
+edge.
+
+### What changed on screen
+
+- **A joint return claiming the senior deduction now sees its IRMAA cliffs.**
+  Its tier-1 cliff is at $196,876 of other income; on the old axis nothing was
+  drawn and the reader got the fallback sentence. The axis stretching to
+  $250,000 for the phaseout brings the cliff along. (Tier 2 at $252,876 misses
+  by $2,876 — cliffs ride along, they do not steer.)
+- **The explainer's caveat flips**: "sits past the right edge of the chart"
+  becomes "is inside the chart" the moment the deduction is claimed, which is
+  true by construction now.
+- **The QCD slider and the "you are here" marker** follow the same edge, and
+  `curveStep` halves to $500 past $150,000 so the widest chart samples no more
+  points than the narrowest always did.
+
+### Tests
+
++21, 434 -> 455.
+
+tax.test.ts, new `describe('sizing the income axis to the return')`: the cap
+inverter pinned against hand arithmetic and against `taxableSocialSecurity`
+either side of the answer, per filing status, at zero benefit, and moving
+dollar-for-dollar with muni interest (left) and a charitable gift (right); the
+AGI inverter likewise, including the muni case where AGI starts past the
+target; the features null in each of the three cases with no deduction to phase
+out, and one qualifying spouse landing where two do; and the property that
+matters — for every year, status, senior count, muni and QCD combination, if
+there is a phaseout then it is inside the axis drawn for it.
+
+App.test.tsx, new `describe('the torpedo chart's right edge')`: the slider max
+and the step intro at $150,000 / $175,000 / $250,000, the explainer sentence
+flipping, and the axis not retreating behind a parked slider.
+
+App.chart.test.tsx: the three single-filer cliff lines sliding left by exactly
+150/175 of their gaps when the axis widens, and a joint return going from no
+lines to one.
+
+One existing test changed meaning rather than breaking: 'doubles the price for
+a joint return with two enrollees' asserted the *fallback* prose, which that
+scenario no longer reaches — it now reads both cliffs off the chart key.
+
+### Verified
+
+`npx tsc -b`, `npx eslint src --max-warnings 0`, `npx vitest run` (7 files, 455
+tests, green in 4.4s), `npm run build`. No CSS change.
+
+### Logged, not fixed
+
+Two Discovered Work bullets: the narrower-axis question above, and that
+App.chart.test.tsx is the one suite that never pins the clock — it runs on 2026
+figures while its comments quote 2025 dollars, and passes only because the two
+years' shapes coincide.

@@ -1112,6 +1112,9 @@ export interface IncomeAxisFeatures {
    * return with a modest gain, which is the reason it is here: the $200,000
    * threshold is $50,000 off the right edge of the axis this chart used to be
    * fixed at, so without this entry the surtax would be drawn nowhere at all.
+   *
+   * Null for every scenario the page can currently build, because none of them
+   * carries a gain. See the dormancy note over the 1411 chapter.
    */
   niitEnd: number | null;
 }
@@ -1195,9 +1198,10 @@ export interface IncomeAxisRange {
  * to reach past it or the gift is a slider whose effect is off the right edge
  * of every chart: see `IncomeAxisFeatures.giftEnd`.
  *
- * The 1411 surtax widens it the same way and for the same reason: its
+ * The 1411 surtax would widen it the same way and for the same reason: its
  * thresholds start at $200,000 of MAGI, which is past where this axis used to
- * stop. See `IncomeAxisFeatures.niitEnd`.
+ * stop. It does not widen it today, because it takes a gain to reach and the
+ * page sets none — see `IncomeAxisFeatures.niitEnd`.
  */
 export function incomeAxisMax(
   scenario: Scenario = {},
@@ -1258,9 +1262,14 @@ export function marginalRateCurve(
       : { ...scenario, ordinaryIncome: income };
   const data: MarginalRatePoint[] = [];
   for (let income = 0; income <= maxIncome; income += step) {
-    // `totalFederalTax`, not `totalTax`: between the 1411 threshold and the
-    // gain above it, a dollar of ordinary income costs 3.8 cents more than
-    // chapter 1 says it does. That band is a third hump on this very axis.
+    // `totalFederalTax`, not `totalTax`, so a scenario carrying a gain is
+    // priced correctly: between the 1411 threshold and the gain above it, a
+    // dollar of ordinary income costs 3.8 cents more than chapter 1 says it
+    // does, and that band is a third hump on this very axis.
+    //
+    // The page passes no `ltcg`, so on the chart that actually ships this is
+    // `totalTax` to the dollar and there is no third hump to see. See the
+    // dormancy note over the 1411 chapter below.
     const taxHere = totalFederalTax(at(income));
     const rate = totalFederalTax(at(income + 1)) - taxHere;
     data.push({
@@ -1418,13 +1427,40 @@ export function ltcgRateCurve(
 /*  Net investment income tax (IRC 1411)                              */
 /* ------------------------------------------------------------------ */
 
+/*
+ * This chapter is dormant, and everything below it is written for the day it
+ * is not.
+ *
+ * `netInvestmentIncomeFor` counts only `ltcg`, for the reasons set out on it,
+ * and no control on the page sets `ltcg` — the capital-gains step came off
+ * when the page narrowed to the torpedo alone. So every scenario the page can
+ * build has $0 of net investment income, `netInvestmentIncomeTax` returns 0,
+ * `totalFederalTax` equals `totalTax` to the dollar, and `niitEnd` is null at
+ * every income there is. `dormant while the page sets no gain` in
+ * `tax.test.ts` pins that, and it fails the moment a gain is back — which is
+ * the signal to come back here and delete this note.
+ *
+ * It stays in `src/utils/` rather than moving to `src/shelf/` because it is
+ * not a section's worth of code that lost its section. It is one term of the
+ * federal tax total, sitting beside `ltcgRateCurve`, `conversionCeilings` and
+ * `sizeConversion` — the rest of what the capital-gains and conversion steps
+ * were priced from, all of it equally unreached and all of it coming back
+ * together or not at all. The shelf is for whole modules; splitting this one
+ * term off from the three functions it was written to serve would cost more to
+ * reverse than it saves to state.
+ *
+ * The arithmetic is not dormant, only its reader: the tests below run the
+ * statute against explicit gains and are green.
+ */
+
 /**
  * The rate IRC 1411(a)(1) charges: 3.8%, unchanged since it took effect.
  *
  * It is not an income tax. Chapter 1 ends at `totalTax`; this is chapter 2A,
  * "Unearned Income Medicare Contribution", reported on Form 8960 and carried
  * to Schedule 2 rather than to the tax line — which is why the two have
- * separate functions here and separate lines at the foot of the page.
+ * separate functions here, and would have separate lines at the foot of the
+ * page for a return that owed both. None that this page can build does.
  */
 export const NIIT_RATE = 0.038;
 
@@ -1586,8 +1622,14 @@ export function netInvestmentIncomeTax(scenario: Scenario = {}): number {
  * This — not `totalTax` — is what both rate curves plot and what the reader's
  * own answer at the foot of the page adds up, because a marginal rate that
  * stops at chapter 1 is wrong by 3.8 points exactly where this app's subject
- * bites hardest. `totalTax` stays chapter 1 on its own so the close can name
- * the surtax as its own line rather than burying it in the income tax.
+ * bites hardest. `totalTax` stays chapter 1 on its own so that when a return
+ * does owe the surtax there is a name for each half, rather than one figure
+ * that quietly means two things.
+ *
+ * With the gains step off the page, no scenario the reader can build reaches
+ * the second half: this is `totalTax` at every point on the shipped chart and
+ * at the foot of the page, and the close accordingly has no surtax line to
+ * show. See the dormancy note over this chapter.
  *
  * Medicare's IRMAA surcharge is still not in here: it is a premium, not a tax,
  * and it is charged two years later. See `irmaaFor`.

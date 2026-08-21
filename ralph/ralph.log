@@ -7053,3 +7053,93 @@ is silently "no test files found". Deleted both probes; tree is clean.
 The standing browser note is unchanged and untested this run — nothing here
 needed a browser. `playwright-core` is presumably still absent; that bullet
 stands.
+
+## 21 Aug 2026 — Say the surtax is asleep, and leave something that wakes up
+
+Task: Backlog 6 bullet 1 — "The 1411 surtax is priced everywhere and can never
+be anything but zero."
+
+### The choice among the three ways out
+
+The bullet offered shelf it / correct the comments / give the page a
+taxable-interest input. Took the middle one, and the reason is in the tree
+rather than in taste:
+
+- **Not the shelf.** `src/shelf/README.md` is explicit that the shelf is for
+  *whole modules that lost their section*, and that "nothing outside
+  `src/shelf/` imports from `src/shelf/`". 1411 is not a module — it is one
+  term of `totalFederalTax`, which `marginalRateCurve`, `ltcgRateCurve`,
+  `incomeAxisFeatures` and `conversionCeilings` all call. Moving it means
+  deleting `totalFederalTax` from live code and re-pointing five call sites at
+  `totalTax`, and then re-threading all of it when gains come back. And
+  App.tsx:87 has *already made this decision*: it names `niitFor` alongside
+  `ltcgRateCurve`, `conversionCeilings` and `sizeConversion` as the things
+  "still in `utils/tax.ts`" waiting for the two steps that came off. Shelving
+  one of those four splits a group the page's own comment keeps together.
+- **Not a taxable-interest input.** Backlog 5's instruction was "keep it
+  focused on tax torpedo". The torpedo lives between $20k and $60k; 1411
+  starts at $200k. A new slider that earns its keep for nobody on this page is
+  scope creep dressed as a fix.
+
+So: the code stays, and the four comments that describe it as live stop.
+
+### What changed
+
+`src/utils/tax.ts`, comments only — no arithmetic moved:
+
+- **`marginalRateCurve` (:1265)** kept its explanation of why it plots
+  `totalFederalTax` (a scenario *carrying* a gain must be priced right) and
+  gained the second half: the page passes no `ltcg`, so on the shipped chart
+  this is `totalTax` to the dollar and there is no third hump.
+- **`totalFederalTax` (:1621)** no longer claims "the close can name the
+  surtax as its own line". It says why the two halves stay separate functions,
+  then says the close has no surtax line to show because no scenario reaches
+  the second half.
+- **`NIIT_RATE`** said the two have "separate lines at the foot of the page".
+  Now: *would* have, for a return that owed both.
+- **`IncomeAxisFeatures.niitEnd`** and **`incomeAxisMax`** both described the
+  surtax widening the axis in the present tense. Both now say it would, and
+  does not, and why.
+- **A dormancy note over the whole 1411 chapter**, carrying the reason it is
+  in `utils/` and not on the shelf, so the next run does not re-litigate it.
+
+### The part that is not prose
+
+Four comments agreeing with each other is still four comments. Added
+`describe('dormant while the page sets no gain')` to `tax.test.ts` — three
+tests, and the note above points at them by name.
+
+They drive off **`decodeScenario`**, not a hand-built scenario, because that
+is the page's whole input surface and it is wider than its controls: it reads
+anything a link can say, `ltcg=250000` and `ceiling=400000` included, and
+reading past those dead keys is the thing that keeps the surtax at zero. Eight
+links, from `''` to `?filing=mfs&income=1000000&muni=50000&qcd=108000`, each
+mapped to a `Scenario` with App.tsx's own `seniors` derivation and
+`PAGE_TAX_YEAR`. Assertions: no net investment income and no surtax on any of
+them; `totalFederalTax === totalTax` exactly (`toBe`, not `toBeCloseTo`);
+`niitEnd` null; every curve point equal to `Math.round(totalTax(...))`; max
+marginal rate ≤ 37.
+
+**Mutation-checked rather than assumed.** Added `ltcg: 250_000` to the mapper
+and re-ran: all three go red (`niitEnd` came back 428,875.80). Restored. The
+guard is not vacuous — and it is the thing that fires when a gains control
+returns and `PageScenario` grows an `ltcg`, which is exactly when those four
+comments would otherwise start lying in the other direction.
+
+Left `README.md:79` alone: it already said this correctly, which is what made
+the contradiction findable in the first place.
+
+### Verification
+
+`npx vitest run` **677 passed in 13 files** (674 before, +3). `tsc -b` clean,
+`eslint . --max-warnings 0` clean. Tree opened clean — third run running.
+
+### Note for the next run
+
+`vitest -t "<name>"` filters by test *name* and runs the whole file with the
+rest skipped — 3 passed, 249 skipped, 638ms. Much faster than the full 7.6s
+suite for iterating on one block.
+
+The standing browser note is unchanged and untested this run; nothing here
+needed a browser. `playwright-core` is presumably still absent — that bullet
+stands, and it is now the topmost unchecked item under Discovered Work.

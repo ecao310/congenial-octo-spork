@@ -88,7 +88,8 @@ import {
   NIIT_ENACTED,
   NIIT_THRESHOLDS,
 } from './tax';
-import type { ConversionCeiling, ConversionCeilingId, TaxYear } from './tax';
+import type { ConversionCeiling, ConversionCeilingId, Scenario, TaxYear } from './tax';
+import { decodeScenario } from './scenarioUrl';
 import { vi } from 'vitest';
 
 /**
@@ -3439,6 +3440,105 @@ describe('sizing the income axis to the return', () => {
 describe('net investment income tax (IRC 1411)', () => {
   const SS = AVG_ANNUAL_SS_BENEFIT; // $23,712
   const YEAR = { year: PINNED_YEAR };
+
+  /**
+   * The framing fact for everything below it, and the one thing here a reader
+   * of the shipped page can check: none of this reaches them.
+   *
+   * `netInvestmentIncomeFor` counts only `ltcg`, and the capital-gains step
+   * came off the page when it narrowed to the torpedo. So the surtax is priced
+   * by an engine no control can feed. The comments over `marginalRateCurve`,
+   * `incomeAxisMax`, `IncomeAxisFeatures.niitEnd` and `totalFederalTax` all say
+   * so in prose; this is the version that fails when it stops being true.
+   *
+   * Which is the point of writing it down as a test rather than a note. The
+   * day a gains control comes back, `PageScenario` grows an `ltcg` and this
+   * goes red — and the four comments it guards are exactly the four that would
+   * otherwise have gone on quietly lying in the other direction.
+   */
+  describe('dormant while the page sets no gain', () => {
+    /**
+     * `decodeScenario` is the page's whole input surface, wider than its
+     * controls: it reads anything a link can say, including the dead `ltcg`
+     * and `ceiling` keys that the gains and conversion steps used to write.
+     * Reading past them is what keeps a stale link from moving a curve nobody
+     * can see, so the adversarial link is the right one to test with.
+     */
+    const fromLink = (search: string): Scenario => {
+      const { scenario } = decodeScenario(search);
+      const { filingStatus, ssBenefit, ordinaryIncome, isSenior, spouseIsSenior } =
+        scenario;
+      return {
+        filingStatus,
+        ssBenefit,
+        ordinaryIncome,
+        muniInterest: scenario.muniInterest,
+        qcd: scenario.qcd,
+        // The same derivation App.tsx makes: a second senior only counts on a
+        // joint return.
+        seniors: isSenior ? (filingStatus === 'mfj' && spouseIsSenior ? 2 : 1) : 0,
+        // Not `PINNED_YEAR` like the rest of this file: the page prices
+        // `PAGE_TAX_YEAR` and nothing lets a reader change it, so that is the
+        // year the claim is about.
+        year: PAGE_TAX_YEAR,
+      };
+    };
+
+    const links = [
+      '',
+      '?income=50000',
+      '?income=150000',
+      '?income=300000',
+      '?income=1000000',
+      '?filing=mfj&income=1000000&senior=1&spouse=1&ss=62172',
+      '?filing=mfs&income=1000000&muni=50000&qcd=108000',
+      // The two keys that would have moved this if they were still honoured.
+      '?income=300000&ltcg=250000&ceiling=400000',
+    ];
+
+    it('has no net investment income to charge, on any link this page reads', () => {
+      for (const search of links) {
+        const scenario = fromLink(search);
+        expect(netInvestmentIncomeFor(scenario)).toBe(0);
+        expect(netInvestmentIncomeTax(scenario)).toBe(0);
+        const assessment = niitFor(scenario);
+        expect(assessment.base).toBe(0);
+        // Null rather than 0: with no gain there is no threshold to worry
+        // about however high MAGI goes, and $1,000,000 of other income is well
+        // over every one of them.
+        expect(assessment.headroom).toBeNull();
+        expect(assessment.toFullyTaxed).toBeNull();
+      }
+    });
+
+    it('leaves totalFederalTax equal to totalTax to the dollar', () => {
+      for (const search of links) {
+        const scenario = fromLink(search);
+        expect(totalFederalTax(scenario)).toBe(totalTax(scenario));
+      }
+    });
+
+    /**
+     * So there is no third hump, and no axis widened to hold one. The chart
+     * the page draws is chapter 1 from end to end.
+     */
+    it('draws no surtax band on the curve and no niitEnd on the axis', () => {
+      const scenario = fromLink('?income=1000000');
+      expect(incomeAxisFeatures(scenario).niitEnd).toBeNull();
+      const curve = marginalRateCurve(scenario, {
+        maxIncome: 300_000,
+        step: 1_000,
+      });
+      for (const point of curve) {
+        expect(point.totalTax).toBe(
+          Math.round(totalTax({ ...scenario, ordinaryIncome: point.income })),
+        );
+      }
+      // The top of the ordinary schedule, and nothing above it: 3.8 points on
+      // top of 35 or 37 is what a live surtax would look like here.
+      expect(Math.max(...curve.map((p) => p.marginalRate))).toBeLessThanOrEqual(37);
+    });
+  });
 
   describe('the thresholds', () => {
     it('is 3.8% over $200,000 unmarried, $250,000 joint, $125,000 separate', () => {

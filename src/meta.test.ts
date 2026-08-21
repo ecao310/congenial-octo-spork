@@ -1,5 +1,8 @@
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { createElement } from 'react';
+import { render, screen } from '@testing-library/react';
+import App from './App';
 import { marginalRateCurve, incomeAxisMax } from './utils/tax';
 import { defaultScenario } from './utils/scenarioUrl';
 
@@ -170,6 +173,65 @@ describe('the cover', () => {
     expect(metaTags['og:description']).toContain(`${hump}%`);
     expect(metaTags['og:description']).toContain(`${valley}%`);
     expect(metaTags['og:image:alt']).toContain(`${hump}%`);
+  });
+});
+
+/**
+ * What a search engine reads, which is not what a chat window reads.
+ *
+ * `the link preview` above holds `og:` and `twitter:` against each other, so
+ * the two of them cannot drift apart — but `name="description"` is a third
+ * surface, checked against neither, and it spent two backlogs advertising
+ * capital-gains stacking after the step came off the page. Every part of that
+ * failure is silent: the tag is well-formed, the page renders, and the only
+ * reader who sees the promise broken arrives from a result page.
+ *
+ * So the copy is held against the page rather than against the other tags.
+ * The snippet ends on the list of sections it promises; this reads that list
+ * back out of the prose and looks for each entry in a heading the rendered app
+ * actually has. Naming a section that came off the page therefore fails here,
+ * and so does taking a section off the page without rewriting the tag.
+ */
+describe('the search snippet', () => {
+  const description = metaTags['description'];
+
+  /**
+   * The sections the snippet promises: everything after the last colon, split
+   * on the list's own punctuation. Parsed rather than duplicated so that the
+   * copy stays a sentence someone would write, and so that rewriting it is
+   * enough — there is no second list to keep in step.
+   */
+  const advertised = (sentence: string) =>
+    sentence
+      .slice(sentence.lastIndexOf(':') + 1)
+      .replace(/\.\s*$/, '')
+      .split(/,\s*|\s+and\s+/)
+      .map((topic) => topic.trim().toLowerCase())
+      .filter(Boolean);
+
+  /* Google shows about 160 characters of a description and cuts the rest, and
+     a promise cut in half is worse than a shorter one that lands. The share
+     card gets its own, looser limit above: chat previews are wider. */
+  it('is short enough to be shown whole on a result page', () => {
+    expect(description).toBeTruthy();
+    expect(description.length).toBeLessThanOrEqual(160);
+  });
+
+  it('promises only sections the page still has', () => {
+    render(createElement(App));
+    const headings = screen.getAllByRole('heading').map((h) => h.textContent?.toLowerCase() ?? '');
+
+    const topics = advertised(description);
+    expect(topics.length).toBeGreaterThan(1);
+    for (const topic of topics) {
+      // Falls back to a sentence rather than `undefined` so a failure reads as
+      // the topic against the page rather than as a lookup that missed. The
+      // sentence must not itself contain the topic, or `toContain` passes on
+      // the fallback and the assertion checks nothing.
+      expect(headings.find((h) => h.includes(topic)) ?? 'no heading on the page says').toContain(
+        topic,
+      );
+    }
   });
 });
 

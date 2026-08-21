@@ -7233,3 +7233,99 @@ Tree opened **clean** — first time in seven runs, after six consecutive
 "opened dirty" entries in this log. Nothing to salvage, nothing to reconstruct.
 The four stray driving scripts were absent too. Worth noting because the
 Discovered Work list has five bullets about the opposite.
+
+---
+
+## Backlog 6 · bullet 3 — the search snippet advertised a section that is gone
+
+`<meta name="description">` promised "the Social Security tax torpedo,
+capital-gains stacking, IRMAA cliffs and the senior deduction phaseout". The
+capital-gains step came off the page in Backlog 5 and `App.test.tsx:567`
+already asserts its heading is absent — so the one tag a search engine reads
+was selling a section that is not there.
+
+### Why nothing caught it
+
+`the link preview` in `src/meta.test.ts` holds `og:description` and
+`twitter:description` against each other. Both were rewritten in the pass that
+removed the step, so they agreed, and they agreed with nothing. `name="description"`
+was never read by any assertion — not for content, not for length, not at all.
+Comparing two copies of the same sentence proves they are copies; it does not
+prove either one is true.
+
+### The rewrite
+
+    What the next dollar of retirement income really costs, for your own
+    return: the tax torpedo, IRMAA cliffs and the senior deduction phaseout.
+
+140 characters, against the old 219. Three deliberate choices:
+
+- **Ends on the list.** The sections it promises are the last clause, so a
+  test can read them back out of the prose instead of a second hand-kept list
+  drifting beside it.
+- **Every phrase is a substring of a heading the page renders.** Rendered
+  headings today: `What is the tax torpedo?`, `How to mitigate the tax
+  torpedo`, `Medicare's IRMAA cliffs`, `The senior deduction phaseout
+  (2025–2028)`. So `the tax torpedo`, `IRMAA cliffs`, `the senior deduction
+  phaseout` all land.
+- **Leaves out the 400% poverty-line cliff**, even though it renders on the
+  default scenario. Its explainer is behind `preMedicare && subsidyCliff` — a
+  description that names it would be a promise the page keeps only for some
+  readers, which is the same bug one size smaller.
+
+### The test
+
+New `describe('the search snippet')` in `src/meta.test.ts`. It renders the
+actual app (`createElement(App)` — the file is `.ts`, not `.tsx`), collects
+every heading by role, parses the topic list out of the description's own
+prose, and looks for each topic in a heading. Naming a section that came off
+the page fails here; so does taking a section off the page without rewriting
+the tag. Plus a 160-character cap, which is roughly where Google truncates —
+looser 200 for the share card stays where it was, because chat previews are
+wider.
+
+Put in `meta.test.ts` rather than `App.test.tsx` because the fact under test
+belongs to `index.html`, and that file's stated job is the surfaces no other
+test reads. It already imports `utils/tax` to check the card quotes a rate the
+engine still reaches, so reaching into the app for the same class of reason is
+in keeping.
+
+### The bug in my own test, caught by mutation-testing it
+
+First draft:
+
+```ts
+expect(headings.find((h) => h.includes(topic)) ?? `no heading names "${topic}"`).toContain(topic);
+```
+
+The fallback message **contains the topic**, so when the lookup missed,
+`toContain` matched the fallback and the assertion passed. Mutation 1 — putting
+`capital-gains stacking` back in the description — went green, which is the
+only reason I found it. A test that cannot fail is worse than no test: it
+reports coverage it does not have. Fallback is now `'no heading on the page
+says'`, which shares no words with any topic, and the failure reads
+`expected 'no heading on the page says' to contain 'capital-gains stacking'`.
+
+**Mutation-checked three ways**, each restored after:
+
+| mutation | result |
+| --- | --- |
+| `capital-gains stacking` back in the description | red: `expected 'no heading on the page says' to contain 'capital-gains stacking'` |
+| page heading renamed to `Medicare's premium surcharges` | red, the same assertion from the other side: `…to contain 'irmaa cliffs'` |
+| description padded to 192 characters | red: `expected 192 to be less than or equal to 160` |
+
+### Verification
+
+`npx vitest run` **682 passed in 13 files** (680 before, +2). `tsc -b` clean,
+`eslint . --max-warnings 0` clean.
+
+### Note for the next run
+
+Tree opened clean. **PLAN.md was edited by a human mid-run**: five new bullets
+went in at the top of Backlog 6 (nav/step-link removal, filing-status dropdown,
+graph label and "You are here", copy deletions, the Lines dropdown), and the
+"Decide whether the rewrite belongs on `main`" bullet was deleted — so that
+decision is answered by removal, not by me. This run had already finished and
+verified the meta-description bullet when they arrived, so it committed that
+rather than throwing verified work away. **The next run's topmost unchecked
+item is the "next — step 2 of 2" link removal**, not this one.

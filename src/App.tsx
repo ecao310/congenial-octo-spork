@@ -1209,8 +1209,11 @@ const App: React.FC = () => {
    * the chart, so a reader who never hovers has never seen which tier their
    * own MAGI lands in.
    */
-  const hereMagi = irmaaMagi(hereScenario);
-  const hereIrmaa = irmaaFor(hereMagi, { filingStatus, beneficiaries, year });
+  const hereIrmaa = irmaaFor(irmaaMagi(hereScenario), {
+    filingStatus,
+    beneficiaries,
+    year,
+  });
 
   /**
    * And 36B's reading of it, which is wider than either: the whole benefit,

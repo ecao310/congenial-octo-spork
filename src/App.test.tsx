@@ -2032,16 +2032,15 @@ describe('the closing answer', () => {
   });
 
   /**
-   * Which tier a reader's own MAGI lands in has only ever been available by
-   * hovering the chart, which is nothing at all on a touch screen.
+   * Which tier a reader's own income lands them in has only ever been
+   * available by hovering the chart, which is nothing at all on a touch
+   * screen. The lag is the other half of it: the tier a 2026 return sets is
+   * not billed until 2028, and the figure means the wrong year without it.
    */
-  it('names the tier the MAGI lands in and what the next cliff costs', () => {
+  it('names the tier the return lands in and the year it is billed for', () => {
     render(<App />);
     const medicare = figure('Medicare surcharge');
-    expect(medicare).toHaveTextContent('On $41,662 of MAGI');
-    expect(medicare).toHaveTextContent(
-      'Another $67,338 of it crosses the next cliff, which costs $1,148 per year.',
-    );
+    expect(medicare).toHaveTextContent('None \u2014 the standard premium');
     expect(medicare).toHaveTextContent(
       'Billed on a 2-year lag, so this is what 2026 income sets for 2028.',
     );
@@ -2054,14 +2053,12 @@ describe('the closing answer', () => {
     fireEvent.click(
       screen.getByRole('checkbox', { name: 'Both spouses are 65 or older' }),
     );
-    setIncome(140_000);
-    // $140,000 of other income plus 85% of the couple's $38,496 benefit.
+    // $200,000 of other income plus 85% of the couple's $38,496 benefit puts
+    // the return's MAGI over the first joint cliff. Two enrollees, so the tier
+    // costs twice the $1,148 one filer pays for it above.
+    setIncome(200_000);
     expect(figure('Medicare surcharge')).toHaveTextContent(
-      'On $172,722 of MAGI, charged to each of you.',
-    );
-    // Two enrollees, so the cliff below costs twice what one filer pays.
-    expect(figure('Medicare surcharge')).toHaveTextContent(
-      'costs $2,297 per year',
+      'Tier 1 of 5 \u2014 $2,297/yr',
     );
   });
 
@@ -2113,9 +2110,7 @@ describe('the closing answer', () => {
     setIncome(0);
     expect(figure('Total income')).toHaveTextContent('$0');
     expect(figure('Effective rate')).toHaveTextContent('\u2014');
-    expect(figure('Effective rate')).toHaveTextContent(
-      'there is no income to average a bill over',
-    );
+    expect(figure('Effective rate')).toHaveTextContent('No tax on no income.');
     expect(figure('Effective rate')).not.toHaveTextContent('%');
   });
 

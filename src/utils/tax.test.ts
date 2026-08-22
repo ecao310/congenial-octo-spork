@@ -1709,19 +1709,15 @@ describe('married filing separately (lived with spouse)', () => {
     expect(irmaaFor(106_001, { filingStatus: 'single' }).annualSurcharge).toBeCloseTo(1_052.4, 6);
   });
 
-  it('walks its own tier ladder for the next cliff and its cost', () => {
+  it('walks its own tier ladder for the next cliff', () => {
     const under = irmaaFor(106_000, { filingStatus: 'mfs' });
     expect(under.tier).toBe(0);
     expect(under.nextThreshold).toBe(106_000);
-    expect(under.headroom).toBe(0);
-    expect(under.nextStep).toBeCloseTo(5_826, 6);
 
     const over = irmaaFor(106_001, { filingStatus: 'mfs' });
     expect(over.tier).toBe(4);
     // Not tier 5's $500,000/$750,000, and not tier 1's — the mfs ladder's.
     expect(over.nextThreshold).toBe(394_000);
-    expect(over.headroom).toBe(287_999);
-    expect(over.nextStep).toBeCloseTo(530.4, 6);
   });
 
   it('reaches its top tier at $394,000 exactly, as every status does', () => {
@@ -2077,22 +2073,17 @@ describe('IRMAA (Medicare income-related monthly adjustment amount)', () => {
     expect(standard.annualSurcharge).toBe(0);
     expect(standard.annualPartB).toBe(2_220); // 185 x 12
     expect(standard.nextThreshold).toBe(106_000);
-    expect(standard.headroom).toBe(56_000);
-    expect(standard.nextStep).toBe(1_052.4);
 
     const tier1 = irmaaFor(106_001);
     expect(tier1.tier).toBe(1);
     // (74.00 Part B + 13.70 Part D) x 12
     expect(tier1.annualSurcharge).toBe(1_052.4);
     expect(tier1.annualPartB).toBe(3_108); // 259 x 12
-    expect(tier1.nextStep).toBe(1_591.2);
 
     const top = irmaaFor(600_000);
     expect(top.tier).toBe(5);
     expect(top.annualSurcharge).toBe(6_356.4);
     expect(top.nextThreshold).toBeNull();
-    expect(top.headroom).toBeNull();
-    expect(top.nextStep).toBe(0);
   });
 
   it('charges a couple twice off one MAGI figure', () => {
@@ -2100,7 +2091,6 @@ describe('IRMAA (Medicare income-related monthly adjustment amount)', () => {
     expect(couple.tier).toBe(1);
     expect(couple.beneficiaries).toBe(2);
     expect(couple.annualSurcharge).toBe(2 * 1_052.4);
-    expect(couple.nextStep).toBe(2 * 1_591.2);
     // Per-beneficiary figures stay per-beneficiary.
     expect(couple.partBMonthly).toBe(259);
     expect(couple.partBSurchargeMonthly).toBe(74);

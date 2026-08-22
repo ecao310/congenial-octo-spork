@@ -2011,10 +2011,6 @@ export interface IrmaaAssessment {
   annualPartB: number;
   /** MAGI at which the next cliff triggers; null at the top tier. */
   nextThreshold: number | null;
-  /** MAGI still available before the next cliff; null at the top tier. */
-  headroom: number | null;
-  /** What crossing the next cliff costs the household per year; 0 at the top. */
-  nextStep: number;
 }
 
 /** Household surcharge for a tier, annualized over `beneficiaries` enrollees. */
@@ -2025,7 +2021,7 @@ function annualSurchargeFor(tier: IrmaaTier, beneficiaries: number): number {
 }
 
 /**
- * What Medicare charges at a given MAGI, and how close the next cliff is.
+ * What Medicare charges at a given MAGI, and where the next cliff is.
  *
  * The surcharge is per enrollee, not per return, so a couple with both spouses
  * on Medicare pays it twice off a single MAGI figure - which is why the joint
@@ -2049,10 +2045,6 @@ export function irmaaFor(magi: number, scenario: Scenario = {}): IrmaaAssessment
     annualSurcharge,
     annualPartB: toCents(tier.partBMonthly * 12 * beneficiaries),
     nextThreshold: next ? next.magiOver[filingStatus] : null,
-    headroom: next ? next.magiOver[filingStatus] - magi : null,
-    nextStep: next
-      ? toCents(annualSurchargeFor(next, beneficiaries) - annualSurcharge)
-      : 0,
   };
 }
 

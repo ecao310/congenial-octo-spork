@@ -1726,7 +1726,7 @@ const App: React.FC = () => {
 
             <div className="input-group chart-slider">
               <div className="slider-header">
-                <label htmlFor="ordinary-income">Other Income (not Social Security)</label>
+                <label htmlFor="ordinary-income">Other Income (excluding Social Security)</label>
                 <span className="slider-value amber">{formatCurrency(ordinaryIncome)}</span>
               </div>
               <input
@@ -1759,7 +1759,7 @@ const App: React.FC = () => {
                 {herePoint && totalIncome > 0 ? (
                   <>
                     {' '}
-                    The return itself owes{' '}
+                    This return owes{' '}
                     <strong>{formatCurrency(herePoint.totalTax)}</strong> in federal
                     tax on {formatCurrency(totalIncome)} of total income &mdash; an
                     effective rate of{' '}
@@ -1778,7 +1778,7 @@ const App: React.FC = () => {
                 <p>
                   Social Security benefits are not taxed dollar-for-dollar. The taxable
                   share depends on <strong>provisional income</strong> — other income
-                  plus half of your benefits. Once provisional income passes{' '}
+                  plus half of your social security benefit. Once provisional income passes{' '}
                   {formatCurrency(ssBase50)}, each extra dollar of other income also
                   drags up to 50&cent; of benefits into taxable income; past{' '}
                   {formatCurrency(ssBase85)}, it drags in up to 85&cent;.
@@ -1797,9 +1797,7 @@ const App: React.FC = () => {
                   stops pulling in benefits — the marginal rate falls straight back to
                   the ordinary bracket, creating the cliff on the right side of the
                   spike. Larger benefits stretch the torpedo across a wider income
-                  range (try the slider above), and because the thresholds are fixed in
-                  law rather than indexed for inflation, more retirees sail into it
-                  every year.
+                  range.
                 </p>
                 <p>
                   {/* What the two-button year selector used to demonstrate, said
@@ -1816,9 +1814,7 @@ const App: React.FC = () => {
                   brackets, the standard deduction, the capital-gain bands, and the
                   benefit itself, which takes a cost-of-living raise every January.
                   So a retirement that has not changed at all in real terms sits
-                  further past the same line every year. The figures here are{' '}
-                  {year}’s; the same return priced a decade from now has more
-                  of its benefit in the tax base for no other reason than that.
+                  further past the same line every year.
                 </p>
               </div>
             </details>
@@ -1900,11 +1896,8 @@ const App: React.FC = () => {
                   simply wait out.
                 </p>
                 <p>
-                  The surcharge never appears on a tax return, which is exactly why it
-                  is worth planning around: nothing about filing reveals that one
-                  dollar of income cost {formatCurrency(cliffs[0].step)}. It is not
-                  included in any of the tax figures here either &mdash; the curve
-                  above is federal income tax only.
+                  The surcharge never appears on a tax return, so nothing about the filing reveals that one
+                  dollar of income cost {formatCurrency(cliffs[0].step)}.
                 </p>
               </div>
             </details>
@@ -2131,7 +2124,7 @@ const App: React.FC = () => {
                 <dd>
                   <strong>{formatCurrency(hereTax)}</strong>
                   <span className="answer-gloss">
-                    What the {year} return owes. Federal only.
+                    What this {year} return owes. Federal only.
                   </span>
                 </dd>
               </div>

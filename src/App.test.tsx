@@ -272,7 +272,11 @@ describe('App', () => {
     expect(frozen).toHaveTextContent('IRC 86(c) set $25,000 and $32,000 in 1983');
     expect(frozen).toHaveTextContent('$34,000 and $44,000 in 1993');
     expect(frozen).toHaveTextContent('Neither has ever been indexed');
-    expect(frozen).toHaveTextContent(`The figures here are ${PAGE_TAX_YEAR}’s`);
+    // The point the frozen bases make: everything around them moves, so the
+    // same real retirement drifts further over the line every year.
+    expect(frozen).toHaveTextContent(
+      'sits further past the same line every year',
+    );
     // It is the same explainer the live thresholds are in, not a fifth block.
     expect(frozen?.closest('details')).toBe(
       screen.getByRole('heading', { name: /what is the tax torpedo/i }).closest('details'),
@@ -316,7 +320,7 @@ describe('App', () => {
   it('renders the ordinary income slider defaulting to $30,000', () => {
     render(<App />);
     const slider = screen.getByRole('slider', {
-      name: /other income \(not social security\)/i,
+      name: /other income \(excluding social security\)/i,
     });
     expect(slider).toHaveValue('30000');
     expect(slider).toHaveAttribute('min', '0');
@@ -479,7 +483,7 @@ describe('App', () => {
   it('updates the ordinary income slider readout when moved', () => {
     render(<App />);
     const slider = screen.getByRole('slider', {
-      name: /other income \(not social security\)/i,
+      name: /other income \(excluding social security\)/i,
     });
     fireEvent.change(slider, { target: { value: '50000' } });
     expect(slider).toHaveValue('50000');
@@ -668,7 +672,7 @@ describe('the step flow', () => {
    */
   it('keeps every input mounted at once', () => {
     render(<App />);
-    const income = screen.getByRole('slider', { name: /other income \(not social security\)/i });
+    const income = screen.getByRole('slider', { name: /other income \(excluding social security\)/i });
     fireEvent.change(income, { target: { value: '90000' } });
 
     expect(
@@ -726,7 +730,7 @@ describe('the shape every step shares', () => {
   it('puts the step’s control on the axis its own chart sweeps', () => {
     render(<App />);
     const slider = screen.getByRole('slider', {
-      name: /other income \(not social security\)/i,
+      name: /other income \(excluding social security\)/i,
     });
     expect(document.getElementById('step-torpedo')?.contains(slider)).toBe(true);
   });
@@ -743,7 +747,7 @@ describe('the shape every step shares', () => {
     expect(readout()).toHaveTextContent('At $30,000 of other income');
 
     fireEvent.change(
-      screen.getByRole('slider', { name: /other income \(not social security\)/i }),
+      screen.getByRole('slider', { name: /other income \(excluding social security\)/i }),
       { target: { value: '90000' } },
     );
     expect(readout()).toHaveTextContent('At $90,000 of other income');
@@ -882,7 +886,7 @@ describe('the total the return owes', () => {
 
   it('moves all three figures when the income does', () => {
     render(<App />);
-    set(/other income \(not social security\)/i, 90_000);
+    set(/other income \(excluding social security\)/i, 90_000);
     expect(readout('torpedo')).toHaveTextContent(
       'owes $15,617 in federal tax on $114,852 of total income — an effective rate of 13.6%',
     );
@@ -904,7 +908,7 @@ describe('the total the return owes', () => {
   it('says nothing at all when nothing comes in', () => {
     render(<App />);
     set(/social security benefit/i, 0);
-    set(/other income \(not social security\)/i, 0);
+    set(/other income \(excluding social security\)/i, 0);
     expect(readout('torpedo')).not.toHaveTextContent('of total income');
     expect(readout('torpedo')).not.toHaveTextContent('effective rate');
   });
@@ -967,7 +971,7 @@ describe('advanced inputs', () => {
     render(<App />);
     for (const label of [
       'Annual Social Security Benefit',
-      'Other Income (not Social Security)',
+      'Other Income (excluding Social Security)',
     ]) {
       expect(screen.getByLabelText(label).closest('details')).toBeNull();
     }
@@ -1004,7 +1008,7 @@ describe('advanced inputs', () => {
       { target: { value: '9000' } },
     );
     fireEvent.change(
-      screen.getByRole('slider', { name: /other income \(not social security\)/i }),
+      screen.getByRole('slider', { name: /other income \(excluding social security\)/i }),
       { target: { value: '90000' } },
     );
     expect(
@@ -1625,7 +1629,7 @@ describe('the 400% poverty-line cliff under the torpedo chart', () => {
     expect(subsidyExplainer()).not.toHaveTextContent(/hover/i);
 
     fireEvent.change(
-      screen.getByRole('slider', { name: /other income \(not social security\)/i }),
+      screen.getByRole('slider', { name: /other income \(excluding social security\)/i }),
       { target: { value: '50000' } },
     );
     expect(subsidyExplainer()).toHaveTextContent('That is past the cliff');
@@ -1691,7 +1695,7 @@ describe('the 400% poverty-line cliff under the torpedo chart', () => {
  */
 describe('the torpedo chart’s right edge', () => {
   const incomeSlider = (): HTMLElement =>
-    screen.getByRole('slider', { name: /other income \(not social security\)/i });
+    screen.getByRole('slider', { name: /other income \(excluding social security\)/i });
 
   // The span the chart draws used to be prose above it as well. That
   // paragraph came off the page, so the plot's own accessible name is the one
@@ -1929,7 +1933,7 @@ describe('the closing answer', () => {
 
   const setIncome = (value: number): void => {
     fireEvent.change(
-      screen.getByRole('slider', { name: /other income \(not social security\)/i }),
+      screen.getByRole('slider', { name: /other income \(excluding social security\)/i }),
       { target: { value: String(value) } },
     );
   };
@@ -2192,7 +2196,7 @@ describe('the closing answer', () => {
       window.history.replaceState(null, '', copied);
       render(<App />);
       expect(
-        screen.getByRole('slider', { name: /other income \(not social security\)/i }),
+        screen.getByRole('slider', { name: /other income \(excluding social security\)/i }),
       ).toHaveValue('120000');
       expect(
         screen.getByRole('radio', { name: 'Married Filing Jointly' }),
@@ -2303,7 +2307,7 @@ describe('the return in the address bar', () => {
   };
 
   const incomeSlider = (): HTMLElement =>
-    screen.getByRole('slider', { name: /other income \(not social security\)/i });
+    screen.getByRole('slider', { name: /other income \(excluding social security\)/i });
 
   it('opens on the return the link names rather than on its own defaults', () => {
     openAt('?filing=mfj&ss=40000&income=120000&senior=1&spouse=1&muni=8000');
@@ -2605,7 +2609,7 @@ describe('the live reading under the controls', () => {
   const set = (name: RegExp, value: number): void => {
     fireEvent.change(slider(name), { target: { value: String(value) } });
   };
-  const income = /other income \(not social security\)/i;
+  const income = /other income \(excluding social security\)/i;
   const benefit = /social security benefit/i;
 
   it('is on the page before it has anything to say', () => {

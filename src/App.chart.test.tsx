@@ -213,7 +213,7 @@ describe('IRMAA cliffs on the ordinary-income chart', () => {
     showBothThresholds();
     const markerAt = (income: number): number => {
       fireEvent.change(
-        screen.getByRole('slider', { name: /other income \(not social security\)/i }),
+        screen.getByRole('slider', { name: /other income \(excluding social security\)/i }),
         { target: { value: String(income) } },
       );
       return herePositions(container)[0];
@@ -390,7 +390,7 @@ describe('the \u201cyou are here\u201d marker', () => {
     const [torpedo] = herePositions(container);
 
     fireEvent.change(
-      screen.getByRole('slider', { name: /other income \(not social security\)/i }),
+      screen.getByRole('slider', { name: /other income \(excluding social security\)/i }),
       { target: { value: '90000' } },
     );
     // $30,000 to $90,000 on a $150,000 axis: right, and a long way.
@@ -401,7 +401,7 @@ describe('the \u201cyou are here\u201d marker', () => {
     const { container } = render(<App />);
     const at = (value: number): number => {
       fireEvent.change(
-        screen.getByRole('slider', { name: /other income \(not social security\)/i }),
+        screen.getByRole('slider', { name: /other income \(excluding social security\)/i }),
         { target: { value: String(value) } },
       );
       return herePositions(container)[0];

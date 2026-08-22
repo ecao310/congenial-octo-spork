@@ -47,8 +47,9 @@
  * **And not on every notch either.** Browsers rate-limit the history API, and
  * Safari throws rather than dropping the call that goes over — so writing
  * per notch put one ordinary drag past the limit and took the page down with
- * it. The page writes once the control has settled and once more on arrival;
- * `ADDRESS_SETTLE_MS` and `writeAddress` in App.tsx are where that lives.
+ * it. The address is written once the control has settled and once more on
+ * arrival; `ADDRESS_SETTLE_MS` and `writeAddress` in
+ * `hooks/useScenarioAddress.ts` are where that lives.
  *
  * Everything a link carries is clamped on the way in against the same bound
  * the page's own slider would have held it inside, and every clamp says what
@@ -56,33 +57,17 @@
  * did not produce itself.
  */
 import {
+  FILING_STATUSES,
   PAGE_TAX_YEAR,
   avgAnnualSSBenefit,
   maxAnnualSSBenefit,
 } from './tax';
+import type { FilingStatus } from './tax';
 import { formatCurrency } from './format';
-
-/**
- * The statuses this page asks about, which is no longer every status the tax
- * code has.
- *
- * `FilingStatus` still names four and `tax.ts` still prices all four: IRC
- * 86(c) gives a base amount to each, and the engine's own tests exercise
- * them. What narrowed is the question the page asks. Single and a joint
- * return are nearly every reader it has, and the two that came off — head of
- * household, and a separate return that lived with the spouse — each cost a
- * note of their own under the control and a branch of their own in three
- * explainers, to price a return almost nobody who opens this page files.
- *
- * So the narrowing is stated here, once, and the page and the link both read
- * it: the strip is built from `PAGE_FILING_STATUSES` and a link naming
- * anything else is told what it got. See `decodeScenario`.
- */
-export type PageFilingStatus = 'single' | 'mfj';
 
 /** The whole return the page prices, and the whole of what a link carries. */
 export interface PageScenario {
-  filingStatus: PageFilingStatus;
+  filingStatus: FilingStatus;
   ssBenefit: number;
   ordinaryIncome: number;
   isSenior: boolean;
@@ -111,22 +96,8 @@ export const MAX_MUNI_INTEREST = 50_000;
  */
 export const MAX_OTHER_INCOME = 1_000_000;
 
-/**
- * The statuses a link may name, in the order the strip offers them.
- *
- * This used to be `Object.keys(SS_BASES)` — every status the tax code has,
- * because the page offered every status the tax code has. Now that it offers
- * two, `hoh` and `mfs` are values a link can say and this page cannot show,
- * which puts them in the same position as `state` and `ltcg`. They are
- * answered differently, though: those keys are read past in silence because
- * no figure on the page moves with them, and a filing status moves every
- * figure there is. A reader arriving on `?filing=hoh` is looking at a single
- * filer's return, and has to be told that is what they got.
- */
-export const PAGE_FILING_STATUSES: PageFilingStatus[] = ['single', 'mfj'];
-
 /** How each status is named back to a reader whose link asked for it. */
-const FILING_STATUS_SHORT: Record<PageFilingStatus, string> = {
+const FILING_STATUS_SHORT: Record<FilingStatus, string> = {
   single: 'a single filer',
   mfj: 'married filing jointly',
 };
@@ -270,11 +241,20 @@ export function decodeScenario(search: string): DecodedScenario {
 
   const flag = (key: string): boolean => params.get(key) === '1';
 
+  /**
+   * `hoh` and `mfs` are the two values most likely to arrive here and be
+   * refused: both were offered once, so links carrying them exist. They are
+   * answered rather than read past, unlike `year`, `ltcg`, `ceiling` and
+   * `qcd` — those name a control that is gone and move no figure, where a
+   * filing status moves every figure there is. A reader arriving on
+   * `?filing=hoh` is looking at a single filer's return and has to be told
+   * that is what they got.
+   */
   const rawFiling = params.get('filing');
-  let filingStatus: PageFilingStatus = 'single';
+  let filingStatus: FilingStatus = 'single';
   if (rawFiling !== null && rawFiling.trim() !== '') {
-    if ((PAGE_FILING_STATUSES as string[]).includes(rawFiling)) {
-      filingStatus = rawFiling as PageFilingStatus;
+    if ((FILING_STATUSES as string[]).includes(rawFiling)) {
+      filingStatus = rawFiling as FilingStatus;
     } else {
       notes.push(
         `This link names a filing status this page does not offer (“${rawFiling}”), so it is showing ${FILING_STATUS_SHORT[filingStatus]}.`,

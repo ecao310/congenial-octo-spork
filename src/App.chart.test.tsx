@@ -21,13 +21,13 @@ vi.mock('recharts', async () => {
 });
 
 import App from './App';
-import { CHART } from './palette';
+import { CHART } from './styles/palette';
 import {
   avgAnnualSSBenefit,
   FPL_YEAR_PARAMS,
   irmaaCliffs,
   PAGE_TAX_YEAR,
-} from './utils/tax';
+} from './lib/tax';
 
 /**
  * The page prices `PAGE_TAX_YEAR` and has no control that changes it, so every
@@ -255,7 +255,7 @@ describe('IRMAA cliffs on the ordinary-income chart', () => {
  * It travels along a MAGI of its own — 36B counts the whole benefit, where
  * Medicare counts only the share the torpedo dragged in — so it is drawn in
  * its own colour and asserted on through its own selector. The dollar
- * arithmetic behind the placement is in tax.test.ts; what is checked here is
+ * arithmetic behind the placement is in lib/tax/irmaa.test.ts; what is checked here is
  * that the line is on the chart, and for whom.
  */
 describe('the 400% poverty-line cliff on the ordinary-income chart', () => {
@@ -322,7 +322,7 @@ describe('the 400% poverty-line cliff on the ordinary-income chart', () => {
    * that one, so what is left to assert here is the premise the other four
    * tests in this describe rest on: the line is drawn because the year the
    * page prices has a cliff, not because the chart always draws one. The
-   * year-by-year half is `tax.test.ts`'s, where `ptcCliff({ year: 2025 })` is
+   * year-by-year half is `lib/tax/ptc.test.ts`'s, where `ptcCliff({ year: 2025 })` is
    * pinned at null and `fpl400` is pinned out of the ceiling list.
    */
   it('draws it because the year the page prices has a cliff', () => {

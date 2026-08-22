@@ -1,31 +1,34 @@
 /**
- * The same palette `:root` declares in `index.css`, in the one form a chart
- * can read.
+ * The colours the charts paint with, as literals, because an SVG attribute is
+ * the one place on this page a `var()` cannot reach.
  *
  * Recharts paints with SVG attributes — `stroke`, `fill`, `stopColor` — and
  * while a browser will resolve `var(--accent)` in most of them, jsdom will
  * not: every chart test would then be asserting on the string `var(--accent)`
  * rather than on a colour, which is a test that cannot tell a right colour
  * from a wrong one. So the values are literals here and the two copies are
- * held together by a test instead (`the palette` in styles.test.tsx), which
- * reads `:root` off disk and fails if either side moves without the other.
+ * held together by a test instead (`the palette` in guards/styles.test.tsx),
+ * which reads `:root` off disk and fails if either side moves without the
+ * other.
  *
- * Only the names the charts and tooltips actually use are here. A token that
- * is only ever a CSS colour stays in CSS.
+ * This is therefore a *subset* of the ground `:root` declares, and the rule
+ * for what belongs is exact: a colour some chart hands to an SVG attribute.
+ * `--violet` and `--emerald` are colours on this page and are not here,
+ * because CSS paints both. Anything that has stopped being spent on either
+ * side is deleted from both rather than kept against a use that might come
+ * back — `--indigo`, `--indigo-bright` and `--lime` were kept that way, for
+ * two steps that came off the page, and were three entries a reader could not
+ * account for on either side of the split.
  */
 export const PALETTE = {
   /** The ground the plot is drawn on, which a marker cuts itself out of. */
   surface: '#1a1a1b',
-  /** The tooltip's own surface: it floats over the plot rather than sits in it. */
-  surfaceRaised: '#202124',
   /** Hairlines — the grid, the tooltip's border, the rule between its sections. */
   edge: '#343940',
   /** The one edge drawn heavier than the mesh: an axis, which frames the plot. */
   edgeStrong: '#4a5059',
 
-  /** A tooltip's heading. */
-  inkBright: '#f1f1fd',
-  /** Tick labels, and a tooltip's own prose. */
+  /** Tick labels, and the rule a hover draws down the plot. */
   inkMuted: '#9799ae',
 
   /** The ordinary-income rate curve, and the fill under it. */
@@ -41,19 +44,6 @@ export const PALETTE = {
   /** The 400% FPL cliff: the same kind of thing, for a reader not yet on Medicare. */
   fuchsia: '#e879f9',
   fuchsiaBright: '#f0abfc',
-  /** The conversion band and the ceiling that closes it. Unspent while the
-      step that drew them is off the page — kept, like the arithmetic behind
-      it, because the step is coming back and its colour is part of it. */
-  indigo: '#818cf8',
-  indigoBright: '#a5b4fc',
-  /** The taxable share of the benefit, and tax-exempt interest's own slider. */
-  violet: '#a78bfa',
-  /** Where the reader stands on the gains axis. Unspent by the charts today,
-      for the same reason indigo is. */
-  emerald: '#34d399',
-  /** The 0% long-term gain band, when there is a gains chart to draw it on.
-      Unspent for the same reason indigo and emerald are. */
-  lime: '#a3e635',
 } as const;
 
 /**
@@ -63,8 +53,8 @@ export const PALETTE = {
  * `stroke-width` and a `font-size` on an SVG element are attributes, and an
  * attribute holds a number rather than a `var(--…)` the browser resolves. So
  * the page's scales — which everywhere else live in `:root` and are held
- * closed by `the type scale` and `the corners` in styles.test.tsx — have to
- * be written a second time here for the chart to spend them.
+ * closed by `the type scale` and `the corners` in guards/styles.test.tsx —
+ * have to be written a second time here for the chart to spend them.
  *
  * The register is FI Calc's: 13px labels, 3px curves, and a grid that is a
  * hairline mesh rather than a set of dashes competing with the dashed lines

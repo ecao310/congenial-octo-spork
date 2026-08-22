@@ -21,7 +21,7 @@
  * ERR_MODULE_NOT_FOUND rather than a wrong card.
  *
  * The curve on the card is the real one. `marginalRateCurve` is bundled out
- * of `src/utils` and sampled for the scenario the page opens on, so the shape
+ * of `src/lib` and sampled for the scenario the page opens on, so the shape
  * a reader sees in the preview is the shape they land on — and if the
  * arithmetic under it ever moves, re-running this moves the picture with it.
  * A drawn-by-hand hump would go on claiming 22.2% long after the statute
@@ -40,7 +40,7 @@ const PUBLIC = join(ROOT, 'public');
 /* ── The arithmetic ──────────────────────────────────────────────────────── */
 
 /**
- * `src/utils` is TypeScript and this is a plain node script, so the module has
+ * `src/lib` is TypeScript and this is a plain node script, so the module has
  * to be bundled before it can be imported. Everything the card needs comes
  * from the two files the page itself reads its opening state out of.
  */
@@ -50,8 +50,8 @@ async function loadTaxModule() {
   const out = join(dir, 'bundle.mjs');
   writeFileSync(
     entry,
-    `export * from ${JSON.stringify(join(ROOT, 'src/utils/tax'))};\n` +
-      `export * from ${JSON.stringify(join(ROOT, 'src/utils/scenarioUrl'))};\n`,
+    `export * from ${JSON.stringify(join(ROOT, 'src/lib/tax/index'))};\n` +
+      `export * from ${JSON.stringify(join(ROOT, 'src/lib/scenarioUrl'))};\n`,
   );
   await build({ input: entry, output: { file: out, format: 'esm' }, platform: 'node', logLevel: 'silent' });
   const mod = await import(pathToFileURL(out).href);
@@ -105,7 +105,7 @@ async function rasterise(page, svg, { width, height, path }) {
 
 /* ── The card ────────────────────────────────────────────────────────────── */
 
-/** The page's own tokens. Kept in step by `the cover` in src/meta.test.ts. */
+/** The page's own tokens. Kept in step by `the cover` in src/guards/meta.test.ts. */
 const INK_BRIGHT = '#f1f1fd';
 const INK_MUTED = '#9799ae';
 const SURFACE = '#1a1a1b';

@@ -20,7 +20,14 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
-    "noUncheckedSideEffectImports": true
+    "noUncheckedSideEffectImports": true,
+
+    /* Named rather than left to "every @types package installed", which is what
+       had `describe`, `it` and `expect` typed by @types/jest in a project that
+       runs vitest: a matcher set close enough to compile and not the one
+       actually running. `node` is here for the suites under src/guards, which
+       read index.html, the stylesheet and the README off disk. */
+    "types": ["vitest/globals", "@testing-library/jest-dom", "node"]
   },
   "include": ["src"]
 }

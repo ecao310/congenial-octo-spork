@@ -22,14 +22,14 @@ import react from '@vitejs/plugin-react'
  * rolldown emits to link them. Vite writes a `modulepreload` for each into
  * index.html, so a first-time reader still fetches them in parallel off one
  * HTML parse and pays nothing for the split; a returning one fetches the
- * ~67 kB that changed and keeps the rest by content hash. Both vendor chunks
+ * ~47 kB that changed and keeps the rest by content hash. Both vendor chunks
  * are under the 500 kB line, which is what retires the warning rather than
  * silencing it with `chunkSizeWarningLimit`.
  *
  * The rule reads "everything in node_modules that is not React is the chart
  * library" because recharts is the only other runtime dependency in
  * package.json. That is an invariant, not an observation, and `the build's
- * chunking` in src/build.test.ts fails the moment a fourth dependency makes it
+ * chunking` in src/guards/build.test.ts fails the moment a fourth dependency makes it
  * untrue — at which point this rule needs a name that is still honest.
  */
 function chunkFor(id: string): string | undefined {
@@ -73,7 +73,7 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     globals: true,
-    setupFiles: './src/setupTests.ts',
+    setupFiles: './src/test/setup.ts',
     include: ['src/**/*.test.{ts,tsx}'],
   },
 })

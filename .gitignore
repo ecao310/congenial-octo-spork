@@ -1,8 +1,5 @@
 # Logs
 logs
-!ralph/ralph.log
-ralph/loop.log
-ralph/last.txt
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*

@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { build, createLogger, resolveConfig, type Rolldown } from 'vite';
-import config from '../vite.config';
+import config from '../../vite.config';
 
 /**
  * How the app is cut into files, that the cut is made under a still-true
@@ -77,7 +77,7 @@ describe('the build\'s chunking', () => {
   });
 
   it('leaves app source in the entry chunk', () => {
-    for (const source of ['src/App.tsx', 'src/utils/tax.ts', 'src/main.tsx']) {
+    for (const source of ['src/App.tsx', 'src/lib/tax/income.ts', 'src/main.tsx']) {
       expect(chunkOf(root(source))).toBeUndefined();
     }
   });

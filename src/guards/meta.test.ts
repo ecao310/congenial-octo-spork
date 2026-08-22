@@ -2,9 +2,9 @@ import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { createElement } from 'react';
 import { render, screen } from '@testing-library/react';
-import App from './App';
-import { marginalRateCurve, incomeAxisMax } from './utils/tax';
-import { defaultScenario } from './utils/scenarioUrl';
+import App from '../App';
+import { marginalRateCurve, incomeAxisMax } from '../lib/tax';
+import { defaultScenario } from '../lib/scenarioUrl';
 
 /**
  * What the link says about itself before anyone opens it.
@@ -131,7 +131,7 @@ describe('the cover', () => {
    * copies are held together by a test that reads the original.
    */
   it('is painted in the palette the page is', () => {
-    const css = readFileSync(root('src/index.css'), 'utf8');
+    const css = readFileSync(root('src/styles/index.css'), 'utf8');
     const token = (name: string) =>
       new RegExp(`--${name}:\\s*(#[0-9a-f]{3,8})`, 'i').exec(css)?.[1] ?? `--${name} is missing`;
     const surface = token('surface');

@@ -1,10 +1,10 @@
 # IRS Pub 915 (2025) — Worksheet 1: Figuring Your Taxable Benefits
 
 Source: https://www.irs.gov/publications/p915 (tax year 2025).
-This is the worksheet behind Form 1040 line 6b. `src/utils/tax.ts`
+This is the worksheet behind Form 1040 line 6b. `src/lib/tax/socialSecurity.ts`
 (`taxableSocialSecurity`) implements the closed-form equivalent, taking line 4
 (tax-exempt interest) as its `muniInterest` argument and assuming no exclusions
-or Schedule 1 adjustments (lines 5 and 7 = 0); `src/utils/tax.test.ts` checks it
+or Schedule 1 adjustments (lines 5 and 7 = 0); `src/lib/tax/socialSecurity.test.ts` checks it
 against a line-by-line reference implementation of this worksheet.
 
 Note that line 4 is what makes municipal bond interest taxable in effect: it is
@@ -24,9 +24,9 @@ benefits exactly as fast as a pension check would.
 | 6 | Combine lines 2, 3, 4, and 5 |
 | 7 | Schedule 1 adjustments: lines 11–20, 23, and 25 |
 | 8 | Line 6 − line 7 (provisional income) |
-| 9 | Base amount: **$25,000** single or HOH / **$32,000** MFJ / **$0** MFS lived together |
+| 9 | Base amount: **$25,000** single / **$32,000** MFJ |
 | 10 | Line 8 − line 9; if zero or less, none of the benefits are taxable |
-| 11 | **$9,000** single or HOH / **$12,000** MFJ / **$0** MFS lived together (second threshold minus base) |
+| 11 | **$9,000** single / **$12,000** MFJ (second threshold minus base) |
 | 12 | Line 10 − line 11 (enter 0 if zero or less) |
 | 13 | Smaller of line 10 or line 11 |
 | 14 | Line 13 × 50% |

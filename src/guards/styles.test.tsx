@@ -1,8 +1,8 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { readFileSync, readdirSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import { render } from '@testing-library/react';
-import App from './App';
-import { CHART, PALETTE } from './palette';
+import App from '../App';
+import { CHART, PALETTE } from '../styles/palette';
 
 /**
  * A CSS rule that can never match is silent. Nothing throws, nothing warns,
@@ -20,7 +20,7 @@ import { CHART, PALETTE } from './palette';
    test as a URL string, and under jsdom `import.meta.url` is an http one. The
    run's cwd is the project root, which is where `vite.config.ts` roots the
    test glob too. */
-const stylesheet = readFileSync(resolve(process.cwd(), 'src/index.css'), 'utf8');
+const stylesheet = readFileSync(resolve(process.cwd(), 'src/styles/index.css'), 'utf8');
 
 /**
  * Every `.a .b` in the stylesheet, and only those.
@@ -38,16 +38,34 @@ const nestedClassSelectors = (css: string): string[] =>
     .filter((selector) => /^\.[\w-]+ \.[\w-]+$/.test(selector));
 
 /**
- * `App.tsx`'s source, for the one question a render cannot answer.
+ * Every shipped `.tsx` under `src`, concatenated, for the one question a
+ * render cannot answer.
  *
  * A class can be alive and still be absent from a default render — the
  * Breakpoints panel's swatches are behind a button, the link note behind a
  * bad query string — so `querySelector` on one render cannot tell "not drawn
  * yet" from "not drawn ever". The source can, and only because every
- * `className` on this page is a literal string: no template, no helper, no
+ * `className` here is a literal string: no template, no helper, no
  * conditional join. The test below asserts that before it relies on it.
+ *
+ * Read off the whole tree rather than off one file, because the markup is
+ * spread across `components/` now. Reading only `App.tsx` would have made this
+ * pass vacuously the moment a rule's one caller moved into a component — the
+ * guard's own extractor going quiet is exactly the failure it exists to catch,
+ * which is why the sizes below are asserted before the comparison is.
  */
-const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+const tsxUnder = (dir: string): string[] =>
+  readdirSync(dir, { withFileTypes: true }).flatMap((entry) =>
+    entry.isDirectory()
+      ? tsxUnder(join(dir, entry.name))
+      : entry.name.endsWith('.tsx') && !entry.name.includes('.test.')
+        ? [join(dir, entry.name)]
+        : [],
+  );
+
+const source = tsxUnder(resolve(process.cwd(), 'src'))
+  .map((file) => readFileSync(file, 'utf8'))
+  .join('\n');
 
 /** Every class name a selector mentions, wherever in the selector it sits. */
 const styledClasses = (css: string): Set<string> =>
@@ -92,7 +110,7 @@ describe('the stylesheet', () => {
     expect(styled.size).toBeGreaterThan(20);
 
     // recharts names its own SVG parts, and the print sheet re-colours the
-    // grid and the ticks by the names the library emits. Nothing in `App.tsx`
+    // grid and the ticks by the names the library emits. Nothing under `src`
     // writes one, and nothing should.
     const dead = Array.from(styled).filter(
       (name) => !rendered.has(name) && !name.startsWith('recharts-'),
@@ -362,10 +380,11 @@ describe('the palette', () => {
    *
    * So there are exactly two ways a token earns its line: a `var()` somewhere
    * in the sheet, or a `PALETTE` entry, which is a chart spending it in SVG
-   * where `var()` cannot reach. `--indigo`, `--lime` and `--emerald` are
-   * unspent by CSS and pass on the second — held, with a comment in
-   * `palette.ts` saying what they are held for, against the steps that drew
-   * them coming back. An unspent token with no such note fails here.
+   * where `var()` cannot reach. `--indigo`, `--indigo-bright` and `--lime`
+   * were held on neither — kept, with a note in `palette.ts` saying what they
+   * were being held *for*, against two steps coming back that have not — and
+   * a note is not a reader. All three are gone from both grounds now, and this
+   * is what fails the next one that outlives its use.
    */
   it('declares no colour with nothing on either side of it', () => {
     const sheet = stylesheet.replace(/\/\*[\s\S]*?\*\//g, '');

@@ -78,11 +78,8 @@
   --rose-bright: #fb7185;
   --fuchsia: #e879f9;
   --fuchsia-bright: #f0abfc;
-  --indigo: #818cf8;
-  --indigo-bright: #a5b4fc;
   --violet: #a78bfa;
   --violet-deep: #8b5cf6;
-  --lime: #a3e635;
   --emerald: #34d399;
 
   /* ── The shell ──
@@ -1660,11 +1657,8 @@ footer p {
     --rose-bright: #9f1239;
     --fuchsia: #a21caf;
     --fuchsia-bright: #86198f;
-    --indigo: #4338ca;
-    --indigo-bright: #3730a3;
     --violet: #6d28d9;
     --violet-deep: #5b21b6;
-    --lime: #4d7c0f;
     --emerald: #047857;
 
     /* Nothing floats on paper. The one thing that took this is the chart

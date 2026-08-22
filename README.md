@@ -21,8 +21,9 @@ one repo publishes two apps.
 ## The two steps
 
 Both steps have the same shape: the chart first, then the one control that
-moves the reader along it, then collapsed explainers, then a box to the next
-step.
+moves the reader along it, then collapsed explainers. Step 1 is the exception
+that sets the rule — it has no curve of its own, so the return itself stands
+where the chart stands below it.
 
 1. **Your Social Security benefit** — the return everything after it prices:
    who files it, who on it has reached 65, and how much Social Security it
@@ -38,17 +39,18 @@ step.
    senior-deduction phaseout is in the curve, because it is tax. The IRMAA
    cliffs and the 400% poverty-line cliff are not: they are a Medicare premium
    and a Marketplace credit, so they are priced for the reader's own income in
-   the chart's tooltip and drawn across the axis only when the **Lines** button
-   above the plot is asked for them. Every figure under it is a federal one.
+   the chart's tooltip and drawn across the axis only when the **Breakpoints**
+   button in the corner of the plot is asked for them. Every figure under it is
+   a federal one.
 
 Two more steps stood here — Capital gains stacking, which split the income
 already entered into ordinary and long-term halves, and Sizing the conversion,
 which read off the largest conversion fitting under a chosen ceiling. Both came
 off the page so that it asks one question, and what they rendered *from* has
-now gone after them: the repo holds what this page reads and nothing else. The
-3.8% surtax those steps were the only route to is the one exception, because it
-is a term of `totalFederalTax`, which the close still prints — so `niitFor`
-stays in `src/utils/tax.ts` under a note saying it is dormant rather than dead.
+gone after them: the repo holds what this page reads and nothing else. The 3.8%
+surtax of IRC 1411 outlived them by a pass, because it was a term of a total
+the close still printed — a total that was always the income tax exactly, since
+nothing on the page could set a gain for the surtax to reach. It is gone too.
 
 The page closes on the six figures the whole walk was for: total income,
 federal tax, effective rate, the rate on the next dollar, the taxable share of
@@ -56,14 +58,23 @@ the benefit, and the Medicare surcharge that MAGI buys.
 
 ## What is priced
 
-`src/utils/tax.ts` runs the whole 1040 chain for tax years 2025 and 2026:
+`src/lib/tax/` runs the whole 1040 chain for tax years 2025 and 2026:
 provisional income and the 50%/85% inclusion worksheet, the base standard
 deduction plus the 65+ additional amount plus the OBBBA senior deduction and
-its 6% phaseout, ordinary brackets for all four filing statuses, capital gains
-stacked on top of ordinary taxable income, tax-exempt interest that moves
-provisional income without moving the tax base, the 3.8% net investment income
-tax of IRC 1411, the IRMAA tiers on their two-year MAGI lag, and the premium
-tax credit's 400% cliff under IRC 36B.
+its 6% phaseout, ordinary brackets, capital gains stacked on top of ordinary
+taxable income, tax-exempt interest that moves provisional income without
+moving the tax base, the IRMAA tiers on their two-year MAGI lag, and the
+premium tax credit's 400% cliff under IRC 36B.
+
+Two filing statuses, single and joint. The tax code has four, and this priced
+all four for a long time — head of household with its own bracket table and
+standard deduction under IRC 1(j)(2)(B) and 63(c)(2)(B), and a separate return
+that lived with its spouse, whose $0 provisional-income bases under 86(c)(1)(C)
+leave it with no valley and no hump at all. Neither was ever offered on the
+page, and each cost a branch in the engine, a nullable return type, and a
+paragraph of prose per explainer. A link that still names one is answered on
+arrival rather than read past, because a filing status moves every figure there
+is; see [Sharing a return](#sharing-a-return).
 
 That last one is a credit the government stops paying rather than a tax it
 charges, and it has a MAGI of its own: 36B(d)(2)(B) counts AGI plus tax-exempt
@@ -79,23 +90,14 @@ the benchmark silver premium for the household's age and county, which this app
 has no way to know — so the line is drawn where it falls and the loss is left
 blank.
 
-Section 1411 is charged on the *lesser* of net investment income and MAGI over
-the threshold, and only the capital gain counts as net investment income here —
-a distribution is excluded by 1411(c)(5), and tax-exempt interest is outside
-both the income and the MAGI, even while it is moving provisional income. So
-the surtax is priced by the engine and is $0 for everything the page can
-currently set: with the gains step off the page there is no net investment
-income for it to reach. It is charged again the moment a gain is back on the
-page, which is the third effect stacking on the same axis.
-
 The Social Security thresholds — $25,000/$34,000 and $32,000/$44,000 — are not
-indexed and stay frozen across both years while everything around them moves,
-and neither are 1411's $200,000/$250,000/$125,000, fixed since 2013. That
+indexed and stay frozen across both years while everything around them moves.
+That
 contrast used to be a two-button year selector, and clicking it was the only
 way to see the point being made. The page states it in prose instead and
-prices one year: `PAGE_TAX_YEAR` in `src/utils/tax.ts`. Everything below that
-constant stays parameterized by year — the engine prices any year on file, the
-tests exercise all of them — so moving the page to a new year is one line, in
+prices one year: `PAGE_TAX_YEAR` in `src/lib/tax/params.ts`. Everything below
+that constant stays parameterized by year — the engine prices any year on file,
+the tests exercise all of them — so moving the page to a new year is one line, in
 the same place a reader would go to check the figures behind it.
 
 ## Sharing a return
@@ -124,7 +126,7 @@ quoting the default's figures at everyone who shared a link. It says what the
 page is; the figures stay on the page.
 
 The curve on that card is the real one. `scripts/og-cover.mjs` bundles
-`marginalRateCurve` out of `src/utils`, samples it for the scenario the page
+`marginalRateCurve` out of `src/lib`, samples it for the scenario the page
 opens on, and rasterises the result:
 
 ```bash
@@ -133,7 +135,8 @@ node scripts/og-cover.mjs   # rewrites public/og-cover.png and public/apple-touc
 
 It is run by hand rather than in CI, because rasterising needs a browser and
 neither deploy workflow installs one — so the PNG is committed. `the cover` in
-`src/meta.test.ts` is what notices when it goes stale: it reads the image's
+`src/guards/meta.test.ts` is what notices when it goes stale: it reads the
+image's
 size back out of the file, checks the mark and the card are still painted in
 `:root`'s own colours, and fails if the rate the description quotes is no
 longer the rate the arithmetic reaches.
@@ -143,7 +146,7 @@ longer the rate the arithmetic reaches.
 ```bash
 npm install
 npm run dev      # start dev server
-npm run test     # vitest, 454 tests
+npm run test     # vitest, 391 tests
 npm run lint     # eslint
 npm run build    # tsc -b && vite build
 ```
@@ -152,11 +155,22 @@ npm run build    # tsc -b && vite build
 
 | Path | What it is |
 | --- | --- |
-| `src/App.tsx` | The page: both steps, the chart, the explainers, the close. |
-| `src/utils/tax.ts` | Every figure on the page, and the only place a rate or a threshold is written down. |
-| `src/utils/scenarioUrl.ts` | The return, encoded into the address bar and clamped back out of it. |
+| `src/App.tsx` | The composition root: the return in state, the figures derived from it, and the three sections it hands them to. |
+| `src/components/` | What the page is made of — the two steps, the chart and its tooltip, the Breakpoints panel, the five explainers, the close. |
+| `src/hooks/` | The three pieces of behaviour that are not markup: the live region's debounce, the address bar, and dismissing a panel. |
+| `src/lib/tax/` | Every figure on the page, and the only place a rate or a threshold is written down. One module per chapter of the code, behind `index.ts`. |
+| `src/lib/scenarioUrl.ts` | The return, encoded into the address bar and clamped back out of it. |
+| `src/lib/format.ts`, `src/lib/returnProse.ts` | How a figure is rendered, and how a return is described in words. |
+| `src/styles/` | `index.css` and the subset of its palette the charts hand to SVG attributes. |
+| `src/guards/` | The four suites that hold down what no other test reads: the build's chunking, the link preview and the README, the rendered prose, the stylesheet. |
+| `src/test/` | Test setup and the fixtures more than one suite shares. |
 | `public/` | The favicon, the touch icon and the link-preview card. |
 | `scripts/og-cover.mjs` | Redraws the card from the page's own arithmetic. Run by hand; see above. |
+
+Tests sit beside what they test: `src/lib/tax/irmaa.test.ts` next to `irmaa.ts`,
+and the three `src/App.*.test.tsx` suites next to `App.tsx`, each rendering the
+whole page and asking about one subject — the steps, the chart's thresholds, the
+close.
 
 ## Deployment
 
@@ -171,7 +185,8 @@ therefore always serves `main`, and `dev` never needs to be merged to be seen.
 That is what the preview was for while this page was still being written out of
 the app it replaced, and it is what the next rewrite will use.
 
-`the front door` in `src/meta.test.ts` holds the two together: it reads the
+`the front door` in `src/guards/meta.test.ts` holds the two together: it reads
+the
 working branch out of the sentence under that link, finds the workflow that
 triggers on that branch, derives the base that workflow builds with, and fails
 if the link and the workflow stop agreeing. What it cannot see is which branch

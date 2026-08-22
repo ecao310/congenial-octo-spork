@@ -2119,9 +2119,7 @@ const App: React.FC = () => {
                     {muniInterest > 0
                       ? `, plus ${formatCurrency(muniInterest)} of tax-exempt interest`
                       : ''}
-                    . The untaxed part of the benefit is counted here because it
-                    is the part the torpedo reaches for; against taxable income it
-                    would vanish.
+                    .
                   </span>
                 </dd>
               </div>
@@ -2131,9 +2129,7 @@ const App: React.FC = () => {
                 <dd>
                   <strong>{formatCurrency(hereTax)}</strong>
                   <span className="answer-gloss">
-                    What the {year} return owes. Federal only &mdash; no Medicare
-                    premium, which is charged rather than taxed and gets its own
-                    line below.
+                    What the {year} return owes. Federal only.
                   </span>
                 </dd>
               </div>
@@ -2148,8 +2144,8 @@ const App: React.FC = () => {
                   </strong>
                   <span className="answer-gloss">
                     {totalIncome > 0
-                      ? 'That tax over that income: the average across every dollar of it, and the figure to hold against the years the same money would otherwise come out in.'
-                      : 'Nothing comes in, so there is no income to average a bill over.'}
+                      ? 'Pecentage of total income paid in tax.'
+                      : 'No tax on no income.'}
                   </span>
                 </dd>
               </div>
@@ -2191,11 +2187,6 @@ const App: React.FC = () => {
                       : 'None \u2014 the standard premium'}
                   </strong>
                   <span className="answer-gloss">
-                    On {formatCurrency(hereMagi)} of MAGI
-                    {beneficiaries > 1 ? ', charged to each of you' : ''}.{' '}
-                    {hereIrmaa.headroom !== null
-                      ? `Another ${formatCurrency(hereIrmaa.headroom)} of it crosses the next cliff, which costs ${formatCurrency(hereIrmaa.nextStep)} per year.`
-                      : 'This is the top tier; there is no cliff above it.'}{' '}
                     Billed on a {IRMAA_LOOKBACK_YEARS}-year lag, so this is what{' '}
                     {year} income sets for {year + IRMAA_LOOKBACK_YEARS}.
                   </span>

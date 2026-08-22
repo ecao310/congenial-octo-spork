@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Tax torpedo">
+  <!-- The page's own shape at 16px: a rate flat on the valley floor, spiking
+       as the benefit follows income into the tax base, falling back once the
+       benefit is fully in, then climbing again with the brackets. Colours are
+       --surface and --accent from src/index.css; `the cover` in
+       src/meta.test.ts fails if either moves without this file. -->
+  <rect width="32" height="32" rx="7" fill="#1a1a1b"/>
+  <path d="M4 25H9L12 10H16L19 18H23L27 7" fill="none" stroke="#409dff"
+    stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+</svg>

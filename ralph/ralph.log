@@ -1,3 +1,79 @@
+## Landmarks, and a way past step 1 (21 Aug 2026)
+
+The page rendered as one `<div className="card">` with the `<h1>` loose in it.
+`<footer>` was the only landmark, on a page whose whole content is above the
+footer, and there was no way over step 1's ten controls to the chart.
+
+### The two decisions the bullet named
+
+**The step nav.** Moot: Backlog 6's first item took the tab strip off, so there
+is no `role="toolbar"` left to promote and no arrow-key handling to preserve.
+`grep -rn toolbar src/` is empty. Nothing to decide.
+
+**Where the skip link lands: `#step-torpedo`, not `#answer`.** `scenarioUrl.ts`
+already made this argument in its own header — the query string says what the
+return is, the fragment says where to stand, and every step carries an `id` for
+exactly that. The chart is what the steps lead to, and the close sits after it
+in reading order one heading-jump away; landing on the chart reaches both,
+landing on the close reaches only one.
+
+### What changed
+
+- `.shell` becomes `<main>` rather than gaining a wrapper — it is already the
+  box holding both steps and the close, and a second box there is a grid parent
+  with one grid child.
+- The footer stays *outside* the main, deliberately. A `<footer>` inside
+  `<main>` is not `contentinfo`, so folding it in would have traded the one
+  landmark the page had for the one it was missing.
+- `<h1>` and the subtitle go into `<header>`, and the link note goes in with
+  them: it is about the arrival rather than the return, and it was the only
+  visible content that would otherwise sit outside every landmark. That made
+  `.link-note`'s CSS comment ("renders as a direct child of `.card`") stale;
+  updated.
+- A `.skip-link` first in the DOM, clipped by the same rule shape
+  `.live-reading` uses and unclipped by `:focus` onto a fixed corner. No
+  handler — `#step-torpedo` already carries `tabIndex={-1}`, which is what
+  makes a browser move focus into it rather than only scrolling to it.
+
+### Guards, all mutation-checked
+
+Eight new tests, 716 → 724.
+
+`App.test.tsx` — three landmarks present; `<h1>` in the banner and the footer
+*not* inside the main; both steps and `#answer` inside it; the link note inside
+a landmark; the skip link first focusable on a bare address *and* on one that
+renders the note (the Dismiss button is what makes that second case bite — the
+first check alone passes with the link written below the header); and the href
+resolving to something with `tabindex="-1"` that is not inside step 1.
+
+`styles.test.tsx` — the skip link is the one thing on the page whose entire
+behaviour is a CSS rule, invisible to jsdom and to every screenshot. So: the
+resting rule clips and never says `display: none` (which takes the tab stop
+with the pixels), the focus rule unclips, and the focused `z-index` equals the
+highest layer the page stacks — 30 today, the hint bubbles and the Breakpoints
+panel, and a skip link under a panel is one nobody reads.
+
+Mutations that each reddened the intended test and nothing else: `main`→`div`,
+`header`→`div`, footer folded into main (also caught an existing test), link
+removed, href pointed at `#step-benefit`, `tabIndex` dropped from the target,
+link moved below the header, `display: none` at rest, `z-index` lowered.
+
+The stylesheet's own invariants constrained the CSS more than the a11y did:
+colours from `:root` tokens only, `font-size` from the nine-step scale,
+`border-radius` from the three corners, and rings `Npx solid var(--accent)` on
+`:focus` selectors only. Both new rules carry `clip-path`, which is what keeps
+`width: 1px`/`width: auto` out of the shell's no-hard-coded-widths check — the
+same exemption `.live-reading` already relies on.
+
+`npx tsc -b`, `npx eslint . --max-warnings 0`, `npm run build` clean.
+
+### Next
+
+The next unchecked item is the heading levels one: eight `<h2>`s and no `<h3>`,
+so the five explainers under step 2's chart read as peers of "The tax torpedo"
+rather than parts of it. Same file, same neighbourhood, and `styles.test.tsx`'s
+`the headings` block is where the levels-descend assertion goes.
+
 # Ralph notes — durable notes at top, per-iteration write-ups appended below
 
 ## Durable notes

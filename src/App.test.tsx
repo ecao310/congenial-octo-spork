@@ -449,6 +449,112 @@ describe('App', () => {
   });
 });
 
+/**
+ * Landmarks, and a way past step 1.
+ *
+ * Everything on this page used to render inside one `<div className="card">`
+ * with the `<h1>` loose in it, so `<footer>` was the only landmark a screen
+ * reader could jump to — on a page whose entire content is above the footer.
+ * Jumping to landmarks is how a reader who cannot see the layout finds out
+ * what the layout is, and this one answered "there is a disclaimer".
+ *
+ * The other half is the keyboard: step 1 is ten controls deep before the chart
+ * begins, and until the skip link there was no way over them. Both halves fail
+ * the same silent way — nothing throws, nothing renders differently, and the
+ * only reader who notices is the one who was already worst served.
+ *
+ * `getByRole` is the assertion rather than `querySelector('main')` on purpose:
+ * what is being claimed is the role an assistive technology computes, and
+ * `<footer>` inside `<main>` computes to nothing at all.
+ */
+describe('the page’s landmarks', () => {
+  it('gives a reader jumping by landmark all three of them', () => {
+    render(<App />);
+    expect(screen.getByRole('banner')).toBeInTheDocument();
+    expect(screen.getByRole('main')).toBeInTheDocument();
+    expect(screen.getByRole('contentinfo')).toBeInTheDocument();
+  });
+
+  it('puts the title in the banner and the disclaimer outside the main', () => {
+    render(<App />);
+    expect(screen.getByRole('banner')).toContainElement(
+      screen.getByRole('heading', { level: 1 }),
+    );
+    // The footer is `contentinfo` only while it is nobody's descendant but the
+    // body's, which is the whole reason `.shell` is the main and `.card` is not.
+    expect(screen.getByRole('main')).not.toContainElement(
+      screen.getByRole('contentinfo'),
+    );
+  });
+
+  it('holds both steps and the close inside the main', () => {
+    render(<App />);
+    const main = screen.getByRole('main');
+    for (const id of ['step-benefit', 'step-torpedo', 'answer']) {
+      expect(main).toContainElement(document.getElementById(id));
+    }
+  });
+
+  /**
+   * A note that only ever appears when a link asked for something out of
+   * bounds, and so the one piece of visible content that could sit outside
+   * every landmark without anyone noticing.
+   */
+  it('keeps the link note inside a landmark', () => {
+    window.history.replaceState(null, '', '/?filing=widow');
+    render(<App />);
+    expect(screen.getByRole('banner')).toContainElement(
+      screen.getByRole('status'),
+    );
+  });
+});
+
+/**
+ * The skip link: first in the tab order, and pointed at something that can
+ * take focus.
+ *
+ * An in-page link moves focus into its target only if the target is focusable,
+ * which for a `<section>` means an explicit `tabindex="-1"`. Without it the
+ * browser scrolls and leaves focus on the link, so the next Tab goes back to
+ * the first control in step 1 and the skip link has skipped nothing. That is
+ * the failure this guards: it is invisible in a screenshot and invisible in
+ * every other test on the page.
+ */
+describe('the skip link', () => {
+  const firstFocusable = (container: HTMLElement): Element | null =>
+    container.querySelector(
+      'a[href], button, input, select, textarea, [tabindex]:not([tabindex="-1"])',
+    );
+
+  /**
+   * On a bare address and on one the page had to correct, because the second
+   * is the case that can go wrong: the link note carries a Dismiss button, and
+   * a skip link written below the note rather than above it is a skip link the
+   * reader reaches second on exactly the arrival that needed it most.
+   */
+  it('is the first thing on the page a Tab can reach', () => {
+    for (const address of ['/', '/?filing=widow']) {
+      window.history.replaceState(null, '', address);
+      const { container, unmount } = render(<App />);
+      expect(firstFocusable(container)).toHaveTextContent(/skip to the chart/i);
+      unmount();
+    }
+  });
+
+  it('points past step 1 at something that can take the focus', () => {
+    render(<App />);
+    const link = screen.getByRole('link', { name: /skip to the chart/i });
+    const target = document.getElementById(
+      (link.getAttribute('href') ?? '').slice(1),
+    );
+    expect(target).not.toBeNull();
+    expect(target).toHaveAttribute('tabindex', '-1');
+    // Past step 1, not into it: a link landing inside the controls it exists
+    // to skip would pass every check above and do nothing for the reader.
+    expect(document.getElementById('step-benefit')).not.toContainElement(target);
+  });
+});
+
 describe('the step flow', () => {
   /**
    * The whole point of the rewrite: the steps scroll rather than swap, so

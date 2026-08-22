@@ -1458,27 +1458,56 @@ const App: React.FC = () => {
 
   return (
     <div className="card">
-      <h1>How Much Can You Take Out This Year?</h1>
-      <p className="subtitle">
-        Because of how Social Security is taxed, your marginal tax rate is often very different than what you might expect.
-      </p>
+      {/* The way past step 1.
 
-      {linkNotes.length > 0 && (
-        <div className="link-note" role="status">
-          <p>
-            <strong>This link asked for something this page could not show.</strong>{' '}
-            Everything else in it came through as sent.
-          </p>
-          <ul>
-            {linkNotes.map((note) => (
-              <li key={note}>{note}</li>
-            ))}
-          </ul>
-          <button type="button" onClick={() => setLinkNotes([])}>
-            Dismiss
-          </button>
-        </div>
-      )}
+          Step 1 is ten controls deep before the chart begins, and a reader who
+          has already set the return — or who arrived on a link that set it for
+          them — has to tab through every one of them to reach the thing the
+          page is about. So the first focusable element on the page is the way
+          out of that.
+
+          It lands on `#step-torpedo` rather than on `#answer` because the
+          fragment is already how this page names a place: `scenarioUrl` keeps
+          whatever fragment the reader arrived on precisely so a link can point
+          at a step, and the chart is what the steps lead to. The close sits
+          after it in reading order and one heading jump away, so landing on the
+          chart reaches both and landing on the close reaches only one.
+
+          No handler: the target carries `tabIndex={-1}`, which is what makes a
+          browser move focus into it rather than only scrolling to it. */}
+      <a className="skip-link" href="#step-torpedo">
+        Skip to the chart
+      </a>
+
+      {/* The banner: what the page is, and what the link that opened it did.
+
+          The note is in here rather than loose above the steps because it is
+          about the arrival rather than about the return — the same thing the
+          title and the subtitle are — and because content outside every
+          landmark is content a reader jumping by landmark never lands on. */}
+      <header>
+        <h1>How Much Can You Take Out This Year?</h1>
+        <p className="subtitle">
+          Because of how Social Security is taxed, your marginal tax rate is often very different than what you might expect.
+        </p>
+
+        {linkNotes.length > 0 && (
+          <div className="link-note" role="status">
+            <p>
+              <strong>This link asked for something this page could not show.</strong>{' '}
+              Everything else in it came through as sent.
+            </p>
+            <ul>
+              {linkNotes.map((note) => (
+                <li key={note}>{note}</li>
+              ))}
+            </ul>
+            <button type="button" onClick={() => setLinkNotes([])}>
+              Dismiss
+            </button>
+          </div>
+        )}
+      </header>
 
       {/* What a screen reader hears when a control moves, and the only thing
           on this page that is heard rather than read. Rendered always and
@@ -1496,7 +1525,17 @@ const App: React.FC = () => {
         {announcement}
       </p>
 
-      <div className="shell">
+      {/* The main landmark, and the whole of the page that is not the title
+          or the disclaimer: both steps and the close.
+
+          `.shell` is already the box that holds exactly that, so it becomes
+          the landmark rather than gaining a wrapper — a second box here would
+          be a grid parent with one grid child, which is a layout bug waiting
+          to be written. The footer stays outside it on purpose: a `<footer>`
+          inside `<main>` is not `contentinfo`, so folding it in would have
+          traded the one landmark this page already had for the one it was
+          missing. */}
+      <main className="shell">
         {/* ───── Step 1: the return every later step prices ───── */}
         <section
           className="step step-config"
@@ -2492,7 +2531,7 @@ const App: React.FC = () => {
             </p>
           </section>
         </div>
-      </div>
+      </main>
 
       <footer>
         <p>

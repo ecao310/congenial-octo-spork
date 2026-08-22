@@ -670,6 +670,53 @@ const corners = (css: string): string[] =>
  * things that took it, so it left the page with them; a new circle is welcome
  * back on the list, but not by being absent from it.
  */
+/**
+ * A control nobody can see, in either of its two states.
+ *
+ * The skip link is the one thing on this page whose whole behaviour is a CSS
+ * rule: it is clipped to a pixel at rest and unclipped by `:focus`, and no
+ * render test can tell a link that unclips from one that does not, because
+ * jsdom computes neither. So it is invisible in every screenshot and every
+ * assertion elsewhere, and both ways of breaking it are silent — a resting
+ * rule that stops hiding puts a link nobody asked for above the title, and a
+ * focus rule that stops showing leaves a keyboard reader tabbing into
+ * something they cannot read.
+ *
+ * `display: none` is called out by name because it is the obvious way to
+ * write the first half and the wrong one: it takes the tab stop away with the
+ * pixels, and a skip link that cannot be tabbed to is not a skip link.
+ */
+describe('the skip link', () => {
+  const rule = (selector: string) =>
+    leafRules(screenBlock(stylesheet)).find((r) => r.selectors.includes(selector));
+
+  it('is clipped at rest and unclipped by focus', () => {
+    const resting = rule('.skip-link');
+    const focused = rule('.skip-link:focus');
+    expect(resting).toBeDefined();
+    expect(focused).toBeDefined();
+
+    expect(resting?.body).toMatch(/clip-path:\s*inset\(50%\)/);
+    expect(resting?.body).not.toMatch(/display:\s*none/);
+    expect(focused?.body).toMatch(/clip-path:\s*none/);
+  });
+
+  /**
+   * And drawn over everything, because what it unclips onto is whatever the
+   * reader had already opened.
+   */
+  it('lands above every other layer the page stacks', () => {
+    const layers = Array.from(
+      screenBlock(stylesheet).matchAll(/z-index:\s*(\d+)/g),
+    ).map(([, value]) => Number(value));
+    // Guards the extractor itself: an empty list would pass vacuously.
+    expect(layers.length).toBeGreaterThan(2);
+
+    const focused = Number(/z-index:\s*(\d+)/.exec(rule('.skip-link:focus')?.body ?? '')?.[1]);
+    expect(focused).toBe(Math.max(...layers));
+  });
+});
+
 describe('the corners', () => {
   const STEPS = ['var(--radius-lg)', 'var(--radius-md)', 'var(--radius-sm)', '0'];
 

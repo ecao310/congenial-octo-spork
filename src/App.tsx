@@ -984,23 +984,21 @@ const App: React.FC = () => {
    * — in the strip beside this section's own summary, and in the recap that
    * closes the step — and stays named while the section is closed.
    *
-   * Each carries the participle it takes in a sentence as well as the label it
-   * takes in the strip. The recap continues a list of what this return does,
-   * and the two do not go the same way: interest is *held* and a gift goes
-   * *out* of an IRA, so one shared "plus" in front of both would read as two
-   * additions, one of which is a subtraction.
+   * Each carries two names: the short one the strip has room for, and the one
+   * a return is described with. The strip sits beside a slider whose own label
+   * says which slider it is, so "Muni interest $3,750" is enough there; the
+   * recap stands on its own at the foot of the column and has to say what the
+   * figure is without a control beside it to lean on.
    */
   const advancedSet = [
     {
       label: 'Muni interest',
-      lead: 'holding',
-      tail: 'of tax-exempt interest',
+      noun: 'municipal interest',
       value: muniInterest,
     },
     {
       label: 'Charitable',
-      lead: 'giving',
-      tail: 'straight to charity out of an IRA',
+      noun: 'qualified charitable distributions',
       value: qcd,
     },
   ].filter(({ value }) => value > 0);
@@ -1021,43 +1019,24 @@ const App: React.FC = () => {
           : 'one spouse 65 or older';
 
   /**
-   * What this return does, as a run of participles for the recap to end on.
+   * The second sentence of the recap, which exists only when one of the two
+   * advanced sliders has been moved off $0.
    *
-   * The recap used to stop at the benefit and then point — "Plus whatever is
-   * set under Advanced inputs above" — which is a pointer at a section that is
-   * shut by default, in the one sentence on the page whose whole job is to say
-   * what is being priced. It names the figures now.
-   *
-   * They join the participle the sentence already runs on rather than arriving
-   * behind a "plus", because a gift comes out of the return: "plus $26,750
-   * given to charity" reads as $26,750 of income, which is the opposite of
-   * what it is. `collecting`, `holding`, `giving` each carry their own
-   * direction and need no lead-in to share.
+   * A sentence of its own rather than more clauses on the end of the first
+   * one. The first sentence describes a filer — a year, a status, an age, a
+   * benefit — and these are neither facts about the filer nor a fifth thing of
+   * the same kind; they are the two figures a reader went and set by hand, and
+   * the point of naming them here is that the section holding them is shut.
+   * Ending the filer sentence and starting "Plus" is what says so.
    */
-  const recapClauses = [
-    {
-      key: 'benefit',
-      node:
-        ssBenefit > 0 ? (
-          <>
-            collecting <strong>{formatCurrency(ssBenefit)}</strong> of Social
-            Security a year
-          </>
-        ) : (
-          <>
-            collecting <strong>no Social Security</strong> at all
-          </>
-        ),
-    },
-    ...advancedSet.map(({ label, lead, tail, value }) => ({
-      key: label,
-      node: (
-        <>
-          {lead} <strong>{formatCurrency(value)}</strong> {tail}
-        </>
-      ),
-    })),
-  ];
+  const advancedClauses = advancedSet.map(({ label, noun, value }) => ({
+    key: label,
+    node: (
+      <>
+        <strong>{formatCurrency(value)}</strong> in {noun}
+      </>
+    ),
+  }));
 
   const baseDeduction = yearFiling.standardDeduction;
   const standardDeduction = standardDeductionFor({ filingStatus, seniors, year });
@@ -1390,24 +1369,22 @@ const App: React.FC = () => {
   const reading = ((): string => {
     switch (announceFrom) {
       case 'benefit': {
-        /* The same list the recap on screen ends on, flattened: same
-           participles, same separators, so a listener and a reader are never
-           told about two different returns. It used to end at the benefit and
-           then tack the advanced inputs on as bare labels — "Muni interest
+        /* The recap on screen, flattened: same words, same separators, so a
+           listener and a reader are never told about two different returns. It
+           used to tack the advanced inputs on as bare labels — "Muni interest
            $10,000" — because the recap only pointed at them and a pointer is no
-           use to someone who has just moved one. The recap says them now, so
-           this says them the same way. */
+           use to someone who has just moved one. The recap names them now, so
+           this names them the same way, in the same second sentence. */
         const collecting =
           ssBenefit > 0
-            ? `collecting ${formatCurrency(ssBenefit)} of Social Security a year`
+            ? `collecting ${formatCurrency(ssBenefit)} of Social Security per year`
             : 'collecting no Social Security at all';
-        const doing = joinProse([
-          collecting,
-          ...advancedSet.map(
-            ({ lead, tail, value }) => `${lead} ${formatCurrency(value)} ${tail}`,
-          ),
-        ]);
-        return `${year} brackets, ${FILING_STATUS_PROSE[filingStatus]}, ${ageProse}, ${doing}.`;
+        const plus = advancedSet.length
+          ? ` Plus ${joinProse(
+            advancedSet.map(({ noun, value }) => `${formatCurrency(value)} in ${noun}`),
+          )}.`
+          : '';
+        return `${year} brackets, ${FILING_STATUS_PROSE[filingStatus]}, ${ageProse}, ${collecting}.${plus}`;
       }
       case 'torpedo':
         return herePoint
@@ -1741,12 +1718,34 @@ const App: React.FC = () => {
           {/* What this step settled, in one line. The hero used to name the
               filing status and the year; it now says what the page is for, so
               the return being priced is named here instead — at the foot of the
-              step that sets it, on the way into the step that spends it. */}
+              column that sets it, on the way into the step that spends it.
+
+              "One year's return" rather than the "Everything from here on
+              prices one return" it opened with: what a reader wants from a
+              recap is the return, and a lead-in that describes where the
+              sentence sits on the page is a fact about the page rather than
+              about the return. */}
           <p className="scenario-recap">
-            Everything from here on prices one return: <strong>{year}</strong>{' '}
-            brackets and standard deduction,{' '}
-            <strong>{FILING_STATUS_PROSE[filingStatus]}</strong>, {ageProse},{' '}
-            <ProseList items={recapClauses} />.
+            One year’s return: <strong>{year}</strong> brackets and standard
+            deduction, <strong>{FILING_STATUS_PROSE[filingStatus]}</strong>,{' '}
+            {ageProse}, collecting{' '}
+            {ssBenefit > 0 ? (
+              <>
+                <strong>{formatCurrency(ssBenefit)}</strong> of Social Security
+                per year
+              </>
+            ) : (
+              <>
+                <strong>no Social Security</strong> at all
+              </>
+            )}
+            .
+            {advancedClauses.length > 0 && (
+              <>
+                {' '}
+                Plus <ProseList items={advancedClauses} />.
+              </>
+            )}
           </p>
         </section>
 

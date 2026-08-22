@@ -8487,3 +8487,91 @@ prices one return:" where the bullet's example says "One year's return:", and
 the vocabulary, where the bullet says "municipal interest" / "qualified
 charitable distributions" and the page says "tax-exempt interest" / "straight
 to charity".
+
+## 2026-08-21 — Task: Summary on bottom left should dynamically include the advanced inputs
+
+The bullet was checked off in 8a8601f and un-checked by the user in the
+PLAN.md edit that 7ea94e6 carried. So the work was not "name the advanced
+inputs" — that shipped — it was "name them the way the bullet's example names
+them". Read as a diff against the example, 8a8601f missed on three counts and
+this iteration closes all three.
+
+### What the example asked for and what was on screen
+
+    example:  One year’s return: 2026 brackets and standard deduction, a
+              married couple filing jointly, one spouse 65 or older,
+              collecting $38,292 of Social Security per year. Plus $3750 in
+              municipal interest and $26750 qualified charitable distributions.
+
+    was:      Everything from here on prices one return: … collecting $38,292
+              of Social Security a year, holding $3,750 of tax-exempt
+              interest, and giving $26,750 straight to charity out of an IRA.
+
+1. **The lead-in.** "Everything from here on prices one return" is a sentence
+   about where the sentence sits on the page. That is the same complaint as
+   the last unchecked bullet in this backlog ("Text shouldn't have meta
+   references"), so the example's "One year's return:" is not just shorter, it
+   is the one that survives that bullet.
+2. **One sentence or two.** 8a8601f ran the advanced figures into the filer
+   clause as participles. Its reason was real — "plus $26,750 given to
+   charity" reads as $26,750 of income, which is backwards — but the fix cost
+   the sentence its shape. The second sentence is what recovers both: "Plus"
+   heads figures a reader set by hand, not dollars added to a total, and the
+   full stop is what says the filer description ended.
+3. **The vocabulary.** "tax-exempt interest" / "straight to charity out of an
+   IRA" for "municipal interest" / "qualified charitable distributions". The
+   sliders were already labelled "Tax-Exempt (Municipal) Interest" and
+   "Qualified Charitable Distribution", so the recap now matches the control
+   it summarises rather than paraphrasing it.
+
+Also "per year" for "a year", in the recap and in the live region both.
+
+### Shape
+
+`advancedSet` entries carried `lead`/`tail` participles; they carry a `noun`
+now — the term a figure is named with — beside the short `label` the summary
+strip has room for. Two names because the two places differ: the strip sits
+beside a slider whose own label says which slider it is, the recap stands
+alone at the foot of the sticky column.
+
+`recapClauses` (benefit + advanced, one list) became `advancedClauses`
+(advanced only), because the benefit is no longer in the same list as the
+other two — it is the end of the first sentence. `ProseList`, `joinProse` and
+`listSeparator` from 8a8601f all still earn their place: two figures behind
+one "Plus" still need " and " between them, and the live region still has to
+render the same list flat.
+
+### Verification
+
+Rendered in Chrome via playwright-core against `vite preview`, not only in
+jsdom, at the example's own scenario
+(`?filing=mfj&senior=1&ss=38292&muni=3750&qcd=26750`):
+
+    One year’s return: 2026 brackets and standard deduction, a married couple
+    filing jointly, one spouse 65 or older, collecting $38,292 of Social
+    Security per year. Plus $3,750 in municipal interest and $26,750 in
+    qualified charitable distributions.
+
+which is the bullet's example to the character, bar the thousands separators
+the page adds. Default state ends at "per year." with no second sentence.
+
+713 tests, unchanged in count (7 rewritten, 1 replaced). Mutation-checked:
+lowercasing the "Plus" and putting "a year" back reddens 7 of them. The
+replaced test was "does not add the gift on with a plus", which asserted
+`not.toMatch(/plus/i)` — the exact thing the bullet asked for. Its successor
+pins what actually matters, `/per year\. Plus \$26,750/` and no `/per year,/`:
+the sentence boundary, which a substring assertion would pass either way.
+
+`npx tsc -b`, `npx eslint . --max-warnings 0`, `npx vitest run` (713/713),
+`npm run build` — all clean.
+
+### Next
+
+Topmost unchecked is "Make the graph shift right when QCD increases", whose
+second half — "Total Income, including $x of Social Security and $y municipal
+interest. Excluding all qualified charitable distributions" — is the x-axis
+label, and whose first half is the axis domain. Note the same two-sentence
+shape the user used here: the "excluding" fact gets its own sentence rather
+than being hung off the "including" one. `axisGiftClause` and `axisDomain` in
+App.tsx are where that lands. After it, the meta-references bullet, which the
+lead-in above is one instance of.

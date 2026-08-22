@@ -32,7 +32,7 @@ afterEach(() => {
  * element, so these tests read the whole sentence rather than one text node.
  */
 const scenarioRecap = (): HTMLElement =>
-  screen.getByText(/Everything from here on prices one return/);
+  screen.getByText(/^One year’s return:/);
 
 /** Set the filing status, which the page keeps in one place: the strip. */
 const chooseFilingStatus = (label: string): void => {
@@ -177,7 +177,7 @@ describe('App', () => {
    * slider moves. "Including $0 of Social Security" would be a sentence about
    * a zero, so the parts drop out one at a time and the axis keeps its name.
    */
-  it('drops the caption\u2019s clause when there is no benefit to name', () => {
+  it('drops the caption’s clause when there is no benefit to name', () => {
     render(<App />);
     fireEvent.change(
       screen.getByRole('slider', { name: /social security benefit/i }),
@@ -424,7 +424,7 @@ describe('App', () => {
     ).toBeInTheDocument();
   });
 
-  it('adds the tax-exempt interest to the chart\u2019s axis caption', () => {
+  it('adds the tax-exempt interest to the chart’s axis caption', () => {
     render(<App />);
     fireEvent.change(
       screen.getByRole('slider', { name: /tax-exempt \(municipal\) interest/i }),
@@ -580,7 +580,7 @@ describe('the shape every step shares', () => {
     expect(landmarks('step-benefit')).toEqual(['control', 'details']);
   });
 
-  it('puts the step\u2019s control on the axis its own chart sweeps', () => {
+  it('puts the step’s control on the axis its own chart sweeps', () => {
     render(<App />);
     const slider = screen.getByRole('slider', {
       name: /other income \(not social security\)/i,
@@ -593,7 +593,7 @@ describe('the shape every step shares', () => {
    * the drawn curve back at the value the reader picked, which is the number
    * the chart cannot show them without being pointed at.
    */
-  it('reads the torpedo curve back at the reader\u2019s own income', () => {
+  it('reads the torpedo curve back at the reader’s own income', () => {
     render(<App />);
     const readout = (): HTMLElement =>
       document.querySelector('#step-torpedo .slider-readout') as HTMLElement;
@@ -622,7 +622,7 @@ describe('the shape every step shares', () => {
    * 400% explainer opens a paragraph the same way about a MAGI figure, and it
    * is a section lead inside a disclosure rather than a label on the chart.
    */
-  it('opens on the reader\u2019s income rather than a label for it', () => {
+  it('opens on the reader’s income rather than a label for it', () => {
     render(<App />);
     const readout =
       document.querySelector('#step-torpedo .slider-readout') as HTMLElement;
@@ -1268,9 +1268,8 @@ describe('scenario recap', () => {
   it('names the return the defaults describe', () => {
     render(<App />);
     expect(scenarioRecap()).toHaveTextContent(
-      'Everything from here on prices one return: 2026 brackets and standard ' +
-        'deduction, a single filer, under 65, collecting $24,852 of Social ' +
-        'Security a year.',
+      'One year’s return: 2026 brackets and standard deduction, a single ' +
+        'filer, under 65, collecting $24,852 of Social Security per year.',
     );
   });
 
@@ -1282,9 +1281,9 @@ describe('scenario recap', () => {
       { target: { value: '48000' } },
     );
     expect(scenarioRecap()).toHaveTextContent(
-      'Everything from here on prices one return: 2026 brackets and standard ' +
-        'deduction, a married couple filing jointly, under 65, collecting ' +
-        '$48,000 of Social Security a year.',
+      'One year’s return: 2026 brackets and standard deduction, a married ' +
+        'couple filing jointly, under 65, collecting $48,000 of Social ' +
+        'Security per year.',
     );
   });
 
@@ -1331,21 +1330,22 @@ describe('scenario recap', () => {
    */
   it('names an advanced input once it is set, and only then', () => {
     render(<App />);
-    expect(scenarioRecap()).not.toHaveTextContent('tax-exempt interest');
+    expect(scenarioRecap()).not.toHaveTextContent('municipal interest');
     expect(scenarioRecap()).not.toHaveTextContent('Advanced inputs');
 
     fireEvent.change(screen.getByLabelText('Tax-Exempt (Municipal) Interest'), {
       target: { value: '5000' },
     });
     expect(scenarioRecap()).toHaveTextContent(
-      'collecting $24,852 of Social Security a year and holding $5,000 of ' +
-        'tax-exempt interest.',
+      'collecting $24,852 of Social Security per year. Plus $5,000 in ' +
+        'municipal interest.',
     );
 
     fireEvent.change(screen.getByLabelText('Tax-Exempt (Municipal) Interest'), {
       target: { value: '0' },
     });
-    expect(scenarioRecap()).not.toHaveTextContent('tax-exempt interest');
+    expect(scenarioRecap()).not.toHaveTextContent('municipal interest');
+    expect(scenarioRecap()).not.toHaveTextContent('Plus');
   });
 
   it('names the gift, which the benefit and the interest do not cover', () => {
@@ -1354,17 +1354,17 @@ describe('scenario recap', () => {
       target: { value: '26750' },
     });
     expect(scenarioRecap()).toHaveTextContent(
-      'collecting $24,852 of Social Security a year and giving $26,750 ' +
-        'straight to charity out of an IRA.',
+      'collecting $24,852 of Social Security per year. Plus $26,750 in ' +
+        'qualified charitable distributions.',
     );
   });
 
   /**
-   * Three clauses take a serial comma where two take a bare "and", and the
-   * bullet that asked for this named both advanced inputs at once — so the
-   * whole sentence, from the year to the gift, is worth pinning once.
+   * Two figures behind one "Plus" take a bare "and", and the bullet that asked
+   * for this named both advanced inputs at once — so the whole recap, from the
+   * year to the gift, is worth pinning end to end once.
    */
-  it('runs both advanced inputs into the sentence it already had', () => {
+  it('names both advanced inputs in the sentence they share', () => {
     render(<App />);
     fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Jointly' }));
     fireEvent.click(screen.getByRole('checkbox', { name: 'Age 65 or older' }));
@@ -1379,26 +1379,27 @@ describe('scenario recap', () => {
       target: { value: '26750' },
     });
     expect(scenarioRecap()).toHaveTextContent(
-      'Everything from here on prices one return: 2026 brackets and standard ' +
-        'deduction, a married couple filing jointly, one spouse 65 or older, ' +
-        'collecting $38,500 of Social Security a year, holding $3,750 of ' +
-        'tax-exempt interest, and giving $26,750 straight to charity out of ' +
-        'an IRA.',
+      'One year’s return: 2026 brackets and standard deduction, a married ' +
+        'couple filing jointly, one spouse 65 or older, collecting $38,500 ' +
+        'of Social Security per year. Plus $3,750 in municipal interest and ' +
+        '$26,750 in qualified charitable distributions.',
     );
   });
 
   /**
-   * The gift is a subtraction from the return, so it cannot arrive behind the
-   * same "plus" as the interest: "plus $26,750 given to charity" reads as
-   * $26,750 of income, which is the opposite of what it is. Each clause
-   * carries its own verb instead.
+   * The two figures a reader set by hand get a sentence of their own rather
+   * than two more clauses hung off the filer: the first sentence describes a
+   * filer, and these are neither facts about the filer nor a fifth thing of
+   * the same kind. The full stop before "Plus" is the whole difference, so it
+   * is pinned rather than left to a substring that would pass either way.
    */
-  it('does not add the gift on with a plus', () => {
+  it('starts a second sentence rather than extending the first', () => {
     render(<App />);
     fireEvent.change(screen.getByLabelText('Qualified Charitable Distribution'), {
       target: { value: '26750' },
     });
-    expect(scenarioRecap().textContent).not.toMatch(/plus/i);
+    expect(scenarioRecap().textContent).toMatch(/per year\. Plus \$26,750/);
+    expect(scenarioRecap().textContent).not.toMatch(/per year,/);
   });
 
   it('keeps the no-benefit reading a sentence when an input is set', () => {
@@ -1411,7 +1412,7 @@ describe('scenario recap', () => {
       target: { value: '5000' },
     });
     expect(scenarioRecap()).toHaveTextContent(
-      'collecting no Social Security at all and holding $5,000 of tax-exempt ' +
+      'collecting no Social Security at all. Plus $5,000 in municipal ' +
         'interest.',
     );
   });
@@ -2785,7 +2786,7 @@ describe('the live reading under the controls', () => {
     set(benefit, 30_000);
     settle();
     expect(region()).toHaveTextContent(
-      '2026 brackets, a single filer, under 65, collecting $30,000 of Social Security a year.',
+      '2026 brackets, a single filer, under 65, collecting $30,000 of Social Security per year.',
     );
     expect(region()).not.toHaveTextContent('the next dollar is taxed at');
 
@@ -2806,8 +2807,8 @@ describe('the live reading under the controls', () => {
     set(/tax-exempt \(municipal\) interest/i, 10_000);
     settle();
     expect(region()).toHaveTextContent(
-      'collecting $24,852 of Social Security a year and holding $10,000 of ' +
-        'tax-exempt interest.',
+      'collecting $24,852 of Social Security per year. Plus $10,000 in ' +
+        'municipal interest.',
     );
     expect(region()).not.toHaveTextContent('Muni interest');
   });

@@ -9,14 +9,14 @@ This is one page that draws that cost across every income level for one
 reader's own return, and marks the stretches worth filling and the ones worth
 stepping around.
 
-**Live:** https://ecao310.github.io/congenial-octo-spork/preview/
+**Live:** https://ecao310.github.io/congenial-octo-spork/
 
-`dev` is the working branch, and that URL is where it publishes. The bare
-https://ecao310.github.io/congenial-octo-spork/ is the same Pages site's other
-build: it serves `main`, which has none of this rewrite on it and still opens
-as *Marginal Tax Rate*. Nothing here has been merged there yet, and until it
-is, the preview path is the page this README describes — see
-[Deployment](#deployment) for why one repo publishes two apps.
+`main` is the working branch, and that URL is where it publishes. The rewrite
+this README describes has been merged there, so the front door is now this
+page. The other build on the same Pages site is nested under it at
+https://ecao310.github.io/congenial-octo-spork/preview/ , which serves `dev`
+and is where work in flight goes out — see [Deployment](#deployment) for why
+one repo publishes two apps.
 
 ## The two steps
 
@@ -167,15 +167,19 @@ Every push to `dev` publishes a preview alongside it, at
 https://ecao310.github.io/congenial-octo-spork/preview/ . The repo has one
 Pages site, so `.github/workflows/deploy-preview.yml` rebuilds main's site
 verbatim from `main` and nests the dev build underneath it. The production URL
-therefore always serves `main`; `dev` never needs to be merged to be seen —
-and, for as long as `main` is the pre-rewrite app, the production URL is not
-this page. That is why the link at the top of this file is the preview one.
+therefore always serves `main`, and `dev` never needs to be merged to be seen.
+That is what the preview was for while this page was still being written out of
+the app it replaced, and it is what the next rewrite will use.
 
 `the front door` in `src/meta.test.ts` holds the two together: it reads the
 working branch out of the sentence under that link, finds the workflow that
 triggers on that branch, derives the base that workflow builds with, and fails
-if the link and the workflow stop agreeing. Merging `dev` into `main` is
-therefore a README edit the test will ask for rather than one to remember.
+if the link and the workflow stop agreeing. What it cannot see is which branch
+is ahead of which: this file went on calling `main` the pre-rewrite app after
+the merge had already landed, and the test stayed green the whole time, because
+the link and the workflow it named still agreed with each other. Moving the
+working branch is a README edit; noticing that nobody made it is still a human
+job.
 
 ---
 

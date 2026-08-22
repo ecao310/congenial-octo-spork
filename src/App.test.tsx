@@ -1909,6 +1909,146 @@ describe('the torpedo chart’s right edge', () => {
   });
 });
 
+/* ------------------------------------------------------------------ */
+/*  The axis, taken apart                                             */
+/* ------------------------------------------------------------------ */
+
+/**
+ * `totalIncomeFor` is what "total income" means on this page: other income
+ * less what went straight to charity, plus the *whole* benefit, plus
+ * tax-exempt interest. Three places take a figure on that axis apart for the
+ * reader rather than just quoting it — the tooltip head, step 2's opening
+ * line and the plot's accessible name — and each of them hands over an
+ * addition the reader can do. So each of them has to name every term the
+ * total contains, or the addition visibly fails: the opening line used to
+ * name the benefit and stop, and at $3,750 of tax-exempt interest it said the
+ * axis began at $28,602 beside arithmetic that reached $24,852.
+ *
+ * These read the figures back out of the prose and add them up, rather than
+ * matching a sentence, so they hold whatever the wording becomes.
+ */
+describe('the axis, taken apart', () => {
+  /** Every dollar figure in a sentence, in the order it says them. */
+  const dollars = (text: string): number[] =>
+    [...text.matchAll(/\$[\d,]+/g)].map((m) => Number(m[0].replace(/[$,]/g, '')));
+
+  const stepIntro = (): string =>
+    (
+      screen
+        .getByRole('heading', { name: 'The tax torpedo' })
+        .closest('section')!
+        .querySelector('.step-intro') as HTMLElement
+    ).textContent!;
+
+  const chartLabel = (): string =>
+    screen
+      .getByRole('img', { name: /^Chart: the marginal tax rate/ })
+      .getAttribute('aria-label')!;
+
+  const setSlider = (name: RegExp, value: string): void => {
+    fireEvent.change(screen.getByRole('slider', { name }), { target: { value } });
+  };
+
+  it('adds up on the return the page opens with', () => {
+    render(<App />);
+    // from, to, the benefit, the $0 the other-income range starts at, the edge
+    const [from, to, benefit, , edge] = dollars(stepIntro());
+    expect(benefit).toBe(AVG_ANNUAL_SS_BENEFIT);
+    expect(from).toBe(benefit);
+    expect(to).toBe(benefit + edge);
+  });
+
+  it('counts tax-exempt interest in both ends of the span it names', () => {
+    render(<App />);
+    setSlider(/tax-exempt \(municipal\) interest/i, '3750');
+    const [from, to, benefit, interest, , edge] = dollars(stepIntro());
+    expect(interest).toBe(3_750);
+    // Muni interest never moves: it is in the left edge and in the right one.
+    expect(from).toBe(benefit + interest);
+    expect(to).toBe(benefit + interest + edge);
+  });
+
+  it('takes the gift off the front of the income, not off the left edge', () => {
+    render(<App />);
+    setSlider(/qualified charitable distribution/i, '10000');
+    const [from, to, benefit, , edge, gift] = dollars(stepIntro());
+    expect(gift).toBe(10_000);
+    // "The first $10,000 of it": at $0 of other income none of the gift has
+    // happened yet, so the left edge is the benefit alone and only the right
+    // edge is $10,000 short. A flat "less $10,000" would be wrong here by
+    // exactly the gift.
+    expect(from).toBe(benefit);
+    expect(to).toBe(benefit + edge - gift);
+  });
+
+  it('adds up with both advanced inputs set at once', () => {
+    render(<App />);
+    setSlider(/tax-exempt \(municipal\) interest/i, '3750');
+    setSlider(/qualified charitable distribution/i, '26750');
+    const [from, to, benefit, interest, , edge, gift] = dollars(stepIntro());
+    expect([interest, gift]).toEqual([3_750, 26_750]);
+    expect(from).toBe(benefit + interest);
+    expect(to).toBe(benefit + interest + edge - gift);
+  });
+
+  /**
+   * The accessible name is the same sentence for a listener, and it was wrong
+   * in the same way, so it is pinned the same way.
+   */
+  it('names both fixed halves to a screen reader, and still adds up', () => {
+    render(<App />);
+    setSlider(/tax-exempt \(municipal\) interest/i, '3750');
+    setSlider(/qualified charitable distribution/i, '26750');
+    expect(chartLabel()).toContain(
+      'a fixed $24,852 of Social Security and $3,750 of tax-exempt interest',
+    );
+    expect(chartLabel()).toContain('given straight to charity');
+    const [from, to, benefit, interest, , edge, gift] = dollars(chartLabel());
+    expect(from).toBe(benefit + interest);
+    expect(to).toBe(benefit + interest + edge - gift);
+  });
+
+  /**
+   * And the third place, which quotes the total for a hovered point and then
+   * decomposes it. The gift keeps its own line below the head — the x-axis is
+   * income before the gift, so the head's addition is the total before it
+   * comes off — but tax-exempt interest is inside the figure the head quotes.
+   */
+  it('names the tax-exempt interest inside the total the tooltip quotes', () => {
+    render(
+      <CustomTooltip
+        active
+        payload={[{ payload: { income: 20_000, marginalRate: 15, totalTax: 768 } }]}
+        ssBenefit={AVG_ANNUAL_SS_BENEFIT}
+        segments={[]}
+        muniInterest={10_000}
+        year={PAGE_TAX_YEAR}
+      />,
+    );
+    const head = document.querySelector('.chart-tooltip-head') as HTMLElement;
+    expect(head).toHaveTextContent(
+      'Total income $54,852 · $24,852 SS + $10,000 tax-exempt + $20,000 other income',
+    );
+    const [total, ...parts] = dollars(head.textContent!);
+    expect(parts.reduce((a, b) => a + b, 0)).toBe(total);
+  });
+
+  it('leaves the head as it was when there is no tax-exempt interest', () => {
+    render(
+      <CustomTooltip
+        active
+        payload={[{ payload: { income: 20_000, marginalRate: 15, totalTax: 768 } }]}
+        ssBenefit={AVG_ANNUAL_SS_BENEFIT}
+        segments={[]}
+        year={PAGE_TAX_YEAR}
+      />,
+    );
+    expect(document.querySelector('.chart-tooltip-head')).toHaveTextContent(
+      'Total income $44,852 · $24,852 SS + $20,000 other income',
+    );
+  });
+});
+
 
 /**
  * The close.

@@ -8157,3 +8157,115 @@ prose. It is four tasks in one bullet and probably wants splitting into four
 before any of it is picked up. Note that the meta-reference sub-item and the
 two explainer sentences this run rewrote ("in the corner of the plot") are the
 same complaint: prose that describes the page's own furniture.
+
+================================================================
+Backlog 7 — "Charity and municipal interest. Includes municipal
+interest in total income, but excludes QCD."
+================================================================
+
+### The bullet, split first
+
+It arrived as one `[ ]` holding four sub-items. Split into four bullets,
+each keeping its own wording verbatim; this run did the first. The other
+three — the step-1 summary naming the advanced inputs, the check against IRS
+figures, and stripping meta references out of the prose — are now the next
+three items in Backlog 7.
+
+### What was actually wrong
+
+`totalIncomeFor` (tax.ts:970) has always been right: `ordinaryIncomeAfterQcd
++ ltcg + ssBenefit + muniInterest`, muni in and the gift out, with a comment
+saying why and seven tests on it at tax.test.ts:776. So the arithmetic was
+never the defect. The defect was in the three places that hand the reader
+that arithmetic to do:
+
+- `CustomTooltip`'s head — "Total income $X · $B SS + $O other income"
+- step 2's opening line — "from $X to $Y — the $B benefit set above, which
+  does not move, plus $0 to $M of other income"
+- the plot's `aria-label`, which is the same sentence for a listener
+
+All three named the benefit and stopped. Measured in a real browser at
+$3,750 of tax-exempt interest: the opening line said the axis began at
+$28,602 beside arithmetic that reached $24,852. Off by the muni slider,
+exactly, in a sentence whose whole purpose is to let the reader add it up.
+
+The figcaption under the axis was already correct — `axisIncludes` /
+`axisCaption` (App.tsx:1138) lists both parts and the gift — which is why
+this stayed invisible: one of the four sentences about the axis had been
+fixed and the other three had not.
+
+### The fix
+
+Two consts beside `axisCaption`, off the same `axisIncludes` list:
+
+- `axisFixedProse` — the part of a figure on this axis the income slider
+  cannot move, as prose. Falls back to `$0 of Social Security` when both are
+  zero, which is what the aria-label already said in that case, so the
+  default reading is unchanged to the character.
+- `axisGiftClause` — `, less the first $G of it given straight to charity`.
+
+"The first ... of it" rather than a flat subtraction, and that phrasing is
+the one real decision here. `qcdFor` caps the gift by the ordinary income
+there is to take it out of, so at the axis's left edge no part of a $26,750
+gift has happened yet and that edge is the fixed part on its own. A flat
+"less $26,750" reads true at the right edge and is wrong by the whole gift
+at the left one — and this sentence names both edges by figure, so it would
+have been visibly wrong. Confirmed in the browser: with muni $3,750 and gift
+$26,750, `$24,852 + $3,750 = $28,602` at the left and
+`$24,852 + $3,750 + $150,000 − $26,750 = $151,852` at the right, both
+matching the figures the sentence quotes.
+
+Step 2's opening line lost "which does not move" — "a fixed" carries it in
+three fewer words, and the alternative was "neither of which moves" on a
+branch.
+
+The tooltip head gained ` + $I tax-exempt` when muni is set.
+
+### What was considered and left
+
+The tooltip head's own addition still does not close when a gift is set:
+at $92,500 of other income it quotes $94,352 and breaks out
+`$24,852 + $3,750 + $92,500`, which is $121,102. That is by construction —
+the x-axis is income *before* the gift, so the head's terms are the axis
+figure taken apart — and the lime line directly beneath it exists to say so:
+"Less $26,750 given straight to charity — $65,750 of it reaches the return".
+The gift has a correction sitting under the head in its own colour, with two
+tests on it (App.test.tsx:1506, :1520). Tax-exempt interest had nothing of
+the kind, which is what made it the defect and not this. Left alone rather
+than adding a fourth term the lime line would then repeat.
+
+`axisCaption` also left alone: it names the contents of a figure, not the
+ends of a span, so it offers no addition to fail.
+
+### Tests
+
+660 → 667. One new block, `the axis, taken apart`, which reads the dollar
+figures back out of the prose with a regex and adds them up rather than
+matching a sentence — so it holds whatever the wording becomes. Seven cases:
+the default reading unchanged, muni in both edges, the gift off the front
+and not off the left edge, both set at once, the aria-label the same way,
+and the tooltip head with and without muni.
+
+Mutation-checked by pasting the old prose back at all four sites: 5 of the 7
+go red — the two that pin the unchanged default reading stay green, which is
+the point of having them.
+
+### Verification
+
+`tsc -b`, `eslint . --max-warnings 0`, `vitest run` — clean, 667/667.
+`npm run build`, then real Chromium via `playwright-core` against `vite
+preview` on 4181: zero page errors, all four sentences read back and checked
+by hand against the figures above, the close's own Total income gloss still
+correct at $31,852. Preview killed, driver script deleted. No CSS touched.
+
+### Next
+
+Topmost unchecked is now "Summary on bottom left should dynamically include
+the advanced inputs" — the `scenario-recap` at App.tsx:1614 currently ends
+with "Plus whatever is set under Advanced inputs above.", a pointer where the
+example in the bullet wants the figures. `advancedSet` (App.tsx:948) already
+holds them as `{label, value}` pairs and the live-region `reading`
+(App.tsx:1274) already names them for exactly this reason — the recap is the
+one place that still points instead of saying. Note the bullet's example
+opens "One year's return:" where the page says "Everything from here on
+prices one return:", so it may want the lead rewritten too.

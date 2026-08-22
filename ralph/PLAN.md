@@ -1,9 +1,9 @@
 Backlog 7
 [x] make "Lines" dropdown render on the corner of the graph to take up less vertical space. simplify it to just have checkmarks for irmaa and 400% fpl. no explainers there needed. also call the dropdown something different like "breakpoints".
-[ ] * Charity and municipal interest. Includes municipal interest in total income, but excludes QCD.
-* Summary on bottom left should dynamically include the advanced inputs. Example: One year’s return: 2026 brackets and standard deduction, a married couple filing jointly, one spouse 65 or older, collecting $38,292 of Social Security per year. Plus $3750 in municipal interest and $26750 qualified charitable distributions.
-* Check against irs numbers
-* Text shouldn’t have meta references. For example, remove wording like “A gift anywhere near that figure is more income than step 2’s chart used to draw, so the slider runs to the statutory limit and that chart’s right edge moves out to hold it.”
+[x] Charity and municipal interest. Includes municipal interest in total income, but excludes QCD.
+[ ] Summary on bottom left should dynamically include the advanced inputs. Example: One year’s return: 2026 brackets and standard deduction, a married couple filing jointly, one spouse 65 or older, collecting $38,292 of Social Security per year. Plus $3750 in municipal interest and $26750 qualified charitable distributions.
+[ ] Check against irs numbers
+[ ] Text shouldn’t have meta references. For example, remove wording like “A gift anywhere near that figure is more income than step 2’s chart used to draw, so the slider runs to the statutory limit and that chart’s right edge moves out to hold it.”
 
 Backlog 6 (21 Aug 2026)
 [x] remove "next - step 2 of 2" link. remove tab links for your benefit and tax torpedo since there's only 1 thing now. 

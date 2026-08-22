@@ -340,13 +340,20 @@ export const CustomTooltip: React.FC<CustomTooltipProps> = ({
   const given = qcdFor(scenario);
   // Not `point.income + ssBenefit`: tax-exempt interest is spent like any
   // other dollar and the gift never reaches the filer, so both belong in what
-  // this return takes in. See `totalIncomeFor`.
+  // this return takes in. See `totalIncomeFor`. Which is why the head below
+  // has to name the interest as well: it quotes the total and then takes it
+  // apart, and a decomposition that leaves out a term the total contains is
+  // an addition the reader can watch fail.
   const totalIncome = totalIncomeFor(scenario);
   return (
     <div className="chart-tooltip">
       <div className="chart-tooltip-head">
         Total income {formatCurrency(totalIncome)} · {formatCurrency(ssBenefit)}{' '}
-        SS + {formatCurrency(point.income)} other income
+        SS
+        {muniInterest > 0
+          ? ` + ${formatCurrency(muniInterest)} tax-exempt`
+          : ''}{' '}
+        + {formatCurrency(point.income)} other income
       </div>
       {given > 0 && (
         <div style={{ color: PALETTE.lime }}>
@@ -1149,6 +1156,38 @@ const App: React.FC = () => {
     (qcd > 0 ? `, less ${formatCurrency(qcd)} given straight to charity` : '');
 
   /**
+   * The same list again, as the fixed part of a span rather than the contents
+   * of a point.
+   *
+   * Two sentences on this page describe the axis end to end instead of
+   * describing a figure on it: step 2's opening line and the plot's accessible
+   * name. Both offered the reader an addition — a benefit that does not move,
+   * plus $0 to the right edge of other income — and both named the benefit and
+   * stopped there, so both stopped adding up the moment the muni slider moved.
+   * At $3,750 of tax-exempt interest the opening line said the axis began at
+   * $28,602 while the arithmetic beside it reached $24,852. They read this
+   * now, and `totalIncomeFor` is the definition all three of them share.
+   */
+  const axisFixedProse =
+    axisIncludes.length > 0
+      ? axisIncludes.join(' and ')
+      : `${formatCurrency(ssBenefit)} of Social Security`;
+
+  /**
+   * And what those two sentences take back off the far end.
+   *
+   * "The first ... of it" rather than a flat subtraction, because `qcdFor`
+   * caps the gift by the ordinary income there is to take it out of: at the
+   * left edge there is no other income yet, so none of the gift has happened
+   * and that edge is the fixed part on its own. A flat "less $26,750" would
+   * be true at the right edge and $26,750 wrong at the left one.
+   */
+  const axisGiftClause =
+    qcd > 0
+      ? `, less the first ${formatCurrency(qcd)} of it given straight to charity`
+      : '';
+
+  /**
    * The average rate, for reading next to the marginal one.
    *
    * Every rate the page quotes today is the price of the *next* dollar. What
@@ -1646,10 +1685,10 @@ const App: React.FC = () => {
             <p className="step-intro">
               The chart prices every total income from{' '}
               {formatCurrency(axisDomain[0])} to {formatCurrency(axisDomain[1])}{' '}
-              &mdash; the {formatCurrency(ssBenefit)} benefit set above, which
-              does not move, plus $0 to {formatCurrency(axisMax)} of other
-              income, far enough right to reach the last thing that happens to
-              this return. The slider says which point along it is yours.
+              &mdash; a fixed {axisFixedProse} set above, plus $0 to{' '}
+              {formatCurrency(axisMax)} of other income{axisGiftClause}, far
+              enough right to reach the last thing that happens to this return.
+              The slider says which point along it is yours.
             </p>
 
             <figure className="chart-figure">
@@ -1723,9 +1762,11 @@ const App: React.FC = () => {
                 role="img"
                 aria-label={`Chart: the marginal tax rate on the next dollar of other income, plotted against total income from ${formatCurrency(
                   axisDomain[0],
-                )} to ${formatCurrency(axisDomain[1])} — a fixed ${formatCurrency(
-                  ssBenefit,
-                )} of Social Security plus $0 to ${formatCurrency(axisMax)} of other income.`}
+                )} to ${formatCurrency(
+                  axisDomain[1],
+                )} — a fixed ${axisFixedProse} plus $0 to ${formatCurrency(
+                  axisMax,
+                )} of other income${axisGiftClause}.`}
               >
                 <ResponsiveContainer width="100%" height="100%">
                   <AreaChart

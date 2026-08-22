@@ -145,7 +145,7 @@ longer the rate the arithmetic reaches.
 ```bash
 npm install
 npm run dev      # start dev server
-npm run test     # vitest, 654 tests
+npm run test     # vitest, 655 tests
 npm run lint     # eslint
 npm run build    # tsc -b && vite build
 ```

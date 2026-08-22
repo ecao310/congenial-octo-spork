@@ -1,6 +1,6 @@
 import { render, screen, fireEvent, within, act } from '@testing-library/react';
 import { vi } from 'vitest';
-import App, { CustomTooltip, READING_SETTLE_MS } from './App';
+import App, { ADDRESS_SETTLE_MS, CustomTooltip, READING_SETTLE_MS } from './App';
 import { TAX_YEAR_PARAMS, TAX_YEARS, PAGE_TAX_YEAR } from './utils/tax';
 
 /**
@@ -2383,12 +2383,31 @@ describe('the closing answer', () => {
  * Nine `useState` values used to be the whole of it, so a refresh threw the
  * return away and there was nothing to send to anyone. Seven are left, two
  * having gone with the steps that set them. These are the page's
- * half of `scenarioUrl` — that the link is read on mount, written on every
- * change, and never pushed.
+ * half of `scenarioUrl` — that the link is read on mount, written once the
+ * control that changed it has settled, and never pushed.
  */
 describe('the return in the address bar', () => {
+  /**
+   * Full fake timers here, where most of the file fakes only the clock: the
+   * write is debounced by `ADDRESS_SETTLE_MS`, so every assertion about the
+   * address is an assertion about which side of that delay it is on. The
+   * system time still has to be set, because the engine's own default year
+   * follows the calendar.
+   */
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(`${PAGE_TAX_YEAR}-07-01T00:00:00Z`));
+  });
+
   const openAt = (search: string): void => {
     window.history.replaceState(null, '', `/${search}`);
+  };
+
+  /** Let whatever was last moved come to rest, and the address catch up. */
+  const settle = (): void => {
+    act(() => {
+      vi.advanceTimersByTime(ADDRESS_SETTLE_MS);
+    });
   };
 
   const incomeSlider = (): HTMLElement =>
@@ -2437,13 +2456,71 @@ describe('the return in the address bar', () => {
     expect(window.location.search).toBe('');
 
     fireEvent.change(incomeSlider(), { target: { value: '90000' } });
+    settle();
     expect(window.location.search).toBe('?income=90000');
 
     fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Jointly' }));
+    settle();
     expect(window.location.search).toBe('?filing=mfj&income=90000');
 
     fireEvent.click(screen.getByRole('checkbox', { name: 'Age 65 or older' }));
+    settle();
     expect(window.location.search).toContain('senior=1');
+  });
+
+  /**
+   * Why the write waits at all, and the defect it was added for.
+   *
+   * Browsers cap the history API — Safari at 100 `replaceState` calls per 30
+   * seconds, and it throws rather than dropping the 101st. Writing on every
+   * notch spent that budget inside one drag of the income slider, the throw
+   * landed in an effect with no error boundary above it, and React unmounted
+   * the document: the reader moved a slider and the page went black. So a
+   * drag has to be one write, and a `replaceState` that fails has to stay
+   * inside the page rather than take it down.
+   */
+  it('spends one write on a whole drag, and survives one that fails', () => {
+    const calls: string[] = [];
+    const real = window.history.replaceState.bind(window.history);
+    const spy = vi
+      .spyOn(window.history, 'replaceState')
+      .mockImplementation((state, unused, url) => {
+        calls.push(String(url));
+        /* Safari's own message, thrown at Safari's own limit. */
+        if (calls.length > 100) {
+          throw new DOMException(
+            'Attempt to use history.replaceState() more than 100 times per 30 seconds',
+            'SecurityError',
+          );
+        }
+        real(state, unused, url);
+      });
+    try {
+      render(<App />);
+      // Arrival is the one write that does not wait: it normalises the link.
+      expect(calls).toHaveLength(1);
+
+      // A drag: sixty notches of the slider, no pause anywhere in it.
+      for (let income = 30_000; income <= 89_500; income += 1000) {
+        fireEvent.change(incomeSlider(), { target: { value: String(income) } });
+      }
+      expect(calls).toHaveLength(1);
+      settle();
+      expect(calls).toHaveLength(2);
+      expect(window.location.search).toBe('?income=89000');
+
+      // And a write the browser refuses is a URL that did not change, not a
+      // page that went away.
+      calls.length = 200;
+      fireEvent.change(incomeSlider(), { target: { value: '95000' } });
+      expect(() => settle()).not.toThrow();
+      expect(incomeSlider()).toHaveValue('95000');
+      expect(
+        screen.getByRole('heading', { name: /your social security benefit/i }),
+      ).toBeInTheDocument();
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   /**
@@ -2457,6 +2534,7 @@ describe('the return in the address bar', () => {
     for (const value of ['40000', '50000', '60000', '70000']) {
       fireEvent.change(incomeSlider(), { target: { value } });
     }
+    settle();
     expect(window.location.search).toBe('?income=70000');
     expect(window.history.length).toBe(before);
   });
@@ -2466,6 +2544,7 @@ describe('the return in the address bar', () => {
     const first = render(<App />);
     fireEvent.change(incomeSlider(), { target: { value: '90000' } });
     chooseFilingStatus('Married Filing Jointly');
+    settle();
     const survived = window.location.search;
     first.unmount();
 
@@ -2487,6 +2566,7 @@ describe('the return in the address bar', () => {
     render(<App />);
 
     fireEvent.change(incomeSlider(), { target: { value: '90000' } });
+    settle();
     expect(window.location.hash).toBe('#step-torpedo');
     expect(window.location.search).toBe('?income=90000');
   });

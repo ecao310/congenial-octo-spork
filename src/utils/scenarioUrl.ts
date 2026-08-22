@@ -42,8 +42,13 @@
  * **Writing is `replaceState`, never `pushState`.** A slider fires a change per
  * notch, so pushing would bury the back button under one entry per $500 of
  * income and make leaving the page a matter of holding it down. Replacing
- * keeps the address shareable at every instant and keeps Back meaning "the
- * page I came from".
+ * keeps the address shareable and keeps Back meaning "the page I came from".
+ *
+ * **And not on every notch either.** Browsers rate-limit the history API, and
+ * Safari throws rather than dropping the call that goes over — so writing
+ * per notch put one ordinary drag past the limit and took the page down with
+ * it. The page writes once the control has settled and once more on arrival;
+ * `ADDRESS_SETTLE_MS` and `writeAddress` in App.tsx are where that lives.
  *
  * Everything a link carries is clamped on the way in against the same bound
  * the page's own slider would have held it inside, and every clamp says what

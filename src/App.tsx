@@ -53,7 +53,7 @@ import {
   PAGE_FILING_STATUSES,
   MAX_MUNI_INTEREST,
 } from './utils/scenarioUrl';
-import type { PageFilingStatus } from './utils/scenarioUrl';
+import type { PageFilingStatus, PageScenario } from './utils/scenarioUrl';
 import { formatCurrency } from './utils/format';
 import { CHART, PALETTE } from './palette';
 import type {
@@ -634,6 +634,65 @@ const useSettledReading = (
   return settled;
 };
 
+/**
+ * How long a control has to sit still before the address bar is rewritten, in
+ * milliseconds.
+ *
+ * This one is not a matter of taste. Browsers rate-limit the history API:
+ * Safari throws a `SecurityError` on the 101st `replaceState` in 30 seconds,
+ * and Chrome and Firefox silently drop the call and log. A range input fires a
+ * change per notch, so one unhurried drag of the income slider spends the
+ * whole budget — measured at 101 calls in a single sweep of the track and
+ * back — and on Safari the throw lands inside an effect, where React has no
+ * boundary to catch it and unmounts the page: the reader moves a slider and
+ * the screen goes black.
+ *
+ * A trailing debounce is the fix rather than a cap, because the address is not
+ * a log of the drag. It is where the drag *stopped*, which is the one return
+ * worth carrying, and a debounce writes exactly that and nothing else — a
+ * whole drag is one call. The delay is what bounds the worst case: a reader who
+ * stutters, pausing just long enough each time to fire another write, still
+ * cannot get past 30_000 / `ADDRESS_SETTLE_MS` calls in the window Safari
+ * counts over, and at 400ms that is 75 against a budget of 100.
+ *
+ * Short enough that it is not a wait. Nobody reads the address bar mid-drag,
+ * and the one control that depends on it — Copy link — flushes this itself
+ * rather than trusting the timer. See `writeAddress`.
+ */
+export const ADDRESS_SETTLE_MS = 400;
+
+/**
+ * Put a return in the address bar, and never take the page down over it.
+ *
+ * `replaceState`, not `pushState`: a slider fires a change per notch, so
+ * pushing would spend a history entry on every $500 of income and turn Back
+ * into a scrub through the drag that got here. Replacing keeps the address
+ * shareable and Back still leaves the page.
+ *
+ * The whole URL is rebuilt each time rather than the search alone, because
+ * `replaceState` takes a URL: passing a bare `?query` would drop the `#step-…`
+ * fragment the reader may have arrived on.
+ *
+ * The `catch` is the seatbelt under `ADDRESS_SETTLE_MS`, not a substitute for
+ * it. A browser that refuses to rewrite the address has denied the reader a
+ * convenience; it has not made anything on the page untrue, and the failure it
+ * throws must not be allowed to reach React, which would unmount the whole
+ * document over a URL. There is nothing to tell the reader either — the page
+ * they are looking at is the page they asked for — so it is swallowed rather
+ * than reported.
+ */
+const writeAddress = (scenario: PageScenario): void => {
+  try {
+    window.history.replaceState(
+      window.history.state,
+      '',
+      scenarioUrl(scenario, window.location),
+    );
+  } catch {
+    /* See above: the address bar is a convenience, and the page outranks it. */
+  }
+};
+
 const App: React.FC = () => {
   /**
    * The return this page opened with, read out of the address bar once.
@@ -778,15 +837,31 @@ const App: React.FC = () => {
    *
    * Deliberately not a fallback text field. A second copy of the address on
    * the page is a second thing to keep in step with the return, and it would
-   * be stale the moment a slider moved — where the address bar never is. So
-   * the failure case points at the address bar, which is the same link the
-   * button would have put on the clipboard, character for character. That is
-   * only true because the button copies `location.href` verbatim rather than
-   * building its own URL.
+   * be stale the moment a slider moved — where the address bar catches up on
+   * its own, within `ADDRESS_SETTLE_MS` and at once when this button is
+   * pressed. So the failure case points at the address bar, which is the same
+   * link the button would have put on the clipboard, character for character.
+   * That is only true because the button copies `location.href` verbatim
+   * rather than building its own URL.
    */
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle');
 
   const copyLink = (): void => {
+    /* Flush the address before reading it. The write below is debounced by
+       `ADDRESS_SETTLE_MS`, and a reader who moves a slider and reaches
+       straight for this button would otherwise be handed the return they just
+       left — silently, since the two links differ only in a query string
+       nobody proofreads. Writing it here is what keeps "the button copies
+       what is in the address bar" true at every instant rather than merely
+       400ms after the last one. */
+    writeAddress({
+      filingStatus,
+      ssBenefit,
+      ordinaryIncome,
+      isSenior,
+      spouseIsSenior,
+      muniInterest,
+    });
     void navigator.clipboard
       .writeText(window.location.href)
       .then(() => setCopyState('copied'))
@@ -794,17 +869,26 @@ const App: React.FC = () => {
   };
 
   /**
-   * The address bar, kept in step with the return.
+   * The address bar, kept in step with the return — once the control moving it
+   * has settled.
    *
-   * `replaceState`, not `pushState`: a slider fires a change per notch, so
-   * pushing would spend a history entry on every $500 of income and turn Back
-   * into a scrub through the drag that got here. Replacing means the address
-   * is shareable at every instant and Back still leaves the page.
+   * The debounce is not cosmetic: writing on every notch of a drag runs the
+   * page into the browser's own limit on the history API, which on Safari is a
+   * throw and, uncaught inside an effect, a black screen. `ADDRESS_SETTLE_MS`
+   * has the measurements and `writeAddress` has the seatbelt.
    *
-   * The whole URL is rebuilt each time rather than the search alone, because
-   * `replaceState` takes a URL: passing a bare `?query` would drop the
-   * `#step-…` fragment the reader may have arrived on.
+   * Only the write waits. `setCopyState` is left on the render that changed
+   * the return, because "Copied" stops being true of the clipboard the instant
+   * a control moves rather than 400ms later.
+   *
+   * And only a *change* waits. Arrival writes at once, because nothing is
+   * being dragged on mount — there is no burst to spread out — and because
+   * this is the write that normalises the link the reader came in on, dropping
+   * the keys this page no longer honours. A link that still names a gain or a
+   * tax year is answered by the address bar the moment it is opened rather
+   * than four tenths of a second later. See `decodeScenario`.
    */
+  const addressWritten = useRef(false);
   useEffect(() => {
     const scenario = {
       filingStatus,
@@ -814,16 +898,19 @@ const App: React.FC = () => {
       spouseIsSenior,
       muniInterest,
     };
-    window.history.replaceState(
-      window.history.state,
-      '',
-      scenarioUrl(scenario, window.location),
-    );
-    /* The address just changed, so whatever is on the clipboard is a different
+    let timer: number | undefined;
+    if (addressWritten.current) {
+      timer = window.setTimeout(() => writeAddress(scenario), ADDRESS_SETTLE_MS);
+    } else {
+      addressWritten.current = true;
+      writeAddress(scenario);
+    }
+    /* The return just changed, so whatever is on the clipboard is a different
        return from the one on screen and "Copied" has stopped being true of
        it. Same reasoning as the link note's Dismiss: a message about an
        arrival cannot be kept current, so it goes when the return moves. */
     setCopyState('idle');
+    return () => window.clearTimeout(timer);
   }, [
     filingStatus,
     ssBenefit,

@@ -9316,3 +9316,118 @@ Top of Backlog 8 is now "sometimes the page goes black when slider moves" — a
 real defect and the only one on the list, so it goes first. It will want a
 reproduction before a fix; `App.chart.test.tsx` is where a slider-drag test
 would live.
+
+## Iteration — "sometimes the page goes black when slider moves" (Backlog 8)
+
+### The defect
+
+Real, reproduced, and not in the tax engine. The page writes the return into
+the address bar from an effect keyed to the six scenario values:
+
+    useEffect(() => { window.history.replaceState(…) }, [filing, ss, income, …])
+
+A range input fires a change per notch, so one drag is one `replaceState` per
+notch. Browsers rate-limit the history API, and they do not all fail the same
+way — Chrome and Firefox drop the call and log; **Safari throws a
+`SecurityError` on the 101st call in 30 seconds**. The throw lands inside an
+effect, `main.tsx` renders `<App />` under `StrictMode` and nothing else, and
+React 18 with no error boundary above the root unmounts the entire document.
+The page's background is near-black, so an empty `#root` *is* a black page.
+That is the whole bug, and it explains the "sometimes": it takes about a
+hundred notches, so a short nudge is fine and a real drag is not.
+
+### How it was found and proved
+
+Two passes, because the first one cleared the wrong suspect. A scratch vitest
+file swept every slider through every notch across all four toggle
+combinations under jsdom: no throw anywhere, so the render logic and the tax
+chain were not it. That left the browser, so: `npm run build`, `vite preview`,
+and drive it with `playwright-core` (already in `node_modules`; the installed
+chromium is 1228 while playwright-core wants 1234, so pass `executablePath`).
+A real mouse-down-move-up drag on Chrome threw nothing — Chrome only warns —
+which is why an `addInitScript` that patches `History.prototype.replaceState`
+to throw Safari's own message at Safari's own limit is what actually
+reproduces it. Result before the fix:
+
+    pass 0: replaceState calls 101, root empty? true
+    pageerror: Attempt to use history.replaceState() more than 100 times per 30 seconds
+
+101 calls in one sweep of the track and back. The mechanism is confirmed
+end-to-end: one throw, whole page gone.
+
+### The fix
+
+Two parts, in that order of importance.
+
+**A trailing debounce, `ADDRESS_SETTLE_MS = 400`.** The address is not a log of
+the drag; it is where the drag *stopped*. A trailing debounce writes exactly
+that, so a whole drag is one call. 400ms is what bounds the pathological case
+too — a reader stuttering so as to fire every debounce still tops out at
+30000/400 = 75 calls in the window Safari counts over, against a budget of 100.
+The shape is the one `useSettledReading` already uses for the live region.
+
+**Arrival still writes at once.** Nothing is being dragged on mount, and that
+write is the one that normalises the link the reader came in on — dropping
+`year=2024`, `ltcg=`, `qcd=` and the rest of the keys this page stopped
+honouring. Two existing tests assert exactly that, and they pass unchanged,
+which is the evidence the branch is behaviour-preserving where it matters.
+
+**`writeAddress` swallows the throw.** The seatbelt, not the fix. A browser
+that refuses to rewrite the address has denied a convenience; it has not made
+anything on the page untrue, and it must not be able to reach React.
+
+**Copy link flushes before it reads.** `copyLink` copies `location.href`
+verbatim — that is what makes "the failure message points at the address bar"
+honest — so a debounced write would let a reader who moves a slider and
+reaches straight for the button send the return they just left, differing only
+in a query string nobody proofreads. It calls `writeAddress` first. Verified
+in the browser: URL shows `income=45000` immediately on click, no wait.
+
+### Verified after
+
+    after income drag (4 full sweeps, mouse held): calls 1, root empty? false
+      settled url: ?income=90500, calls after settle: 2
+    after benefit drag: calls 3, root empty? false
+    url right after Copy link (no wait): ?ss=37680&income=45000
+    errors: (none)
+
+Four sweeps of the track spend **one** call (the mount write) while dragging
+and one more on release, against 101 before. Under the Safari-emulating patch
+the page never blanks.
+
+### Tests
+
+Six tests in `the return in the address bar` asserted the address one line
+after `fireEvent.change`. That block now uses full fake timers and a `settle()`
+helper, the same way `the live reading under the controls` does for
+`READING_SETTLE_MS` — four needed `settle()`, and the two that read the address
+on arrival needed nothing, which is the point above.
+
+New: **`spends one write on a whole drag, and survives one that fails`**. It
+spies on `replaceState`, counts, throws Safari's message past 100, and asserts
+sixty notches cost one write, that the write lands after the delay, and that a
+refused write leaves the slider and the page's own heading standing. Mutation
+check: drop the `try/catch` in `writeAddress` and it reddens; drop the
+debounce and it reddens on the count.
+
+`scenarioUrl.ts`'s header said writing "keeps the address shareable at every
+instant", which is the claim the debounce just narrowed — rewritten to say
+what the page now does and to point at `ADDRESS_SETTLE_MS`. The `copyState`
+comment's "where the address bar never is" got the same treatment.
+
+`npx tsc -b`, `npx eslint . --max-warnings 0`, `npx vitest run` (655/655) and
+`npm run build` all clean. README's test count 654 → 655.
+
+### Discovered
+
+Added a bullet: **nothing stands between a thrown exception and a blank
+screen.** The cause is fixed but the shape survives — no error boundary, on a
+page that derives everything from six numbers in a URL. Left as a bullet
+rather than done in passing, because a boundary also hides the next defect
+from this loop, and that trade is worth deciding rather than assuming.
+
+### Next
+
+Top of Backlog 8 is now "if age 65 or older gets unchecked, the both spouses
+box should also automatically uncheck" — small, and the state lives in
+`isSenior`/`spouseIsSenior` with `seniors` derived from both in App.tsx.

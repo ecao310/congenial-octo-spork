@@ -1116,33 +1116,59 @@ describe('advanced inputs', () => {
   });
 });
 
-describe('Tooltip Recommendations', () => {
-  const mockOrdinarySegments = [
-    { rate: 0, start: 0, end: 14000, points: [], type: 'valley' as const },
-    { rate: 15, start: 16000, end: 22000, points: [], type: 'flat' as const },
-    { rate: 22.2, start: 24000, end: 40000, points: [], type: 'hill' as const },
-    { rate: 12, start: 42000, end: 44000, points: [], type: 'valley' as const },
-  ];
-
+describe('What a hovered point is worth', () => {
   describe('CustomTooltip', () => {
     it('does not render if not active', () => {
       const { container } = render(
-        <CustomTooltip
-          active={false}
-          ssBenefit={20000}
-          segments={mockOrdinarySegments}
-        />,
+        <CustomTooltip active={false} ssBenefit={20000} />,
       );
       expect(container.firstChild).toBeNull();
     });
 
-    it('renders normal information without recommendation on a flat segment', () => {
+    /**
+     * Four rows, in order, and nothing after them.
+     *
+     * This is the assertion that keeps advice off a hover. The tooltip used to
+     * close with "stay under $x or over $y" on a hill and "fill this valley"
+     * on a valley — a recommendation about wherever the mouse landed, sitting
+     * inches from `StandingNote`'s recommendation about where the reader
+     * actually stands, and disagreeing with it whenever the two points fell in
+     * different segments. It also carried two distances, to the next IRMAA
+     * cliff and to the 400% poverty line, which are now quoted in the close at
+     * the reader's own income. `children` is pinned rather than the text,
+     * because a row added back would pass every assertion written about the
+     * four that remain.
+     */
+    it('draws four figures and no advice', () => {
+      const { container } = render(
+        <CustomTooltip
+          active
+          payload={[{ payload: { income: 30000, marginalRate: 22.2, totalTax: 2813 } }]}
+          ssBenefit={24852}
+        />,
+      );
+      const tooltip = container.querySelector('.chart-tooltip') as HTMLElement;
+      expect(tooltip.children).toHaveLength(4);
+      expect([...tooltip.children].map((row) => row.textContent)).toEqual([
+        expect.stringContaining('Total income'),
+        expect.stringContaining('Marginal Rate:'),
+        expect.stringContaining('Total Federal Tax:'),
+        expect.stringContaining('Medicare IRMAA:'),
+      ]);
+      // $30,000 sits inside the hump on this return, which is where the hill
+      // advice used to be drawn, and inside the 400% cliff's reach besides.
+      expect(tooltip).not.toHaveTextContent(/Consider/);
+      expect(tooltip).not.toHaveTextContent(/tax hill|tax valley/);
+      expect(tooltip).not.toHaveTextContent(/next cliff/);
+      expect(tooltip).not.toHaveTextContent(/poverty line|premium tax credit/);
+    });
+
+    it('renders the head and the rate on a point off any threshold', () => {
       render(
         <CustomTooltip
           active={true}
           payload={[{ payload: { income: 20000, marginalRate: 15, totalTax: 768 } }]}
           ssBenefit={24852}
-          segments={mockOrdinarySegments}
         />,
       );
       // The head names the axis figure and then takes it apart, because the
@@ -1151,56 +1177,20 @@ describe('Tooltip Recommendations', () => {
         screen.getByText(/Total income \$44,852 · \$24,852 SS \+ \$20,000 other income/),
       ).toBeInTheDocument();
       expect(screen.getByText(/Marginal Rate:/)).toBeInTheDocument();
-      expect(screen.queryByText(/Consider avoiding/)).not.toBeInTheDocument();
-      expect(screen.queryByText(/Consider filling out/)).not.toBeInTheDocument();
     });
 
-    it('renders tax hill recommendation on a hill segment', () => {
-      render(
-        <CustomTooltip
-          active={true}
-          payload={[{ payload: { income: 30000, marginalRate: 22.2, totalTax: 2813 } }]}
-          ssBenefit={24852}
-          segments={mockOrdinarySegments}
-        />,
-      );
-      expect(
-        screen.getByText(
-          /Consider avoiding this tax hill by staying under \$24,000 or over \$40,000/,
-        ),
-      ).toBeInTheDocument();
-    });
-
-    it('renders tax valley recommendation on a valley segment', () => {
-      render(
-        <CustomTooltip
-          active={true}
-          payload={[{ payload: { income: 42000, marginalRate: 12, totalTax: 5330 } }]}
-          ssBenefit={24852}
-          segments={mockOrdinarySegments}
-        />,
-      );
-      expect(
-        screen.getByText(/Consider filling out this tax valley at \$42,000/),
-      ).toBeInTheDocument();
-    });
-
-    it('reports no IRMAA surcharge and the room left below the first cliff', () => {
+    it('reports no IRMAA surcharge below the first cliff', () => {
       render(
         <CustomTooltip
           active={true}
           payload={[{ payload: { income: 20000, marginalRate: 15, totalTax: 768 } }]}
           ssBenefit={24852}
-          segments={mockOrdinarySegments}
         />,
       );
       // Provisional income is $20,000 + half the $24,852 benefit = $32,426,
       // $7,426 over the $25,000 base, so $3,713 of the benefit is taxable and
       // MAGI is $23,713 — against a 2026 first cliff of $109,000.
       expect(screen.getByText('$0/yr')).toBeInTheDocument();
-      expect(
-        screen.getByText(/\$85,287 of MAGI to the next cliff, then \$1,148\/yr more/),
-      ).toBeInTheDocument();
       expect(screen.queryByText(/tier .* of 5/)).not.toBeInTheDocument();
     });
 
@@ -1210,91 +1200,51 @@ describe('Tooltip Recommendations', () => {
           active={true}
           payload={[{ payload: { income: 90000, marginalRate: 22, totalTax: 17000 } }]}
           ssBenefit={24852}
-          segments={mockOrdinarySegments}
         />,
       );
       // $90,000 + the capped $21,124.20 of benefits clears $109,000 of MAGI.
       expect(screen.getByText('$1,148/yr')).toBeInTheDocument();
       expect(screen.getByText(/tier 1 of 5/)).toBeInTheDocument();
-      expect(
-        screen.getByText(/\$25,876 of MAGI to the next cliff, then \$1,736\/yr more/),
-      ).toBeInTheDocument();
     });
 
     /**
-     * The 400% line, priced at the hovered point rather than drawn across the
-     * axis. This is where the poverty-line cliff went when the lines came off
-     * the chart by default: 36B reads a MAGI of its own — the whole benefit,
-     * taxed or not — so it is a third assessment of the same point rather than
-     * a rescaling of Medicare's, and a reader who never switches the line on
-     * still meets it on hover.
+     * Priced at a point chosen so the interest is the whole difference: this
+     * return is $1,876 under the joint cliff on the tax code's reading of it
+     * and $8,124 over on Medicare's. The pair of assertions is the test — the
+     * first alone would pass on a tooltip that had never heard of muni
+     * interest and simply read a MAGI $10,000 too high.
      */
-    it('measures the hovered point against the 400% poverty line', () => {
-      render(
+    it('adds tax-exempt interest back to the MAGI the surcharge is read from', () => {
+      const point = { income: 195000, marginalRate: 24, totalTax: 34000 };
+      const { unmount } = render(
         <CustomTooltip
           active={true}
-          payload={[{ payload: { income: 20000, marginalRate: 15, totalTax: 768 } }]}
+          payload={[{ payload: point }]}
           ssBenefit={24852}
-          segments={mockOrdinarySegments}
-          preMedicare
-        />,
-      );
-      // 36B household income is $20,000 + the whole $24,852 benefit = $44,852,
-      // against a one-person cliff of $62,600.
-      expect(
-        screen.getByText(
-          /\$17,748 of household income to the 400% poverty line, then the credit is gone/,
-        ),
-      ).toBeInTheDocument();
-    });
-
-    it('says the credit is gone once the hovered point is past the line', () => {
-      render(
-        <CustomTooltip
-          active={true}
-          payload={[{ payload: { income: 90000, marginalRate: 22, totalTax: 17000 } }]}
-          ssBenefit={24852}
-          segments={mockOrdinarySegments}
-          preMedicare
-        />,
-      );
-      expect(
-        screen.getByText(/Past the 400% poverty line — no Marketplace premium tax credit/),
-      ).toBeInTheDocument();
-    });
-
-    it('leaves the line out for a return that is already on Medicare', () => {
-      render(
-        <CustomTooltip
-          active={true}
-          payload={[{ payload: { income: 20000, marginalRate: 15, totalTax: 768 } }]}
-          ssBenefit={24852}
-          segments={mockOrdinarySegments}
-        />,
-      );
-      // 36B(c)(2)(B): nobody enrolled in Medicare is eligible for the credit,
-      // so there is nothing to measure and the row is not drawn.
-      expect(screen.queryByText(/poverty line/)).not.toBeInTheDocument();
-    });
-
-    it('adds tax-exempt interest back and doubles the surcharge for a couple', () => {
-      render(
-        <CustomTooltip
-          active={true}
-          payload={[{ payload: { income: 90000, marginalRate: 22, totalTax: 17000 } }]}
-          ssBenefit={24852}
-          segments={mockOrdinarySegments}
           filingStatus="mfj"
           muniInterest={10000}
           beneficiaries={2}
         />,
       );
-      // A joint return is nowhere near $218,000 here, so nothing is owed - but
-      // the tax-exempt interest still counts toward the MAGI that decides it.
+      // $195,000 of other income plus the capped $21,124.20 of benefit is
+      // $216,124 of AGI, under the $218,000 first cliff — until the $10,000 of
+      // tax-exempt interest is added straight back. Charged to each of them,
+      // so the tier-1 step of $1,148.40 is billed twice.
+      expect(screen.getByText('$2,297/yr')).toBeInTheDocument();
+      expect(screen.getByText(/tier 1 of 5/)).toBeInTheDocument();
+      unmount();
+
+      render(
+        <CustomTooltip
+          active={true}
+          payload={[{ payload: point }]}
+          ssBenefit={24852}
+          filingStatus="mfj"
+          beneficiaries={2}
+        />,
+      );
       expect(screen.getByText('$0/yr')).toBeInTheDocument();
-      expect(
-        screen.getByText(/\$96,876 of MAGI to the next cliff, then \$2,297\/yr more/),
-      ).toBeInTheDocument();
+      expect(screen.queryByText(/tier .* of 5/)).not.toBeInTheDocument();
     });
   });
 
@@ -1312,7 +1262,6 @@ describe('Tooltip Recommendations', () => {
           active={true}
           payload={[{ payload: { income: 40_000, marginalRate: 22.2, totalTax: 3_000 } }]}
           ssBenefit={24_852}
-          segments={mockOrdinarySegments}
           filingStatus="single"
           muniInterest={10_000}
           year={PAGE_TAX_YEAR}
@@ -1332,7 +1281,6 @@ describe('Tooltip Recommendations', () => {
           active={true}
           payload={[{ payload: { income: 30_000, marginalRate: 22.2, totalTax: 2_819 } }]}
           ssBenefit={24_852}
-          segments={mockOrdinarySegments}
         />,
       );
       expect(screen.getByText(/Total income \$54,852/)).toBeInTheDocument();
@@ -1767,6 +1715,15 @@ describe('the 400% poverty-line cliff under the torpedo chart', () => {
       'household income is $54,852, 350% of the poverty line',
     );
     expect(subsidyExplainer()).toHaveTextContent('Another $7,748 of it reaches the line');
+    // And sends the reader here for it rather than to the chart. The hover
+    // tooltip used to measure this distance too, at whichever point the mouse
+    // was over; it now says only what a hover is good for, so an explainer
+    // that still offered "hover the curve to read your own distance from it"
+    // would be pointing at a row that is not drawn.
+    expect(subsidyExplainer()).toHaveTextContent(
+      'your own distance from it is at the foot of this note',
+    );
+    expect(subsidyExplainer()).not.toHaveTextContent(/hover/i);
 
     fireEvent.change(
       screen.getByRole('slider', { name: /other income \(not social security\)/i }),
@@ -2025,7 +1982,6 @@ describe('the axis, taken apart', () => {
         active
         payload={[{ payload: { income: 20_000, marginalRate: 15, totalTax: 768 } }]}
         ssBenefit={AVG_ANNUAL_SS_BENEFIT}
-        segments={[]}
         muniInterest={10_000}
         year={PAGE_TAX_YEAR}
       />,
@@ -2044,7 +2000,6 @@ describe('the axis, taken apart', () => {
         active
         payload={[{ payload: { income: 20_000, marginalRate: 15, totalTax: 768 } }]}
         ssBenefit={AVG_ANNUAL_SS_BENEFIT}
-        segments={[]}
         year={PAGE_TAX_YEAR}
       />,
     );

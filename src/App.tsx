@@ -59,7 +59,6 @@ import { CHART, PALETTE } from './palette';
 import type {
   TaxYear,
   MarginalRatePoint,
-  CurveSegment,
   CurveStanding,
   IrmaaCliff,
   PtcCliff,
@@ -304,38 +303,45 @@ interface CustomTooltipProps {
   active?: boolean;
   payload?: Array<{ payload: TooltipPayloadPoint }>;
   ssBenefit: number;
-  segments: CurveSegment<MarginalRatePoint>[];
   filingStatus?: FilingStatus;
   muniInterest?: number;
   /** How many people on the return are enrolled in Medicare. */
   beneficiaries?: number;
   /** Which year's premium schedule prices the IRMAA line. */
   year?: TaxYear;
-  /**
-   * Whether anyone on this return is still buying their own coverage, and so
-   * still has a premium tax credit to lose. 36B(c)(2)(B) makes anyone enrolled
-   * in Medicare ineligible, so the 400% row is drawn on the ages the page
-   * already has rather than on a field it does not. See `preMedicare`.
-   */
-  preMedicare?: boolean;
 }
 
+/**
+ * What one point on the curve is worth: the income that makes it, the rate on
+ * the next dollar there, the year's federal tax, and the Medicare surcharge.
+ *
+ * Four figures and no advice. It used to close with "stay under $x or over
+ * $y" on a hill and "fill this valley" here on a valley, but that is a
+ * recommendation about wherever a mouse happened to land — nobody's point in
+ * particular, and no point at all on a touchscreen — and the page now makes
+ * the same argument about the reader's own place, out loud and unprompted, in
+ * `StandingNote`. Two recommendations inches apart, one of them addressed to
+ * nobody, is worse than one.
+ *
+ * The two cliff figures went the same way. "$x of MAGI to the next cliff" and
+ * "$y of household income to the 400% poverty line" are distances, and a
+ * distance is only worth reading from where you are standing: both are in the
+ * close, keyed to the slider, in `Medicare surcharge` and in the poverty-line
+ * explainer's "You are here". What stays here is what a hover is actually
+ * good for — the surcharge and tier *at this point*, which no other reading of
+ * the return can give you.
+ */
 export const CustomTooltip: React.FC<CustomTooltipProps> = ({
   active,
   payload,
   ssBenefit,
-  segments,
   filingStatus = 'single',
   muniInterest = 0,
   beneficiaries = 1,
   year = defaultTaxYear(),
-  preMedicare = false,
 }) => {
   if (!active || !payload || !payload.length) return null;
   const point = payload[0].payload;
-  const segment = segments.find(
-    (seg) => point.income >= seg.start && point.income <= seg.end,
-  );
   // The hovered point, as a whole return, so that every figure below is priced
   // off one object rather than off a different subset of the props each time.
   const scenario = {
@@ -353,12 +359,6 @@ export const CustomTooltip: React.FC<CustomTooltipProps> = ({
     beneficiaries,
     year,
   });
-  // And 36B reads a wider one still — the *whole* benefit, taxed or not — so
-  // the 400% line is a third assessment of the same point rather than a
-  // rescaling of Medicare's. This is where both cliffs are priced now that
-  // neither is drawn unless the reader asks for it: the lines say where the
-  // thresholds are, the tooltip says what they cost here.
-  const subsidy = ptcFor(acaMagi(scenario), scenario);
   // Not `point.income + ssBenefit`: tax-exempt interest is spent like any
   // other dollar, so it belongs in what this return takes in too. See
   // `totalIncomeFor`. Which is why the head below has to name the interest as
@@ -389,38 +389,6 @@ export const CustomTooltip: React.FC<CustomTooltipProps> = ({
         </strong>
         {irmaa.tier > 0 ? ` (tier ${irmaa.tier} of 5)` : ''}
       </div>
-      {irmaa.headroom !== null && (
-        <div style={{ color: PALETTE.inkMuted }}>
-          {formatCurrency(irmaa.headroom)} of MAGI to the next cliff, then{' '}
-          {formatCurrency(irmaa.nextStep)}/yr more
-        </div>
-      )}
-      {preMedicare && subsidy.cliffApplies && (
-        <div style={{ color: PALETTE.fuchsiaBright }}>
-          {subsidy.overCliff ? (
-            <>
-              Past the {PTC_CLIFF_PERCENT * 100}% poverty line &mdash; no
-              Marketplace premium tax credit
-            </>
-          ) : (
-            <>
-              {formatCurrency(Math.round(subsidy.headroom ?? 0))} of household
-              income to the {PTC_CLIFF_PERCENT * 100}% poverty line, then the
-              credit is gone
-            </>
-          )}
-        </div>
-      )}
-      {segment && segment.type === 'hill' && (
-        <div className="chart-tooltip-advice">
-          Consider avoiding this tax hill by staying under {formatCurrency(segment.start)} or over {formatCurrency(segment.end)}
-        </div>
-      )}
-      {segment && segment.type === 'valley' && (
-        <div className="chart-tooltip-advice">
-          Consider filling out this tax valley at {formatCurrency(point.income)}
-        </div>
-      )}
     </div>
   );
 };
@@ -459,12 +427,13 @@ interface StandingNoteProps {
 /**
  * Why this particular reader should move their income up, down, or not at all.
  *
- * The tooltip has always carried this arithmetic — "stay under $x or over $y"
- * for a hill, "fill this valley" for a valley — but only for whichever point
- * the mouse happened to be over, which is nobody's point in particular and no
- * point at all on a touchscreen. The reader's own place is the one place worth
- * saying it about, so here it is said out loud, keyed to the slider and shown
- * without being asked for.
+ * The one place on the chart worth saying this about is the reader's own, so
+ * here it is said out loud, keyed to the slider and shown without being asked
+ * for. The hover tooltip used to carry the same arithmetic — "stay under $x or
+ * over $y" for a hill, "fill this valley" for a valley — but only about
+ * whichever point a mouse happened to be over, which is nobody's point in
+ * particular and no point at all on a touchscreen. This is now the only place
+ * the page recommends a direction.
  *
  * Every branch names dollar figures the reader can act on rather than the
  * mechanism behind them: the hump is "the dearest stretch on this chart", not
@@ -712,10 +681,9 @@ const App: React.FC = () => {
    * and the 400% line is a Marketplace credit — so both were furniture on a
    * chart of marginal rates for every reader they do not apply to, and each
    * came with a paragraph of key underneath explaining a dash. What each one
-   * costs *this* return at *this* income is in the hover tooltip, which is
-   * where a per-point figure belongs; the lines are the other question — where
-   * the thresholds sit across the whole axis — and that is worth a control
-   * rather than an assumption.
+   * costs *this* return is in the close, priced at the reader's own income;
+   * the lines are the other question — where the thresholds sit across the
+   * whole axis — and that is worth a control rather than an assumption.
    *
    * Off by default rather than on, because the page has one subject and these
    * are two more. A reader who came for the torpedo gets the torpedo; a reader
@@ -1096,9 +1064,9 @@ const App: React.FC = () => {
 
   /**
    * And what that place is worth knowing about: which side of the hump the
-   * reader is on, and so which way their income is worth moving. Same
-   * segments the tooltip reads, asked about one point rather than whichever
-   * point a mouse is over.
+   * reader is on, and so which way their income is worth moving. The same
+   * segments the curve is drawn from, asked about the one point the reader
+   * actually holds.
    */
   const standing = useMemo(
     () => standingOn(segments, ordinaryIncome),
@@ -1717,10 +1685,11 @@ const App: React.FC = () => {
                   <div className="chart-lines-panel" id="torpedo-lines">
                     <fieldset className="chart-lines-group">
                       {/* Two switches and their legend, and nothing else.
-                          What each threshold costs is in the hover tooltip,
-                          what a cliff is is in the disclosure below, and both
-                          were being said a third time in a panel that floats
-                          over the chart the reader opened it to look at. */}
+                          What each threshold costs this return is in the
+                          close, what a cliff is is in the disclosure below,
+                          and both were being said a third time in a panel that
+                          floats over the chart the reader opened it to look
+                          at. */}
                       <legend>Health insurance breakpoints</legend>
                       <label className="checkbox-option chart-lines-option">
                         <input
@@ -1804,12 +1773,10 @@ const App: React.FC = () => {
                       content={
                         <CustomTooltip
                           ssBenefit={ssBenefit}
-                          segments={segments}
                           filingStatus={filingStatus}
                           muniInterest={muniInterest}
                           beneficiaries={beneficiaries}
                           year={year}
-                          preMedicare={preMedicare}
                         />
                       }
                     />
@@ -2087,8 +2054,8 @@ const App: React.FC = () => {
                       ? 'one person'
                       : `${subsidyCliff.householdSize} people`}
                     . Switch it on as a pink dashed line under{' '}
-                    <strong>Breakpoints</strong> in the corner of the chart, or
-                    hover the curve to read your own distance from it.
+                    <strong>Breakpoints</strong> in the corner of the chart;
+                    your own distance from it is at the foot of this note.
                   </p>
                   <p>
                     <strong>What it costs is not a fixed figure.</strong> Just

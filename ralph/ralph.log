@@ -9070,3 +9070,75 @@ a list. Topmost unchecked is now the tooltip bullet: take the valley/hill advice
 the "$x to the next cliff" line and the marketplace-premium line out of the hover
 tooltip — which also settles the tooltip-advice bullet already in Discovered Work,
 since that sentence is one of the three being removed.
+
+## Iteration — "remove tax valley hill from tooltip entirely…" (Backlog 8)
+
+Third clean-tree open running. Three things came out of `CustomTooltip`: both
+arms of the segment advice, the IRMAA headroom line, and the 400% poverty-line
+row. What is left is four figures — the head, marginal rate, federal tax, and
+the Medicare surcharge with its tier.
+
+### Why each removal is a subtraction and not a loss
+
+The advice was a duplicate with a worse address. `StandingNote` says the same
+arithmetic about the reader's own point, unprompted; the tooltip said it about
+wherever the mouse landed, so a reader hovering the stretch they stand in read
+two recommendations inches apart — and after `9abae3a` they disagreed, because
+the note now recommends clearing the hump and the tooltip still offered staying
+under and going over as equals. That is the Discovered Work item from two runs
+back, struck here rather than rewritten.
+
+Both cliff figures are distances, and a distance is only worth reading from
+where you are standing. Both survive at the reader's own income: the IRMAA
+headroom in the close's `Medicare surcharge` figure (App.tsx:2337), the 36B
+distance in the poverty-line explainer's "You are here" (:2119). Nothing was
+deleted from the page — it moved to the one point it is about.
+
+### Fallout
+
+`segments` and `preMedicare` had no reader left, so they came off the props,
+the destructure and the call site, and the `CurveSegment` type import with
+them; the tooltip's `ptcFor`/`acaMagi` call went with the row it priced (both
+still serve `hereSubsidy`). `.chart-tooltip-advice` styled nothing and came out
+of the stylesheet.
+
+Four comments and one paragraph asserted the old arrangement. The paragraph is
+the one that mattered: the 400% explainer told the reader to "hover the curve to
+read your own distance from it", which after this run is a pointer at a row that
+is not drawn. It now points four paragraphs down at its own "You are here".
+
+### Verification
+
+`draws four figures and no advice` pins `.chart-tooltip`'s `children` at 4 and
+their order, plus four negative assertions, at $30,000 — inside the hump, where
+the hill advice used to fire. Pinning `children` rather than text is the point:
+a row added back passes every assertion written about the four that remain.
+
+The muni test needed rebuilding. Its old carrier was the headroom figure, and
+my first replacement asserted a tier at $200,000 of other income for a couple —
+which clears $218,000 without the interest, so it passed with `muniInterest`
+set to zero. Rewritten at $195,000, where AGI is $216,124 and the $10,000 of
+tax-exempt interest is the whole difference, with both halves asserted: tier 1
+with it, `$0/yr` without. Mutating `irmaaMagi(scenario)` to drop the interest
+now reddens it; before the rewrite it did not.
+
+Mutations, each reverted: an advice row appended to the tooltip reddens the
+four-children test alone; the muni mutation above; restoring "hover the curve to
+read your own distance from it" reddens the explainer test. That third one is
+worth naming — before this run the sentence was unasserted, so deleting the row
+it pointed at would have left the page lying and the suite green.
+
+`npx tsc -b`, `npx eslint . --max-warnings 0`, `npx vitest run` (649/649, down
+from 653: five tests removed, one added) and `npm run build` all clean.
+
+### Next
+
+Topmost unchecked is Backlog 8's "clean up dead code" — the sweep the manual
+text pass and the QCD removal both left work for, and Discovered Work's second
+bullet already lists its starting set (`.step-intro`, `.answer-share-line`,
+`.answer-note`, the stale `.answer-share` comment). The bullet says to break it
+into steps if necessary, so a run that clears the stylesheet and the stale
+comments and leaves the shelf modules for a second pass is a reasonable shape.
+One new item logged: nothing on this page asserts where its own prose sends the
+reader, which is why the hover pointer went stale silently and why the fix had
+to be written by hand rather than caught.

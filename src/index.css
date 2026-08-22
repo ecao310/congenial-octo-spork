@@ -903,15 +903,6 @@ h1 {
   font-weight: 600;
 }
 
-/* The one row that is advice rather than a figure, ruled off from the figures
-   above it. */
-.chart-tooltip-advice {
-  margin-top: 0.5rem;
-  border-top: 1px solid var(--edge);
-  padding-top: 0.5rem;
-  color: var(--ink-muted);
-}
-
 /* Rendered as HTML rather than an SVG <XAxis label> so it can never be
    clipped by the chart's viewport. The padding-left offsets the text to the
    centre of the plot area, which starts after the y-axis gutter.

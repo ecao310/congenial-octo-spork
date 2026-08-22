@@ -11,13 +11,6 @@ stepping around.
 
 **Live:** https://ecao310.github.io/congenial-octo-spork/
 
-`main` is the working branch, and that URL is where it publishes. The rewrite
-this README describes has been merged there, so the front door is now this
-page. The other build on the same Pages site is nested under it at
-https://ecao310.github.io/congenial-octo-spork/preview/ , which serves `dev`
-and is where work in flight goes out — see [Deployment](#deployment) for why
-one repo publishes two apps.
-
 ## The two steps
 
 Both steps have the same shape: the chart first, then the one control that
@@ -42,15 +35,6 @@ where the chart stands below it.
    the chart's tooltip and drawn across the axis only when the **Breakpoints**
    button in the corner of the plot is asked for them. Every figure under it is
    a federal one.
-
-Two more steps stood here — Capital gains stacking, which split the income
-already entered into ordinary and long-term halves, and Sizing the conversion,
-which read off the largest conversion fitting under a chosen ceiling. Both came
-off the page so that it asks one question, and what they rendered *from* has
-gone after them: the repo holds what this page reads and nothing else. The 3.8%
-surtax of IRC 1411 outlived them by a pass, because it was a term of a total
-the close still printed — a total that was always the income tax exactly, since
-nothing on the page could set a gain for the surtax to reach. It is gone too.
 
 The page closes on the six figures the whole walk was for: total income,
 federal tax, effective rate, the rate on the next dollar, the taxable share of
@@ -182,8 +166,6 @@ https://ecao310.github.io/congenial-octo-spork/preview/ . The repo has one
 Pages site, so `.github/workflows/deploy-preview.yml` rebuilds main's site
 verbatim from `main` and nests the dev build underneath it. The production URL
 therefore always serves `main`, and `dev` never needs to be merged to be seen.
-That is what the preview was for while this page was still being written out of
-the app it replaced, and it is what the next rewrite will use.
 
 `the front door` in `src/guards/meta.test.ts` holds the two together: it reads
 the

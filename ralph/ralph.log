@@ -8575,3 +8575,105 @@ shape the user used here: the "excluding" fact gets its own sentence rather
 than being hung off the "including" one. `axisGiftClause` and `axisDomain` in
 App.tsx are where that lands. After it, the meta-references bullet, which the
 lead-in above is one instance of.
+
+---
+
+## Make the graph shift right when QCD increases (21 Aug 2026)
+
+Picked up mid-flight. The working tree already held the source half of this
+bullet, uncommitted, with 11 tests red — a previous run ended between editing
+`totalIncomeFor` and updating the suite. Finishing it was this iteration.
+
+### The change that was already there, and why it is right
+
+`totalIncomeFor` used to subtract the gift. That reads well as a sentence — a
+dollar sent straight to charity never reaches the filer — and it drew a chart
+that could not be read. 408(d)(8) moves every threshold on this page out by
+exactly the gift; an axis that also took the gift off moved every one of them
+back by the same amount and landed them where they started. Dragging the
+charity slider changed nothing on screen. That is the bug the bullet names.
+
+So the axis carries the gift now: `ordinaryIncome + ltcg + ssBenefit +
+muniInterest`, no `ordinaryIncomeAfterQcd`. Line 4a of the return says the
+dollar left the IRA; only 4b knows about the exclusion. `agiFor` and `acaMagi`
+still subtract it — the tax is unchanged, only the denominator moved.
+
+Confirmed in Chrome against `vite preview`, MFJ/senior/$38,292 SS/$3,750 muni
+at $95,000 of other income:
+
+    qcd $0       torpedo starts ~$66K on the axis, tax $10,028, rate 12%
+    qcd $60,000  torpedo starts ~$126K on the axis, tax  $1,296, rate 18.5%
+
+Exactly $60,000 of slide, and the flat run the gift buys is $60,000 wide
+instead of collapsed onto one x. Total income holds at $137,042 across all
+three, so the saving shows up as a smaller numerator rather than hiding inside
+a shrinking denominator.
+
+### The caption
+
+    Total income ($), including $38,292 of Social Security and $3,750 of
+    municipal interest. Excluding all qualified charitable distributions from
+    the tax on it.
+
+The bullet's own text, bar four words. "From the tax on it" is there because
+the gift is now *in* the figure the first sentence quotes — a bare "Excluding
+all qualified charitable distributions" sitting under an axis that includes
+them would be a false statement about the axis, and it would read as a third
+item in the "including" list going the other way. What the gift excludes is
+the tax, which is what the second sentence now says. No dollar figure, because
+`qcdFor` caps the gift by the ordinary income there is to take it from, so any
+figure here would be wrong at the left edge.
+
+"Municipal interest" per the bullet, replacing "tax-exempt interest" in this
+caption and the chart's aria-label. That leaves the tooltip and the closing
+answer still saying "tax-exempt" — logged under Discovered work rather than
+swept here.
+
+The step-1 intro and the chart's accessible name both lost their `less the
+first $X of it given straight to charity` clause: the span is a plain addition
+again, fixed part to fixed part plus every dollar the slider reaches. The
+gift's whole effect on that sentence is that `axisMax` grows, which the
+sentence already picks up for free.
+
+### The test half — the actual work this run
+
+11 red → 714 green. Rewritten rather than retargeted, because most of them
+asserted the old *claim*, not the old number:
+
+- `leaves a charitable distribution out of it` → `counts a charitable
+  distribution into it, though the tax drops it`, and it now asserts both
+  sides of the same scenario: $114,852 of total income before and after a
+  $20,000 gift, $15,617 of tax before and $11,217 after. The old test could
+  not have told a moving numerator from a moving denominator.
+- `takes the gift back out of the axis label` → `gives the gift its own
+  sentence in the axis label`.
+- `takes the gift off the front of the income, not off the left edge` → `stays
+  a plain addition when a gift is set, and widens with it`. First draft
+  asserted `edge === before + 10_000` and failed: `incomeAxisMax` never
+  narrows below `MIN_INCOME_AXIS`, so a $10,000 gift on a single filer is
+  absorbed by the $150,000 floor. Uses the full $111,000 single limit now and
+  asserts the direction, since the exact widening is already pinned by `makes
+  room for the gift even when there is no torpedo to carry it`.
+- The tooltip test now also pins the head's decomposition end to end —
+  `$74,852 · $24,852 SS + $10,000 tax-exempt + $40,000 other income` — which
+  only adds up because the gift moved inside `point.income` rather than beside
+  it. Under the old total that line was an addition a reader could watch fail.
+
+Mutation-checked both directions: putting `ordinaryIncomeAfterQcd` back in
+`totalIncomeFor` reddens 10, and deleting the "Excluding" sentence reddens the
+1 that is about it.
+
+`npx tsc -b`, `npx eslint . --max-warnings 0`, `npx vitest run` (714/714),
+`npm run build` — all clean. Untracked `shot.tmp.mjs` removed.
+
+### Next
+
+Topmost unchecked is the meta-references bullet — "remove wording like 'A gift
+anywhere near that figure is more income than step 2's chart used to draw, so
+the slider runs to the statutory limit and that chart's right edge moves out to
+hold it.'" Worth noting that this iteration deleted one instance of exactly
+that register on its way past (the axis span's "less the first $X of it"
+clause explained away a subtraction the reader could not see), and that the
+sentence the bullet quotes is about the QCD slider, whose behaviour this
+iteration changed — so re-read it against what the chart does now before
+rewriting it.

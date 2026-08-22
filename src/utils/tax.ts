@@ -3,13 +3,14 @@ export interface MarginalRatePoint {
   /**
    * Everything the return takes in at this point on the sweep: `totalIncomeFor`
    * of the same scenario, so the whole benefit and any tax-exempt interest are
-   * in it and a charitable distribution is not.
+   * in it, and so is a charitable distribution.
    *
    * The swept `income` is what the reader sets; this is what they have. The
    * chart plots against it, so the two are carried together rather than the
    * page re-deriving one from the other point by point — and the flat run a
-   * charitable gift buys collapses to a single x, which is the honest reading:
-   * a dollar given straight away was never income to plot.
+   * charitable gift buys is drawn at its own width, because the axis it is
+   * drawn on is the income the gift came out of rather than what was left
+   * after it.
    */
   totalIncome: number;
   marginalRate: number;
@@ -967,17 +968,22 @@ export function agiFor(scenario: Scenario = {}): number {
  * the share 86(a) drags in, because a page about the untaxed portion of Social
  * Security cannot leave that portion out of the income it measures against —
  * against taxable income the torpedo's own subject disappears. Tax-exempt
- * interest counts because the filer spends it, whatever 103 says about it. And
- * the charitable distribution comes off, because that money leaves the IRA
- * without ever reaching the filer — but only as much of it as `qcdFor` allows,
- * which is the gift capped by the ordinary income there is to take it from.
+ * interest counts because the filer spends it, whatever 103 says about it.
+ *
+ * And a charitable distribution counts, though it never reaches the filer at
+ * all. It used to come off, which read well as a sentence and drew a chart
+ * that could not be read: the exclusion moves every threshold out by exactly
+ * the gift, so subtracting the gift from the axis as well put every one of
+ * them back where it started. Nothing moved when the gift moved. The dollar
+ * left the IRA either way — line 4a of the return says so, and only line 4b
+ * knows about 408(d)(8) — so it is income here, and what the gift buys is
+ * visible where it happens: the tax on it, and the run of axis it holds down
+ * at nothing.
  */
 export function totalIncomeFor(scenario: Scenario = {}): number {
-  const { ltcg, ssBenefit, muniInterest } = resolveScenario(scenario);
-  return Math.max(
-    0,
-    ordinaryIncomeAfterQcd(scenario) + ltcg + ssBenefit + muniInterest,
-  );
+  const { ordinaryIncome, ltcg, ssBenefit, muniInterest } =
+    resolveScenario(scenario);
+  return Math.max(0, ordinaryIncome + ltcg + ssBenefit + muniInterest);
 }
 
 /**

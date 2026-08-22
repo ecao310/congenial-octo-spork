@@ -161,13 +161,13 @@ describe('App', () => {
     // The axis is total income, so the benefit is the fixed half of every
     // figure on it and the caption is where that half is named in dollars.
     expect(
-      screen.getByText('Total income ($) including $24,852 of Social Security'),
+      screen.getByText('Total income ($), including $24,852 of Social Security.'),
     ).toBeInTheDocument();
     fireEvent.change(slider, { target: { value: '36000' } });
     expect(slider).toHaveValue('36000');
     expect(within(benefitGroup()).getByText('$36,000')).toBeInTheDocument();
     expect(
-      screen.getByText('Total income ($) including $36,000 of Social Security'),
+      screen.getByText('Total income ($), including $36,000 of Social Security.'),
     ).toBeInTheDocument();
   });
 
@@ -191,7 +191,7 @@ describe('App', () => {
       { target: { value: '5000' } },
     );
     expect(
-      screen.getByText('Total income ($) including $5,000 of tax-exempt interest'),
+      screen.getByText('Total income ($), including $5,000 of municipal interest.'),
     ).toBeInTheDocument();
   });
 
@@ -424,7 +424,7 @@ describe('App', () => {
     ).toBeInTheDocument();
   });
 
-  it('adds the tax-exempt interest to the chart’s axis caption', () => {
+  it('adds the municipal interest to the chart’s axis caption', () => {
     render(<App />);
     fireEvent.change(
       screen.getByRole('slider', { name: /tax-exempt \(municipal\) interest/i }),
@@ -433,8 +433,8 @@ describe('App', () => {
 
     expect(
       screen.getByText(
-        'Total income ($) including $24,852 of Social Security and ' +
-          '$5,000 of tax-exempt interest',
+        'Total income ($), including $24,852 of Social Security and ' +
+          '$5,000 of municipal interest.',
       ),
     ).toBeInTheDocument();
   });
@@ -873,12 +873,22 @@ describe('the total the return owes', () => {
     );
   });
 
-  it('leaves a charitable distribution out of it', () => {
+  /**
+   * The gift moves the numerator and not the denominator, which is the whole
+   * of what 408(d)(8) buys: the same $114,852 came out, and $4,400 less is
+   * owed on it. A total that dropped the gift too would have shown the tax
+   * falling against an income that fell with it, and hidden the saving inside
+   * a smaller effective rate rather than showing it as one.
+   */
+  it('counts a charitable distribution into it, though the tax drops it', () => {
     render(<App />);
     set(/other income \(not social security\)/i, 90_000);
+    expect(readout('torpedo')).toHaveTextContent(
+      'owes $15,617 in federal tax on $114,852 of total income',
+    );
     set(/qualified charitable distribution/i, 20_000);
     expect(readout('torpedo')).toHaveTextContent(
-      'owes $11,217 in federal tax on $94,852 of total income',
+      'owes $11,217 in federal tax on $114,852 of total income',
     );
   });
 
@@ -1215,7 +1225,7 @@ describe('Tooltip Recommendations', () => {
    * apart on the page. Both now read `totalIncomeFor`.
    */
   describe('what the tooltip calls total income', () => {
-    it('counts tax-exempt interest and drops the gift', () => {
+    it('counts tax-exempt interest and the gift alike', () => {
       render(
         <CustomTooltip
           active={true}
@@ -1228,9 +1238,13 @@ describe('Tooltip Recommendations', () => {
           year={PAGE_TAX_YEAR}
         />,
       );
-      // $40,000 of other income - $5,000 given away + $24,852 of benefit +
-      // $10,000 of tax-exempt interest.
-      expect(screen.getByText(/Total income \$69,852/)).toBeInTheDocument();
+      // $40,000 of other income + $24,852 of benefit + $10,000 of tax-exempt
+      // interest. The $5,000 given away is inside the $40,000, not beside it,
+      // so the head's own addition is the whole of the figure it quotes.
+      expect(screen.getByText(/Total income \$74,852/)).toBeInTheDocument();
+      expect(
+        screen.getByText(/Total income \$74,852 · \$24,852 SS \+ \$10,000 tax-exempt \+ \$40,000 other income/),
+      ).toBeInTheDocument();
     });
 
     it('falls back to income plus benefit when nothing else is set', () => {
@@ -1553,18 +1567,24 @@ describe('qualified charitable distribution', () => {
     expect(qcdSlider()).toHaveValue('111000');
   });
 
-  it('takes the gift back out of the axis label', () => {
+  /**
+   * The gift is *in* the figure on the axis — that is what lets the chart move
+   * when the gift moves — so the caption cannot list it beside the benefit as
+   * something taken off. It gets a sentence of its own, about the tax rather
+   * than the income, and no dollar figure: 408(d)(8) excludes every dollar
+   * sent this way, and `qcdFor` caps what has actually been sent by the income
+   * there is to send it from, so a figure here would be wrong at the left edge.
+   */
+  it('gives the gift its own sentence in the axis label', () => {
     render(<App />);
     expect(
-      screen.getByText('Total income ($) including $24,852 of Social Security'),
+      screen.getByText('Total income ($), including $24,852 of Social Security.'),
     ).toBeInTheDocument();
     setSlider(/qualified charitable distribution/i, '10000');
-    // The gift is the one part that comes *out* of the axis figure, so it gets
-    // its own clause after the list of what is in it.
     expect(
       screen.getByText(
-        'Total income ($) including $24,852 of Social Security, less ' +
-          '$10,000 given straight to charity',
+        'Total income ($), including $24,852 of Social Security.' +
+          ' Excluding all qualified charitable distributions from the tax on it.',
       ),
     ).toBeInTheDocument();
   });
@@ -2040,27 +2060,38 @@ describe('the axis, taken apart', () => {
     expect(to).toBe(benefit + interest + edge);
   });
 
-  it('takes the gift off the front of the income, not off the left edge', () => {
+  /**
+   * The gift used to take a clause off the far end of this span, because the
+   * axis it describes used to take the gift off the income. Neither does now:
+   * a dollar sent to charity still left the IRA, so it is on the axis like any
+   * other, and the span is the fixed part at one end and the fixed part plus
+   * every dollar the slider reaches at the other. The gift's whole effect is
+   * that the slider reaches further — which this span picks up for free, in
+   * `edge`, and does not have to explain away in words.
+   */
+  it('stays a plain addition when a gift is set, and widens with it', () => {
     render(<App />);
-    setSlider(/qualified charitable distribution/i, '10000');
-    const [from, to, benefit, , edge, gift] = dollars(stepIntro());
-    expect(gift).toBe(10_000);
-    // "The first $10,000 of it": at $0 of other income none of the gift has
-    // happened yet, so the left edge is the benefit alone and only the right
-    // edge is $10,000 short. A flat "less $10,000" would be wrong here by
-    // exactly the gift.
+    const [, toBefore, , , edgeBefore] = dollars(stepIntro());
+    setSlider(/qualified charitable distribution/i, '111000');
+    const [from, to, benefit, , edge] = dollars(stepIntro());
     expect(from).toBe(benefit);
-    expect(to).toBe(benefit + edge - gift);
+    expect(to).toBe(benefit + edge);
+    // The gift sits on the axis now rather than being taken off it, so the
+    // axis has to reach past it: the right edge moves out and the left one
+    // does not move at all.
+    expect(edge).toBeGreaterThan(edgeBefore);
+    expect(to).toBeGreaterThan(toBefore);
+    expect(stepIntro()).not.toMatch(/straight to charity/i);
   });
 
   it('adds up with both advanced inputs set at once', () => {
     render(<App />);
     setSlider(/tax-exempt \(municipal\) interest/i, '3750');
     setSlider(/qualified charitable distribution/i, '26750');
-    const [from, to, benefit, interest, , edge, gift] = dollars(stepIntro());
-    expect([interest, gift]).toEqual([3_750, 26_750]);
+    const [from, to, benefit, interest, , edge] = dollars(stepIntro());
+    expect(interest).toBe(3_750);
     expect(from).toBe(benefit + interest);
-    expect(to).toBe(benefit + interest + edge - gift);
+    expect(to).toBe(benefit + interest + edge);
   });
 
   /**
@@ -2072,12 +2103,12 @@ describe('the axis, taken apart', () => {
     setSlider(/tax-exempt \(municipal\) interest/i, '3750');
     setSlider(/qualified charitable distribution/i, '26750');
     expect(chartLabel()).toContain(
-      'a fixed $24,852 of Social Security and $3,750 of tax-exempt interest',
+      'a fixed $24,852 of Social Security and $3,750 of municipal interest',
     );
-    expect(chartLabel()).toContain('given straight to charity');
-    const [from, to, benefit, interest, , edge, gift] = dollars(chartLabel());
+    expect(chartLabel()).not.toMatch(/straight to charity/i);
+    const [from, to, benefit, interest, , edge] = dollars(chartLabel());
     expect(from).toBe(benefit + interest);
-    expect(to).toBe(benefit + interest + edge - gift);
+    expect(to).toBe(benefit + interest + edge);
   });
 
   /**
@@ -2294,11 +2325,13 @@ describe('the closing answer', () => {
   });
 
   /**
-   * The same denominator the effective rate above step 2 uses: money received,
-   * so tax-exempt interest is in it, and a gift that never reaches the filer
-   * is not.
+   * The same denominator the effective rate above step 2 uses, and the same
+   * one the chart's axis is drawn in: everything that came out, so tax-exempt
+   * interest is in it and so is a gift the filer never sees. What the gift
+   * changes is the numerator — here all the way to $0 — which is the saving
+   * stated as a saving rather than hidden in a shrinking denominator.
    */
-  it('counts tax-exempt interest into the total and a charitable gift out', () => {
+  it('counts tax-exempt interest and a charitable gift alike into the total', () => {
     render(<App />);
     fireEvent.change(
       screen.getByRole('slider', { name: /tax-exempt \(municipal\) interest/i }),
@@ -2318,10 +2351,11 @@ describe('the closing answer', () => {
       screen.getByRole('slider', { name: /qualified charitable distribution/i }),
       { target: { value: '20000' } },
     );
-    expect(figure('Total income')).toHaveTextContent('$34,852');
+    expect(figure('Total income')).toHaveTextContent('$54,852');
     expect(figure('Total income')).toHaveTextContent(
-      'less the $20,000 that went straight to charity',
+      'The $20,000 that goes straight to charity is counted too',
     );
+    expect(figure('Total income')).not.toHaveTextContent('less');
     // The gift takes provisional income under the 50% base, so none of the
     // benefit is taxable and the return owes nothing.
     expect(figure('Federal tax')).toHaveTextContent('$0');

@@ -426,7 +426,7 @@ describe('the \u201cyou are here\u201d marker', () => {
     const { container } = render(<App />);
     // $24,852 is the default single benefit for the year.
     expect(axisCaption(container)).toBe(
-      'Total income ($) including $24,852 of Social Security',
+      'Total income ($), including $24,852 of Social Security.',
     );
 
     // recharts lifts tick labels out of the axis layer, so they are found by
@@ -442,7 +442,7 @@ describe('the \u201cyou are here\u201d marker', () => {
       { target: { value: '36000' } },
     );
     expect(axisCaption(container)).toBe(
-      'Total income ($) including $36,000 of Social Security',
+      'Total income ($), including $36,000 of Social Security.',
     );
     expect(herePositions(container)[0]).toBe(before);
     expect(firstTick()).not.toBe(tickBefore);

@@ -451,20 +451,57 @@ describe('marginalRateCurve', () => {
       expect(at(100_000)).toBe(135_000);
     });
 
-    it('leaves out what went straight to charity, so the excluded run is one point', () => {
+    it('carries what went straight to charity, so the excluded run has width', () => {
       const data = marginalRateCurve(
         { ssBenefit: 30_000, qcd: 10_000 },
         { maxIncome: 60_000, step: 1_000 },
       );
       const at = (income: number) =>
         data.find((d) => d.income === income)!.totalIncome;
-      // A gift that never reaches the filer is not income to plot, so the
-      // whole $0-to-$10,000 stretch stands at the same place on the axis.
+      // The dollar came out of the IRA whether or not the charity got it, so
+      // the axis moves under the gift the same as anywhere else — the sweep
+      // and the axis stay a fixed distance apart at every sample.
       expect(at(0)).toBe(30_000);
-      expect(at(5_000)).toBe(30_000);
-      expect(at(10_000)).toBe(30_000);
-      // Past the gift the axis moves again, one dollar at a time.
-      expect(at(25_000)).toBe(45_000);
+      expect(at(5_000)).toBe(35_000);
+      expect(at(10_000)).toBe(40_000);
+      expect(at(25_000)).toBe(55_000);
+      // Which is what gives the run the gift buys a width to be seen at: the
+      // first $10,000 of the sweep is excluded outright, and it is $10,000 of
+      // axis rather than a single point stacked on itself.
+      expect(at(0)).toBe(at(10_000) - 10_000);
+      for (const income of [0, 5_000, 9_000]) {
+        expect(data.find((d) => d.income === income)!.marginalRate).toBe(0);
+      }
+    });
+
+    /**
+     * The whole reason the gift stays in the figure above.
+     *
+     * 408(d)(8) takes the gift out of gross income, so every threshold this
+     * page draws — the torpedo's two ends, the brackets, the IRMAA cliffs —
+     * arrives at exactly `gift` more other income than it otherwise would.
+     * An axis that also took the gift off would move each of them back by the
+     * same `gift` and land them where they started: a reader dragging the
+     * charity slider would watch a chart that never moved. Plotted against
+     * what came out of the IRA, the curve is the same shape slid right, which
+     * is the fact the slider's own note promises.
+     */
+    it('slides the whole curve right by exactly the gift', () => {
+      const scenario = { ssBenefit: 30_000, seniors: 1, muniInterest: 2_000 };
+      const plain = marginalRateCurve(scenario, {
+        maxIncome: 120_000,
+        step: 1_000,
+      });
+      const given = marginalRateCurve(
+        { ...scenario, qcd: 15_000 },
+        { maxIncome: 135_000, step: 1_000 },
+      );
+      for (const point of plain) {
+        const moved = given.find(
+          (d) => d.totalIncome === point.totalIncome + 15_000,
+        )!;
+        expect(moved.marginalRate).toBe(point.marginalRate);
+      }
     });
 
     it('rises with the sweep and never falls', () => {
@@ -793,13 +830,19 @@ describe('totalIncomeFor', () => {
     ).toBe(64_000);
   });
 
-  it('takes off the charitable gift the law allows, not the one asked for', () => {
-    expect(totalIncomeFor({ ...base, qcd: 10_000 })).toBe(54_000);
-    // Only $25,000 of ordinary income is left beside the gain to take a gift
-    // from, so a $40,000 gift removes $25,000 and the rest is not a gift at all.
+  it('keeps the charitable gift in, because the dollar still came out', () => {
+    // 408(d)(8) excludes the gift from the tax, not from the distribution:
+    // the return reports the whole $40,000 and only the taxable half of it
+    // knows about the charity. Taking it off here as well would have moved
+    // every threshold on the chart's axis back to where it sat with no gift
+    // at all — see `marginalRateCurve`'s own test of the slide.
+    expect(totalIncomeFor({ ...base, qcd: 10_000 })).toBe(64_000);
     expect(
       totalIncomeFor({ ...base, ordinaryIncome: 25_000, ltcg: 15_000, qcd: 40_000 }),
-    ).toBe(39_000);
+    ).toBe(64_000);
+    // Which is the one thing AGI does differently: there the gift is gone,
+    // and it takes some of the benefit's taxable share out with it.
+    expect(agiFor({ ...base, qcd: 10_000 })).toBeLessThan(agiFor(base) - 10_000);
   });
 
   it('never reports a negative total', () => {
@@ -3969,8 +4012,16 @@ describe('the premium tax credit’s 400% cliff (IRC 36B)', () => {
      * income" the close already quotes are the same arithmetic, because both
      * mean everything the return took in. A reader who has read one figure has
      * read the other.
+     *
+     * Bar the one thing 36B has to leave out and the page's axis has to keep:
+     * a charitable distribution is out of gross income by 408(d)(8), so it is
+     * out of household income too, while the axis carries it so that the
+     * thresholds it moves are seen to move. So the gap between the two figures
+     * is the gift and nothing else — which is worth pinning in both
+     * directions, because a drift in either would be a page quoting a cliff
+     * against an income it does not measure.
      */
-    it('is the total income this page already states, on every scenario it can build', () => {
+    it('is the total income this page already states, less any gift, on every scenario it can build', () => {
       const scenarios = [
         { ordinaryIncome: 0, ssBenefit: SS },
         { ordinaryIncome: 40_000, ssBenefit: SS, muniInterest: 9_000 },
@@ -3979,7 +4030,10 @@ describe('the premium tax credit’s 400% cliff (IRC 36B)', () => {
       ];
       for (const scenario of scenarios) {
         const full = { ...scenario, ...Y26 };
-        expect(acaMagi(full)).toBeCloseTo(totalIncomeFor(full), 6);
+        expect(acaMagi(full)).toBeCloseTo(
+          totalIncomeFor(full) - qcdFor(full),
+          6,
+        );
       }
     });
 

@@ -366,15 +366,16 @@ export const CustomTooltip: React.FC<CustomTooltipProps> = ({
   // neither is drawn unless the reader asks for it: the lines say where the
   // thresholds are, the tooltip says what they cost here.
   const subsidy = ptcFor(acaMagi(scenario), scenario);
-  // The x-axis is income before the gift, so the charitable exclusion has to
-  // come back out of the total the header quotes.
+  // How much of the gift this point on the sweep can actually make: at the
+  // left of the chart there is not yet enough other income to take it from.
   const given = qcdFor(scenario);
   // Not `point.income + ssBenefit`: tax-exempt interest is spent like any
-  // other dollar and the gift never reaches the filer, so both belong in what
-  // this return takes in. See `totalIncomeFor`. Which is why the head below
-  // has to name the interest as well: it quotes the total and then takes it
-  // apart, and a decomposition that leaves out a term the total contains is
-  // an addition the reader can watch fail.
+  // other dollar, so it belongs in what this return takes in too. See
+  // `totalIncomeFor`. Which is why the head below has to name the interest as
+  // well: it quotes the total and then takes it apart, and a decomposition
+  // that leaves out a term the total contains is an addition the reader can
+  // watch fail. The gift is the one term that is *not* named there — it is
+  // inside the other income, not beside it — so it gets the line below.
   const totalIncome = totalIncomeFor(scenario);
   return (
     <div className="chart-tooltip">
@@ -1111,7 +1112,7 @@ const App: React.FC = () => {
    *
    * Read off the curve's own ends rather than recomputed, so the axis cannot
    * span anything the plot does not. See `MarginalRatePoint.totalIncome` for
-   * what a charitable gift does to the left of it.
+   * what a charitable gift does to the width of it.
    */
   const axisDomain: [number, number] = [
     curve[0].totalIncome,
@@ -1162,8 +1163,8 @@ const App: React.FC = () => {
   /**
    * How much of a charitable gift 408(d)(8) can actually exclude, which is the
    * gift capped by the ordinary income there is to take it out of. Named
-   * rather than inlined because the close below quotes the figure as well as
-   * subtracting it.
+   * rather than inlined because the close below quotes the figure, and because
+   * the figure a reader set is not always the figure the statute reaches.
    */
   const given = qcdFor(hereScenario);
 
@@ -1173,7 +1174,8 @@ const App: React.FC = () => {
    *
    * `totalIncomeFor` is the one definition — both axis labels and both
    * tooltips now read it rather than each restating it — and its own comment
-   * says why the whole benefit counts and the charitable gift does not.
+   * says why the whole benefit counts, and why a charitable gift counts too
+   * even though the filer never sees it.
    */
   const totalIncome = totalIncomeFor(hereScenario);
 
@@ -1193,7 +1195,7 @@ const App: React.FC = () => {
    * The caption under the plot: what a figure on the axis has inside it.
    *
    * The axis is total income, and a point on it does not explain itself. Part
-   * of it is a benefit the income slider cannot move, and any tax-exempt
+   * of it is a benefit the income slider cannot move, and any municipal
    * interest the reader holds is in it too even though nothing is charged on
    * that — so a reader who reads one figure off the axis cannot say which part
    * of it the slider beneath is for. This sentence is where that is answered
@@ -1201,25 +1203,41 @@ const App: React.FC = () => {
    * over the curve, and one line under the axis says the same thing without
    * spending a quarter of a narrow plot on it.
    *
-   * A charitable distribution is the one that goes the other way — it is out
-   * of the figure rather than in it — so it takes its own clause rather than
-   * joining the list.
-   *
    * Each part appears only when it is non-zero, so a return with no benefit
-   * and nothing tax-exempt gets the bare axis name rather than a sentence
+   * and no municipal interest gets the bare axis name rather than a sentence
    * about two zeroes.
    */
   const axisIncludes: string[] = [
     ssBenefit > 0 ? `${formatCurrency(ssBenefit)} of Social Security` : '',
     muniInterest > 0
-      ? `${formatCurrency(muniInterest)} of tax-exempt interest`
+      ? `${formatCurrency(muniInterest)} of municipal interest`
       : '',
   ].filter(Boolean);
 
+  /**
+   * And the second sentence, which is about the tax rather than the income.
+   *
+   * A charitable distribution is in the figure on the axis — see
+   * `totalIncomeFor` for why it has to be — so it cannot join the list above
+   * as something taken off. What it does is happen to the *rate*: the sentence
+   * names the one thing on this return that the curve above is drawn without.
+   *
+   * No dollar figure, and "all", because that is the whole of 408(d)(8): every
+   * dollar sent this way is excluded, and the reader's own figure is already
+   * named twice in step 1 above. A figure here would also have to be hedged —
+   * `qcdFor` caps the gift by the ordinary income there is to take it from, so
+   * at the left edge of this axis none of it has happened yet.
+   */
+  const axisExcludes =
+    qcd > 0
+      ? ' Excluding all qualified charitable distributions from the tax on it.'
+      : '';
+
   const axisCaption =
     'Total income ($)' +
-    (axisIncludes.length > 0 ? ` including ${axisIncludes.join(' and ')}` : '') +
-    (qcd > 0 ? `, less ${formatCurrency(qcd)} given straight to charity` : '');
+    (axisIncludes.length > 0 ? `, including ${axisIncludes.join(' and ')}` : '') +
+    (axisIncludes.length > 0 || axisExcludes ? '.' : '') +
+    axisExcludes;
 
   /**
    * The same list again, as the fixed part of a span rather than the contents
@@ -1230,28 +1248,19 @@ const App: React.FC = () => {
    * name. Both offered the reader an addition — a benefit that does not move,
    * plus $0 to the right edge of other income — and both named the benefit and
    * stopped there, so both stopped adding up the moment the muni slider moved.
-   * At $3,750 of tax-exempt interest the opening line said the axis began at
+   * At $3,750 of municipal interest the opening line said the axis began at
    * $28,602 while the arithmetic beside it reached $24,852. They read this
    * now, and `totalIncomeFor` is the definition all three of them share.
+   *
+   * Both are a plain addition again, with no clause taking the gift back off
+   * the far end: the axis stopped subtracting it, so the two ends of the span
+   * are the fixed part and the fixed part plus every dollar the slider can
+   * reach, and nothing in between needs explaining away.
    */
   const axisFixedProse =
     axisIncludes.length > 0
       ? axisIncludes.join(' and ')
       : `${formatCurrency(ssBenefit)} of Social Security`;
-
-  /**
-   * And what those two sentences take back off the far end.
-   *
-   * "The first ... of it" rather than a flat subtraction, because `qcdFor`
-   * caps the gift by the ordinary income there is to take it out of: at the
-   * left edge there is no other income yet, so none of the gift has happened
-   * and that edge is the fixed part on its own. A flat "less $26,750" would
-   * be true at the right edge and $26,750 wrong at the left one.
-   */
-  const axisGiftClause =
-    qcd > 0
-      ? `, less the first ${formatCurrency(qcd)} of it given straight to charity`
-      : '';
 
   /**
    * The average rate, for reading next to the marginal one.
@@ -1765,7 +1774,7 @@ const App: React.FC = () => {
               The chart prices every total income from{' '}
               {formatCurrency(axisDomain[0])} to {formatCurrency(axisDomain[1])}{' '}
               &mdash; a fixed {axisFixedProse} set above, plus $0 to{' '}
-              {formatCurrency(axisMax)} of other income{axisGiftClause}, far
+              {formatCurrency(axisMax)} of other income, far
               enough right to reach the last thing that happens to this return.
               The slider says which point along it is yours.
             </p>
@@ -1845,7 +1854,7 @@ const App: React.FC = () => {
                   axisDomain[1],
                 )} — a fixed ${axisFixedProse} plus $0 to ${formatCurrency(
                   axisMax,
-                )} of other income${axisGiftClause}.`}
+                )} of other income.`}
               >
                 <ResponsiveContainer width="100%" height="100%">
                   <AreaChart
@@ -2349,12 +2358,12 @@ const App: React.FC = () => {
                     {muniInterest > 0
                       ? `, plus ${formatCurrency(muniInterest)} of tax-exempt interest`
                       : ''}
-                    {given > 0
-                      ? `, less the ${formatCurrency(given)} that went straight to charity`
-                      : ''}
                     . The untaxed part of the benefit is counted here on purpose:
                     it is the part the whole page is about, and against taxable
                     income it would vanish.
+                    {given > 0
+                      ? ` The ${formatCurrency(given)} that goes straight to charity is counted too — it comes out of the IRA like every other dollar here. What the gift buys is the tax on it, not a smaller total.`
+                      : ''}
                   </span>
                 </dd>
               </div>

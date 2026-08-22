@@ -506,9 +506,24 @@ export const StandingNote: React.FC<StandingNoteProps> = ({ standing, at }) => {
             {clear ? <>: {clear}</> : null}.{' '}
           </>
         )}
-        Every dollar in between is charged the hump rate, so the move that pays
-        is around this stretch rather than into it: stop short of the near edge,
-        or take enough at once to land past the far one.
+        Every dollar in between is charged the hump rate, but only the dollars
+        in between: {rate} is the price of the next one here, not the price of
+        the income already under it.{' '}
+        {next ? (
+          <>
+            So the crossing is worth finishing rather than starting &mdash; the
+            dollars between here and {formatCurrency(next.start)} cost {rate}{' '}
+            whether they are drawn in one year or a slice at a time, and only
+            the year that reaches the far edge is charged {next.rate}% on the
+            dollars past it. Take enough at once to land past it rather than
+            stopping inside.
+          </>
+        ) : (
+          <>
+            The stretch runs off the right edge of this chart, so there is
+            nowhere past it to land from here.
+          </>
+        )}
       </p>
     );
   }

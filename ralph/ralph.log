@@ -8918,3 +8918,67 @@ visible in the screenshot this run took: it is the `StandingNote` under step
 2's slider, and it currently offers stopping short and clearing the hump as two
 equal moves ("stop short of the near edge, or take enough at once to land past
 the far one"). The change is to stop treating them as equals.
+
+## Stop offering the two ways off the hump as equals (21 Aug 2026)
+
+Backlog 7's last bullet. The peak branch of `StandingNote` closed with "the
+move that pays is around this stretch rather than into it: stop short of the
+near edge, or take enough at once to land past the far one" — two moves, one
+sentence, no preference. The user wants the far edge recommended, and the
+reason named: the rate is marginal.
+
+### Why the far edge actually wins
+
+Worth writing down because the sentence now asserts it. Hump runs $23,000 to
+$41,000 at 22.2%; reader is standing at $30,000 and wants $50,000 more out of
+an IRA. Taken $10,000 a year for five years, every one of those dollars lands
+between the edges and is charged 22.2% — $11,100. Taken at once, the run from
+$30,000 to $41,250 is charged 22.2% and the remaining $38,750 is charged 12%
+and then 22% — because 22.2% is the price of the *next* dollar inside the
+stretch, not the price of the income under it. Splitting the crossing costs
+the same in hump-rate dollars and never arrives; that is the whole argument,
+and it is the argument the 'climbing' branch two paragraphs down was already
+making ("cheaper taken all at once, in one year that clears the hump, than a
+slice at a time inside it"). The peak branch was the one place contradicting
+it.
+
+### What changed
+
+The close is now three sentences: the marginal-rate fact, the consequence, the
+instruction. It reuses `next.start` rather than minting a figure — the `clear`
+clause above it already says "clearing $41,250 — $11,250 more — takes it to
+12%", so the close points at that edge instead of re-deriving the distance.
+Coming back under the near edge is still stated, in the `prev` clause where it
+always was; what it no longer gets is equal billing in the recommendation.
+
+Added a `next`-is-null arm, which the old flat sentence did not need. It cannot
+fire on the drawn axis (the hump ends around $41,000 and the axis runs to
+$178,602) but the branch above it already guards `next` for `clear`, so leaving
+the close asserting a far edge that does not exist would have been the one way
+this paragraph could lie.
+
+### Verification
+
+New test `recommends clearing the far edge rather than stopping inside`, four
+positive assertions plus `not.toHaveTextContent('stop short of the near edge')`.
+Mutation-checked by swapping `next.start` for `hump.end` in the source: reddens
+that test alone, 1 failed / 146 passed. Rendered the paragraph through jsdom at
+three points inside the hump ($30,000, the near edge $23,000, and $40,500) and
+read `textContent` back — no lost spaces at the JSX line joins, and the
+arithmetic tracks the reader's position ($11,250 more, $18,250, $750).
+
+`npx tsc -b`, `npx eslint . --max-warnings 0`, `npx vitest run` (654/654),
+`npm run build` — all clean. Tree opened clean this run, which breaks the
+seven-run streak of opening mid-edit.
+
+### Next
+
+Backlog 7 is empty. Topmost unchecked is Backlog 6's heading-levels bullet —
+one `h1`, eight `h2`s, no `h3` anywhere, so the five explainers under step 2's
+chart are peers of step 2 rather than parts of it. Logged one new Discovered
+Work item on the way past: the hover tooltip still says "staying under $x or
+over $y" for a hill, which is the framing this run just took out of the slider
+advice. Not wrong — it is about a hovered point, not the reader's standing —
+but a reader hovering the stretch they are standing in now reads two different
+recommendations inches apart, and the valley tooltip beside it is already
+one-sided.

@@ -782,6 +782,31 @@ describe('the advice under the slider', () => {
     );
   });
 
+  /**
+   * The two ways off are named, but they are not offered as equals. The hump
+   * rate is marginal — charged on the dollars inside the stretch and on
+   * nothing under them — so the dollars it takes to cross cost the same
+   * however many years they are spread over, and only the year that finishes
+   * the crossing reaches the cheaper ground. Stopping short of the near edge
+   * is the move that keeps paying; the close says so.
+   */
+  it('recommends clearing the far edge rather than stopping inside', () => {
+    render(<App />);
+    expect(advice()).toHaveTextContent(
+      'but only the dollars in between: 22.2% is the price of the next one here, not the price of the income already under it',
+    );
+    expect(advice()).toHaveTextContent(
+      'the dollars between here and $41,250 cost 22.2% whether they are drawn in one year or a slice at a time',
+    );
+    expect(advice()).toHaveTextContent(
+      'only the year that reaches the far edge is charged 12% on the dollars past it',
+    );
+    expect(advice()).toHaveTextContent(
+      'Take enough at once to land past it rather than stopping inside',
+    );
+    expect(advice()).not.toHaveTextContent('stop short of the near edge');
+  });
+
   it('measures the room left when the reader is on the valley floor', () => {
     render(<App />);
     setIncome(10_000);

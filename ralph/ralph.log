@@ -8677,3 +8677,83 @@ clause explained away a subtraction the reader could not see), and that the
 sentence the bullet quotes is about the QCD slider, whose behaviour this
 iteration changed — so re-read it against what the chart does now before
 rewriting it.
+
+## Text shouldn’t have meta references (21 Aug 2026)
+
+The bullet quotes one sentence and says "wording like" it, so the task was the
+register, not the sentence. Twelve sites, all of them the page as its own
+subject: what it opens on, what it has no field for, why a curve is worth
+drawing, which edge moves when a slider does.
+
+### The rule I sorted them by
+
+A reference to the chart is not automatically meta. "Nothing behind you on
+this chart is cheaper than 22.2%" is only true of the range drawn — take
+"on this chart" out and it becomes a claim about the whole return, which is
+false. That is a scope qualifier and it stays. So does every instruction:
+"hover the curve", "switch it on under Breakpoints", "(try the slider above)".
+A reader using a control needs to be told where the control is.
+
+What goes is the page narrating itself as a made thing — its drawing
+decisions, its history, its missing fields:
+
+- the QCD note's third sentence, the one the bullet quotes. Deleted whole; the
+  note now ends at 408(d)(8)(A) and section 170(b), which is what a reader
+  asking about a charitable distribution came for.
+- the advanced-inputs note: "so the page opens on the plain picture" and the
+  whole sentence about what stays set "for both of the steps that follow and is
+  named on the line above even when this section is shut". Both replaced by one
+  clause about the return: at $0 neither input changes a figure on it.
+- step 2's intro: "far enough right to reach the last thing that happens to
+  this return" was the axis justifying its own domain to the reader.
+- "the whole reason that curve is worth drawing" → the average is what the
+  income already in has been charged, this is the price of taking any more.
+  Same contrast, no authorial aside.
+- "it is the part the whole page is about" → "the part the torpedo reaches
+  for".
+- "What it costs is not on this page" / "which this page has no way to know.
+  So the line is drawn where it falls and the loss is left blank" → the cost
+  is not a fixed figure, it depends on ages and county. The reader learns the
+  same thing without being told what the page declined to do.
+- "and this page has no field for one" (both household branches) → "The
+  household here is one person" / "…the two people this filing status
+  implies". An assumption of the figure rather than a gap in the form.
+- "This page prices 2026" → "The figures here are 2026’s".
+- "any of the tax figures on this page" → "any of the tax figures here".
+- "The chart above makes the goal concrete" → "The goal itself is concrete".
+- the no-benefit gloss: "every curve on this page is an ordinary one" → "the
+  rate follows the ordinary brackets and nothing else".
+
+Three "this page"s are left and all three are about the link — the share note
+and the banner that catches a link asking for a return the page cannot show.
+Sending the page *is* something the page does.
+
+### Two guards, both mutation-checked
+
+`prose.test.ts` gets a third `it`: no shipped JSX text or gloss string may say
+"this page"/"the page" unless it also says "link". It needed a third bucket in
+the walker — the conditional glosses are string literals inside expressions,
+which the existing backslash rule never looked at — and a filter for `.test.`
+files, whose own names are prose about the page by definition. Putting "which
+this page has no way to know" back reddens it.
+
+That rule would not have caught the sentence the bullet quotes, which never
+says "page". So the second guard is at the render level: the QCD note must end
+at the statute — `/section 170\(b\)\.$/` single, `/gets it twice\.$/` joint.
+Anything appended after it is the same sentence coming back. Re-adding a
+trimmed version of it reddens that one.
+
+716 green (714 + the two). `npx tsc -b`, `npx eslint . --max-warnings 0`,
+`npm run build` clean. Rendered every changed passage through jsdom and read
+the `textContent` back, because two of these edits join across a JSX line
+break — one did lose its space (`The figures here are{year}’s`) and now has an
+explicit `{' '}`.
+
+### Next
+
+Backlog 7 is empty after this. The open items are all in Discovered Work; I
+added one there for the half of this register that never says "page" — chart
+-as-subject sentences the static test cannot see, mixed in with scope
+qualifiers that have to stay. The two oldest are the tax-exempt/municipal
+naming split and the duplicated "federal income tax only" clause, both of
+which are one careful read of step 2's prose apiece.

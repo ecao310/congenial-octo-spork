@@ -4,7 +4,7 @@ Backlog 7
 [x] Summary on bottom left should dynamically include the advanced inputs. Example: One year’s return: 2026 brackets and standard deduction, a married couple filing jointly, one spouse 65 or older, collecting $38,292 of Social Security per year. Plus $3750 in municipal interest and $26750 qualified charitable distributions.
 [x] Make the graph shift right when QCD increases. Text should say something like Total Income, including $x of Social Security and $y municipal interest. Excluding all qualified charitable distributions.
 [x] Check against irs numbers
-[ ] Text shouldn’t have meta references. For example, remove wording like “A gift anywhere near that figure is more income than step 2’s chart used to draw, so the slider runs to the statutory limit and that chart’s right edge moves out to hold it.”
+[x] Text shouldn’t have meta references. For example, remove wording like “A gift anywhere near that figure is more income than step 2’s chart used to draw, so the slider runs to the statutory limit and that chart’s right edge moves out to hold it.”
 
 Backlog 6 (21 Aug 2026)
 [x] remove "next - step 2 of 2" link. remove tab links for your benefit and tax torpedo since there's only 1 thing now. 
@@ -218,4 +218,5 @@ Discovered Work
 
 Discovered work
 [ ] The previous iteration left `totalIncomeFor` rewritten and 11 tests red in an uncommitted working tree — the source half of "make the graph shift right" was done, the test half was not. Fixed this iteration by finishing the test half rather than reverting. No process change proposed, but it is the second time a run has ended between the source edit and the suite; the loop's own commit step is the only thing that catches it.
+[ ] The page-as-subject register survives in sentences that never say the word "page", which is all `prose.test.ts` can see. "The chart prices every total income from…", "the line disappears from this chart once everyone has turned 65", "sits past the right edge of the chart at the benefit selected above" — each has the drawing as its grammatical subject rather than the return. Some of those are load-bearing scope qualifiers ("nothing behind you *on this chart* is cheaper" is only true of the range drawn) and some are just narration. Worth one pass that sorts them, and a note in the test about what it cannot catch.
 [ ] The page says "tax-exempt interest" and "municipal interest" for the same slider in different places. The recap (c306ba6) and now step 2's axis caption say "municipal interest" because the user asked for that wording twice; the chart tooltip head, the closing answer's total-income note and the IRMAA explainer still say "tax-exempt interest". The slider's own label is "Tax-Exempt (Municipal) Interest", so both terms are introduced — but a reader who meets one figure under two names a foot apart cannot tell whether they are the same money. Pick one for prose and leave the statutory term to the places that are actually about 103.

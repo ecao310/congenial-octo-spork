@@ -1649,11 +1649,8 @@ const App: React.FC = () => {
             <p className="field-note">
               Tax-exempt interest, and money given to charity straight out of an
               IRA. Both sit at $0 until you move them, and at $0 neither one
-              changes a single figure on either chart below — so the page opens on
-              the plain picture, benefit plus other income, and you add the rest
-              only if it is yours. Whatever you set here stays set for both of the
-              steps that follow and is named on the line above even when this
-              section is shut.
+              changes a single figure on this return — so set them only if they
+              are yours.
             </p>
             <div className="input-group">
               <div className="slider-header">
@@ -1716,10 +1713,7 @@ const App: React.FC = () => {
                 <strong>{formatCurrency(qcdLimit)}</strong> for {year}
                 {filingStatus === 'mfj'
                   ? ' \u2014 408(d)(8)(A) caps it per individual, so a joint return where both spouses have reached 70\u00BD and each gives from their own IRA gets it twice.'
-                  : ' by 408(d)(8)(A), which the IRS indexes every year. Anything past it is an ordinary distribution, deductible only on an itemized return and only within the AGI limits of section 170(b).'}{' '}
-                A gift anywhere near that figure is more income than step 2’s
-                chart used to draw, so the slider runs to the statutory limit and
-                that chart’s right edge moves out to hold it.
+                  : ' by 408(d)(8)(A), which the IRS indexes every year. Anything past it is an ordinary distribution, deductible only on an itemized return and only within the AGI limits of section 170(b).'}
               </p>
             </div>
           </details>
@@ -1774,9 +1768,8 @@ const App: React.FC = () => {
               The chart prices every total income from{' '}
               {formatCurrency(axisDomain[0])} to {formatCurrency(axisDomain[1])}{' '}
               &mdash; a fixed {axisFixedProse} set above, plus $0 to{' '}
-              {formatCurrency(axisMax)} of other income, far
-              enough right to reach the last thing that happens to this return.
-              The slider says which point along it is yours.
+              {formatCurrency(axisMax)} of other income. The slider says which
+              point along it is yours.
             </p>
 
             <figure className="chart-figure">
@@ -2051,9 +2044,9 @@ const App: React.FC = () => {
                   brackets, the standard deduction, the capital-gain bands, and the
                   benefit itself, which takes a cost-of-living raise every January.
                   So a retirement that has not changed at all in real terms sits
-                  further past the same line every year. This page prices {year};
-                  the same return priced a decade from now has more of its benefit
-                  in the tax base for no other reason than that.
+                  further past the same line every year. The figures here are{' '}
+                  {year}’s; the same return priced a decade from now has more
+                  of its benefit in the tax base for no other reason than that.
                 </p>
               </div>
             </details>
@@ -2084,8 +2077,8 @@ const App: React.FC = () => {
                 </ul>
                 <p>
                   The right mix depends on account balances, Medicare premium
-                  surcharges, and more. The chart above makes the goal concrete:
-                  keep provisional income out of the spike, or jump clean over it.
+                  surcharges, and more. The goal itself is concrete: keep
+                  provisional income out of the spike, or jump clean over it.
                 </p>
               </div>
             </details>
@@ -2139,8 +2132,8 @@ const App: React.FC = () => {
                   The surcharge never appears on a tax return, which is exactly why it
                   is worth planning around: nothing about filing reveals that one
                   dollar of income cost {formatCurrency(cliffs[0].step)}. It is not
-                  included in any of the tax figures on this page either &mdash; the
-                  curve above is federal income tax only.
+                  included in any of the tax figures here either &mdash; the curve
+                  above is federal income tax only.
                 </p>
               </div>
             </details>
@@ -2179,16 +2172,15 @@ const App: React.FC = () => {
                     hover the curve to read your own distance from it.
                   </p>
                   <p>
-                    <strong>What it costs is not on this page.</strong> Just
+                    <strong>What it costs is not a fixed figure.</strong> Just
                     under the line the household pays at most{' '}
                     {(subsidyCliff.topApplicablePercentage * 100).toFixed(2)}% of
                     its income &mdash;{' '}
                     {formatCurrency(subsidyCliff.cappedContribution)} &mdash; for
                     the benchmark plan, and the credit covers the rest. One
                     dollar over, it pays the full premium, which depends on ages
-                    and county and which this page has no way to know. So the
-                    line is drawn where it falls and the loss is left blank: for
-                    a couple in their early sixties it is routinely five figures.
+                    and county: for a couple in their early sixties it is
+                    routinely five figures.
                   </p>
                   <p>
                     <strong>It is not Medicare&apos;s line, or the tax
@@ -2248,8 +2240,8 @@ const App: React.FC = () => {
                     Hawaii have their own, higher, so the line falls further
                     right there than it is drawn.{' '}
                     {subsidyCliff.householdSize === 1
-                      ? 'A dependent would move it right by about $5,500 of income, and this page has no field for one.'
-                      : 'A dependent past the two people this filing status implies would move it right by about $5,500 of income, and this page has no field for one.'}
+                      ? 'The household here is one person; a dependent would move the line right by about $5,500 of income.'
+                      : 'The household here is the two people this filing status implies; a dependent past them would move the line right by about $5,500 of income.'}
                   </p>
                 </div>
               </details>
@@ -2358,9 +2350,9 @@ const App: React.FC = () => {
                     {muniInterest > 0
                       ? `, plus ${formatCurrency(muniInterest)} of tax-exempt interest`
                       : ''}
-                    . The untaxed part of the benefit is counted here on purpose:
-                    it is the part the whole page is about, and against taxable
-                    income it would vanish.
+                    . The untaxed part of the benefit is counted here because it
+                    is the part the torpedo reaches for; against taxable income it
+                    would vanish.
                     {given > 0
                       ? ` The ${formatCurrency(given)} that goes straight to charity is counted too — it comes out of the IRA like every other dollar here. What the gift buys is the tax on it, not a smaller total.`
                       : ''}
@@ -2404,9 +2396,9 @@ const App: React.FC = () => {
                   </strong>
                   <span className="answer-gloss">
                     What one more dollar of ordinary income costs, where the amber
-                    line crosses step 2&apos;s curve. The gap between this and the
-                    average above it is the whole reason that curve is worth
-                    drawing.
+                    line crosses step 2&apos;s curve. The average above it is what
+                    the income already in has been charged; this is the price of
+                    taking any more.
                   </span>
                 </dd>
               </div>
@@ -2422,7 +2414,7 @@ const App: React.FC = () => {
                   <span className="answer-gloss">
                     {ssBenefit > 0
                       ? `${formatPercent(taxableSS / ssBenefit)} of it. 86(a) can never make more than 85% taxable, and whatever is left never reaches the return at all.`
-                      : 'Step 1 sets no benefit, so there is nothing for other income to drag in \u2014 every curve on this page is an ordinary one.'}
+                      : 'Step 1 sets no benefit, so there is nothing for other income to drag in \u2014 the rate follows the ordinary brackets and nothing else.'}
                   </span>
                 </dd>
               </div>

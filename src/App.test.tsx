@@ -272,7 +272,7 @@ describe('App', () => {
     expect(frozen).toHaveTextContent('IRC 86(c) set $25,000 and $32,000 in 1983');
     expect(frozen).toHaveTextContent('$34,000 and $44,000 in 1993');
     expect(frozen).toHaveTextContent('Neither has ever been indexed');
-    expect(frozen).toHaveTextContent(`This page prices ${PAGE_TAX_YEAR}`);
+    expect(frozen).toHaveTextContent(`The figures here are ${PAGE_TAX_YEAR}’s`);
     // It is the same explainer the live thresholds are in, not a fifth block.
     expect(frozen?.closest('details')).toBe(
       screen.getByRole('heading', { name: /what is the tax torpedo/i }).closest('details'),
@@ -1522,6 +1522,23 @@ describe('qualified charitable distribution', () => {
   });
 
   /**
+   * The note used to carry a third sentence after the statute, about the gift
+   * being more income than the chart used to draw and the chart's right edge
+   * moving out to hold it — the page narrating its own axis to a reader who
+   * asked what a charitable distribution does to a tax bill. The statute is
+   * the last thing this note has to say on either filing status, so that is
+   * what is pinned: anything appended after it is the same sentence coming
+   * back.
+   */
+  it('stops at the statute rather than explaining the chart', () => {
+    render(<App />);
+    expect(qcdNote().textContent!.trim()).toMatch(/section 170\(b\)\.$/);
+
+    fireEvent.click(screen.getByRole('radio', { name: /married filing jointly/i }));
+    expect(qcdNote().textContent!.trim()).toMatch(/gets it twice\.$/);
+  });
+
+  /**
    * And the other half of the same change: a gift the old axis could not hold
    * has to widen the axis, or it is a slider whose whole effect is off the
    * right edge of every chart. The gift comes off the front of the income, so
@@ -1538,9 +1555,12 @@ describe('qualified charitable distribution', () => {
     // The torpedo's right foot moves right dollar for dollar with the gift:
     // $48,797 + $216,000, plus a tail, rounded up to a legible tick.
     expect(incomeSlider()).toHaveAttribute('max', '300000');
-    expect(screen.getByText(/far enough right to reach the last/i)).toHaveTextContent(
-      '$300,000',
-    );
+    expect(
+      screen
+        .getByRole('heading', { name: 'The tax torpedo' })
+        .closest('section')!
+        .querySelector('.step-intro'),
+    ).toHaveTextContent('$0 to $300,000 of other income');
   });
 
   /**

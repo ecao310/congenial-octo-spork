@@ -9142,3 +9142,97 @@ comments and leaves the shelf modules for a second pass is a reasonable shape.
 One new item logged: nothing on this page asserts where its own prose sends the
 reader, which is why the hover pointer went stale silently and why the fix had
 to be written by hand rather than caught.
+
+## Iteration — "clean up dead code" step 1: the render layer (Backlog 8)
+
+Fourth clean-tree open running. The bullet says to break it into steps if
+necessary, and it is: the sweep has two halves that want different decisions,
+so this run did the first and wrote the second down as a sub-bullet rather
+than guessing at it.
+
+### What was actually dead
+
+Six rules and four tokens, found by scanning selectors and `:root` against
+what `App.tsx` can render:
+
+- `.step-intro`, `.answer-share-line`, `.answer-share-line strong`,
+  `.answer-note` — the four the previous run's Discovered Work already named.
+- `.chart-key` and `.chart-key strong` — not on that list, and the better find.
+  The paragraph of key under the plot went when the Breakpoints panel put each
+  swatch beside the switch that draws its line; the comment above
+  `.chart-key-swatch-subsidy` even says so ("the swatch outlived it") while two
+  rules for the paragraph itself sat six lines above, unremarked.
+- `--rose-rgb`, `--indigo-rgb`, `--lime-deep`, `--emerald-deep`, each in both
+  the screen and the print `:root`.
+
+The four tokens are the resolution of the `--lime-deep` bullet, taken the way
+it framed the choice: a token earns its line by a `var()` or by a `PALETTE`
+twin, and these have neither. `--indigo`, `--lime` and `--emerald` stay,
+because `palette.ts` names them and says what they are held for — the
+distinction is not "unspent" but "unaccounted".
+
+### What was stale rather than dead
+
+`index.css`'s shell comment listed the configuration column's inputs as "the
+year, the status, the ages, the benefit, and the two advanced amounts" — the
+year picker came off in Backlog 5 and the second advanced amount was the QCD
+slider. Same comment: "a reader looking at step 3's chart", of a page with two
+steps. `palette.ts` said "the three charts" and set the label size against "the
+curve-in-words under each plot", which Backlog 5 deleted. And App.tsx's
+`.answer-share` block still ended "The sentence is the feature and the button is
+the convenience", of a sentence the manual text pass removed.
+
+That last one is not only a comment. With the sentence gone the block is gated
+entirely on `canCopyLink`, so a browser without `navigator.clipboard` renders
+nothing there at all and never learns the address bar is the return. Logged
+under Discovered work rather than fixed here: putting prose back that the user
+deleted by hand is their call, and the alternative — render the button always,
+let the failure message carry it — is a different edit than a comment.
+
+### The two guards
+
+Both halves of this were silent, which is the whole reason they accumulated,
+so each got a test in `styles.test.tsx`:
+
+- `writes no rule for a class the page never renders` — every class any
+  selector mentions, against every class `App.tsx` emits. Read off source, not
+  off a render, because the existing nesting check next to it *is* render-based
+  and cannot tell "behind a closed panel" from "deleted": `.chart-key-swatch`
+  and `.link-note` are both absent from a default render and both alive. Source
+  works only because every `className` here is a literal string, so the test
+  asserts that first (`expect(source).not.toMatch(/className=\{/)`) before
+  relying on it. `recharts-*` is excluded and the comment says why — the print
+  sheet re-colours the library's own SVG parts.
+- `declares no colour with nothing on either side of it` — the existing palette
+  test runs `PALETTE` → CSS only, which is exactly the direction `--lime-deep`
+  fell through. This runs the other way.
+
+Mutations, each reverted: a `.ghost-rule {}` appended to the stylesheet reddens
+the first alone; restoring `--emerald-deep` reddens the second (and, usefully,
+the print/screen parity test too, which is why the tokens had to come out of
+both blocks).
+
+One test changed rather than added. `the chart metrics` asserted `.chart-key`'s
+font-size, which after this is a claim about a rule that does not exist, so its
+`notes` list is down to `.chart-axis-label`. And `App.test.tsx:1523` asserted
+`document.querySelector('.chart-key')` was null on arrival — true, but vacuously
+so once nothing can render it; rewritten to `.chart-key-swatch`, which is a real
+claim about a panel that starts shut.
+
+`npx tsc -b`, `npx eslint . --max-warnings 0`, `npx vitest run` (651/651, up 2)
+and `npm run build` all clean. CSS is 78 lines lighter.
+
+### Next
+
+The sub-bullet left open is the other half: `tax.ts`'s three chapters that
+nothing on the page reaches — `ltcgRateCurve`, the 1411 block, and conversion
+sizing. That one is a decision, not a sweep, and the repo currently argues both
+sides of it in two files: the note above `NIIT_RATE` says the three stay in
+`utils/` because the shelf is for whole modules, and `shelf/README.md` says the
+directory is the decision and moving the file is the only way to reverse it.
+`sequencing.ts` imports four of the conversion exports, so that chapter does not
+split cleanly and is the part to settle first. Nothing was touched there this
+run on purpose — a half-moved chapter is worse than an unmoved one.
+
+Also noted: the user added a Backlog 8 item mid-run (the 65-or-older / both-
+spouses checkbox coupling). It is below the two open ones and was left alone.

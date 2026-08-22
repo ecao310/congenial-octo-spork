@@ -2323,16 +2323,15 @@ const App: React.FC = () => {
             {/* ───── The link is the return ─────
 
                 The address bar has carried the whole return since the query
-                string went in, and until now the only place the page mentioned it
-                was the failure case: the note that appears when a link asked for
-                something this page could not show. So a reader who wanted to send
-                this to a spouse or an advisor had to work out on their own that
-                the URL was the thing to send.
+                string went in, and the only other place the page names it is the
+                failure case: the note that appears when a link asked for
+                something this page could not show.
 
                 It belongs here rather than in the header, because what is worth
                 sending is the answer, and this is the one place the answer sits
-                together. The sentence is the feature and the button is the
-                convenience — see `canCopyLink`. */}
+                together. The button is the whole of it — the sentence that used
+                to say so in prose came off in the text pass — so a browser with
+                no clipboard (`canCopyLink`) is left with nothing here at all. */}
             <div className="answer-share">
               {canCopyLink && (
                 <button

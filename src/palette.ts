@@ -64,7 +64,7 @@ export const PALETTE = {
  * attribute holds a number rather than a `var(--…)` the browser resolves. So
  * the page's scales — which everywhere else live in `:root` and are held
  * closed by `the type scale` and `the corners` in styles.test.tsx — have to
- * be written a second time here for the three charts to spend them.
+ * be written a second time here for the chart to spend them.
  *
  * The register is FI Calc's: 13px labels, 3px curves, and a grid that is a
  * hairline mesh rather than a set of dashes competing with the dashed lines
@@ -81,8 +81,8 @@ export const CHART = {
   /**
    * Every word the plot says: a tick label, a cliff's name, the marker's.
    * 13px is `0.8125rem` on the page's type scale — the caption step — which
-   * is what the axis label, the key and the curve-in-words under each plot
-   * are already set in, so the chart and its notes read at one size.
+   * is what the axis label and the key under the plot are already set in, so
+   * the chart and its notes read at one size.
    */
   label: 13,
 

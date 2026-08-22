@@ -37,6 +37,26 @@ const nestedClassSelectors = (css: string): string[] =>
     .map((selector) => selector.trim().replace(/\s+/g, ' '))
     .filter((selector) => /^\.[\w-]+ \.[\w-]+$/.test(selector));
 
+/**
+ * `App.tsx`'s source, for the one question a render cannot answer.
+ *
+ * A class can be alive and still be absent from a default render — the
+ * Breakpoints panel's swatches are behind a button, the link note behind a
+ * bad query string — so `querySelector` on one render cannot tell "not drawn
+ * yet" from "not drawn ever". The source can, and only because every
+ * `className` on this page is a literal string: no template, no helper, no
+ * conditional join. The test below asserts that before it relies on it.
+ */
+const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+
+/** Every class name a selector mentions, wherever in the selector it sits. */
+const styledClasses = (css: string): Set<string> =>
+  new Set(
+    (css.replace(/\/\*[\s\S]*?\*\//g, '').match(/[^{}]+(?=\{)/g) ?? [])
+      .flatMap((prelude) => Array.from(prelude.matchAll(/\.([\w-]+)/g)))
+      .map(([, name]) => name),
+  );
+
 describe('the stylesheet', () => {
   it('scopes no rule to a nesting the page never renders', () => {
     const selectors = nestedClassSelectors(stylesheet);
@@ -45,6 +65,38 @@ describe('the stylesheet', () => {
 
     const { container } = render(<App />);
     const dead = selectors.filter((selector) => !container.querySelector(selector));
+    expect(dead).toEqual([]);
+  });
+
+  /**
+   * The other half of the same silence. A rule scoped to a nesting that never
+   * happens is caught above; this catches a rule whose class no render path
+   * emits at all, which is what a section leaves behind when its markup is
+   * deleted and its stylesheet is not. `.step-intro`, `.answer-share-line`,
+   * `.answer-note` and `.chart-key` were four of them at once — every one
+   * outliving the element it was written for, and none of them costing a
+   * warning to say so.
+   */
+  it('writes no rule for a class the page never renders', () => {
+    // The claim `styledClasses` rests on: className is always a literal here.
+    expect(source).not.toMatch(/className=\{/);
+
+    const rendered = new Set(
+      Array.from(source.matchAll(/className="([^"]*)"/g)).flatMap(([, list]) =>
+        list.split(/\s+/).filter(Boolean),
+      ),
+    );
+    // Guards both extractors: either coming back empty would pass vacuously.
+    expect(rendered.size).toBeGreaterThan(20);
+    const styled = styledClasses(stylesheet);
+    expect(styled.size).toBeGreaterThan(20);
+
+    // recharts names its own SVG parts, and the print sheet re-colours the
+    // grid and the ticks by the names the library emits. Nothing in `App.tsx`
+    // writes one, and nothing should.
+    const dead = Array.from(styled).filter(
+      (name) => !rendered.has(name) && !name.startsWith('recharts-'),
+    );
     expect(dead).toEqual([]);
   });
 });
@@ -273,29 +325,59 @@ describe('the print sheet’s charts', () => {
  * other: the whole reason the tokens exist is that "change the accent" should
  * be one edit, and it is only one edit if a second copy cannot survive it.
  */
+/** `surfaceRaised` is `--surface-raised`, and every name pairs that way. */
+const custom = (name: string) =>
+  `--${name.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}`;
+
+/** Every custom property `:root` declares on screen, name to value. */
+const rootTokens = (css: string): Record<string, string> =>
+  Object.fromEntries(
+    Array.from(
+      (screenBlock(css).match(/:root\s*\{[^}]*\}/g) ?? [])
+        .join('\n')
+        .matchAll(/(--[\w-]+):\s*([^;]+);/g),
+    ).map(([, name, value]) => [name, value.trim()]),
+  );
+
 describe('the palette', () => {
   it('gives the charts the same colours the stylesheet declares', () => {
-    const root = (screenBlock(stylesheet).match(/:root\s*\{[^}]*\}/g) ?? []).join(
-      '\n',
-    );
-    const declared = Object.fromEntries(
-      Array.from(root.matchAll(/(--[\w-]+):\s*([^;]+);/g)).map(([, name, value]) => [
-        name,
-        value.trim(),
-      ]),
-    );
+    const declared = rootTokens(stylesheet);
     // Guards the extractor: an empty map would make every check below vacuous.
     expect(Object.keys(declared).length).toBeGreaterThan(20);
-
-    /** `surfaceRaised` is `--surface-raised`, and every name pairs that way. */
-    const custom = (name: string) =>
-      `--${name.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}`;
 
     const disagreed = Object.entries(PALETTE)
       .map(([name, value]) => ({ name, value, css: declared[custom(name)] }))
       .filter((token) => token.css !== token.value);
 
     expect(disagreed).toEqual([]);
+  });
+
+  /**
+   * The check above runs `PALETTE` → CSS, so a token with no `PALETTE` twin is
+   * invisible to it. That is the half `--lime-deep` fell through: its only
+   * user was the charitable slider, the slider came off with the deduction it
+   * set, and the token sat in both `:root` blocks afterwards spent by nothing
+   * and named by nothing — the one entry in the block a reader could not
+   * account for.
+   *
+   * So there are exactly two ways a token earns its line: a `var()` somewhere
+   * in the sheet, or a `PALETTE` entry, which is a chart spending it in SVG
+   * where `var()` cannot reach. `--indigo`, `--lime` and `--emerald` are
+   * unspent by CSS and pass on the second — held, with a comment in
+   * `palette.ts` saying what they are held for, against the steps that drew
+   * them coming back. An unspent token with no such note fails here.
+   */
+  it('declares no colour with nothing on either side of it', () => {
+    const sheet = stylesheet.replace(/\/\*[\s\S]*?\*\//g, '');
+    const twins = new Set(Object.keys(PALETTE).map(custom));
+
+    const names = Object.keys(rootTokens(stylesheet));
+    expect(names.length).toBeGreaterThan(20);
+
+    const orphaned = names.filter(
+      (name) => !sheet.includes(`var(${name})`) && !twins.has(name),
+    );
+    expect(orphaned).toEqual([]);
   });
 });
 
@@ -329,7 +411,10 @@ describe('the chart metrics', () => {
     const step = `${CHART.label / 16}rem`;
     expect(step).toBe('0.8125rem');
 
-    const notes = ['.chart-axis-label', '.chart-key'];
+    // One note, where there were two: the paragraph of key under the plot
+    // came off with the Breakpoints panel, which put each swatch beside the
+    // switch that draws its line instead.
+    const notes = ['.chart-axis-label'];
     const set = leafRules(screenBlock(stylesheet))
       .filter((rule) => rule.selectors.some((selector) => notes.includes(selector)))
       .map((rule) => ({

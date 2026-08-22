@@ -1519,8 +1519,10 @@ describe('the Breakpoints panel on the torpedo chart', () => {
       'aria-expanded',
       'false',
     );
-    // And no key at all: the only two this page ever draws are the cliffs'.
-    expect(document.querySelector('.chart-key')).toBeNull();
+    // And no key at all. The key is the swatch beside each switch now, so
+    // with the panel shut there is nothing tying a colour to a cliff —
+    // which is right, because neither cliff is drawn.
+    expect(document.querySelector('.chart-key-swatch')).toBeNull();
   });
 
   it('offers both switches, unticked, and counts what it draws', () => {

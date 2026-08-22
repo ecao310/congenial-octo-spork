@@ -76,18 +76,14 @@
   --orange: #f97316;
   --rose: #f43f5e;
   --rose-bright: #fb7185;
-  --rose-rgb: 244, 63, 94;
   --fuchsia: #e879f9;
   --fuchsia-bright: #f0abfc;
   --indigo: #818cf8;
   --indigo-bright: #a5b4fc;
-  --indigo-rgb: 129, 140, 248;
   --violet: #a78bfa;
   --violet-deep: #8b5cf6;
   --lime: #a3e635;
-  --lime-deep: #65a30d;
   --emerald: #34d399;
-  --emerald-deep: #10b981;
 
   /* ── The shell ──
      FI Calc's two measures, read off its own layout rather than guessed at:
@@ -203,12 +199,12 @@ body {
  *
  * FI Calc's shape: a configuration column that stays put and a reading column
  * that scrolls past it. Every input this page has that describes the *return*
- * — the year, the status, the ages, the benefit, and the two advanced
- * amounts — lives in the first; the charts, their sliders, the
- * explainers and the close live in the second.
+ * — the status, the ages, the benefit and the tax-exempt interest — lives in
+ * the first; the chart, its slider, the explainers and the close live in the
+ * second.
  *
  * That is the fix for the thing this page could not do: every input sat in
- * step 1, at the top of a single 900px column, so a reader looking at step 3's
+ * step 1, at the top of a single 900px column, so a reader looking at step 2's
  * chart had no way to see — let alone change — the benefit being priced
  * without scrolling a screen and a half back and losing their place. The
  * inputs are now beside the chart at every point in the walk.
@@ -919,28 +915,13 @@ h1 {
   color: var(--ink-muted);
 }
 
-/* Names the reference lines drawn on the chart above. The dashed swatch is the
-   whole point: it is the only thing tying a red dash in the SVG to the prose
-   that prices it, now that the section explaining IRMAA lives behind a
-   disclosure rather than on a tab of its own. Shares the axis label's gutter
-   so it starts where the plot area does. */
-.chart-key {
-  display: flex;
-  gap: 0.625rem;
-  margin: 0.875rem 0 0;
-  padding-left: var(--chart-axis);
-  font-size: 0.8125rem;
-  line-height: 1.5;
-  color: var(--ink-muted);
-}
-
-.chart-key strong {
-  color: var(--rose-bright);
-  font-weight: 600;
-}
-
 /* A zero-height box so the border *is* the swatch, nudged down to the middle of
-   the first line of text rather than its top. */
+   the first line of text rather than its top.
+
+   The `chart-key-` prefix is older than anything on the page: it named a
+   paragraph of key under the plot, which the Breakpoints panel replaced by
+   putting the swatch beside the switch that draws the line. The paragraph and
+   its `.chart-key` rules are gone; the swatch is what a key was for. */
 .chart-key-swatch {
   flex: 0 0 1.75rem;
   align-self: flex-start;
@@ -1182,11 +1163,6 @@ footer p {
   color: var(--ink-bright);
 }
 
-.step-intro {
-  color: var(--ink-muted);
-  margin: 0 0 1.5rem;
-}
-
 /* The line that closes step 1 by naming the return everything else prices.
    Set apart the way the slider advice is — a rule in the step's own colour,
    not a bigger type size — because it is a summary of the inputs above it,
@@ -1300,11 +1276,10 @@ footer p {
 
 /* ───── Sending the answer ─────
  *
- * Between the figures and the caveat, and on the figures' side of the rule
- * that separates them: this is about the figures — whether they are worth
- * sending — where the caveat below the rule is about the return. No second
- * rule of its own for the same reason. The button is quiet, an outline rather
- * than a fill, because it takes a copy and nothing on the page moves.
+ * The last thing in the close, directly under the figures it offers to send
+ * and with no rule between: what is worth a link is the answer, and this is
+ * the one place the answer sits together. The button is quiet, an outline
+ * rather than a fill, because it takes a copy and nothing on the page moves.
  */
 .answer-share {
   display: flex;
@@ -1312,18 +1287,6 @@ footer p {
   align-items: baseline;
   gap: 0.75rem 1rem;
   margin-top: 1.5rem;
-}
-
-.answer-share-line {
-  flex: 1 1 18rem;
-  margin: 0;
-  font-size: 0.8125rem;
-  line-height: 1.6;
-  color: var(--ink-muted);
-}
-
-.answer-share-line strong {
-  color: var(--ink);
 }
 
 .answer-share-button {
@@ -1358,15 +1321,6 @@ footer p {
 
 .answer-share-status:empty {
   display: none;
-}
-
-.answer-note {
-  margin: 1.5rem 0 0;
-  padding-top: 1rem;
-  border-top: 1px solid var(--edge);
-  font-size: 0.8125rem;
-  line-height: 1.6;
-  color: var(--ink-dim);
 }
 
 @media (max-width: 640px) {
@@ -1723,18 +1677,14 @@ footer p {
     --orange: #c2410c;
     --rose: #be123c;
     --rose-bright: #9f1239;
-    --rose-rgb: 190, 18, 60;
     --fuchsia: #a21caf;
     --fuchsia-bright: #86198f;
     --indigo: #4338ca;
     --indigo-bright: #3730a3;
-    --indigo-rgb: 67, 56, 202;
     --violet: #6d28d9;
     --violet-deep: #5b21b6;
     --lime: #4d7c0f;
-    --lime-deep: #3f6212;
     --emerald: #047857;
-    --emerald-deep: #065f46;
 
     /* Nothing floats on paper. The one thing that took this is the chart
        tooltip, which follows a pointer there is none of here. */

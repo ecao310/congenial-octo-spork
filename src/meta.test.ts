@@ -161,7 +161,6 @@ describe('the cover', () => {
       isSenior: opening.isSenior,
       spouseIsSenior: opening.spouseIsSenior,
       muniInterest: opening.muniInterest,
-      qcd: opening.qcd,
     };
     const curve = marginalRateCurve(scenario, { maxIncome: incomeAxisMax(scenario), step: 250 });
 

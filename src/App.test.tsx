@@ -967,34 +967,14 @@ describe('the total the return owes', () => {
 
   /**
    * The denominator is the total income the axis label under step 2's chart
-   * already defines, and for the same reasons: tax-exempt interest is money
-   * received, and a charitable distribution is money that leaves the IRA
-   * without ever reaching the filer.
+   * already defines, and for the same reason: tax-exempt interest is money
+   * received.
    */
   it('counts tax-exempt interest as income received', () => {
     render(<App />);
     set(/tax-exempt \(municipal\) interest/i, 10_000);
     expect(readout('torpedo')).toHaveTextContent(
       'owes $3,839 in federal tax on $64,852 of total income',
-    );
-  });
-
-  /**
-   * The gift moves the numerator and not the denominator, which is the whole
-   * of what 408(d)(8) buys: the same $114,852 came out, and $4,400 less is
-   * owed on it. A total that dropped the gift too would have shown the tax
-   * falling against an income that fell with it, and hidden the saving inside
-   * a smaller effective rate rather than showing it as one.
-   */
-  it('counts a charitable distribution into it, though the tax drops it', () => {
-    render(<App />);
-    set(/other income \(not social security\)/i, 90_000);
-    expect(readout('torpedo')).toHaveTextContent(
-      'owes $15,617 in federal tax on $114,852 of total income',
-    );
-    set(/qualified charitable distribution/i, 20_000);
-    expect(readout('torpedo')).toHaveTextContent(
-      'owes $11,217 in federal tax on $114,852 of total income',
     );
   });
 
@@ -1036,21 +1016,18 @@ describe('advanced inputs', () => {
   });
 
   /**
-   * The line that justifies the whole disclosure: at their defaults both of
-   * these change nothing, so there is nothing to see until one is moved.
+   * The line that justifies the whole disclosure: at its default it changes
+   * nothing, so there is nothing to see until it is moved.
    */
-  it('reports both sitting at their defaults', () => {
+  it('reports it sitting at its default', () => {
     render(<App />);
-    expect(advancedState()).toHaveTextContent('Both at $0');
+    expect(advancedState()).toHaveTextContent('At $0');
   });
 
-  it('holds the two inputs that belong to no chart axis', () => {
+  it('holds the input that belongs to no chart axis', () => {
     render(<App />);
     const inside = within(advanced());
     expect(inside.getByLabelText('Tax-Exempt (Municipal) Interest')).toHaveValue(
-      '0',
-    );
-    expect(inside.getByLabelText('Qualified Charitable Distribution')).toHaveValue(
       '0',
     );
     expect(
@@ -1076,46 +1053,19 @@ describe('advanced inputs', () => {
     }
   });
 
-  it('names each input that has been moved off zero', () => {
+  it('names the input once it has been moved off zero', () => {
     render(<App />);
     fireEvent.change(
       screen.getByLabelText('Tax-Exempt (Municipal) Interest'),
       { target: { value: '5000' } },
     );
     expect(advancedState()).toHaveTextContent('Muni interest $5,000');
-    expect(advancedState()).not.toHaveTextContent('Charitable');
-
-    fireEvent.change(screen.getByLabelText('Qualified Charitable Distribution'), {
-      target: { value: '3000' },
-    });
-    expect(advancedState()).toHaveTextContent(
-      'Muni interest $5,000 \u00B7 Charitable $3,000',
-    );
 
     fireEvent.change(
       screen.getByLabelText('Tax-Exempt (Municipal) Interest'),
       { target: { value: '0' } },
     );
-    expect(advancedState()).not.toHaveTextContent('Muni interest');
-    expect(advancedState()).toHaveTextContent('Charitable $3,000');
-  });
-
-  /**
-   * A joint return's charitable limit is twice everyone else's, so leaving it
-   * and coming back re-caps the gift. That re-cap happens whether or not the
-   * section is open, which is precisely when a summary that goes stale would
-   * mislead.
-   */
-  it('follows a value the app clamps behind its back', () => {
-    render(<App />);
-    fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Jointly' }));
-    fireEvent.change(screen.getByLabelText('Qualified Charitable Distribution'), {
-      target: { value: '150000' },
-    });
-    expect(advancedState()).toHaveTextContent('Charitable $150,000');
-
-    fireEvent.click(screen.getByRole('radio', { name: 'Single' }));
-    expect(advancedState()).toHaveTextContent('Charitable $111,000');
+    expect(advancedState()).toHaveTextContent('At $0');
   });
 
   /**
@@ -1331,7 +1281,7 @@ describe('Tooltip Recommendations', () => {
    * apart on the page. Both now read `totalIncomeFor`.
    */
   describe('what the tooltip calls total income', () => {
-    it('counts tax-exempt interest and the gift alike', () => {
+    it('counts tax-exempt interest', () => {
       render(
         <CustomTooltip
           active={true}
@@ -1340,13 +1290,11 @@ describe('Tooltip Recommendations', () => {
           segments={mockOrdinarySegments}
           filingStatus="single"
           muniInterest={10_000}
-          qcd={5_000}
           year={PAGE_TAX_YEAR}
         />,
       );
       // $40,000 of other income + $24,852 of benefit + $10,000 of tax-exempt
-      // interest. The $5,000 given away is inside the $40,000, not beside it,
-      // so the head's own addition is the whole of the figure it quotes.
+      // interest, which is the whole of the figure the head quotes.
       expect(screen.getByText(/Total income \$74,852/)).toBeInTheDocument();
       expect(
         screen.getByText(/Total income \$74,852 · \$24,852 SS \+ \$10,000 tax-exempt \+ \$40,000 other income/),
@@ -1468,23 +1416,11 @@ describe('scenario recap', () => {
     expect(scenarioRecap()).not.toHaveTextContent('Plus');
   });
 
-  it('names the gift, which the benefit and the interest do not cover', () => {
-    render(<App />);
-    fireEvent.change(screen.getByLabelText('Qualified Charitable Distribution'), {
-      target: { value: '26750' },
-    });
-    expect(scenarioRecap()).toHaveTextContent(
-      'collecting $24,852 of Social Security per year. Plus $26,750 in ' +
-        'qualified charitable distributions.',
-    );
-  });
-
   /**
-   * Two figures behind one "Plus" take a bare "and", and the bullet that asked
-   * for this named both advanced inputs at once — so the whole recap, from the
-   * year to the gift, is worth pinning end to end once.
+   * The bullet that asked for this pinned the recap end to end, from the year
+   * to the figure a reader set by hand, so that is what is pinned.
    */
-  it('names both advanced inputs in the sentence they share', () => {
+  it('names the advanced input in the sentence the filer’s does not cover', () => {
     render(<App />);
     fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Jointly' }));
     fireEvent.click(screen.getByRole('checkbox', { name: 'Age 65 or older' }));
@@ -1495,30 +1431,26 @@ describe('scenario recap', () => {
     fireEvent.change(screen.getByLabelText('Tax-Exempt (Municipal) Interest'), {
       target: { value: '3750' },
     });
-    fireEvent.change(screen.getByLabelText('Qualified Charitable Distribution'), {
-      target: { value: '26750' },
-    });
     expect(scenarioRecap()).toHaveTextContent(
       'One year’s return: 2026 brackets and standard deduction, a married ' +
         'couple filing jointly, one spouse 65 or older, collecting $38,500 ' +
-        'of Social Security per year. Plus $3,750 in municipal interest and ' +
-        '$26,750 in qualified charitable distributions.',
+        'of Social Security per year. Plus $3,750 in municipal interest.',
     );
   });
 
   /**
-   * The two figures a reader set by hand get a sentence of their own rather
-   * than two more clauses hung off the filer: the first sentence describes a
-   * filer, and these are neither facts about the filer nor a fifth thing of
-   * the same kind. The full stop before "Plus" is the whole difference, so it
-   * is pinned rather than left to a substring that would pass either way.
+   * The figure a reader set by hand gets a sentence of its own rather than
+   * another clause hung off the filer: the first sentence describes a filer,
+   * and this is neither a fact about the filer nor a fifth thing of the same
+   * kind. The full stop before "Plus" is the whole difference, so it is pinned
+   * rather than left to a substring that would pass either way.
    */
   it('starts a second sentence rather than extending the first', () => {
     render(<App />);
-    fireEvent.change(screen.getByLabelText('Qualified Charitable Distribution'), {
-      target: { value: '26750' },
+    fireEvent.change(screen.getByLabelText('Tax-Exempt (Municipal) Interest'), {
+      target: { value: '3750' },
     });
-    expect(scenarioRecap().textContent).toMatch(/per year\. Plus \$26,750/);
+    expect(scenarioRecap().textContent).toMatch(/per year\. Plus \$3,750/);
     expect(scenarioRecap().textContent).not.toMatch(/per year,/);
   });
 
@@ -1587,166 +1519,6 @@ describe('the year the page prices', () => {
     expect(scenarioRecap()).toHaveTextContent(
       `${PAGE_TAX_YEAR} brackets and standard deduction`,
     );
-  });
-});
-
-/* ------------------------------------------------------------------ */
-/*  Qualified charitable distributions                                */
-/* ------------------------------------------------------------------ */
-
-describe('qualified charitable distribution', () => {
-  const qcdSlider = (): HTMLElement =>
-    screen.getByRole('slider', { name: /qualified charitable distribution/i });
-
-  /** The note under the slider. "Capped at" appears in other sections too. */
-  const qcdNote = (): HTMLElement =>
-    qcdSlider().closest('.input-group')!.querySelector('.field-note')!;
-
-  const setSlider = (name: RegExp, value: string): void => {
-    fireEvent.change(screen.getByRole('slider', { name }), { target: { value } });
-  };
-
-  it('runs from $0 to the 2026 annual limit', () => {
-    render(<App />);
-    expect(qcdSlider()).toHaveValue('0');
-    expect(qcdSlider()).toHaveAttribute('min', '0');
-    expect(qcdSlider()).toHaveAttribute('max', '111000');
-    expect(qcdNote()).toHaveTextContent('Capped at $111,000 for 2026');
-  });
-
-  /**
-   * The slider used to stop at `min(limit, axisMax)`, so a joint return's
-   * $216,000 was cut off at the chart's $150,000 domain — the chart clipping
-   * the statute. Now the statute sets the slider and the chart follows.
-   */
-  it('doubles the limit on a joint return and runs the slider all the way to it', () => {
-    render(<App />);
-    fireEvent.click(screen.getByRole('radio', { name: /married filing jointly/i }));
-    expect(qcdSlider()).toHaveAttribute('max', '222000');
-    expect(qcdNote()).toHaveTextContent('Capped at $222,000 for 2026');
-    expect(qcdNote()).toHaveTextContent(/caps it per individual/);
-  });
-
-  /**
-   * The note used to carry a third sentence after the statute, about the gift
-   * being more income than the chart used to draw and the chart's right edge
-   * moving out to hold it — the page narrating its own axis to a reader who
-   * asked what a charitable distribution does to a tax bill. The statute is
-   * the last thing this note has to say on either filing status, so that is
-   * what is pinned: anything appended after it is the same sentence coming
-   * back.
-   */
-  it('stops at the statute rather than explaining the chart', () => {
-    render(<App />);
-    expect(qcdNote().textContent!.trim()).toMatch(/section 170\(b\)\.$/);
-
-    fireEvent.click(screen.getByRole('radio', { name: /married filing jointly/i }));
-    expect(qcdNote().textContent!.trim()).toMatch(/gets it twice\.$/);
-  });
-
-  /**
-   * And the other half of the same change: a gift the old axis could not hold
-   * has to widen the axis, or it is a slider whose whole effect is off the
-   * right edge of every chart. The gift comes off the front of the income, so
-   * the reader needs to be able to walk past it to see anything happen.
-   */
-  it('widens the chart and the income slider to make room for the gift', () => {
-    render(<App />);
-    const incomeSlider = (): HTMLElement =>
-      screen.getByRole('slider', { name: /other income \(not social security\)/i });
-    fireEvent.click(screen.getByRole('radio', { name: /married filing jointly/i }));
-    expect(incomeSlider()).toHaveAttribute('max', '150000');
-
-    setSlider(/qualified charitable distribution/i, '216000');
-    // The torpedo's right foot moves right dollar for dollar with the gift:
-    // $48,797 + $216,000, plus a tail, rounded up to a legible tick.
-    expect(incomeSlider()).toHaveAttribute('max', '300000');
-    expect(
-      screen
-        .getByRole('heading', { name: 'The tax torpedo' })
-        .closest('section')!
-        .querySelector('.step-intro'),
-    ).toHaveTextContent('$0 to $300,000 of other income');
-  });
-
-  /**
-   * The case the axis could not have found any other way. With no benefit
-   * there is no torpedo for the gift to push right, so nothing but the gift
-   * itself asks for the width.
-   */
-  it('makes room for the gift even when there is no torpedo to carry it', () => {
-    render(<App />);
-    fireEvent.click(screen.getByRole('radio', { name: /married filing jointly/i }));
-    setSlider(/annual social security benefit/i, '0');
-    setSlider(/qualified charitable distribution/i, '216000');
-    expect(
-      screen.getByRole('slider', { name: /other income \(not social security\)/i }),
-    ).toHaveAttribute('max', '250000');
-  });
-
-  it('clamps a gift parked past the limit when the filing status changes', () => {
-    render(<App />);
-    fireEvent.click(screen.getByRole('radio', { name: /married filing jointly/i }));
-    setSlider(/qualified charitable distribution/i, '150000');
-    // The limit is per individual, so it halves on the way back to one filer.
-    fireEvent.click(screen.getByRole('radio', { name: 'Single' }));
-    expect(qcdSlider()).toHaveValue('111000');
-  });
-
-  /**
-   * The gift is *in* the figure on the axis — that is what lets the chart move
-   * when the gift moves — so the caption cannot list it beside the benefit as
-   * something taken off. It gets a sentence of its own, about the tax rather
-   * than the income, and no dollar figure: 408(d)(8) excludes every dollar
-   * sent this way, and `qcdFor` caps what has actually been sent by the income
-   * there is to send it from, so a figure here would be wrong at the left edge.
-   */
-  it('gives the gift its own sentence in the axis label', () => {
-    render(<App />);
-    expect(
-      screen.getByText('Total income ($), including $24,852 of Social Security.'),
-    ).toBeInTheDocument();
-    setSlider(/qualified charitable distribution/i, '10000');
-    expect(
-      screen.getByText(
-        'Total income ($), including $24,852 of Social Security.' +
-          ' Excluding all qualified charitable distributions from the tax on it.',
-      ),
-    ).toBeInTheDocument();
-  });
-
-  it('shows the exclusion on the chart tooltip', () => {
-    render(
-      <CustomTooltip
-        active
-        payload={[{ payload: { income: 30_000, marginalRate: 22.2, totalTax: 2_813 } }]}
-        ssBenefit={AVG_ANNUAL_SS_BENEFIT}
-        segments={[]}
-        qcd={10_000}
-        year={PAGE_TAX_YEAR}
-      />,
-    );
-    expect(
-      screen.getByText(/less \$10,000 given straight to charity/i),
-    ).toHaveTextContent('$20,000 of it reaches the return');
-  });
-
-  it('never quotes more given away than the income at that point on the axis', () => {
-    // The x-axis is income before the gift, so at $5,000 of income only
-    // $5,000 of a $10,000 gift can have come out of it.
-    render(
-      <CustomTooltip
-        active
-        payload={[{ payload: { income: 5_000, marginalRate: 0, totalTax: 0 } }]}
-        ssBenefit={AVG_ANNUAL_SS_BENEFIT}
-        segments={[]}
-        qcd={10_000}
-        year={PAGE_TAX_YEAR}
-      />,
-    );
-    expect(
-      screen.getByText(/less \$5,000 given straight to charity/i),
-    ).toHaveTextContent('$0 of it reaches the return');
   });
 });
 
@@ -2104,8 +1876,12 @@ describe('the torpedo chart’s right edge', () => {
   /**
    * The slider steps in whatever the curve beneath it samples, so the widest
    * chart costs no more points than the narrowest and the reader's marker
-   * still lands on a sampled point. The third rung exists because a maxed
-   * charitable gift can take a joint return past $300,000.
+   * still lands on a sampled point.
+   *
+   * Nothing a reader can click reaches the third rung any more — the widest
+   * chart a control can ask for is the joint phaseout's $250,000 — so the
+   * rungs past it are reached the only way that is left, which is the way
+   * they were written for: a link naming an income the sliders never had.
    */
   it('coarsens its step as the axis widens', () => {
     render(<App />);
@@ -2115,15 +1891,20 @@ describe('the torpedo chart’s right edge', () => {
     fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Jointly' }));
     expect(incomeSlider()).toHaveAttribute('max', '250000');
     expect(incomeSlider()).toHaveAttribute('step', '500');
+  });
 
-    fireEvent.change(
-      screen.getByRole('slider', { name: /qualified charitable distribution/i }),
-      { target: { value: '216000' } },
-    );
-    // The gift never enters AGI, so the phaseout ends $216,000 further out:
-    // $229,845 + $216,000 of other income, plus a tail, rounded up.
-    expect(incomeSlider()).toHaveAttribute('max', '475000');
+  it('coarsens it again for an income only a link can name', () => {
+    window.history.replaceState(null, '', '/?income=400000');
+    render(<App />);
+    expect(incomeSlider()).toHaveAttribute('max', '400000');
     expect(incomeSlider()).toHaveAttribute('step', '1000');
+  });
+
+  it('coarsens it once more past $600,000', () => {
+    window.history.replaceState(null, '', '/?income=700000');
+    render(<App />);
+    expect(incomeSlider()).toHaveAttribute('max', '700000');
+    expect(incomeSlider()).toHaveAttribute('step', '2000');
   });
 });
 
@@ -2132,9 +1913,9 @@ describe('the torpedo chart’s right edge', () => {
 /* ------------------------------------------------------------------ */
 
 /**
- * `totalIncomeFor` is what "total income" means on this page: other income
- * less what went straight to charity, plus the *whole* benefit, plus
- * tax-exempt interest. Three places take a figure on that axis apart for the
+ * `totalIncomeFor` is what "total income" means on this page: other income,
+ * plus the *whole* benefit, plus tax-exempt interest. Three places take a
+ * figure on that axis apart for the
  * reader rather than just quoting it — the tooltip head, step 2's opening
  * line and the plot's accessible name — and each of them hands over an
  * addition the reader can do. So each of them has to name every term the
@@ -2187,37 +1968,22 @@ describe('the axis, taken apart', () => {
   });
 
   /**
-   * The gift used to take a clause off the far end of this span, because the
-   * axis it describes used to take the gift off the income. Neither does now:
-   * a dollar sent to charity still left the IRA, so it is on the axis like any
-   * other, and the span is the fixed part at one end and the fixed part plus
-   * every dollar the slider reaches at the other. The gift's whole effect is
-   * that the slider reaches further — which this span picks up for free, in
-   * `edge`, and does not have to explain away in words.
+   * The span stays a plain addition when the axis widens under it. The edge
+   * moves for reasons of its own — the senior phaseout is the one a reader
+   * can reach — and both ends have to follow it, or the sentence names a
+   * right edge the chart no longer has.
    */
-  it('stays a plain addition when a gift is set, and widens with it', () => {
-    render(<App />);
-    const [, toBefore, , , edgeBefore] = dollars(stepIntro());
-    setSlider(/qualified charitable distribution/i, '111000');
-    const [from, to, benefit, , edge] = dollars(stepIntro());
-    expect(from).toBe(benefit);
-    expect(to).toBe(benefit + edge);
-    // The gift sits on the axis now rather than being taken off it, so the
-    // axis has to reach past it: the right edge moves out and the left one
-    // does not move at all.
-    expect(edge).toBeGreaterThan(edgeBefore);
-    expect(to).toBeGreaterThan(toBefore);
-    expect(stepIntro()).not.toMatch(/straight to charity/i);
-  });
-
-  it('adds up with both advanced inputs set at once', () => {
+  it('stays a plain addition when the axis widens under it', () => {
     render(<App />);
     setSlider(/tax-exempt \(municipal\) interest/i, '3750');
-    setSlider(/qualified charitable distribution/i, '26750');
+    const [, toBefore, , , , edgeBefore] = dollars(stepIntro());
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Age 65 or older' }));
     const [from, to, benefit, interest, , edge] = dollars(stepIntro());
-    expect(interest).toBe(3_750);
     expect(from).toBe(benefit + interest);
     expect(to).toBe(benefit + interest + edge);
+    expect(edge).toBeGreaterThan(edgeBefore);
+    expect(to).toBeGreaterThan(toBefore);
   });
 
   /**
@@ -2227,11 +1993,9 @@ describe('the axis, taken apart', () => {
   it('names both fixed halves to a screen reader, and still adds up', () => {
     render(<App />);
     setSlider(/tax-exempt \(municipal\) interest/i, '3750');
-    setSlider(/qualified charitable distribution/i, '26750');
     expect(chartLabel()).toContain(
       'a fixed $24,852 of Social Security and $3,750 of municipal interest',
     );
-    expect(chartLabel()).not.toMatch(/straight to charity/i);
     const [from, to, benefit, interest, , edge] = dollars(chartLabel());
     expect(from).toBe(benefit + interest);
     expect(to).toBe(benefit + interest + edge);
@@ -2239,9 +2003,8 @@ describe('the axis, taken apart', () => {
 
   /**
    * And the third place, which quotes the total for a hovered point and then
-   * decomposes it. The gift keeps its own line below the head — the x-axis is
-   * income before the gift, so the head's addition is the total before it
-   * comes off — but tax-exempt interest is inside the figure the head quotes.
+   * decomposes it. Tax-exempt interest is inside the figure the head quotes,
+   * so the head has to name it among the terms it adds up.
    */
   it('names the tax-exempt interest inside the total the tooltip quotes', () => {
     render(
@@ -2453,11 +2216,11 @@ describe('the closing answer', () => {
   /**
    * The same denominator the effective rate above step 2 uses, and the same
    * one the chart's axis is drawn in: everything that came out, so tax-exempt
-   * interest is in it and so is a gift the filer never sees. What the gift
-   * changes is the numerator — here all the way to $0 — which is the saving
-   * stated as a saving rather than hidden in a shrinking denominator.
+   * interest is in it even though no part of it is taxed. Taking it back to
+   * $0 has to put both figures back where they started, or the total is
+   * carrying a dollar the return no longer has.
    */
-  it('counts tax-exempt interest and a charitable gift alike into the total', () => {
+  it('counts tax-exempt interest into the total the return takes in', () => {
     render(<App />);
     fireEvent.change(
       screen.getByRole('slider', { name: /tax-exempt \(municipal\) interest/i }),
@@ -2473,19 +2236,8 @@ describe('the closing answer', () => {
       screen.getByRole('slider', { name: /tax-exempt \(municipal\) interest/i }),
       { target: { value: '0' } },
     );
-    fireEvent.change(
-      screen.getByRole('slider', { name: /qualified charitable distribution/i }),
-      { target: { value: '20000' } },
-    );
     expect(figure('Total income')).toHaveTextContent('$54,852');
-    expect(figure('Total income')).toHaveTextContent(
-      'The $20,000 that goes straight to charity is counted too',
-    );
-    expect(figure('Total income')).not.toHaveTextContent('less');
-    // The gift takes provisional income under the 50% base, so none of the
-    // benefit is taxable and the return owes nothing.
-    expect(figure('Federal tax')).toHaveTextContent('$0');
-    expect(figure('Benefit in the tax base')).toHaveTextContent('$0 of $24,852');
+    expect(figure('Total income')).not.toHaveTextContent('tax-exempt interest');
   });
 
   /** No income is no denominator, and "0.00%" would be a claim about nothing. */
@@ -2671,9 +2423,7 @@ describe('the return in the address bar', () => {
     screen.getByRole('slider', { name: /other income \(not social security\)/i });
 
   it('opens on the return the link names rather than on its own defaults', () => {
-    openAt(
-      '?filing=mfj&ss=40000&income=120000&senior=1&spouse=1&muni=8000&qcd=15000',
-    );
+    openAt('?filing=mfj&ss=40000&income=120000&senior=1&spouse=1&muni=8000');
     render(<App />);
 
     expect(screen.getByRole('radio', { name: 'Married Filing Jointly' })).toBeChecked();
@@ -2688,18 +2438,16 @@ describe('the return in the address bar', () => {
     expect(screen.getByRole('slider', { name: /tax-exempt \(municipal\) interest/i })).toHaveValue(
       '8000',
     );
-    expect(
-      screen.getByRole('slider', { name: /qualified charitable distribution/i }),
-    ).toHaveValue('15000');
   });
 
   /**
-   * And prices nothing off the two keys that outlived their controls. A gain
-   * named in an old link would move the curve with nothing on the page to say
-   * so or to undo it, which is the one thing worse than dropping it.
+   * And prices nothing off the three keys that outlived their controls. A gain
+   * or a gift named in an old link would move the curve with nothing on the
+   * page to say so or to undo it, which is the one thing worse than dropping
+   * it.
    */
-  it('reads past a gain or a ceiling an older link still names', () => {
-    openAt('?income=120000&ltcg=25000&ceiling=irmaa1');
+  it('reads past a gain, a gift or a ceiling an older link still names', () => {
+    openAt('?income=120000&ltcg=25000&ceiling=irmaa1&qcd=15000');
     render(<App />);
 
     expect(screen.queryByRole('status')).not.toBeInTheDocument();

@@ -8833,3 +8833,88 @@ added one there for the half of this register that never says "page" — chart
 qualifiers that have to stay. The two oldest are the tax-exempt/municipal
 naming split and the duplicated "federal income tax only" clause, both of
 which are one careful read of step 2's prose apiece.
+
+## Remove everything to do with QCDs, and redo the math (21 Aug 2026)
+
+The tree opened dirty with the source half of this bullet already done and
+green — `tax.ts`, `App.tsx`, `scenarioUrl.ts`, `index.css`, `palette.ts`,
+`docs/irs-published-figures.md`, both shelf modules and their own tests, 1,866
+lines deleted — and six `App.test.tsx` tests still reaching for a slider that
+no longer exists. Seventh dirty-tree open, third of the exact "source edited,
+suite red" shape. Finished rather than reverted.
+
+### What was left
+
+Four cleanups on top of the six red tests:
+
+- `acaMagi`'s doc comment still had a paragraph on 408(d)(8) buying a dollar of
+  headroom under Medicare's line and 1411's. Deleted; the rest of that comment
+  is about 36B(d)(2)(B)'s add-backs and stands on its own.
+- README's "What is priced" and "Sharing a return" paragraphs were left
+  mid-rewrap by the deletion, with a 20-word line beside a 90-word one.
+  Re-wrapped, no wording changed.
+- Four Discovered Work bullets are now about code that is gone — the axis
+  label's asked-for-versus-allowed gift, the withdrawal-order gift pricing, the
+  $500,000 chart whose first 43% was the flat run a maxed gift bought, and the
+  gain crowding out a distribution. All four marked
+  `[blocked: superseded — …]`, following the precedent Backlog 4 set.
+- `src/shelf/README.md` already said "Two bullets" where two gate bullets in
+  PLAN.md still say three and four, so the counts disagree. Logged rather than
+  rewritten: the gate bullets' own wording is what a future run reads, and
+  re-counting them is one pass over all three gates, not a patch on one.
+
+### The six tests
+
+Two of them only had to drop a slider (`opens on the return the link names`,
+which is now six keys; `counts tax-exempt interest and a charitable gift alike`,
+which is now about the interest alone and asserts the gloss disappears when the
+slider goes back to $0). One gained a key rather than losing it: the legacy-key
+test now opens `?income=120000&ltcg=25000&ceiling=irmaa1&qcd=15000` and still
+asserts the address comes back `?income=120000`, so `qcd` is pinned as read-past
+in the same place `ltcg` and `ceiling` are.
+
+Three needed a new mechanism, because the gift was the mechanism:
+
+- `coarsens its step as the axis widens` reached the 1000 rung by maxing a
+  joint gift to $216,000. Nothing a reader can click reaches past $250,000 any
+  more, so the two rungs past it are now reached the way `curveStepFor`'s own
+  comment says they exist for — a link naming an income the sliders never had.
+  Split into three `it`s: the reachable rung by clicking, then `?income=400000`
+  and `?income=700000`.
+- `stays a plain addition when a gift is set, and widens with it` was pinning
+  that the span has no clause taking the gift back off the far end. There is no
+  gift, so it now widens the axis the one way a reader still can — the senior
+  toggle — and asserts the same two things: both ends are a plain addition, and
+  both follow the edge out.
+- `names both fixed halves to a screen reader` lost its `not.toMatch(/straight
+  to charity/)` and keeps the addition.
+
+### Verification
+
+Mutation-checked all three rewritten tests, each uniquely: breaking
+`curveStepFor`'s 300k threshold reddens only the link rung; pinning
+`axisDomain[1]` to `curve[0].totalIncome + MIN_INCOME_AXIS` reddens only the
+span test; making the close's tax-exempt clause unconditional reddens only the
+total-income test.
+
+`npx tsc -b`, `npx eslint . --max-warnings 0`, `npx vitest run` (653/653),
+`npm run build` — all clean. `grep` over `dist/` for qcd/charitable: zero hits
+in every chunk and in `index.html`.
+
+Drove the built page in Chrome. No QCD text anywhere, one slider left in
+Advanced inputs, and the math reconciles across the three places that state it:
+$24,852 benefit + $30,000 other + $3,750 muni = $58,602 in the close, the same
+$58,602 in the readout's effective rate, and an axis running $28,602 to
+$178,602 — the fixed $28,602 plus $0–$150,000 of other income. No console
+errors. Nothing untracked left behind (the browser script went in as
+`dv-tmp.mjs` and out in the same command line).
+
+### Next
+
+Topmost unchecked is Backlog 7's last bullet — the hump advice's "take enough
+at once to land past the far one", which the user wants changed to recommend
+blowing past the far edge because the rate there is marginal. That sentence is
+visible in the screenshot this run took: it is the `StandingNote` under step
+2's slider, and it currently offers stopping short and clearing the hump as two
+equal moves ("stop short of the near edge, or take enough at once to land past
+the far one"). The change is to stop treating them as equals.

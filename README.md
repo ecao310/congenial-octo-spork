@@ -59,10 +59,10 @@ the benefit, and the Medicare surcharge that MAGI buys.
 provisional income and the 50%/85% inclusion worksheet, the base standard
 deduction plus the 65+ additional amount plus the OBBBA senior deduction and
 its 6% phaseout, ordinary brackets for all four filing statuses, capital gains
-stacked on top of ordinary taxable income, QCDs excluded under IRC 408(d)(8),
-tax-exempt interest that moves provisional income without moving the tax base,
-the 3.8% net investment income tax of IRC 1411, the IRMAA tiers on their
-two-year MAGI lag, and the premium tax credit's 400% cliff under IRC 36B.
+stacked on top of ordinary taxable income, tax-exempt interest that moves
+provisional income without moving the tax base, the 3.8% net investment income
+tax of IRC 1411, the IRMAA tiers on their two-year MAGI lag, and the premium
+tax credit's 400% cliff under IRC 36B.
 
 That last one is a credit the government stops paying rather than a tax it
 charges, and it has a MAGI of its own: 36B(d)(2)(B) counts AGI plus tax-exempt
@@ -100,17 +100,18 @@ the same place a reader would go to check the figures behind it.
 ## Sharing a return
 
 The whole scenario lives in the query string, so a link survives a refresh and
-can be sent to a spouse or an advisor: `filing`, `ss`, `income`, `muni`, `qcd`,
+can be sent to a spouse or an advisor: `filing`, `ss`, `income`, `muni`,
 `senior`, `spouse`. Nothing is written unconditionally — a key appears only
 when it differs from what the page opens with, so an untouched page has no
-query string at all and every key present is something the reader did. A link asking for something the page cannot show —
-an income past the slider's bound, a gift past the statutory limit — is
-clamped to what it can, and the page says on load what it changed. A `year` in
-an older link is read past in silence: there is no year to switch to, so there
-is nothing to tell the reader and nothing to point them at. `ltcg` and
-`ceiling` are read past the same way, for the same reason — both named a step
-that is no longer on the page, and `ltcg` moved the curve, so honouring it
-would set a figure no reader could see or change. The step is a fragment
+query string at all and every key present is something the reader did. A link
+asking for something the page cannot show — an income past the slider's bound,
+a benefit past the year's maximum — is clamped to what it can, and the page
+says on load what it changed. A `year` in an older link is read past in
+silence: there is no year to switch to, so there is nothing to tell the reader
+and nothing to point them at. `ltcg`, `ceiling` and `qcd` are read past the
+same way, for the same reason — each named a step that is no longer on the
+page, and `ltcg` and `qcd` moved the curve, so honouring either would set a
+figure no reader could see or change. The step is a fragment
 (`#step-torpedo`), not a query parameter: it is where the reader is standing,
 not what the return holds.
 

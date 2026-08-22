@@ -27,8 +27,6 @@ import {
   MIN_INCOME_AXIS,
   standardDeductionFor,
   taxableSocialSecurity,
-  qcdLimitFor,
-  qcdFor,
   totalIncomeFor,
   SENIOR_DEDUCTION,
   SENIOR_DEDUCTION_FIRST_YEAR,
@@ -103,10 +101,9 @@ import type {
  *
  * So the inputs are split across the steps that move them: filing status, age
  * and the benefit are step 1, and other ordinary income is step 2, being a
- * point on the axis its chart sweeps. Tax-exempt interest and the charitable
- * distribution belong to no axis and sit in a collapsed `advanced-inputs`
- * block at the end of step 1, because each starts at $0 and at $0 leaves the
- * chart on the page identical.
+ * point on the axis its chart sweeps. Tax-exempt interest belongs to no axis
+ * and sits in a collapsed `advanced-inputs` block at the end of step 1,
+ * because it starts at $0 and at $0 leaves the chart on the page identical.
  *
  * Nothing renders off the list itself any more. It carried a nav label, a
  * heading and a blurb per step until the nav and the next-step box went, and
@@ -310,8 +307,6 @@ interface CustomTooltipProps {
   segments: CurveSegment<MarginalRatePoint>[];
   filingStatus?: FilingStatus;
   muniInterest?: number;
-  /** Charitable distribution excluded from the x-axis income, if any. */
-  qcd?: number;
   /** How many people on the return are enrolled in Medicare. */
   beneficiaries?: number;
   /** Which year's premium schedule prices the IRMAA line. */
@@ -332,7 +327,6 @@ export const CustomTooltip: React.FC<CustomTooltipProps> = ({
   segments,
   filingStatus = 'single',
   muniInterest = 0,
-  qcd = 0,
   beneficiaries = 1,
   year = defaultTaxYear(),
   preMedicare = false,
@@ -349,7 +343,6 @@ export const CustomTooltip: React.FC<CustomTooltipProps> = ({
     ssBenefit,
     filingStatus,
     muniInterest,
-    qcd,
     year,
   };
   // Medicare reads a wider MAGI than the tax chain does — tax-exempt interest
@@ -366,16 +359,12 @@ export const CustomTooltip: React.FC<CustomTooltipProps> = ({
   // neither is drawn unless the reader asks for it: the lines say where the
   // thresholds are, the tooltip says what they cost here.
   const subsidy = ptcFor(acaMagi(scenario), scenario);
-  // How much of the gift this point on the sweep can actually make: at the
-  // left of the chart there is not yet enough other income to take it from.
-  const given = qcdFor(scenario);
   // Not `point.income + ssBenefit`: tax-exempt interest is spent like any
   // other dollar, so it belongs in what this return takes in too. See
   // `totalIncomeFor`. Which is why the head below has to name the interest as
   // well: it quotes the total and then takes it apart, and a decomposition
   // that leaves out a term the total contains is an addition the reader can
-  // watch fail. The gift is the one term that is *not* named there — it is
-  // inside the other income, not beside it — so it gets the line below.
+  // watch fail.
   const totalIncome = totalIncomeFor(scenario);
   return (
     <div className="chart-tooltip">
@@ -387,12 +376,6 @@ export const CustomTooltip: React.FC<CustomTooltipProps> = ({
           : ''}{' '}
         + {formatCurrency(point.income)} other income
       </div>
-      {given > 0 && (
-        <div style={{ color: PALETTE.lime }}>
-          Less {formatCurrency(given)} given straight to charity —{' '}
-          {formatCurrency(point.income - given)} of it reaches the return
-        </div>
-      )}
       <div>
         Marginal Rate: <strong style={{ color: PALETTE.accent }}>{point.marginalRate}%</strong>
       </div>
@@ -618,9 +601,7 @@ export const StandingNote: React.FC<StandingNoteProps> = ({ standing, at }) => {
  *
  * The interval doubles each time the axis does, so the widest chart this app
  * can draw samples no more points than the narrowest one always did — at most
- * 600 either way. A maxed charitable gift is what widens it furthest by hand:
- * the gift comes off the front of the income, so a joint return giving its
- * full $216,000 asks for an axis that runs well past $250,000.
+ * 600 either way.
  *
  * The last rungs exist for links rather than for sliders. Nothing a reader can
  * click takes the axis past $300,000, but a link can name any income up to
@@ -707,7 +688,6 @@ const App: React.FC = () => {
   const [isSenior, setIsSenior] = useState<boolean>(opening.isSenior);
   const [spouseIsSenior, setSpouseIsSenior] = useState<boolean>(opening.spouseIsSenior);
   const [muniInterest, setMuniInterest] = useState<number>(opening.muniInterest);
-  const [qcd, setQcd] = useState<number>(opening.qcd);
 
   /**
    * Which of step 2's two threshold lines are drawn, and whether the panel
@@ -850,7 +830,6 @@ const App: React.FC = () => {
       isSenior,
       spouseIsSenior,
       muniInterest,
-      qcd,
     };
     window.history.replaceState(
       window.history.state,
@@ -869,7 +848,6 @@ const App: React.FC = () => {
     isSenior,
     spouseIsSenior,
     muniInterest,
-    qcd,
   ]);
 
   const yearFiling = filingParams(year, filingStatus);
@@ -880,22 +858,18 @@ const App: React.FC = () => {
   };
 
   /**
-   * The charitable limit is per individual, so it halves on the way from a
-   * joint return to any other one. Re-cap the gift rather than leaving the
-   * slider parked past its own right edge.
+   * Line 6a on a joint return holds two benefits, so both ends of that slider
+   * are the couple's: coming back from `mfj` can leave a figure standing past
+   * a right edge that has nearly halved, and it is re-capped rather than left
+   * parked out there.
    *
-   * The benefit moves for the same reason and one more. Line 6a on a joint
-   * return holds two benefits, so both ends of that slider are the couple's:
-   * coming back from `mfj` can leave a figure standing past a right edge that
-   * has nearly halved, and it gets the same re-cap the gift does. The extra
-   * rule is the average. A reader sitting exactly on one status's average has
-   * not chosen that number, they have accepted the marker under the slider —
-   * so when the marker moves, they move with it, and switching back puts them
-   * where they started. Anywhere else on the slider is a figure they set, and
-   * it stays set.
+   * The extra rule is the average. A reader sitting exactly on one status's
+   * average has not chosen that number, they have accepted the marker under
+   * the slider — so when the marker moves, they move with it, and switching
+   * back puts them where they started. Anywhere else on the slider is a figure
+   * they set, and it stays set.
    */
   const changeFilingStatus = (next: PageFilingStatus): void => {
-    setQcd((current) => Math.min(current, qcdLimitFor({ filingStatus: next, year })));
     setSsBenefit((current) =>
       current === avgAnnualSSBenefit(year, filingStatus)
         ? avgAnnualSSBenefit(year, next)
@@ -935,19 +909,14 @@ const App: React.FC = () => {
    * The reader's own income is passed as the floor so the axis always contains
    * where they are standing. Without it, turning the age toggle back off would
    * pull the right edge in behind a slider left out at $170,000.
-   *
-   * A charitable gift widens it too, and it is the one input that can widen it
-   * a lot: the gift comes off the front of the income, so a joint return giving
-   * its full $216,000 is asking for a chart whose first $216,000 is a flat run
-   * at nothing. That run is what the gift buys, so it is worth the width.
    */
   const axisMax = useMemo(
     () =>
       incomeAxisMax(
-        { ssBenefit, filingStatus, seniors, muniInterest, qcd, year },
+        { ssBenefit, filingStatus, seniors, muniInterest, year },
         { minimum: Math.max(MIN_INCOME_AXIS, ordinaryIncome) },
       ),
-    [ssBenefit, filingStatus, seniors, muniInterest, qcd, year, ordinaryIncome],
+    [ssBenefit, filingStatus, seniors, muniInterest, year, ordinaryIncome],
   );
 
   /**
@@ -960,23 +929,9 @@ const App: React.FC = () => {
   const incomeSliderStep = Math.max(500, curveStep);
 
   /**
-   * The statutory annual QCD limit for this return, and the right edge of the
-   * slider under it.
+   * The inputs the page does not open with.
    *
-   * The slider used to stop at `min(limit, axisMax)`, which meant a joint
-   * return — whose limit 408(d)(8)(A) doubles, to $216,000 for 2025 — was cut
-   * off at the chart's $150,000 domain. That is the chart clipping the statute,
-   * which is backwards: the gift is a fact about the return, and the axis is
-   * drawn to show the return. So the slider runs to the limit and the axis
-   * follows it out, because `incomeAxisFeatures` counts the gift's own far
-   * side as a feature to make room for.
-   */
-  const qcdLimit = qcdLimitFor({ filingStatus, year });
-
-  /**
-   * The two inputs the page does not open with.
-   *
-   * Both start at $0, and at $0 both are a no-op: every chart on the page
+   * Each starts at $0, and at $0 each is a no-op: every chart on the page
    * prices the identical scenario whether this section is open or shut. That
    * is the whole test for what belongs in here — year, filing status, age,
    * benefit and other income all change the picture the moment the page loads,
@@ -997,11 +952,6 @@ const App: React.FC = () => {
       noun: 'municipal interest',
       value: muniInterest,
     },
-    {
-      label: 'Charitable',
-      noun: 'qualified charitable distributions',
-      value: qcd,
-    },
   ].filter(({ value }) => value > 0);
 
   /**
@@ -1020,15 +970,15 @@ const App: React.FC = () => {
           : 'one spouse 65 or older';
 
   /**
-   * The second sentence of the recap, which exists only when one of the two
-   * advanced sliders has been moved off $0.
+   * The second sentence of the recap, which exists only when an advanced
+   * slider has been moved off $0.
    *
    * A sentence of its own rather than more clauses on the end of the first
    * one. The first sentence describes a filer — a year, a status, an age, a
-   * benefit — and these are neither facts about the filer nor a fifth thing of
-   * the same kind; they are the two figures a reader went and set by hand, and
-   * the point of naming them here is that the section holding them is shut.
-   * Ending the filer sentence and starting "Plus" is what says so.
+   * benefit — and this is neither a fact about the filer nor a fifth thing of
+   * the same kind; it is a figure a reader went and set by hand, and the point
+   * of naming it here is that the section holding it is shut. Ending the filer
+   * sentence and starting "Plus" is what says so.
    */
   const advancedClauses = advancedSet.map(({ label, noun, value }) => ({
     key: label,
@@ -1069,7 +1019,6 @@ const App: React.FC = () => {
     filingStatus,
     seniors: Math.max(1, seniors),
     muniInterest,
-    qcd,
     year,
   }).seniorPhaseoutEnd;
   const phaseoutEndsOnChart =
@@ -1089,10 +1038,10 @@ const App: React.FC = () => {
   const curve = useMemo(
     () =>
       marginalRateCurve(
-        { ssBenefit, filingStatus, seniors, muniInterest, qcd, year },
+        { ssBenefit, filingStatus, seniors, muniInterest, year },
         { maxIncome: axisMax, step: curveStep },
       ),
-    [ssBenefit, filingStatus, seniors, muniInterest, qcd, year, axisMax, curveStep],
+    [ssBenefit, filingStatus, seniors, muniInterest, year, axisMax, curveStep],
   );
 
   const segments = useMemo(
@@ -1111,8 +1060,7 @@ const App: React.FC = () => {
    * answer, because the benefit sitting underneath it is income too.
    *
    * Read off the curve's own ends rather than recomputed, so the axis cannot
-   * span anything the plot does not. See `MarginalRatePoint.totalIncome` for
-   * what a charitable gift does to the width of it.
+   * span anything the plot does not.
    */
   const axisDomain: [number, number] = [
     curve[0].totalIncome,
@@ -1154,19 +1102,10 @@ const App: React.FC = () => {
       filingStatus,
       seniors,
       muniInterest,
-      qcd,
       year,
     }),
-    [ordinaryIncome, ssBenefit, filingStatus, seniors, muniInterest, qcd, year],
+    [ordinaryIncome, ssBenefit, filingStatus, seniors, muniInterest, year],
   );
-
-  /**
-   * How much of a charitable gift 408(d)(8) can actually exclude, which is the
-   * gift capped by the ordinary income there is to take it out of. Named
-   * rather than inlined because the close below quotes the figure, and because
-   * the figure a reader set is not always the figure the statute reaches.
-   */
-  const given = qcdFor(hereScenario);
 
   /**
    * Everything this return takes in, which is the denominator an effective
@@ -1174,8 +1113,7 @@ const App: React.FC = () => {
    *
    * `totalIncomeFor` is the one definition — both axis labels and both
    * tooltips now read it rather than each restating it — and its own comment
-   * says why the whole benefit counts, and why a charitable gift counts too
-   * even though the filer never sees it.
+   * says why the whole benefit counts.
    */
   const totalIncome = totalIncomeFor(hereScenario);
 
@@ -1214,30 +1152,9 @@ const App: React.FC = () => {
       : '',
   ].filter(Boolean);
 
-  /**
-   * And the second sentence, which is about the tax rather than the income.
-   *
-   * A charitable distribution is in the figure on the axis — see
-   * `totalIncomeFor` for why it has to be — so it cannot join the list above
-   * as something taken off. What it does is happen to the *rate*: the sentence
-   * names the one thing on this return that the curve above is drawn without.
-   *
-   * No dollar figure, and "all", because that is the whole of 408(d)(8): every
-   * dollar sent this way is excluded, and the reader's own figure is already
-   * named twice in step 1 above. A figure here would also have to be hedged —
-   * `qcdFor` caps the gift by the ordinary income there is to take it from, so
-   * at the left edge of this axis none of it has happened yet.
-   */
-  const axisExcludes =
-    qcd > 0
-      ? ' Excluding all qualified charitable distributions from the tax on it.'
-      : '';
-
   const axisCaption =
     'Total income ($)' +
-    (axisIncludes.length > 0 ? `, including ${axisIncludes.join(' and ')}` : '') +
-    (axisIncludes.length > 0 || axisExcludes ? '.' : '') +
-    axisExcludes;
+    (axisIncludes.length > 0 ? `, including ${axisIncludes.join(' and ')}.` : '');
 
   /**
    * The same list again, as the fixed part of a span rather than the contents
@@ -1252,10 +1169,9 @@ const App: React.FC = () => {
    * $28,602 while the arithmetic beside it reached $24,852. They read this
    * now, and `totalIncomeFor` is the definition all three of them share.
    *
-   * Both are a plain addition again, with no clause taking the gift back off
-   * the far end: the axis stopped subtracting it, so the two ends of the span
-   * are the fixed part and the fixed part plus every dollar the slider can
-   * reach, and nothing in between needs explaining away.
+   * Both are a plain addition: the two ends of the span are the fixed part and
+   * the fixed part plus every dollar the slider can reach, and nothing in
+   * between needs explaining away.
    */
   const axisFixedProse =
     axisIncludes.length > 0
@@ -1288,11 +1204,10 @@ const App: React.FC = () => {
         ssBenefit,
         filingStatus,
         muniInterest,
-        qcd,
         beneficiaries,
         year,
       }),
-    [ssBenefit, filingStatus, muniInterest, qcd, beneficiaries, year],
+    [ssBenefit, filingStatus, muniInterest, beneficiaries, year],
   );
 
   /** The cliffs that actually land inside the chart's x-axis. */
@@ -1334,10 +1249,9 @@ const App: React.FC = () => {
         ssBenefit,
         filingStatus,
         muniInterest,
-        qcd,
         year,
       }),
-    [ssBenefit, filingStatus, muniInterest, qcd, year],
+    [ssBenefit, filingStatus, muniInterest, year],
   );
 
   /** The 400% line when it is this return's to meet and the axis can show it. */
@@ -1682,14 +1596,13 @@ const App: React.FC = () => {
                     .join(' \u00B7 ')}
                 </span>
               ) : (
-                <span className="advanced-state">Both at $0</span>
+                <span className="advanced-state">At $0</span>
               )}
             </summary>
             <p className="field-note">
-              Tax-exempt interest, and money given to charity straight out of an
-              IRA. Both sit at $0 until you move them, and at $0 neither one
-              changes a single figure on this return — so set them only if they
-              are yours.
+              Interest a municipal bond pays. It sits at $0 until you move it,
+              and at $0 it changes not a single figure on this return — so set
+              it only if it is yours.
             </p>
             <div className="input-group">
               <div className="slider-header">
@@ -1721,40 +1634,6 @@ const App: React.FC = () => {
               </p>
             </div>
 
-            <div className="input-group">
-              <div className="slider-header">
-                <label htmlFor="qcd">Qualified Charitable Distribution</label>
-                <span className="slider-value lime">{formatCurrency(qcd)}</span>
-              </div>
-              <input
-                id="qcd"
-                type="range"
-                min={0}
-                max={qcdLimit}
-                step={250}
-                value={qcd}
-                onChange={(e) => {
-                  setQcd(Number(e.target.value));
-                  announce('benefit');
-                }}
-                className="slider-lime"
-              />
-              <div className="slider-range-labels">
-                <span>$0</span>
-                <span>{formatCurrency(qcdLimit)}</span>
-              </div>
-              <p className="field-note">
-                IRA money paid straight to the charity. It comes <em>out of</em> the
-                other income set in step 2 rather than on top of it, because the
-                gift is a distribution that would otherwise have been reported — so it
-                moves the whole curve to the right, exactly as far as tax-exempt
-                interest moves it to the left. Capped at{' '}
-                <strong>{formatCurrency(qcdLimit)}</strong> for {year}
-                {filingStatus === 'mfj'
-                  ? ' \u2014 408(d)(8)(A) caps it per individual, so a joint return where both spouses have reached 70\u00BD and each gives from their own IRA gets it twice.'
-                  : ' by 408(d)(8)(A), which the IRS indexes every year. Anything past it is an ordinary distribution, deductible only on an itemized return and only within the AGI limits of section 170(b).'}
-              </p>
-            </div>
           </details>
 
           {/* What this step settled, in one line. The hero used to name the
@@ -1925,7 +1804,6 @@ const App: React.FC = () => {
                           segments={segments}
                           filingStatus={filingStatus}
                           muniInterest={muniInterest}
-                          qcd={qcd}
                           beneficiaries={beneficiaries}
                           year={year}
                           preMedicare={preMedicare}
@@ -2150,8 +2028,7 @@ const App: React.FC = () => {
                   {muniInterest > 0
                     ? `, and because Medicare's MAGI is wider than the tax code's — the ${formatCurrency(muniInterest)} of tax-exempt interest set above is added straight back in, moving every line ${formatCurrency(muniInterest)} further left`
                     : '. Medicare\u2019s MAGI is also wider than the tax code\u2019s: tax-exempt interest is added straight back in, so muni bonds move these lines as well as the torpedo'}
-                  . A charitable distribution moves them the other way, because it
-                  never reaches AGI at all.
+                  .
                 </p>
                 <p>
                   <strong>The x-axis caveat.</strong> Medicare bills on a{' '}
@@ -2392,9 +2269,6 @@ const App: React.FC = () => {
                     . The untaxed part of the benefit is counted here because it
                     is the part the torpedo reaches for; against taxable income it
                     would vanish.
-                    {given > 0
-                      ? ` The ${formatCurrency(given)} that goes straight to charity is counted too — it comes out of the IRA like every other dollar here. What the gift buys is the tax on it, not a smaller total.`
-                      : ''}
                   </span>
                 </dd>
               </div>

@@ -3,14 +3,11 @@ export interface MarginalRatePoint {
   /**
    * Everything the return takes in at this point on the sweep: `totalIncomeFor`
    * of the same scenario, so the whole benefit and any tax-exempt interest are
-   * in it, and so is a charitable distribution.
+   * in it.
    *
    * The swept `income` is what the reader sets; this is what they have. The
    * chart plots against it, so the two are carried together rather than the
-   * page re-deriving one from the other point by point — and the flat run a
-   * charitable gift buys is drawn at its own width, because the axis it is
-   * drawn on is the income the gift came out of rather than what was left
-   * after it.
+   * page re-deriving one from the other point by point.
    */
   totalIncome: number;
   marginalRate: number;
@@ -48,16 +45,6 @@ export interface Scenario {
   ltcg?: number;
   /** Interest exempt from tax under IRC 103 — municipal bonds. */
   muniInterest?: number;
-  /**
-   * Qualified charitable distributions under IRC 408(d)(8): IRA money paid
-   * straight to charity, which never enters gross income at all.
-   *
-   * Taken *out of* `ordinaryIncome` rather than added on top of it, because
-   * the gift is a distribution the filer was going to report anyway — see
-   * `ordinaryIncomeAfterQcd`. Capped by the annual limit and by the ordinary
-   * income there is to exclude it from.
-   */
-  qcd?: number;
   filingStatus?: FilingStatus;
   /** How many people on the return have reached 65; clamped by `maxSeniors`. */
   seniors?: number;
@@ -137,7 +124,6 @@ export function resolveScenario(scenario: Scenario = {}): Required<Scenario> {
     ssBenefit: scenario.ssBenefit ?? 0,
     ltcg: scenario.ltcg ?? 0,
     muniInterest: scenario.muniInterest ?? 0,
-    qcd: scenario.qcd ?? 0,
     filingStatus,
     seniors: scenario.seniors ?? 0,
     beneficiaries: scenario.beneficiaries ?? 1,
@@ -215,21 +201,6 @@ export interface TaxYearParams {
   avgAnnualCoupleSSBenefit: number;
   /** The COLA that produced this year's benefit figures, in percent. */
   colaPercent: number;
-  /**
-   * The IRC 408(d)(8)(A) annual limit on qualified charitable distributions,
-   * per individual. SECURE 2.0 section 307 started indexing the statutory
-   * $100,000 in 2024; the IRS announces the adjusted figure in its annual
-   * retirement-plan limits notice rather than in the Rev. Proc. above.
-   */
-  qcdAnnualLimit: number;
-  /**
-   * The 408(d)(8)(F) one-time limit on a QCD to a split-interest entity — a
-   * charitable remainder trust or charitable gift annuity. Indexed alongside
-   * the annual limit, elective once in a lifetime, and counted against that
-   * year's annual limit rather than on top of it. Reference only: this app
-   * models the ordinary annual QCD.
-   */
-  qcdSplitInterestLimit: number;
 }
 
 /**
@@ -310,8 +281,6 @@ export const TAX_YEAR_PARAMS: Record<TaxYear, TaxYearParams> = {
     maxAnnualCoupleSSBenefit: 122_592, // two of the above
     avgAnnualCoupleSSBenefit: 37_068, // $3,089/mo, January 2025
     colaPercent: 2.5,
-    qcdAnnualLimit: 108_000, // Notice 2024-80
-    qcdSplitInterestLimit: 54_000, // Notice 2024-80
     filing: {
       single: {
         standardDeduction: 15_750,
@@ -412,8 +381,6 @@ export const TAX_YEAR_PARAMS: Record<TaxYear, TaxYearParams> = {
     maxAnnualCoupleSSBenefit: 124_344, // two of the above
     avgAnnualCoupleSSBenefit: 38_496, // $3,208/mo, January 2026
     colaPercent: 2.8,
-    qcdAnnualLimit: 111_000, // Notice 2025-67
-    qcdSplitInterestLimit: 55_000, // Notice 2025-67
     filing: {
       single: {
         standardDeduction: 16_100,
@@ -784,99 +751,6 @@ export function avgAnnualSSBenefit(
   return filingStatus === 'mfj' ? params.avgAnnualCoupleSSBenefit : params.avgAnnualSSBenefit;
 }
 
-/* ------------------------------------------------------------------ */
-/*  Qualified charitable distributions (IRC 408(d)(8))                */
-/* ------------------------------------------------------------------ */
-
-/**
- * The age at which an IRA owner may start making QCDs: 70 1/2, measured to the
- * day, not to the tax year.
- *
- * Deliberately *not* the required-beginning age. SECURE raised the RMD age to
- * 72 and SECURE 2.0 to 73 and then 75, but 408(d)(8)(B)(ii) still says "on or
- * after the date that the individual for whose benefit the plan is maintained
- * has attained age 70 1/2", and neither act touched it. So there is a window —
- * five years wide for someone with an applicable age of 75 — where a filer can
- * give from the IRA before anything is required to come out of it, which is the
- * cheapest QCD there is: it shrinks the balance every later RMD is measured
- * against, with no distribution to displace.
- */
-export const QCD_MIN_AGE = 70.5;
-
-/** The per-individual annual QCD limit for a tax year. */
-export function qcdAnnualLimit(year: TaxYear = defaultTaxYear()): number {
-  return taxYearParams(year).qcdAnnualLimit;
-}
-
-/** The one-time split-interest-entity QCD limit for a tax year. */
-export function qcdSplitInterestLimit(year: TaxYear = defaultTaxYear()): number {
-  return taxYearParams(year).qcdSplitInterestLimit;
-}
-
-/**
- * The most this return may exclude in a year.
- *
- * 408(d)(8)(A) caps "the aggregate amount of distributions ... which may be
- * excluded" per *individual*, not per return, so a joint return where both
- * spouses have reached 70 1/2 and each gives from their own IRA gets the limit
- * twice. A separate return carries one individual, so it gets it once, exactly
- * like a single filer.
- *
- * The doubling assumes both spouses qualify and both own an IRA — the app has
- * no field for either — but the limit only binds past six figures of ordinary
- * income, well beyond where this makes any difference to the curve.
- *
- * Read off `year` rather than `scenarioYear`, because the limit only exists for
- * years the IRS has published. A projected year borrows its anchor year's
- * figure; nothing projects a QCD today.
- */
-export function qcdLimitFor(scenario: Scenario = {}): number {
-  const { filingStatus, year } = resolveScenario(scenario);
-  return qcdAnnualLimit(year) * (filingStatus === 'mfj' ? 2 : 1);
-}
-
-/**
- * The gift after the statutory limit but before the income cap — how much of
- * what was asked for the law would allow, if there were a distribution that
- * size to take it from.
- */
-export function qcdAllowed(scenario: Scenario = {}): number {
-  const { qcd } = resolveScenario(scenario);
-  return Math.min(Math.max(0, qcd), qcdLimitFor(scenario));
-}
-
-/**
- * What the QCD actually keeps off the return: `qcdAllowed`, capped again by the
- * ordinary income there is to exclude it from.
- *
- * The second cap is what makes `ordinaryIncome` the pre-QCD figure rather than
- * the post-QCD one. A QCD is not a deduction that can run past the income it
- * offsets — it is an exclusion of a distribution, so there has to be a
- * distribution. The app cannot tell how much of the ordinary-income slider is
- * IRA money and how much is a pension or a paycheck, so it assumes the whole of
- * it could be: a loose upper bound, and the only one available.
- */
-export function qcdFor(scenario: Scenario = {}): number {
-  const { ordinaryIncome } = resolveScenario(scenario);
-  return Math.min(qcdAllowed(scenario), Math.max(0, ordinaryIncome));
-}
-
-/**
- * Ordinary income as the return will actually show it, with the QCD removed.
- *
- * This — not `Scenario.ordinaryIncome` — is what every downstream figure is
- * built on, and it is the whole point of the provision. 408(d)(8)(A) excludes
- * the distribution from gross income outright, so it never reaches AGI, and
- * because 86(b)(2) builds provisional income out of AGI, it never reaches
- * provisional income either. A charitable *deduction* for the same gift would
- * do neither: deductions come off after AGI is fixed, so they cannot untax a
- * single dollar of Social Security. And a retiree taking the standard deduction
- * gets nothing at all from a cash gift, which is most of them.
- */
-export function ordinaryIncomeAfterQcd(scenario: Scenario = {}): number {
-  return resolveScenario(scenario).ordinaryIncome - qcdFor(scenario);
-}
-
 /**
  * Taxable portion of Social Security benefits under the 50%/85% rules.
  * Provisional income = ordinary income + capital gains + tax-exempt interest +
@@ -900,13 +774,11 @@ export function taxableSocialSecurity(scenario: Scenario = {}): number {
 /** 86(a) on its own, before the 86(e) ceiling. Split out only so the cap has
  * one place to apply rather than three early returns to chase. */
 function includedUnder86a(scenario: Scenario = {}): number {
-  const { ssBenefit, ltcg, muniInterest, filingStatus } = resolveScenario(scenario);
+  const { ordinaryIncome, ssBenefit, ltcg, muniInterest, filingStatus } =
+    resolveScenario(scenario);
   // Deliberately not read off the tax year: IRC 86(c) has never been indexed.
   const { ssBase50, ssBase85 } = SS_BASES[filingStatus];
-  // Net of any QCD: provisional income is built from gross income, and an
-  // excluded distribution never got there. See `ordinaryIncomeAfterQcd`.
-  const provisional =
-    ordinaryIncomeAfterQcd(scenario) + ltcg + muniInterest + 0.5 * ssBenefit;
+  const provisional = ordinaryIncome + ltcg + muniInterest + 0.5 * ssBenefit;
   if (provisional <= ssBase50) return 0;
   if (provisional <= ssBase85) {
     return Math.min(0.5 * (provisional - ssBase50), 0.5 * ssBenefit);
@@ -938,9 +810,8 @@ export function federalIncomeTax(
 }
 
 /**
- * Adjusted gross income: ordinary income net of any qualified charitable
- * distribution, capital gains, and whatever share of the benefit the torpedo
- * has dragged in.
+ * Adjusted gross income: ordinary income, capital gains, and whatever share of
+ * the benefit the torpedo has dragged in.
  *
  * Tax-exempt interest is deliberately absent. It raises provisional income, so
  * it can pull benefits into AGI — but it never lands in AGI itself, and it is
@@ -949,8 +820,8 @@ export function federalIncomeTax(
  * trace it leaves in the tax base is the benefits it dragged in.
  */
 export function agiFor(scenario: Scenario = {}): number {
-  const { ltcg } = resolveScenario(scenario);
-  return ordinaryIncomeAfterQcd(scenario) + ltcg + taxableSocialSecurity(scenario);
+  const { ordinaryIncome, ltcg } = resolveScenario(scenario);
+  return ordinaryIncome + ltcg + taxableSocialSecurity(scenario);
 }
 
 /**
@@ -969,16 +840,6 @@ export function agiFor(scenario: Scenario = {}): number {
  * Security cannot leave that portion out of the income it measures against —
  * against taxable income the torpedo's own subject disappears. Tax-exempt
  * interest counts because the filer spends it, whatever 103 says about it.
- *
- * And a charitable distribution counts, though it never reaches the filer at
- * all. It used to come off, which read well as a sentence and drew a chart
- * that could not be read: the exclusion moves every threshold out by exactly
- * the gift, so subtracting the gift from the axis as well put every one of
- * them back where it started. Nothing moved when the gift moved. The dollar
- * left the IRA either way — line 4a of the return says so, and only line 4b
- * knows about 408(d)(8) — so it is income here, and what the gift buys is
- * visible where it happens: the tax on it, and the run of axis it holds down
- * at nothing.
  */
 export function totalIncomeFor(scenario: Scenario = {}): number {
   const { ordinaryIncome, ltcg, ssBenefit, muniInterest } =
@@ -995,8 +856,7 @@ export function totalIncomeFor(scenario: Scenario = {}): number {
  * of it — the $12,000 of stock they sold is part of the $60,000 they lived on,
  * not $12,000 more. Both halves reach provisional income identically, so the
  * split is invisible to the Social Security torpedo; where it shows up is the
- * rate schedule each half is charged under, and the charitable exclusion,
- * which has only the ordinary half to come out of (see `qcdFor`).
+ * rate schedule each half is charged under.
  *
  * A gain larger than the income it is carved from is clamped rather than
  * driving the ordinary half negative: there is no $10,000 gain inside $5,000
@@ -1061,11 +921,10 @@ export function otherIncomeAtTaxableSSCap(scenario: Scenario = {}): number {
   // the curve flattens at the ceiling instead. See `Scenario.taxableSSCap`.
   const cap =
     taxableSSCap === null ? 0.85 * ssBenefit : Math.min(0.85 * ssBenefit, taxableSSCap);
-  const gift = qcdAllowed(scenario);
-  // Provisional income is other income less the excluded gift, plus muni
-  // interest and half the benefit, and the cap needs at most `ssBase85` plus
-  // the whole benefit of it — so this always overshoots.
-  const high = SS_BASES[filingStatus].ssBase85 + ssBenefit + gift;
+  // Provisional income is other income plus muni interest and half the
+  // benefit, and the cap needs at most `ssBase85` plus the whole benefit of
+  // it — so this always overshoots.
+  const high = SS_BASES[filingStatus].ssBase85 + ssBenefit;
   return otherIncomeAt(cap - 0.01, high, (income) =>
     taxableSocialSecurity({ ...scenario, ...splitOtherIncome(income, ltcg) }),
   );
@@ -1086,10 +945,8 @@ export function otherIncomeAtAgi(
   scenario: Scenario = {},
 ): number {
   const { ltcg } = resolveScenario(scenario);
-  // AGI is never below other income less the excluded gift, so the target plus
-  // the gift always overshoots.
-  const high = targetAgi + qcdAllowed(scenario);
-  return otherIncomeAt(targetAgi, high, (income) =>
+  // AGI is never below other income, so the target itself always overshoots.
+  return otherIncomeAt(targetAgi, targetAgi, (income) =>
     agiFor({ ...scenario, ...splitOtherIncome(income, ltcg) }),
   );
 }
@@ -1105,20 +962,6 @@ export interface IncomeAxisFeatures {
    */
   seniorPhaseoutEnd: number | null;
   /**
-   * Where the charitable gift runs out: the last dollar of other income it can
-   * be excluded from, which is the gift itself plus whatever of that income is
-   * a gain — 408(d)(8) excludes a *distribution*, and a sale is not one. 0
-   * when there is no gift.
-   *
-   * Left of it every ordinary dollar is given away and the curve is flat at
-   * nothing; right of it the return starts again from zero. Normally it sits
-   * well inside `torpedoEnd`, which the same gift pushes right dollar for
-   * dollar — it binds only when there is no torpedo left to push, which is a
-   * benefit of $0, or enough tax-exempt interest to have capped the taxable
-   * share before the first dollar of other income lands.
-   */
-  giftEnd: number;
-  /**
    * Where the 3.8% surtax of IRC 1411 finishes biting, or `null` when this
    * return has no net investment income for it to bite on.
    *
@@ -1126,7 +969,7 @@ export interface IncomeAxisFeatures {
    * the threshold, so it ramps in over a band exactly as wide as the gain: it
    * starts at the threshold and is fully priced at threshold-plus-gain. This
    * is the far end of that band, and past it the curve is flat again — the
-   * same "end" the other three fields are.
+   * same "end" the other two fields are.
    *
    * It is the one feature that can sit past `MIN_INCOME_AXIS` for an unmarried
    * return with a modest gain, which is the reason it is here: the $200,000
@@ -1148,13 +991,12 @@ export interface IncomeAxisFeatures {
  * thing to size an axis by.
  */
 export function incomeAxisFeatures(scenario: Scenario = {}): IncomeAxisFeatures {
-  const { filingStatus, seniors, ltcg } = resolveScenario(scenario);
+  const { filingStatus, seniors } = resolveScenario(scenario);
   // Read off `seniorDeductionFor` rather than re-testing its conditions: the
   // phaseout is worth axis space exactly when there is a deduction to phase
   // out, which is age, filing status and tax year all at once.
   const claimed = seniorDeductionFor({ ...scenario, seniors }, 0) > 0;
   const phaseoutEnd = seniorDeductionPhaseoutEnd(filingStatus);
-  const gift = qcdAllowed(scenario);
   // Read off `netInvestmentIncomeFor` rather than off `ltcg` directly, so the
   // one place that decides what 1411 counts stays the one place.
   const nii = netInvestmentIncomeFor(scenario);
@@ -1162,7 +1004,6 @@ export function incomeAxisFeatures(scenario: Scenario = {}): IncomeAxisFeatures 
     torpedoEnd: otherIncomeAtTaxableSSCap(scenario),
     seniorPhaseoutEnd:
       claimed && phaseoutEnd !== null ? otherIncomeAtAgi(phaseoutEnd, scenario) : null,
-    giftEnd: gift > 0 ? gift + Math.max(0, ltcg) : 0,
     // 1411's MAGI is plain AGI, so this solves on the same axis the senior
     // phaseout does — and lands at *less* other income than the raw MAGI
     // figure suggests, because the benefits the torpedo dragged in are in AGI
@@ -1213,11 +1054,6 @@ export interface IncomeAxisRange {
  * live with. Callers who need the axis to contain a point of their own — the
  * reader's own income, wherever they left the slider — pass it as `minimum`.
  *
- * A charitable gift is the other input the reader sets in dollars of this same
- * axis, and 408(d)(8) lets a joint return give $216,000 of them. The axis has
- * to reach past it or the gift is a slider whose effect is off the right edge
- * of every chart: see `IncomeAxisFeatures.giftEnd`.
- *
  * The 1411 surtax would widen it the same way and for the same reason: its
  * thresholds start at $200,000 of MAGI, which is past where this axis used to
  * stop. It does not widen it today, because it takes a gain to reach and the
@@ -1227,14 +1063,8 @@ export function incomeAxisMax(
   scenario: Scenario = {},
   { headroom = 0.05, roundTo = 25_000, minimum = MIN_INCOME_AXIS }: IncomeAxisRange = {},
 ): number {
-  const { torpedoEnd, seniorPhaseoutEnd, giftEnd, niitEnd } =
-    incomeAxisFeatures(scenario);
-  const lastFeature = Math.max(
-    torpedoEnd,
-    seniorPhaseoutEnd ?? 0,
-    giftEnd,
-    niitEnd ?? 0,
-  );
+  const { torpedoEnd, seniorPhaseoutEnd, niitEnd } = incomeAxisFeatures(scenario);
+  const lastFeature = Math.max(torpedoEnd, seniorPhaseoutEnd ?? 0, niitEnd ?? 0);
   const wanted = Math.max(minimum, lastFeature * (1 + headroom));
   return Math.ceil(wanted / roundTo) * roundTo;
 }
@@ -1311,8 +1141,8 @@ export function marginalRateCurve(
  * of the benefit is taxable, with long-term gains stacked on top in their own
  * brackets.
  *
- * Ordinary income (taxable SS included, any QCD already excluded) fills the
- * ordinary brackets first; LTCG is then taxed at its preferential rates, but
+ * Ordinary income (taxable SS included) fills the ordinary brackets first;
+ * LTCG is then taxed at its preferential rates, but
  * the LTCG thresholds are measured against the *full* taxable income, ordinary
  * and gains together.
  *
@@ -1324,7 +1154,7 @@ export function marginalRateCurve(
  * See `irmaaFor`.
  */
 export function totalTax(scenario: Scenario = {}): number {
-  const ordinaryIncome = ordinaryIncomeAfterQcd(scenario);
+  const { ordinaryIncome } = resolveScenario(scenario);
 
   const taxableSS = taxableSocialSecurity(scenario);
   // Gains are part of AGI, so they phase out the senior deduction too.
@@ -1724,136 +1554,6 @@ export function muniInterestEffect(scenario: Scenario = {}): MuniInterestEffect 
       muniInterest > 0 ? Math.round((taxCost / muniInterest) * 10_000) / 100 : 0,
     ratePerNextDollar:
       Math.round((taxAt(muniInterest + 1) - taxWithRaw) * 10_000) / 100,
-  };
-}
-
-/* ------------------------------------------------------------------ */
-/*  What a qualified charitable distribution is worth                 */
-/* ------------------------------------------------------------------ */
-
-export interface QcdEffect {
-  /** The gift the scenario asked for, before either cap. */
-  requested: number;
-  /** This return's annual statutory limit — see `qcdLimitFor`. */
-  limit: number;
-  /** The gift after the statutory limit, before the income cap. */
-  allowed: number;
-  /** What actually stays off the return — see `qcdFor`. */
-  excluded: number;
-  /** The statutory limit is what stopped it. */
-  limitedByLaw: boolean;
-  /** There was not enough ordinary income to exclude it from. */
-  limitedByIncome: boolean;
-  /** Ordinary income before the exclusion. */
-  ordinaryIncomeBefore: number;
-  /** Ordinary income the return actually shows. */
-  ordinaryIncomeAfter: number;
-  /** Taxable Social Security with the gift taken as a taxable distribution. */
-  taxableSSWithout: number;
-  /** Taxable Social Security once the distribution is excluded. */
-  taxableSSWith: number;
-  /** Benefits the exclusion takes back out of the tax base. */
-  taxableSSRemoved: number;
-  /** AGI without the exclusion. */
-  agiWithout: number;
-  /** AGI with it. */
-  agiWith: number;
-  /** Federal tax without the exclusion. */
-  taxWithout: number;
-  /** Federal tax with it. */
-  taxWith: number;
-  /** taxWithout - taxWith: what the exclusion saves. */
-  taxSaved: number;
-  /** Average federal tax saved per excluded dollar, in percent. */
-  savedPerDollar: number;
-  /** Federal tax saved by the *next* excluded dollar, in percent. */
-  ratePerNextDollar: number;
-  /** Medicare's MAGI without the exclusion. */
-  irmaaMagiWithout: number;
-  /** Medicare's MAGI with it. */
-  irmaaMagiWith: number;
-  /** IRMAA tier without the exclusion; 0 when no surcharge applies. */
-  irmaaTierWithout: number;
-  /** IRMAA tier with it. */
-  irmaaTierWith: number;
-  /** Household annual IRMAA surcharge without the exclusion. */
-  irmaaSurchargeWithout: number;
-  /** Household annual IRMAA surcharge with it. */
-  irmaaSurchargeWith: number;
-  /** What the exclusion saves in surcharge, two years out. */
-  irmaaSurchargeSaved: number;
-}
-
-/**
- * What a qualified charitable distribution is worth to a Social Security
- * recipient, against the same gift taken as an ordinary distribution.
- *
- * The comparison is deliberately *not* "gift versus no gift". Someone choosing
- * between a QCD and a check has already decided to give; what they are choosing
- * is the route. Taken as a distribution the money lands in gross income, drags
- * benefits in behind it under 86(b), and — for the roughly nine in ten filers
- * who take the standard deduction — buys no offsetting deduction whatever. Sent
- * under 408(d)(8) it never enters gross income, so provisional income never
- * sees it, and neither does Medicare's MAGI two years later.
- *
- * That last part is why a QCD can be worth far more than its own bracket rate:
- * a dollar excluded inside the torpedo removes up to 85 cents of benefits from
- * the tax base as well as itself, and a dollar excluded just over an IRMAA
- * threshold takes a whole year of surcharges with it.
- */
-export function qcdEffect(scenario: Scenario = {}): QcdEffect {
-  const { qcd, ordinaryIncome } = resolveScenario(scenario);
-  const without: Scenario = { ...scenario, qcd: 0 };
-
-  const limit = qcdLimitFor(scenario);
-  const allowed = qcdAllowed(scenario);
-  const excluded = qcdFor(scenario);
-
-  const taxAt = (amount: number): number => totalTax({ ...scenario, qcd: amount });
-  const taxWithRaw = taxAt(qcd);
-  const taxWithout = Math.round(taxAt(0));
-  const taxWith = Math.round(taxWithRaw);
-  const taxSaved = taxWithout - taxWith;
-
-  const taxableSSWithout = taxableSocialSecurity(without);
-  const taxableSSWith = taxableSocialSecurity(scenario);
-
-  const magiWithout = irmaaMagi(without);
-  const magiWith = irmaaMagi(scenario);
-  const irmaaWithout = irmaaFor(magiWithout, without);
-  const irmaaWith = irmaaFor(magiWith, scenario);
-
-  return {
-    requested: qcd,
-    limit,
-    allowed,
-    excluded,
-    limitedByLaw: qcd > limit,
-    limitedByIncome: allowed > Math.max(0, ordinaryIncome),
-    ordinaryIncomeBefore: Math.round(ordinaryIncome),
-    ordinaryIncomeAfter: Math.round(ordinaryIncomeAfterQcd(scenario)),
-    taxableSSWithout: Math.round(taxableSSWithout),
-    taxableSSWith: Math.round(taxableSSWith),
-    taxableSSRemoved: Math.round(taxableSSWithout - taxableSSWith),
-    agiWithout: Math.round(agiFor(without)),
-    agiWith: Math.round(agiFor(scenario)),
-    taxWithout,
-    taxWith,
-    taxSaved,
-    savedPerDollar:
-      excluded > 0 ? Math.round((taxSaved / excluded) * 10_000) / 100 : 0,
-    // Backwards against the muni version on purpose: there the next dollar
-    // costs, here it saves, so both read as a positive percentage.
-    ratePerNextDollar: Math.round((taxWithRaw - taxAt(qcd + 1)) * 10_000) / 100,
-    irmaaMagiWithout: Math.round(magiWithout),
-    irmaaMagiWith: Math.round(magiWith),
-    irmaaTierWithout: irmaaWithout.tier,
-    irmaaTierWith: irmaaWith.tier,
-    irmaaSurchargeWithout: irmaaWithout.annualSurcharge,
-    irmaaSurchargeWith: irmaaWith.annualSurcharge,
-    irmaaSurchargeSaved: toCents(
-      irmaaWithout.annualSurcharge - irmaaWith.annualSurcharge,
-    ),
   };
 }
 
@@ -2376,20 +2076,14 @@ export function otherIncomeAtIrmaaMagi(
   // is read as a share of the swept figure rather than a gain on top of it —
   // the same reading the charts take. See `splitOtherIncome`.
   //
-  // MAGI is very nearly blind to that split, because AGI counts both halves at
-  // face value and provisional income does too. The one place it shows is the
-  // charitable exclusion, which has only the ordinary half to come out of: a
-  // gift bigger than what is left after the gain cannot be excluded in full,
-  // and the cliff arrives earlier for it.
+  // MAGI is blind to that split, because AGI counts both halves at face value
+  // and provisional income does too.
   const magiAt = (income: number): number =>
     irmaaMagi({ ...scenario, ...splitOtherIncome(income, resolveScenario(scenario).ltcg) });
   if (magiAt(0) >= targetMagi) return 0;
-  // MAGI is never below other income *less the QCD excluded from it*, so
-  // targetMagi plus the allowed gift always overshoots. Without that term the
-  // bound is too low whenever a QCD is in play and the bisection converges on
-  // its own ceiling instead of on the threshold.
+  // MAGI is never below other income, so targetMagi itself always overshoots.
   let low = 0;
-  let high = targetMagi + qcdAllowed(scenario);
+  let high = targetMagi;
   for (let i = 0; i < 60; i += 1) {
     const mid = (low + high) / 2;
     if (magiAt(mid) < targetMagi) low = mid;
@@ -2614,12 +2308,6 @@ export function povertyLineFor(scenario: Scenario = {}): number {
  * therefore the one line on step 2's chart that does *not* move left as the
  * benefit grows in the way the IRMAA lines do — it moves left dollar for
  * dollar with the benefit itself, because the benefit was already all of it.
- *
- * A charitable distribution is the one input that lowers this MAGI along with
- * every other. 408(d)(8) keeps it out of gross income before AGI is struck,
- * and 36B(d)(2)(B) writes no add-back for it the way it writes one for
- * tax-exempt interest and for the untaxed benefit — so the same gift buys the
- * same dollar of headroom here, under Medicare's line and under 1411's.
  */
 export function acaMagi(scenario: Scenario = {}): number {
   const { ssBenefit, muniInterest } = resolveScenario(scenario);
@@ -2651,20 +2339,17 @@ export function ptcCliffMagi(scenario: Scenario = {}): number | null {
  * The third of these solvers, alongside `otherIncomeAtAgi` and
  * `otherIncomeAtIrmaaMagi`, and the only one whose function is a straight line
  * of slope 1 — see `acaMagi`. It is still solved rather than rearranged,
- * because the charitable exclusion puts a flat stretch at the left end where
- * the whole of a small other income is being given away, and because three
- * solvers that agree in form are easier to trust than two that agree and one
- * that is clever.
+ * because three solvers that agree in form are easier to trust than two that
+ * agree and one that is clever.
  */
 export function otherIncomeAtAcaMagi(
   targetMagi: number,
   scenario: Scenario = {},
 ): number {
   const { ltcg } = resolveScenario(scenario);
-  // Household income is never below other income less the excluded gift, so
-  // the target plus the gift always overshoots.
-  const high = targetMagi + qcdAllowed(scenario);
-  return otherIncomeAt(targetMagi, high, (income) =>
+  // Household income is never below other income, so the target itself always
+  // overshoots.
+  return otherIncomeAt(targetMagi, targetMagi, (income) =>
     acaMagi({ ...scenario, ...splitOtherIncome(income, ltcg) }),
   );
 }
@@ -2915,12 +2600,7 @@ export function conversionMeasureValue(
     ...scenario,
     ordinaryIncome: ordinaryIncome + conversion,
   };
-  // Net of any QCD, and net of it *after* the conversion, because the exclusion
-  // is capped by the ordinary income available to take it from. When that cap
-  // is what binds, the first conversion dollars restore excluded dollars
-  // one for one and the measure is flat rather than falling — still
-  // non-decreasing, so the binary search below stays valid.
-  const netOrdinary = ordinaryIncomeAfterQcd(converted);
+  const netOrdinary = ordinaryIncome + conversion;
   const taxableSS = taxableSocialSecurity(converted);
   // AGI, which already includes taxable SS but never includes tax-exempt
   // interest. This is also the base for the senior deduction's phaseout, where

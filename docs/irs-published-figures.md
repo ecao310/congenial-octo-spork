@@ -9,7 +9,6 @@ the app's tables against these.
 |---|---|---|
 | Rate tables, standard deduction, capital-gain amounts | [Rev. Proc. 2024-40](https://www.irs.gov/pub/irs-drop/rp-24-40.pdf) §§ 2.01, 2.03, 2.15 | [Rev. Proc. 2025-32](https://www.irs.gov/pub/irs-drop/rp-25-32.pdf) §§ 4.01, 4.03, 4.14 |
 | Standard deduction as replaced by the OBBBA | Rev. Proc. 2025-32 § 3.01 | (in § 4.14) |
-| 408(d)(8) charitable-distribution limits | [Notice 2024-80](https://www.irs.gov/pub/irs-drop/n-24-80.pdf) | [Notice 2025-67](https://www.irs.gov/pub/irs-drop/n-25-67.pdf) |
 | 36B applicable percentage table | ARPA § 9661 as extended by IRA § 12001 | [Rev. Proc. 2025-25](https://www.irs.gov/pub/irs-drop/rp-25-25.pdf) § 3.01 |
 
 Figures that are **not** here because no Rev. Proc. sets them: the § 86(c)
@@ -90,15 +89,6 @@ is married, so takes the smaller one.
 Half of the 2026 joint 15% amount is $306,850 exactly, so that year the
 separate figure really is the halved joint one; in 2025 separate rounding put
 it $25 below half ($300,000 against $300,025).
-
-## Qualified charitable distributions, § 408(d)(8)
-
-Notice 2025-67: "The aggregate amount of qualified charitable distributions
-that are not includible in gross income under section 408(d)(8)(A) is increased
-from **$108,000** to **$111,000**. The amount of qualified charitable
-distributions made directly to a split-interest entity that are not includible
-in gross income under section 408(d)(8)(F)(i)(II) pursuant to a one-time
-election is increased from **$54,000** to **$55,000**."
 
 ## Applicable percentage table, § 36B(b)(3)(A)(i)
 

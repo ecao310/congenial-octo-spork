@@ -1128,14 +1128,6 @@ footer p {
   }
 }
 
-.slider-value.lime {
-  color: var(--lime);
-}
-
-.slider-lime {
-  accent-color: var(--lime-deep) !important;
-}
-
 /* ───── The step flow ────────────────────────────────────────────────────────
  *
  * Two sections, both mounted, read top to bottom, and nothing between them but

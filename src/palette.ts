@@ -51,8 +51,8 @@ export const PALETTE = {
   /** Where the reader stands on the gains axis. Unspent by the charts today,
       for the same reason indigo is. */
   emerald: '#34d399',
-  /** The gift that leaves the return before it starts, and the 0% long-term
-      gain band when there is a gains chart to draw it on. */
+  /** The 0% long-term gain band, when there is a gains chart to draw it on.
+      Unspent for the same reason indigo and emerald are. */
   lime: '#a3e635',
 } as const;
 

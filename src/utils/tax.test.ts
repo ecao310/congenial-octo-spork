@@ -43,16 +43,8 @@ import {
   deductionFor,
   seniorDeductionFor,
   seniorDeductionPhaseoutEnd,
-  qcdAnnualLimit,
-  qcdSplitInterestLimit,
-  qcdLimitFor,
-  qcdAllowed,
-  qcdFor,
-  ordinaryIncomeAfterQcd,
-  qcdEffect,
   agiFor,
   totalIncomeFor,
-  QCD_MIN_AGE,
   SENIOR_DEDUCTION,
   SENIOR_DEDUCTION_PHASEOUT_RATE,
   SENIOR_DEDUCTION_PHASEOUT_START,
@@ -451,62 +443,9 @@ describe('marginalRateCurve', () => {
       expect(at(100_000)).toBe(135_000);
     });
 
-    it('carries what went straight to charity, so the excluded run has width', () => {
-      const data = marginalRateCurve(
-        { ssBenefit: 30_000, qcd: 10_000 },
-        { maxIncome: 60_000, step: 1_000 },
-      );
-      const at = (income: number) =>
-        data.find((d) => d.income === income)!.totalIncome;
-      // The dollar came out of the IRA whether or not the charity got it, so
-      // the axis moves under the gift the same as anywhere else — the sweep
-      // and the axis stay a fixed distance apart at every sample.
-      expect(at(0)).toBe(30_000);
-      expect(at(5_000)).toBe(35_000);
-      expect(at(10_000)).toBe(40_000);
-      expect(at(25_000)).toBe(55_000);
-      // Which is what gives the run the gift buys a width to be seen at: the
-      // first $10,000 of the sweep is excluded outright, and it is $10,000 of
-      // axis rather than a single point stacked on itself.
-      expect(at(0)).toBe(at(10_000) - 10_000);
-      for (const income of [0, 5_000, 9_000]) {
-        expect(data.find((d) => d.income === income)!.marginalRate).toBe(0);
-      }
-    });
-
-    /**
-     * The whole reason the gift stays in the figure above.
-     *
-     * 408(d)(8) takes the gift out of gross income, so every threshold this
-     * page draws — the torpedo's two ends, the brackets, the IRMAA cliffs —
-     * arrives at exactly `gift` more other income than it otherwise would.
-     * An axis that also took the gift off would move each of them back by the
-     * same `gift` and land them where they started: a reader dragging the
-     * charity slider would watch a chart that never moved. Plotted against
-     * what came out of the IRA, the curve is the same shape slid right, which
-     * is the fact the slider's own note promises.
-     */
-    it('slides the whole curve right by exactly the gift', () => {
-      const scenario = { ssBenefit: 30_000, seniors: 1, muniInterest: 2_000 };
-      const plain = marginalRateCurve(scenario, {
-        maxIncome: 120_000,
-        step: 1_000,
-      });
-      const given = marginalRateCurve(
-        { ...scenario, qcd: 15_000 },
-        { maxIncome: 135_000, step: 1_000 },
-      );
-      for (const point of plain) {
-        const moved = given.find(
-          (d) => d.totalIncome === point.totalIncome + 15_000,
-        )!;
-        expect(moved.marginalRate).toBe(point.marginalRate);
-      }
-    });
-
     it('rises with the sweep and never falls', () => {
       const data = marginalRateCurve(
-        { ssBenefit: 24_852, seniors: 1, muniInterest: 3_000, qcd: 7_500 },
+        { ssBenefit: 24_852, seniors: 1, muniInterest: 3_000 },
         { maxIncome: 150_000, step: 500 },
       );
       for (let i = 1; i < data.length; i += 1) {
@@ -830,21 +769,6 @@ describe('totalIncomeFor', () => {
     ).toBe(64_000);
   });
 
-  it('keeps the charitable gift in, because the dollar still came out', () => {
-    // 408(d)(8) excludes the gift from the tax, not from the distribution:
-    // the return reports the whole $40,000 and only the taxable half of it
-    // knows about the charity. Taking it off here as well would have moved
-    // every threshold on the chart's axis back to where it sat with no gift
-    // at all — see `marginalRateCurve`'s own test of the slide.
-    expect(totalIncomeFor({ ...base, qcd: 10_000 })).toBe(64_000);
-    expect(
-      totalIncomeFor({ ...base, ordinaryIncome: 25_000, ltcg: 15_000, qcd: 40_000 }),
-    ).toBe(64_000);
-    // Which is the one thing AGI does differently: there the gift is gone,
-    // and it takes some of the benefit's taxable share out with it.
-    expect(agiFor({ ...base, qcd: 10_000 })).toBeLessThan(agiFor(base) - 10_000);
-  });
-
   it('never reports a negative total', () => {
     expect(totalIncomeFor({ ordinaryIncome: -5_000 })).toBe(0);
     expect(totalIncomeFor()).toBe(0);
@@ -990,8 +914,7 @@ describe('gains carved out of income rather than stacked on top', () => {
     /**
      * The preferential rate is below the ordinary one at every position in the
      * stack, so re-labelling a dollar of the same income as a gain can never
-     * cost more. (With a charitable distribution in play it can, because the
-     * gift has only the ordinary half to come out of — hence no QCD here.)
+     * cost more.
      */
     it('never charges more for the same income as the gain share grows', () => {
       const curve = ltcgRateCurve(scenario, {
@@ -1028,18 +951,6 @@ describe('gains carved out of income rather than stacked on top', () => {
         otherIncomeAtIrmaaMagi(106_000, base),
         4,
       );
-    });
-
-    /**
-     * The one exception: a charitable distribution is an exclusion of an IRA
-     * distribution, so it has only the ordinary half to come out of. Make the
-     * gain big enough and part of the gift can no longer be excluded, which
-     * brings the cliff nearer.
-     */
-    it('brings the cliff nearer when a gain crowds out the charitable gift', () => {
-      const base = { ssBenefit: 24_000, qcd: 30_000 };
-      const crowded = otherIncomeAtIrmaaMagi(106_000, { ...base, ltcg: 100_000 });
-      expect(crowded).toBeLessThan(otherIncomeAtIrmaaMagi(106_000, base));
     });
   });
 });
@@ -2407,9 +2318,6 @@ describe('head of household', () => {
 
   it('is one person for every per-person figure', () => {
     expect(maxSeniors('hoh')).toBe(1);
-    // 408(d)(8)(A) caps a QCD per individual, and doubling needs two people.
-    expect(qcdLimitFor({ filingStatus: 'hoh' })).toBe(qcdAnnualLimit(PINNED_YEAR));
-    expect(qcdLimitFor({ filingStatus: 'hoh' })).toBe(qcdLimitFor({ filingStatus: 'single' }));
   });
 
   it("uses Medicare's individual-return column, not a fourth one", () => {
@@ -2943,230 +2851,6 @@ describe('whose benefit the year figures describe', () => {
   });
 });
 
-/* ------------------------------------------------------------------ */
-/*  Qualified charitable distributions (IRC 408(d)(8))                */
-/* ------------------------------------------------------------------ */
-
-describe('qualified charitable distributions', () => {
-  const SS = AVG_ANNUAL_SS_BENEFIT;
-
-  it('reads the published annual limits, which are indexed', () => {
-    // SECURE 2.0 section 307 started indexing the statutory $100,000 in 2024.
-    expect(qcdAnnualLimit(2025)).toBe(108_000); // Notice 2024-80
-    expect(qcdAnnualLimit(2026)).toBe(111_000); // Notice 2025-67
-    expect(qcdSplitInterestLimit(2025)).toBe(54_000);
-    expect(qcdSplitInterestLimit(2026)).toBe(55_000);
-    expect(qcdAnnualLimit(2026)).toBeGreaterThan(qcdAnnualLimit(2025));
-  });
-
-  it('starts at 70 1/2, which no act has moved even as the RMD age climbed', () => {
-    expect(QCD_MIN_AGE).toBe(70.5);
-    // The gap that opens up: someone with an applicable age of 75 can give from
-    // the IRA five years before anything is required to come out of it.
-    expect(QCD_MIN_AGE).toBeLessThan(73);
-  });
-
-  it('is a per-individual limit, so only a joint return gets it twice', () => {
-    expect(qcdLimitFor({ filingStatus: 'single', year: 2025 })).toBe(108_000);
-    expect(qcdLimitFor({ filingStatus: 'mfj', year: 2025 })).toBe(216_000);
-    // A separate return carries one individual, exactly like a single one.
-    expect(qcdLimitFor({ filingStatus: 'mfs', year: 2025 })).toBe(108_000);
-    expect(qcdLimitFor({ filingStatus: 'mfj', year: 2026 })).toBe(222_000);
-  });
-
-  it('caps the exclusion at the statutory limit, then at the income to take it from', () => {
-    const single = { filingStatus: 'single' as const, year: PINNED_YEAR };
-    // Under both caps: exactly what was asked for.
-    expect(qcdFor({ ...single, ordinaryIncome: 40_000, qcd: 10_000 })).toBe(10_000);
-    // Over the statutory limit.
-    expect(qcdAllowed({ ...single, ordinaryIncome: 200_000, qcd: 130_000 })).toBe(108_000);
-    expect(qcdFor({ ...single, ordinaryIncome: 200_000, qcd: 130_000 })).toBe(108_000);
-    // Allowed by law, but there is only $40,000 of ordinary income to exclude.
-    expect(qcdAllowed({ ...single, ordinaryIncome: 40_000, qcd: 50_000 })).toBe(50_000);
-    expect(qcdFor({ ...single, ordinaryIncome: 40_000, qcd: 50_000 })).toBe(40_000);
-    // Nonsense inputs clamp rather than going negative.
-    expect(qcdFor({ ...single, ordinaryIncome: 40_000, qcd: -5_000 })).toBe(0);
-    expect(qcdFor({ ...single, ordinaryIncome: -1_000, qcd: 5_000 })).toBe(0);
-  });
-
-  it('never drives ordinary income below zero', () => {
-    expect(ordinaryIncomeAfterQcd({ ordinaryIncome: 40_000, qcd: 10_000 })).toBe(30_000);
-    expect(ordinaryIncomeAfterQcd({ ordinaryIncome: 40_000, qcd: 90_000 })).toBe(0);
-    expect(ordinaryIncomeAfterQcd({ ordinaryIncome: 40_000 })).toBe(40_000);
-  });
-
-  it('takes benefits back out of the tax base, 85 cents per dollar in the top tier', () => {
-    const base = { ordinaryIncome: 40_000, ssBenefit: SS, seniors: 1, year: PINNED_YEAR };
-    // $40,000 of other income puts provisional income at $51,856, well past the
-    // $34,000 adjusted base, so every excluded dollar unwinds 85 cents.
-    expect(taxableSocialSecurity(base)).toBeCloseTo(19_677.6, 4);
-    expect(taxableSocialSecurity({ ...base, qcd: 10_000 })).toBeCloseTo(11_177.6, 4);
-    expect(
-      taxableSocialSecurity(base) - taxableSocialSecurity({ ...base, qcd: 10_000 }),
-    ).toBeCloseTo(8_500, 4);
-    // AGI falls by the gift *and* the benefits it took with it: $18,500 on a
-    // $10,000 distribution.
-    expect(agiFor(base) - agiFor({ ...base, qcd: 10_000 })).toBeCloseTo(18_500, 4);
-  });
-
-  it('is worth the torpedo rate rather than the bracket rate', () => {
-    const base = { ordinaryIncome: 40_000, ssBenefit: SS, seniors: 1, year: PINNED_YEAR };
-    const effect = qcdEffect({ ...base, qcd: 10_000 });
-    expect(effect.excluded).toBe(10_000);
-    expect(effect.taxableSSRemoved).toBe(8_500);
-    expect(effect.taxWithout).toBe(4_073);
-    expect(effect.taxWith).toBe(1_853);
-    expect(effect.taxSaved).toBe(2_220);
-    // 12% on $1.85 of taxable income per excluded dollar. A charitable
-    // deduction for the same gift would be worth nothing at all here, because
-    // this filer takes the standard deduction.
-    expect(effect.savedPerDollar).toBeCloseTo(22.2, 2);
-    expect(effect.ratePerNextDollar).toBeCloseTo(22.2, 2);
-  });
-
-  it('reports the caps it hit, and stops saving anything once it hits one', () => {
-    const byLaw = qcdEffect({
-      ordinaryIncome: 200_000,
-      ssBenefit: 30_000,
-      qcd: 130_000,
-      year: PINNED_YEAR,
-    });
-    expect(byLaw.limitedByLaw).toBe(true);
-    expect(byLaw.limitedByIncome).toBe(false);
-    expect(byLaw.excluded).toBe(108_000);
-    // The 130,001st dollar is over the limit, so it is an ordinary
-    // distribution and saves nothing.
-    expect(byLaw.ratePerNextDollar).toBe(0);
-
-    const byIncome = qcdEffect({
-      ordinaryIncome: 40_000,
-      ssBenefit: SS,
-      qcd: 50_000,
-      seniors: 1,
-      year: PINNED_YEAR,
-    });
-    expect(byIncome.limitedByLaw).toBe(false);
-    expect(byIncome.limitedByIncome).toBe(true);
-    expect(byIncome.excluded).toBe(40_000);
-    expect(byIncome.ordinaryIncomeAfter).toBe(0);
-    expect(byIncome.taxWith).toBe(0);
-    expect(byIncome.ratePerNextDollar).toBe(0);
-    // Averaged over what was asked for rather than what was excluded would
-    // read 8.1%; the exclusion that happened was worth 10.18%.
-    expect(byIncome.savedPerDollar).toBeCloseTo(10.18, 2);
-  });
-
-  it('reports zero saved per dollar rather than dividing by zero', () => {
-    const none = qcdEffect({ ordinaryIncome: 40_000, ssBenefit: SS, year: PINNED_YEAR });
-    expect(none.excluded).toBe(0);
-    expect(none.savedPerDollar).toBe(0);
-    expect(none.taxSaved).toBe(0);
-    // The slider is still worth moving, and the readout says by how much.
-    expect(none.ratePerNextDollar).toBeCloseTo(22.2, 2);
-  });
-
-  it('drops the IRMAA tier the same dollars set, two years out', () => {
-    const effect = qcdEffect({
-      ordinaryIncome: 100_000,
-      ssBenefit: 40_000,
-      seniors: 1,
-      qcd: 8_000,
-      year: PINNED_YEAR,
-    });
-    // $134,000 of MAGI is in tier 2; $126,000 is in tier 1.
-    expect(effect.irmaaMagiWithout).toBe(134_000);
-    expect(effect.irmaaMagiWith).toBe(126_000);
-    expect(effect.irmaaTierWithout).toBe(2);
-    expect(effect.irmaaTierWith).toBe(1);
-    expect(effect.irmaaSurchargeSaved).toBeCloseTo(1_591.2, 2);
-    // The surcharge saving is most of the tax saving again, and it is not in
-    // the tax figures at all.
-    expect(effect.taxSaved).toBe(2_036);
-  });
-
-  it('shifts the whole marginal-rate curve right by the amount excluded', () => {
-    const base = { ssBenefit: SS, seniors: 1, year: PINNED_YEAR };
-    const plain = marginalRateCurve(base, { maxIncome: 120_000, step: 1_000 });
-    const given = marginalRateCurve({ ...base, qcd: 10_000 }, { maxIncome: 120_000, step: 1_000 });
-    // Same rate 10 rows later, all the way along: a QCD moves the torpedo the
-    // way tax-exempt interest moves it, only in the other direction.
-    for (let i = 0; i + 10 < plain.length; i += 1) {
-      expect(given[i + 10].marginalRate).toBeCloseTo(plain[i].marginalRate, 6);
-      expect(given[i + 10].totalTax).toBe(plain[i].totalTax);
-    }
-    // And the excluded stretch is flat at zero, because none of it is income.
-    expect(given.slice(0, 10).every((p) => p.marginalRate === 0)).toBe(true);
-  });
-
-  it('moves the IRMAA cliffs right by the same amount', () => {
-    const base = { ssBenefit: SS, filingStatus: 'single' as const, year: PINNED_YEAR };
-    const plain = irmaaCliffs(base);
-    const given = irmaaCliffs({ ...base, qcd: 10_000 });
-    expect(given).toHaveLength(plain.length);
-    plain.forEach((cliff, i) => {
-      expect(given[i].magi).toBe(cliff.magi);
-      // Without the QCD term in the bisection bound this converged on the
-      // search ceiling instead of the threshold.
-      expect(given[i].otherIncome).toBeCloseTo(cliff.otherIncome + 10_000, 4);
-    });
-    expect(otherIncomeAtIrmaaMagi(106_000, { ...base, qcd: 10_000 })).toBeCloseTo(
-      otherIncomeAtIrmaaMagi(106_000, base) + 10_000,
-      4,
-    );
-  });
-
-  it('leaves more room under a conversion ceiling', () => {
-    const base = {
-      ordinaryIncome: 30_000,
-      ssBenefit: SS,
-      filingStatus: 'single' as const,
-      year: PINNED_YEAR,
-    };
-    const ss85 = conversionCeilings(base).find((c) => c.id === 'ss85')!;
-    // Provisional income is built out of gross income, so the exclusion buys
-    // headroom under a provisional-income ceiling dollar for dollar.
-    expect(conversionMeasureValue('provisionalIncome', base, 0)).toBeCloseTo(41_856, 4);
-    expect(
-      conversionMeasureValue('provisionalIncome', { ...base, qcd: 10_000 }, 0),
-    ).toBeCloseTo(31_856, 4);
-    expect(maxConversionUnder(ss85, base)).toBe(0);
-    expect(maxConversionUnder(ss85, { ...base, qcd: 10_000 })).toBe(2_144);
-  });
-
-  it('stays monotonic when a conversion un-caps an income-limited exclusion', () => {
-    // $5,000 of ordinary income and a $20,000 gift: the exclusion is capped at
-    // $5,000 until a conversion supplies more income for it to come out of, so
-    // the first $15,000 of conversion is absorbed and the measure is flat.
-    // Flat is fine; falling would break the binary search.
-    const base = { ordinaryIncome: 5_000, ssBenefit: SS, qcd: 20_000, year: PINNED_YEAR };
-    let previous = -Infinity;
-    for (let conversion = 0; conversion <= 40_000; conversion += 500) {
-      const value = conversionMeasureValue('provisionalIncome', base, conversion);
-      expect(value).toBeGreaterThanOrEqual(previous);
-      previous = value;
-    }
-    expect(conversionMeasureValue('provisionalIncome', base, 0)).toBeCloseTo(11_856, 4);
-    expect(conversionMeasureValue('provisionalIncome', base, 15_000)).toBeCloseTo(11_856, 4);
-    expect(conversionMeasureValue('provisionalIncome', base, 20_000)).toBeCloseTo(16_856, 4);
-  });
-
-  it('changes nothing at all when it is not set', () => {
-    const base = {
-      ordinaryIncome: 45_000,
-      ssBenefit: SS,
-      ltcg: 12_000,
-      muniInterest: 3_000,
-      filingStatus: 'mfj' as const,
-      seniors: 2,
-      year: PINNED_YEAR,
-    };
-    expect(totalTax({ ...base, qcd: 0 })).toBe(totalTax(base));
-    expect(taxableSocialSecurity({ ...base, qcd: 0 })).toBe(taxableSocialSecurity(base));
-    expect(agiFor({ ...base, qcd: 0 })).toBe(agiFor(base));
-    expect(irmaaMagi({ ...base, qcd: 0 })).toBe(irmaaMagi(base));
-  });
-});
-
 /**
  * The chart's right edge used to be a constant, and a constant cannot be right
  * for every return: $150,000 shows an unmarried filer the whole torpedo and
@@ -3232,12 +2916,6 @@ describe('sizing the income axis to the return', () => {
         plain - 5_000,
         1,
       );
-      // A charitable distribution never reaches provisional income at all, so
-      // it takes that much more income to finish the job.
-      expect(otherIncomeAtTaxableSSCap({ ...base, qcd: 5_000 })).toBeCloseTo(
-        plain + 5_000,
-        1,
-      );
     });
   });
 
@@ -3261,14 +2939,6 @@ describe('sizing the income axis to the return', () => {
       ).toBe(0);
       expect(otherIncomeAtAgi(1_000, { ssBenefit: SS, ordinaryIncome: 90_000 })).toBe(
         1_000,
-      );
-    });
-
-    it('makes room for a gift that never enters AGI', () => {
-      const base = { ssBenefit: SS, filingStatus: 'single' as const };
-      expect(otherIncomeAtAgi(175_000, { ...base, qcd: 20_000 })).toBeCloseTo(
-        otherIncomeAtAgi(175_000, base) + 20_000,
-        1,
       );
     });
   });
@@ -3310,40 +2980,6 @@ describe('sizing the income axis to the return', () => {
         6,
       );
     });
-
-    /**
-     * The gift's own far side. Left of it every ordinary dollar is given away;
-     * right of it the return starts again from zero.
-     */
-    it('reports where a charitable gift stops covering the income', () => {
-      const base = { ssBenefit: SS, filingStatus: 'single' as const, year: PINNED_YEAR };
-      expect(incomeAxisFeatures(base).giftEnd).toBe(0);
-      expect(incomeAxisFeatures({ ...base, qcd: 40_000 }).giftEnd).toBe(40_000);
-      // 408(d)(8)(A) caps it, so asking for more moves nothing.
-      expect(incomeAxisFeatures({ ...base, qcd: 500_000 }).giftEnd).toBe(
-        qcdLimitFor(base),
-      );
-      // Twice the cap on a joint return, which is the whole reason the axis
-      // had to learn about the gift at all.
-      expect(
-        incomeAxisFeatures({ ...base, filingStatus: 'mfj', qcd: 500_000 }).giftEnd,
-      ).toBe(2 * qcdLimitFor(base));
-    });
-
-    /**
-     * A gain is a sale, not a distribution, so it is income the gift cannot be
-     * excluded from — and the chart reads the gain as a share *of* the swept
-     * income. Both together put the last excludable dollar that much further
-     * along the axis.
-     */
-    it('pushes the gift’s far side out past the gain inside the income', () => {
-      const base = { ssBenefit: SS, filingStatus: 'single' as const, year: PINNED_YEAR };
-      expect(incomeAxisFeatures({ ...base, qcd: 40_000, ltcg: 25_000 }).giftEnd).toBe(
-        65_000,
-      );
-      // No gift, no far side, however big the gain.
-      expect(incomeAxisFeatures({ ...base, ltcg: 25_000 }).giftEnd).toBe(0);
-    });
   });
 
   describe('incomeAxisMax', () => {
@@ -3376,66 +3012,16 @@ describe('sizing the income axis to the return', () => {
         for (const filingStatus of ['single', 'mfj', 'mfs', 'hoh'] as FilingStatus[]) {
           for (const seniors of [1, 2]) {
             for (const muniInterest of [0, 20_000]) {
-              for (const qcd of [0, 30_000]) {
-                const scenario = {
-                  ssBenefit: avgAnnualSSBenefit(year),
-                  filingStatus,
-                  seniors,
-                  muniInterest,
-                  qcd,
-                  year,
-                };
-                const { seniorPhaseoutEnd } = incomeAxisFeatures(scenario);
-                if (seniorPhaseoutEnd === null) continue;
-                expect(incomeAxisMax(scenario)).toBeGreaterThan(seniorPhaseoutEnd);
-              }
-            }
-          }
-        }
-      }
-    });
-
-    /**
-     * The gift is the second thing the reader sets in dollars of this axis,
-     * and 408(d)(8)(A) lets a joint return set $216,000 of them. Sizing the
-     * axis by the torpedo alone was not enough: the same gift pushes the
-     * torpedo right dollar for dollar, so it usually carries the gift along
-     * with it — but a return with no benefit has no torpedo to push, and the
-     * gift would have run off a $150,000 chart with nothing to widen it.
-     */
-    it('widens to fit a gift that outruns the chart', () => {
-      const limit = qcdLimitFor({ filingStatus: 'mfj', year: PINNED_YEAR });
-      expect(limit).toBe(216_000);
-      const scenario = {
-        ssBenefit: 0,
-        filingStatus: 'mfj' as const,
-        qcd: limit,
-        year: PINNED_YEAR,
-      };
-      // Without the gift there is nothing on this curve at all, so the axis
-      // sits at its floor; the gift alone takes it out past $216,000.
-      expect(incomeAxisMax({ ...scenario, qcd: 0 })).toBe(MIN_INCOME_AXIS);
-      expect(incomeAxisMax(scenario)).toBe(250_000);
-    });
-
-    it('always contains the gift it is drawn for', () => {
-      for (const year of TAX_YEARS) {
-        for (const filingStatus of ['single', 'mfj', 'mfs', 'hoh'] as FilingStatus[]) {
-          for (const ssBenefit of [0, avgAnnualSSBenefit(year)]) {
-            for (const seniors of [0, 1, 2]) {
-              for (const muniInterest of [0, 40_000]) {
-                const scenario = {
-                  ssBenefit,
-                  filingStatus,
-                  seniors,
-                  muniInterest,
-                  qcd: 500_000,
-                  year,
-                };
-                expect(incomeAxisMax(scenario)).toBeGreaterThan(
-                  qcdLimitFor({ filingStatus, year }),
-                );
-              }
+              const scenario = {
+                ssBenefit: avgAnnualSSBenefit(year),
+                filingStatus,
+                seniors,
+                muniInterest,
+                year,
+              };
+              const { seniorPhaseoutEnd } = incomeAxisFeatures(scenario);
+              if (seniorPhaseoutEnd === null) continue;
+              expect(incomeAxisMax(scenario)).toBeGreaterThan(seniorPhaseoutEnd);
             }
           }
         }
@@ -3502,10 +3088,11 @@ describe('net investment income tax (IRC 1411)', () => {
   describe('dormant while the page sets no gain', () => {
     /**
      * `decodeScenario` is the page's whole input surface, wider than its
-     * controls: it reads anything a link can say, including the dead `ltcg`
-     * and `ceiling` keys that the gains and conversion steps used to write.
-     * Reading past them is what keeps a stale link from moving a curve nobody
-     * can see, so the adversarial link is the right one to test with.
+     * controls: it reads anything a link can say, including the dead `ltcg`,
+     * `ceiling` and `qcd` keys that the gains, conversion and charity steps
+     * used to write. Reading past them is what keeps a stale link from moving
+     * a curve nobody can see, so the adversarial link is the right one to test
+     * with.
      */
     const fromLink = (search: string): Scenario => {
       const { scenario } = decodeScenario(search);
@@ -3516,7 +3103,6 @@ describe('net investment income tax (IRC 1411)', () => {
         ssBenefit,
         ordinaryIncome,
         muniInterest: scenario.muniInterest,
-        qcd: scenario.qcd,
         // The same derivation App.tsx makes: a second senior only counts on a
         // joint return.
         seniors: isSenior ? (filingStatus === 'mfj' && spouseIsSenior ? 2 : 1) : 0,
@@ -3534,9 +3120,9 @@ describe('net investment income tax (IRC 1411)', () => {
       '?income=300000',
       '?income=1000000',
       '?filing=mfj&income=1000000&senior=1&spouse=1&ss=62172',
-      '?filing=mfs&income=1000000&muni=50000&qcd=108000',
-      // The two keys that would have moved this if they were still honoured.
-      '?income=300000&ltcg=250000&ceiling=400000',
+      '?filing=mfs&income=1000000&muni=50000',
+      // The three keys that would have moved this if they were still honoured.
+      '?income=300000&ltcg=250000&ceiling=400000&qcd=108000',
     ];
 
     it('has no net investment income to charge, on any link this page reads', () => {
@@ -4011,48 +3597,20 @@ describe('the premium tax credit’s 400% cliff (IRC 36B)', () => {
      * Not a coincidence worth hiding: 36B household income and the "total
      * income" the close already quotes are the same arithmetic, because both
      * mean everything the return took in. A reader who has read one figure has
-     * read the other.
-     *
-     * Bar the one thing 36B has to leave out and the page's axis has to keep:
-     * a charitable distribution is out of gross income by 408(d)(8), so it is
-     * out of household income too, while the axis carries it so that the
-     * thresholds it moves are seen to move. So the gap between the two figures
-     * is the gift and nothing else — which is worth pinning in both
-     * directions, because a drift in either would be a page quoting a cliff
-     * against an income it does not measure.
+     * read the other — which is worth pinning, because a drift in either would
+     * be a page quoting a cliff against an income it does not measure.
      */
-    it('is the total income this page already states, less any gift, on every scenario it can build', () => {
+    it('is the total income this page already states, on every scenario it can build', () => {
       const scenarios = [
         { ordinaryIncome: 0, ssBenefit: SS },
         { ordinaryIncome: 40_000, ssBenefit: SS, muniInterest: 9_000 },
-        { ordinaryIncome: 90_000, ssBenefit: SS, ltcg: 30_000, qcd: 7_000 },
+        { ordinaryIncome: 90_000, ssBenefit: SS, ltcg: 30_000 },
         { ordinaryIncome: 120_000, ssBenefit: 0, filingStatus: 'mfj' as const },
       ];
       for (const scenario of scenarios) {
         const full = { ...scenario, ...Y26 };
-        expect(acaMagi(full)).toBeCloseTo(
-          totalIncomeFor(full) - qcdFor(full),
-          6,
-        );
+        expect(acaMagi(full)).toBeCloseTo(totalIncomeFor(full), 6);
       }
-    });
-
-    /**
-     * The correction this bullet's first draft got wrong: a QCD is out of
-     * gross income before AGI is struck, so it comes off all three MAGIs. What
-     * differs is by how much — this one falls by the gift and no more, because
-     * the benefit it un-taxes was already counted here in full.
-     */
-    it('comes down by the gift alone, where the AGI-based MAGIs come down by more', () => {
-      const base = { ordinaryIncome: 25_000, ssBenefit: SS, ...Y26 };
-      const given = { ...base, qcd: 8_000 };
-      expect(acaMagi(base) - acaMagi(given)).toBeCloseTo(8_000, 6);
-      // The gift also drops provisional income, which un-taxes benefit on the
-      // way — so AGI falls by the gift *plus* that.
-      const untaxed = taxableSocialSecurity(base) - taxableSocialSecurity(given);
-      expect(untaxed).toBeGreaterThan(0);
-      expect(niitMagi(base) - niitMagi(given)).toBeCloseTo(8_000 + untaxed, 6);
-      expect(irmaaMagi(base) - irmaaMagi(given)).toBeCloseTo(8_000 + untaxed, 6);
     });
   });
 
@@ -4142,9 +3700,8 @@ describe('the premium tax credit’s 400% cliff (IRC 36B)', () => {
       expect(otherIncomeAtAcaMagi(CLIFF, big)).toBe(0);
     });
 
-    it('is pushed right by the gift and left by the tax-exempt interest, dollar for dollar', () => {
+    it('is pushed left by the tax-exempt interest, dollar for dollar', () => {
       const plain = ptcCliff(base)!.otherIncome;
-      expect(ptcCliff({ ...base, qcd: 5_000 })!.otherIncome - plain).toBeCloseTo(5_000, 4);
       expect(plain - ptcCliff({ ...base, muniInterest: 5_000 })!.otherIncome).toBeCloseTo(
         5_000,
         4,
@@ -4239,9 +3796,8 @@ describe('the premium tax credit’s 400% cliff (IRC 36B)', () => {
  *
  * Sources: Rev. Proc. 2024-40 section 2 (2025), Rev. Proc. 2025-32 sections 3
  * and 4 (2026, and the OBBBA standard deductions it substitutes into 2025),
- * Notice 2024-80 and Notice 2025-67 (the 408(d)(8) limits), Rev. Proc. 2025-25
- * section 3.01 (the 36B applicable percentage table). Reproduced in
- * docs/irs-published-figures.md.
+ * Rev. Proc. 2025-25 section 3.01 (the 36B applicable percentage table).
+ * Reproduced in docs/irs-published-figures.md.
  */
 describe('the published IRS figures', () => {
   /**
@@ -4416,15 +3972,6 @@ describe('the published IRS figures', () => {
         ]);
       });
     });
-  });
-
-  it('has the published 408(d)(8) charitable-distribution limits', () => {
-    // Notice 2024-80 and Notice 2025-67, which give the second figure as the
-    // one-time split-interest election under 408(d)(8)(F)(i)(II).
-    expect(qcdAnnualLimit(2025)).toBe(108_000);
-    expect(qcdSplitInterestLimit(2025)).toBe(54_000);
-    expect(qcdAnnualLimit(2026)).toBe(111_000);
-    expect(qcdSplitInterestLimit(2026)).toBe(55_000);
   });
 
   it('has the published applicable percentage at the top of the 36B table', () => {

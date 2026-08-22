@@ -70,14 +70,13 @@ the only way to reverse the decision is to reverse the move.
 
 ## Open defects
 
-Three bullets in `ralph/PLAN.md`'s Discovered Work are polish on code in this
-directory: the withdrawal-order comparison never pricing what its recurring gift
-is worth to each order, the shortfall figure summing nominal dollars under a
-caption promising start-year ones, and whether the COLA slider should be
-anchored on the raises the SSA has already announced. They are real, they are
-unfixed, and they should stay unfixed while the code is here — fixing them today
-changes nothing a reader can see. They come back with the section, which is the
-point of having written them down.
+Two bullets in `ralph/PLAN.md`'s Discovered Work are polish on code in this
+directory: the shortfall figure summing nominal dollars under a caption
+promising start-year ones, and whether the COLA slider should be anchored on
+the raises the SSA has already announced. They are real, they are unfixed, and
+they should stay unfixed while the code is here — fixing them today changes
+nothing a reader can see. They come back with the section, which is the point
+of having written them down.
 
 `stateTax.ts` is the worked example of the move running both ways. It came off
 this shelf in the commit that gave it a footnote under step 2's chart, and went

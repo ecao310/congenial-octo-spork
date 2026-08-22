@@ -1,8 +1,8 @@
 /**
  * The return, written into the address bar and read back out of it.
  *
- * Every figure on the page is derived from seven values, and until this file
- * existed all seven lived only in React state: a refresh threw the return away
+ * Every figure on the page is derived from six values, and until this file
+ * existed all six lived only in React state: a refresh threw the return away
  * and there was nothing to send to a spouse or an advisor. Putting them in the query string
  * fixes both at once, because the address bar is already the share surface
  * every reader knows how to use. Every value it carries prices something: a
@@ -29,14 +29,15 @@
  * `PAGE_TAX_YEAR` figure, which the page says in its own prose in a dozen
  * places.
  *
- * **Two more keys went the same way, and later.** `ltcg` sized the capital
- * gain inside the other income and `ceiling` picked the line a conversion was
- * sized against; both steps came off the page when it narrowed to the torpedo,
- * so both keys now name a control that is not there. `ltcg=20000` is the
- * dangerous one of the two — it moved the curve — which is why it is read past
+ * **Three more keys went the same way, and later.** `ltcg` sized the capital
+ * gain inside the other income, `ceiling` picked the line a conversion was
+ * sized against, and `qcd` set a charitable distribution against it; all three
+ * steps came off the page as it narrowed to the torpedo, so all three keys now
+ * name a control that is not there. `ltcg=20000` and `qcd=26750` are the
+ * dangerous ones — both moved the curve — which is why they are read past
  * rather than honoured: a figure no reader can see, change or be told about is
- * worse than a figure the link never carried. Old links naming either open in
- * silence, on the return the rest of their keys describe.
+ * worse than a figure the link never carried. Old links naming any of the
+ * three open in silence, on the return the rest of their keys describe.
  *
  * **Writing is `replaceState`, never `pushState`.** A slider fires a change per
  * notch, so pushing would bury the back button under one entry per $500 of
@@ -53,7 +54,6 @@ import {
   PAGE_TAX_YEAR,
   avgAnnualSSBenefit,
   maxAnnualSSBenefit,
-  qcdLimitFor,
 } from './tax';
 import { formatCurrency } from './format';
 
@@ -83,7 +83,6 @@ export interface PageScenario {
   isSenior: boolean;
   spouseIsSenior: boolean;
   muniInterest: number;
-  qcd: number;
 }
 
 /** The other income the page opens with, before the reader touches anything. */
@@ -136,7 +135,6 @@ export function defaultScenario(): PageScenario {
     isSenior: false,
     spouseIsSenior: false,
     muniInterest: 0,
-    qcd: 0,
   };
 }
 
@@ -175,9 +173,6 @@ export function encodeScenario(scenario: PageScenario): string {
   }
   if (scenario.muniInterest !== opening.muniInterest) {
     params.set('muni', String(scenario.muniInterest));
-  }
-  if (scenario.qcd !== opening.qcd) {
-    params.set('qcd', String(scenario.qcd));
   }
   if (scenario.isSenior) params.set('senior', '1');
   if (scenario.spouseIsSenior) params.set('spouse', '1');
@@ -310,13 +305,6 @@ export function decodeScenario(search: string): DecodedScenario {
     reason: 'the right edge of the slider that sets it',
   });
 
-  const qcd = dollars('qcd', {
-    fallback: 0,
-    max: qcdLimitFor({ filingStatus, year: PAGE_TAX_YEAR }),
-    what: 'a charitable distribution',
-    reason: `the ${PAGE_TAX_YEAR} annual limit for this return`,
-  });
-
   return {
     scenario: {
       filingStatus,
@@ -325,7 +313,6 @@ export function decodeScenario(search: string): DecodedScenario {
       isSenior: flag('senior'),
       spouseIsSenior: flag('spouse'),
       muniInterest,
-      qcd,
     },
     notes,
   };

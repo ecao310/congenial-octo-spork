@@ -2300,7 +2300,7 @@ describe('head of household', () => {
       17_000, 64_850, 103_350, 197_300, 250_500, 626_350, Infinity,
     ]);
     expect(filingParams(2026, 'hoh').brackets.map((b) => b.upTo)).toEqual([
-      17_700, 67_450, 105_700, 201_775, 256_200, 640_600, Infinity,
+      17_700, 67_450, 105_700, 201_750, 256_200, 640_600, Infinity,
     ]);
     // $50,000 of taxable income is still in the 12% band for a head of
     // household and already in the 22% one for a single filer.
@@ -4160,5 +4160,224 @@ describe('the premium tax credit’s 400% cliff (IRC 36B)', () => {
       expect(maxConversionUnder(ceiling, scenario)).toBe(0);
       expect(sizeConversion(ceiling, scenario).alreadyOver).toBe(true);
     });
+  });
+});
+
+/**
+ * The figures as the IRS printed them, checked against the tables this app
+ * prices with.
+ *
+ * Every other test in this file asserts what the engine *does* with a
+ * parameter. These assert that the parameter is the published one, which is a
+ * different kind of failure and needs a different kind of test: a transcription
+ * error survives every behavioural test in the suite, because the engine
+ * happily computes the wrong bracket to six decimal places.
+ *
+ * The transcription is deliberately redundant. A Rev. Proc. rate table prints
+ * three things per row — the threshold, the rate, and the cumulative tax at
+ * that threshold ("$39,207 plus 32% of the excess over $201,750") — and the
+ * third is a function of every row above it. Pinning all three means a mistyped
+ * threshold has to be matched by a mistyped base amount to go unnoticed, and
+ * the base amounts are the one column that is not a round number. That is what
+ * caught the 2026 head-of-household 24% band sitting at the single filer's
+ * $201,775 instead of its own $201,750: a $25 error, worth $2 of tax, invisible
+ * to every other assertion here.
+ *
+ * Sources: Rev. Proc. 2024-40 section 2 (2025), Rev. Proc. 2025-32 sections 3
+ * and 4 (2026, and the OBBBA standard deductions it substitutes into 2025),
+ * Notice 2024-80 and Notice 2025-67 (the 408(d)(8) limits), Rev. Proc. 2025-25
+ * section 3.01 (the 36B applicable percentage table). Reproduced in
+ * docs/irs-published-figures.md.
+ */
+describe('the published IRS figures', () => {
+  /**
+   * One row of a rate table: "$base plus rate% of the excess over $over". The
+   * first row's `over` is $0 and its `base` is $0 — Rev. Proc. prints it as
+   * "Not over $X: 10% of the taxable income", which is the same row.
+   */
+  type RateRow = { over: number; rate: number; base: number };
+
+  /** Section 2.01 (2025) and 4.01 (2026), Tables 1 through 4. */
+  const RATE_TABLES: Record<TaxYear, Record<FilingStatus, RateRow[]>> = {
+    2025: {
+      mfj: [
+        { over: 0, rate: 0.1, base: 0 },
+        { over: 23_850, rate: 0.12, base: 2_385 },
+        { over: 96_950, rate: 0.22, base: 11_157 },
+        { over: 206_700, rate: 0.24, base: 35_302 },
+        { over: 394_600, rate: 0.32, base: 80_398 },
+        { over: 501_050, rate: 0.35, base: 114_462 },
+        { over: 751_600, rate: 0.37, base: 202_154.5 },
+      ],
+      hoh: [
+        { over: 0, rate: 0.1, base: 0 },
+        { over: 17_000, rate: 0.12, base: 1_700 },
+        { over: 64_850, rate: 0.22, base: 7_442 },
+        { over: 103_350, rate: 0.24, base: 15_912 },
+        { over: 197_300, rate: 0.32, base: 38_460 },
+        { over: 250_500, rate: 0.35, base: 55_484 },
+        { over: 626_350, rate: 0.37, base: 187_031.5 },
+      ],
+      single: [
+        { over: 0, rate: 0.1, base: 0 },
+        { over: 11_925, rate: 0.12, base: 1_192.5 },
+        { over: 48_475, rate: 0.22, base: 5_578.5 },
+        { over: 103_350, rate: 0.24, base: 17_651 },
+        { over: 197_300, rate: 0.32, base: 40_199 },
+        { over: 250_525, rate: 0.35, base: 57_231 },
+        { over: 626_350, rate: 0.37, base: 188_769.75 },
+      ],
+      mfs: [
+        { over: 0, rate: 0.1, base: 0 },
+        { over: 11_925, rate: 0.12, base: 1_192.5 },
+        { over: 48_475, rate: 0.22, base: 5_578.5 },
+        { over: 103_350, rate: 0.24, base: 17_651 },
+        { over: 197_300, rate: 0.32, base: 40_199 },
+        { over: 250_525, rate: 0.35, base: 57_231 },
+        { over: 375_800, rate: 0.37, base: 101_077.25 },
+      ],
+    },
+    2026: {
+      mfj: [
+        { over: 0, rate: 0.1, base: 0 },
+        { over: 24_800, rate: 0.12, base: 2_480 },
+        { over: 100_800, rate: 0.22, base: 11_600 },
+        { over: 211_400, rate: 0.24, base: 35_932 },
+        { over: 403_550, rate: 0.32, base: 82_048 },
+        { over: 512_450, rate: 0.35, base: 116_896 },
+        { over: 768_700, rate: 0.37, base: 206_583.5 },
+      ],
+      hoh: [
+        { over: 0, rate: 0.1, base: 0 },
+        { over: 17_700, rate: 0.12, base: 1_770 },
+        { over: 67_450, rate: 0.22, base: 7_740 },
+        { over: 105_700, rate: 0.24, base: 16_155 },
+        { over: 201_750, rate: 0.32, base: 39_207 },
+        { over: 256_200, rate: 0.35, base: 56_631 },
+        { over: 640_600, rate: 0.37, base: 191_171 },
+      ],
+      single: [
+        { over: 0, rate: 0.1, base: 0 },
+        { over: 12_400, rate: 0.12, base: 1_240 },
+        { over: 50_400, rate: 0.22, base: 5_800 },
+        { over: 105_700, rate: 0.24, base: 17_966 },
+        { over: 201_775, rate: 0.32, base: 41_024 },
+        { over: 256_225, rate: 0.35, base: 58_448 },
+        { over: 640_600, rate: 0.37, base: 192_979.25 },
+      ],
+      mfs: [
+        { over: 0, rate: 0.1, base: 0 },
+        { over: 12_400, rate: 0.12, base: 1_240 },
+        { over: 50_400, rate: 0.22, base: 5_800 },
+        { over: 105_700, rate: 0.24, base: 17_966 },
+        { over: 201_775, rate: 0.32, base: 41_024 },
+        { over: 256_225, rate: 0.35, base: 58_448 },
+        { over: 384_350, rate: 0.37, base: 103_291.75 },
+      ],
+    },
+  };
+
+  /** Section 2.15(1) as replaced by 3.01 (2025), and 4.14(1) (2026). */
+  const STANDARD_DEDUCTION: Record<TaxYear, Record<FilingStatus, number>> = {
+    2025: { mfj: 31_500, hoh: 23_625, single: 15_750, mfs: 15_750 },
+    2026: { mfj: 32_200, hoh: 24_150, single: 16_100, mfs: 16_100 },
+  };
+
+  /**
+   * Section 2.15(3) and 4.14(3): the 63(f) aged addition, "increased ... if the
+   * individual is also unmarried and not a surviving spouse". Filing status is
+   * the whole test of that, so the table is two figures rather than four.
+   */
+  const AGED_ADDITION: Record<TaxYear, { married: number; unmarried: number }> = {
+    2025: { married: 1_600, unmarried: 2_000 },
+    2026: { married: 1_650, unmarried: 2_050 },
+  };
+  const MARRIED: FilingStatus[] = ['mfj', 'mfs'];
+
+  /** Section 2.03 and 4.03: the 1(j)(5)(B) maximum zero and 15 percent amounts. */
+  const CAPITAL_GAIN_AMOUNTS: Record<
+    TaxYear,
+    Record<FilingStatus, { maxZero: number; max15: number }>
+  > = {
+    2025: {
+      mfj: { maxZero: 96_700, max15: 600_050 },
+      mfs: { maxZero: 48_350, max15: 300_000 },
+      hoh: { maxZero: 64_750, max15: 566_700 },
+      single: { maxZero: 48_350, max15: 533_400 },
+    },
+    2026: {
+      mfj: { maxZero: 98_900, max15: 613_700 },
+      mfs: { maxZero: 49_450, max15: 306_850 },
+      hoh: { maxZero: 66_200, max15: 579_600 },
+      single: { maxZero: 49_450, max15: 545_500 },
+    },
+  };
+
+  const STATUSES: FilingStatus[] = ['mfj', 'hoh', 'single', 'mfs'];
+
+  describe.each(TAX_YEARS)('%d', (year) => {
+    describe.each(STATUSES)('%s', (filingStatus) => {
+      const rows = RATE_TABLES[year][filingStatus];
+
+      it('has the published rate schedule', () => {
+        expect(filingParams(year, filingStatus).brackets).toEqual(
+          rows.map((row, i) => ({
+            upTo: rows[i + 1]?.over ?? Infinity,
+            rate: row.rate,
+          })),
+        );
+      });
+
+      it('owes what the table says at every threshold in it', () => {
+        for (const { over, base } of rows) {
+          expect(federalIncomeTax(over, { filingStatus, year })).toBeCloseTo(base, 6);
+        }
+      });
+
+      it('charges each band its own rate on the next dollar', () => {
+        for (const { over, rate, base } of rows) {
+          // "$base plus rate% of the excess over $over", read one dollar in.
+          expect(federalIncomeTax(over + 1, { filingStatus, year })).toBeCloseTo(
+            base + rate,
+            6,
+          );
+        }
+      });
+
+      it('has the published standard deduction and age-65 addition', () => {
+        const params = filingParams(year, filingStatus);
+        expect(params.standardDeduction).toBe(STANDARD_DEDUCTION[year][filingStatus]);
+        const { married, unmarried } = AGED_ADDITION[year];
+        expect(params.additionalStdDeduction65).toBe(
+          MARRIED.includes(filingStatus) ? married : unmarried,
+        );
+      });
+
+      it('has the published capital-gain amounts', () => {
+        const { maxZero, max15 } = CAPITAL_GAIN_AMOUNTS[year][filingStatus];
+        expect(filingParams(year, filingStatus).ltcgBrackets).toEqual([
+          { upTo: maxZero, rate: 0 },
+          { upTo: max15, rate: 0.15 },
+          { upTo: Infinity, rate: 0.2 },
+        ]);
+      });
+    });
+  });
+
+  it('has the published 408(d)(8) charitable-distribution limits', () => {
+    // Notice 2024-80 and Notice 2025-67, which give the second figure as the
+    // one-time split-interest election under 408(d)(8)(F)(i)(II).
+    expect(qcdAnnualLimit(2025)).toBe(108_000);
+    expect(qcdSplitInterestLimit(2025)).toBe(54_000);
+    expect(qcdAnnualLimit(2026)).toBe(111_000);
+    expect(qcdSplitInterestLimit(2026)).toBe(55_000);
+  });
+
+  it('has the published applicable percentage at the top of the 36B table', () => {
+    // Rev. Proc. 2025-25 section 3.01, last row: "At least 300% but not more
+    // than 400% — 9.96%, 9.96%". 2025 has no such row: ARPA replaced the table
+    // with one that runs past 400% and tops out at 8.5%.
+    expect(ptcParams(2026).topApplicablePercentage).toBe(0.0996);
+    expect(ptcParams(2025).topApplicablePercentage).toBe(0.085);
   });
 });

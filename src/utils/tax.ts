@@ -481,7 +481,12 @@ export const TAX_YEAR_PARAMS: Record<TaxYear, TaxYearParams> = {
           { upTo: 17_700, rate: 0.1 },
           { upTo: 67_450, rate: 0.12 },
           { upTo: 105_700, rate: 0.22 },
-          { upTo: 201_775, rate: 0.24 },
+          // $201,750, not the single filer's $201,775. Rev. Proc. 2025-32
+          // Table 2 prints "$39,207 plus 32% of the excess over $201,750",
+          // and $16,155 + 24% x ($201,750 - $105,700) is exactly $39,207 — so
+          // the table's own cumulative amounts pin the $25 difference. The
+          // 32% band's top is $25 under the single one for the same reason.
+          { upTo: 201_750, rate: 0.24 },
           { upTo: 256_200, rate: 0.32 },
           { upTo: 640_600, rate: 0.35 },
           { upTo: Infinity, rate: 0.37 },

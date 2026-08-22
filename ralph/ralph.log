@@ -8373,3 +8373,117 @@ the top of this file say the tax math was verified line-by-line against Pub
 2026 params (brackets, standard deduction, SENIOR_DEDUCTION and its phaseout,
 IRMAA tiers, FPL, the QCD limit) are the ones that need a source check. Start
 at src/utils/tax.ts's param tables and docs/.
+
+## 2026-08-21 — Task: Check against irs numbers
+
+Backlog 7. Picked as topmost unchecked at the time this iteration started.
+Mid-run the user edited ralph/PLAN.md in the working tree — un-checked the
+"Summary on bottom left" bullet (which 8a8601f had completed) and added a new
+"Make the graph shift right when QCD increases" bullet above it. Both are left
+unchecked and are now the topmost two items; their edit is committed alongside
+this one because PLAN.md is one file. **Next iteration should start with the
+QCD-axis bullet, not with this list's order as of yesterday.**
+
+### One real error, in the 2026 head-of-household schedule
+
+`TAX_YEAR_PARAMS[2026].filing.hoh` had its 24% band ending at **$201,775**.
+Rev. Proc. 2025-32 Table 2 says **$201,750**. The single filer's figure had
+been copied into the head-of-household row — a $25 error, worth $2 of tax at
+the top of the 32% band.
+
+It is pinned by the Rev. Proc.'s own arithmetic and not just by its threshold
+column: Table 2 prints "$39,207 plus 32% of the excess over $201,750", and
+$16,155 + 24% x ($201,750 - $105,700) is exactly $39,207. The cumulative
+amounts down the whole column agree with $201,750 and disagree with $201,775.
+
+Not reachable from the shipped page: `PAGE_FILING_STATUSES` is
+`['single', 'mfj']` and `?filing=hoh` falls back to single with a notice. It
+was reachable through the engine, which `src/shelf/` prices with all four
+statuses. So this is an engine correctness fix with no visible change.
+
+### Everything else checked out
+
+Verified against the primary documents, not summaries of them:
+
+- **Rate tables**, all four statuses x both years, thresholds *and* rates
+  *and* the printed cumulative base amounts — Rev. Proc. 2024-40 s 2.01 and
+  Rev. Proc. 2025-32 s 4.01. Only the one error above.
+- **Standard deduction** s 63(c)(2) — 2026 from Rev. Proc. 2025-32 s 4.14(1);
+  2025 from that same document's s 3.01, which *removes* s 2.15(1) of Rev.
+  Proc. 2024-40 and its pre-OBBBA $30,000 / $22,500 / $15,000 and substitutes
+  $31,500 / $23,625 / $15,750. The app already had the OBBBA figures.
+- **s 63(f) aged addition** — $1,600/$2,000 (2025), $1,650/$2,050 (2026), the
+  larger "if the individual is also unmarried and not a surviving spouse". hoh
+  takes the larger, mfs the smaller. Both correct.
+- **s 1(j)(5)(B) capital-gain amounts**, all four statuses x both years —
+  s 2.03 and s 4.03. All correct, including the 2026 mfs 15% amount being
+  exactly half the joint one where 2025's is $25 under half.
+- **s 408(d)(8) QCD limits** — Notice 2025-67 gives $111,000 and $55,000 for
+  2026 and names $108,000 / $54,000 as the 2025 figures it raises. Correct.
+- **s 36B applicable percentage table** — Rev. Proc. 2025-25 s 3.01's last row
+  is "At least 300% but not more than 400% — 9.96%, 9.96%". Correct.
+- Not IRS-set and so out of this task's scope, but noted: SS_BASES (statutory,
+  86(c), unindexed), NIIT_THRESHOLDS (statutory, 1411(b)), SENIOR_DEDUCTION
+  (statutory, OBBBA), IRMAA (CMS), FPL (HHS), benefit figures (SSA). Each
+  carries its own source string.
+
+### How to read an IRS PDF here, for next time
+
+`WebFetch` on an irs.gov PDF returns the compressed streams and the summarizing
+model gives up. It *does* save the bytes and print the path. `pdftotext`,
+`mutool`, `qpdf` and `gs` are all absent on this machine; `/usr/bin/python3`
+has no Quartz. What works:
+
+    /usr/bin/python3 -m pip install --user pypdf     # already installed now
+    /usr/bin/python3 -c "from pypdf import PdfReader; ..."
+
+Extraction is clean enough to read the rate tables straight out, though the
+table cells arrive out of order — Table 1's rows print *after* Table 2's
+heading, so read by the "Not over $X" that starts each table rather than by
+position.
+
+### Code
+
+- `src/utils/tax.ts` — the one-line fix, with a comment carrying the Rev.
+  Proc.'s own cumulative amount so the $25 is defended rather than looking
+  like a typo waiting to be "corrected" back.
+- `src/utils/tax.test.ts` — the existing hoh schedule assertion updated, and a
+  new `describe('the published IRS figures')` at the foot of the file: the
+  four rate tables transcribed as `{over, rate, base}` rows for both years,
+  plus standard deductions, aged additions, capital-gain amounts, QCD limits
+  and the 36B top percentage. `describe.each(TAX_YEARS)` x
+  `describe.each(STATUSES)` x 5 assertions.
+- `docs/irs-published-figures.md` — the same figures as prose tables with the
+  source for each, so the transcription is checkable without a PDF reader.
+  Says what is deliberately *not* in it and why.
+
+The base-amount column is the point of the whole block. Pinning thresholds
+alone would not have caught this: `federalIncomeTax` at $201,750 is $39,207
+either way, because the two schedules only diverge *above* it. Pinning the
+printed cumulative tax at every threshold catches it at the next row down.
+
+### Tests
+
+671 -> 713 (+40 from 8 year-status combinations x 5, +2 standalone).
+Mutation-checked: restoring $201,775 in `tax.ts` reddens 4 tests — the
+existing hoh schedule assertion plus all three of the new 2026-hoh ones,
+including "owes what the table says at every threshold in it", which is the
+one that would have caught this without anyone knowing to look.
+
+### Verification
+
+`npx tsc -b`, `npx eslint . --max-warnings 0`, `npx vitest run` (713/713),
+`npm run build` — all clean. No browser run: this iteration changes no
+rendered figure, because the status it fixes is not one the page offers.
+
+### Next
+
+Topmost unchecked is now the user's new "Make the graph shift right when QCD
+increases" bullet, then the re-opened "Summary on bottom left" one. The latter
+was implemented in 8a8601f and un-checked by the user afterwards, so read that
+commit and the write-up above it before redoing it — the likely gap is the
+lead-in, which that iteration deliberately left as "Everything from here on
+prices one return:" where the bullet's example says "One year's return:", and
+the vocabulary, where the bullet says "municipal interest" / "qualified
+charitable distributions" and the page says "tax-exempt interest" / "straight
+to charity".

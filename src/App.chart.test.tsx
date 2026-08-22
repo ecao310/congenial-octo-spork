@@ -102,7 +102,7 @@ const herePositions = (container: HTMLElement): number[] =>
  * accessible-name space as the age toggles for the rest of the test.
  */
 const showBothThresholds = (): void => {
-  const open = screen.getByRole('button', { name: /^Lines/ });
+  const open = screen.getByRole('button', { name: /^Breakpoints/ });
   fireEvent.click(open);
   fireEvent.click(screen.getByRole('checkbox', { name: 'Medicare IRMAA cliffs' }));
   fireEvent.click(screen.getByRole('checkbox', { name: '400% poverty-line cliff' }));

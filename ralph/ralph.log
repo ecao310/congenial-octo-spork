@@ -8033,3 +8033,127 @@ rename it something like "breakpoints". Note that the bullet two below it
 and argues they should join `scenarioUrl`; whoever takes the dropdown should
 read that one first, because moving the control and changing what it persists
 are cheaper together than apart.
+
+## 2026-08-21 — Task: the Lines dropdown → Breakpoints, in the chart's corner
+
+Three asks in one bullet: move the control off its own row, cut the panel to
+two checkboxes with no explainer prose, and rename it.
+
+### Starting state
+
+The working tree was dirty on arrival — a previous run had begun this bullet
+and not committed. Two of its three hunks were the shape of this work (the
+`.chart-lines-lead` paragraph gone, the legend reworded) and one was not: it
+also deleted the `.step-intro` paragraph above the chart, which is out of
+scope here and is asserted on by five tests, including the whole `the torpedo
+chart's right edge` block that reads the axis figures out of it
+(App.test.tsx:1846). Reverted the file and redid the panel work from the
+committed base.
+
+### Where it went
+
+**Not** over the plot, which was the first attempt and is wrong for this
+chart. Overlaid at the container's top-right the button covered the `IRMAA 2`
+and `IRMAA 3` reference-line labels outright and came within 2px of the curve
+— this is a *marginal rate* curve, so it finishes near the top of the axis,
+and its top-right is the least free corner it has. Measured in a real browser,
+not reasoned about: labels at y 439±8, button at 397–431 in the overlay
+version.
+
+So the button takes a band of its own instead — `.chart-figure` gets
+`position: relative` and `padding-top: 2.375rem` (the button's height and a
+hair) and `.chart-lines` is absolute in its top-right corner. The plot starts
+directly under it and the label band is clear by 4px, verified with a
+bounding-box intersection over all four labels rather than by eye.
+
+Height above the plot: 66px → 38px. The old cost was a full-width flex row
+(34px) plus `.chart-container`'s 2rem gap, both spent on one small button.
+
+### The panel
+
+Legend, two switches with their dashed swatches, nothing else. Off it came:
+the `chart-lines-lead` paragraph (both thresholds are not income tax, both are
+priced in the tooltip) and both `.chart-lines-note` paragraphs — which took
+`irmaaLinesNote`, `subsidyLineNote`, `cliffPriceList` and `firstCliffPastAxis`
+with them, ~55 lines of derivation. Legend is now `Health insurance
+breakpoints`, which is what both of them actually are and does not repeat the
+button.
+
+`linesShown` stays, and its comment now says why: with the notes gone, a
+ticked box and no number beside `Breakpoints` is the only thing left that says
+"this axis does not reach that threshold".
+
+The subsidy switch was gated on `preMedicare && subsidyLineNote`; it is now
+`preMedicare && subsidyCliff`, which is the same condition — `subsidyLineNote`
+was null exactly when `subsidyCliff` was.
+
+### Two things the rename touched that are not the panel
+
+Both explainers pointed the reader at **Lines** "above the plot" (App.tsx:1981,
+:2050). Both now say **Breakpoints** "in the corner of the plot/chart". A test
+holds the first one to that wording now, because the disclosures are the only
+prose left that names the control.
+
+### CSS
+
+- `.chart-lines-panel`'s `max-width: min(24rem, 100%)` had to change. The
+  percentage resolved against `.chart-lines`, which used to be a full-width
+  flex row and is now a box the size of the button — the panel would have been
+  squeezed to ~110px. Now `min(18rem, 90vw)`; checked at 390px wide, panel
+  sits at x 111–354 and fits.
+- `.checkbox-option` is `inline-flex`, and with the notes between them gone
+  the two switches shared a line. Fixed with `.chart-lines-option`, a second
+  class on the label — *not* `.chart-lines-group .checkbox-option`, which
+  `styles.test.tsx`'s dead-selector scan rejects (it renders App once, with the
+  panel shut, so a rule scoped inside the panel can never be proved alive).
+  Same pattern `.chart-lines-swatch` already uses.
+- Print: `.chart-figure { padding-top: 0 }`, since the button is hidden there
+  and the band would otherwise be blank paper at the top of the chart.
+
+### Tests
+
+660 pass, down from 662. Four panel-note tests deleted and three added:
+
+- Deleted: `prices every line the switch would draw`, `re-prices the note when
+  tax-exempt interest moves the lines left`, `says where the nearest cliff is
+  when none fits on the axis`, `says that neither line is tax`. All read prose
+  that no longer exists. Checked before deleting that the *behaviour* under
+  them is held elsewhere — `tax.test.ts:2637` (muni moves the cliffs left),
+  `:2655` (a couple pays each step twice), `:4087` (a household already past
+  the 400% line), and `App.chart.test.tsx:141/:240/:292` for the lines
+  themselves.
+- `doubles the price for a joint return with two enrollees` survives,
+  re-pointed at the IRMAA disclosure, which prices `cliffs[0].step` and says
+  "for the two of you". It was the only page-level assertion that the two age
+  checkboxes reach `irmaaCliffs` as `beneficiaries: 2`. Figures: $1,148 single,
+  $2,297 for two — not the $1,052/$2,105 in `tax.test.ts`, which prices a
+  different year's params.
+- Added `is two switches and nothing to read` (zero `<p>` in the panel, two
+  checkboxes, three negatives) and `sends the reader to the control that draws
+  the lines, by its name`. The 400% off-the-edge test became a count assertion:
+  switch on, muni to $40,000, `Breakpoints (1)` → `Breakpoints`.
+- Mutation-checked the no-prose test by pasting a `.chart-lines-note` back in;
+  it goes red.
+
+### Verification
+
+`tsc -b`, `eslint . --max-warnings 0`, `vitest run` — clean, 660/660.
+`npm run build`, then real Chromium via `playwright-core` against `vite
+preview` on 4181: zero page errors, button reads `Breakpoints` / `Breakpoints
+(4)`, panel has 0 paragraphs and 2 checkboxes, no reference-line label
+intersects the button's box, `/Neither is income tax/`, `/IRMAA 1 at \$/`,
+`/of household income, reached at/` and `/\bLines\b/` all absent from
+`body.innerText`. Under `emulateMedia({ media: 'print' })`: figure padding 0,
+button `display: none`, 10 axis tick labels still drawn (the regression the
+Backlog 5 print bullet fixed is still fixed). Preview killed and the driver
+script deleted.
+
+### Next
+
+The topmost unchecked bullet is the four-part one — municipal interest in
+total income, a step-1 summary that names the advanced inputs, a check against
+IRS figures, and stripping meta references like "step 2's chart" out of the
+prose. It is four tasks in one bullet and probably wants splitting into four
+before any of it is picked up. Note that the meta-reference sub-item and the
+two explainer sentences this run rewrote ("in the corner of the plot") are the
+same complaint: prose that describes the page's own furniture.

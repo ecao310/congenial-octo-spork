@@ -1187,27 +1187,6 @@ const App: React.FC = () => {
   );
 
   /**
-   * The first cliff off the right edge, for the joint returns where none fit:
-   * "no line is drawn" is only useful next to where the nearest one would be.
-   */
-  const firstCliffPastAxis: IrmaaCliff | undefined = cliffs.find(
-    (c) => c.otherIncome > axisMax,
-  );
-
-  /**
-   * What each drawn line costs to cross, in the order they are drawn. The chart
-   * label can only carry a tier number without the three of them colliding, so
-   * the price goes in the key underneath instead.
-   */
-  const cliffPriceList = cliffsOnChart
-    .map(
-      (c, i) =>
-        `IRMAA ${c.tier} at ${formatCurrency(Math.round(c.otherIncome))} ` +
-        `${i === 0 ? 'costs' : 'another'} ${formatCurrency(c.step)}/yr`,
-    )
-    .join('; ');
-
-  /**
    * Whether anyone on this return still has to buy their own health coverage.
    *
    * The 400% cliff and the IRMAA cliffs are mutually exclusive *per person*:
@@ -1257,44 +1236,12 @@ const App: React.FC = () => {
       : null;
 
   /**
-   * What each switch has to offer, said under the switch itself.
-   *
-   * The two paragraphs of key that used to sit under the plot are gone: what
-   * the surcharge costs at the reader's own income is in the hover tooltip and
-   * what a cliff *is* is in the disclosure below, so all the panel owes is the
-   * one thing a checkbox cannot say on its own — whether ticking it will draw
-   * anything, and where. "No line" and "off the right edge" are different
-   * answers, and a switch that appears to do nothing is the reason to say so
-   * here rather than leave the reader to work it out from an unchanged chart.
-   */
-  const irmaaLinesNote =
-    cliffsOnChart.length > 0
-      ? `${cliffPriceList}${beneficiaries > 1 ? ', for the two of you' : ''}.`
-      : firstCliffPastAxis
-        ? `None falls on this chart. The first one this return could reach needs ` +
-        `${formatCurrency(Math.round(firstCliffPastAxis.otherIncome))} of other ` +
-        `income, past the right edge, and would cost ` +
-        `${formatCurrency(firstCliffPastAxis.step)}/yr.`
-        : null;
-
-  const subsidyLineNote = !subsidyCliff
-    ? null
-    : subsidyCliffOnChart
-      ? `${formatCurrency(subsidyCliff.magi)} of household income, reached at ` +
-      `${formatCurrency(Math.round(subsidyCliff.otherIncome))} of other income.`
-      : subsidyCliff.otherIncome <= 0
-        ? `Already past it. The benefit and tax-exempt interest set above come ` +
-        `to more than ${formatCurrency(subsidyCliff.magi)} on their own, so ` +
-        `there is no credit to lose at any point on this chart.`
-        : `Off the right edge. It needs ${formatCurrency(subsidyCliff.magi)} of ` +
-        `household income — ` +
-        `${formatCurrency(Math.round(subsidyCliff.otherIncome))} of other income.`;
-
-  /**
    * How many lines the plot is actually drawing, for the button that opens the
    * panel — a count of marks on the chart, not of ticked boxes. The two part
-   * company whenever a switch is on and its threshold falls off the axis,
-   * which is exactly the case the notes inside the panel are written for.
+   * company whenever a switch is on and its threshold falls off the axis, and
+   * the count is the only thing that says so now that the panel is two
+   * checkboxes and nothing else: a ticked box with no number beside the
+   * button's name is a threshold this axis does not reach.
    */
   const linesShown =
     (showIrmaaLines ? cliffsOnChart.length : 0) +
@@ -1708,9 +1655,11 @@ const App: React.FC = () => {
             <figure className="chart-figure">
               {/* The chart's own settings, and the only control on the page
                   that changes what is drawn rather than what is priced. It
-                  sits above the plot on the right, where a chart's controls
-                  go, rather than down among the sliders — those all move the
-                  return, and this one does not touch it. */}
+                  rides in the figure's top-right corner rather than on a row
+                  above it: a row of its own cost this chart the better part of
+                  an inch of screen to hold one small button. Not down among
+                  the sliders, because those all move the return and this one
+                  does not touch it. */}
               <div className="chart-lines" ref={linesRef}>
                 <button
                   type="button"
@@ -1720,19 +1669,19 @@ const App: React.FC = () => {
                   aria-controls="torpedo-lines"
                   onClick={() => setLinesOpen((open) => !open)}
                 >
-                  Lines
+                  Breakpoints
                   {linesShown > 0 ? ` (${linesShown})` : ''}
                 </button>
                 {linesOpen && (
                   <div className="chart-lines-panel" id="torpedo-lines">
                     <fieldset className="chart-lines-group">
-                      <legend>Thresholds on this chart</legend>
-                      <p className="chart-lines-lead">
-                        Neither is income tax, so neither is in the curve. Both
-                        are priced for your own income in the chart&apos;s
-                        tooltip whether or not the line is drawn.
-                      </p>
-                      <label className="checkbox-option">
+                      {/* Two switches and their legend, and nothing else.
+                          What each threshold costs is in the hover tooltip,
+                          what a cliff is is in the disclosure below, and both
+                          were being said a third time in a panel that floats
+                          over the chart the reader opened it to look at. */}
+                      <legend>Health insurance breakpoints</legend>
+                      <label className="checkbox-option chart-lines-option">
                         <input
                           type="checkbox"
                           checked={showIrmaaLines}
@@ -1744,32 +1693,26 @@ const App: React.FC = () => {
                         />
                         <span>Medicare IRMAA cliffs</span>
                       </label>
-                      {irmaaLinesNote && (
-                        <p className="chart-lines-note">{irmaaLinesNote}</p>
-                      )}
                       {/* The same pair of conditions the explainer below
                           carries: nobody on Medicare can claim the credit, and
                           a year without a 400% ceiling has no line to draw. */}
-                      {preMedicare && subsidyLineNote && (
-                        <>
-                          <label className="checkbox-option">
-                            <input
-                              type="checkbox"
-                              checked={showSubsidyLine}
-                              onChange={(e) =>
-                                setShowSubsidyLine(e.target.checked)
-                              }
-                            />
-                            <span
-                              className="chart-key-swatch chart-lines-swatch chart-key-swatch-subsidy"
-                              aria-hidden="true"
-                            />
-                            <span>
-                              {PTC_CLIFF_PERCENT * 100}% poverty-line cliff
-                            </span>
-                          </label>
-                          <p className="chart-lines-note">{subsidyLineNote}</p>
-                        </>
+                      {preMedicare && subsidyCliff && (
+                        <label className="checkbox-option chart-lines-option">
+                          <input
+                            type="checkbox"
+                            checked={showSubsidyLine}
+                            onChange={(e) =>
+                              setShowSubsidyLine(e.target.checked)
+                            }
+                          />
+                          <span
+                            className="chart-key-swatch chart-lines-swatch chart-key-swatch-subsidy"
+                            aria-hidden="true"
+                          />
+                          <span>
+                            {PTC_CLIFF_PERCENT * 100}% poverty-line cliff
+                          </span>
+                        </label>
                       )}
                     </fieldset>
                   </div>
@@ -2033,7 +1976,8 @@ const App: React.FC = () => {
                   a threshold triggers the whole surcharge for twelve months. The
                   chart above prices your own tier on hover and will draw the
                   thresholds as red dashed lines if you ask it to, under{' '}
-                  <strong>Lines</strong> above the plot. The first cliff this return
+                  <strong>Breakpoints</strong> in the corner of the plot. The
+                  first cliff this return
                   can reach costs{' '}
                   <strong>{formatCurrency(cliffs[0].step)}</strong> a year
                   {beneficiaries > 1 ? ' for the two of you' : ''} &mdash; on a single
@@ -2102,8 +2046,8 @@ const App: React.FC = () => {
                       ? 'one person'
                       : `${subsidyCliff.householdSize} people`}
                     . Switch it on as a pink dashed line under{' '}
-                    <strong>Lines</strong> above the chart, or hover the curve
-                    to read your own distance from it.
+                    <strong>Breakpoints</strong> in the corner of the chart, or
+                    hover the curve to read your own distance from it.
                   </p>
                   <p>
                     <strong>What it costs is not on this page.</strong> Just

@@ -718,12 +718,19 @@ h1 {
    <figure> ships with 40px of it. */
 .chart-figure {
   margin: 0;
+  /* The containing block for the settings button in the plot's corner, and
+     the band it sits in: 2.375rem is the button's own height and a hair, so
+     the figure gives it exactly the room it needs and the plot starts
+     directly under it. The 2rem that used to sit on `.chart-container` was
+     the gap under a full-width row that held one small button; between them
+     the two cost this chart nearly 70px of screen. */
+  position: relative;
+  padding-top: 2.375rem;
 }
 
 .chart-container {
   height: 400px;
   width: 100%;
-  margin-top: 2rem;
 }
 
 /* ───── The chart's own settings ────────────────────────────────────────────
@@ -740,11 +747,25 @@ h1 {
  * two borders and owns no icon asset; the button rotates the same chevron
  * `details.explainer summary` does, so an open panel and an open explainer
  * say "open" the same way.
+ *
+ * It sits in the figure's top-right corner rather than on a row of its own.
+ * The row was full-width and held one small button, and the gap under it was
+ * sized for a row: together they charged this chart nearly 70px of height,
+ * on a page where the slider that drives the plot is already below it.
+ *
+ * Out of the plot rather than over it. The top-right of *this* chart is the
+ * one corner that is never free: the marginal rate is at its highest where
+ * income is highest, so the curve finishes near the top of the axis, and the
+ * reference-line labels — `IRMAA 3` most of all — are drawn in the band above
+ * it. So the button takes a band of its own, in the figure's padding, and
+ * covers nothing.
  */
 .chart-lines {
-  position: relative;
-  display: flex;
-  justify-content: flex-end;
+  position: absolute;
+  top: 0;
+  right: 0;
+  /* Over the SVG, under the panel it opens. */
+  z-index: 20;
 }
 
 .chart-lines-button {
@@ -799,7 +820,10 @@ h1 {
   right: 0;
   z-index: 30;
   width: max-content;
-  max-width: min(24rem, 100%);
+  /* Against the viewport, not against `.chart-lines` — that box is the button
+     now, and a percentage here would size the panel to the thing that opens
+     it. */
+  max-width: min(18rem, 90vw);
   padding: 0.875rem;
   border: 1px solid var(--edge);
   border-radius: var(--radius-lg);
@@ -820,11 +844,19 @@ h1 {
   padding: 0;
 }
 
-.chart-lines-lead {
-  margin: 0.375rem 0 0.75rem;
-  font-size: 0.75rem;
-  line-height: 1.5;
-  color: var(--ink-dim);
+/* One switch per line. `.checkbox-option` is an inline-flex everywhere else on
+   the page, where it sits in a row of siblings; here there are two of them in
+   a box sized to its own content, and inline they would share a line. The
+   margin is what the notes between them used to provide, and the first one's
+   is the gap under the legend.
+
+   A class of its own rather than `.chart-lines-group .checkbox-option`, for
+   the same reason `.chart-lines-swatch` is one: a rule that only ever matches
+   inside a panel the reader has to open is a rule no default render can prove
+   is alive. See `styles.test.tsx`. */
+.chart-lines-option {
+  display: flex;
+  margin-top: 0.625rem;
 }
 
 /* The swatch is the key. It is the same dashed rule the chart draws, so a
@@ -836,21 +868,6 @@ h1 {
 .chart-lines-swatch {
   align-self: center;
   margin-top: 0;
-}
-
-/* What ticking the box will actually draw, and where. The only thing a
-   checkbox cannot say on its own: a threshold past the right edge of the axis
-   makes the switch look broken, and "off the right edge" is a different
-   answer from "no line". */
-.chart-lines-note {
-  margin: 0.25rem 0 0.875rem 1.5rem;
-  font-size: 0.75rem;
-  line-height: 1.5;
-  color: var(--ink-muted);
-}
-
-.chart-lines-note:last-child {
-  margin-bottom: 0;
 }
 
 /* The one thing on this page that genuinely floats over something rather than
@@ -1834,6 +1851,13 @@ footer p {
   .slider-header,
   footer {
     break-inside: avoid;
+  }
+
+  /* The band the settings button rides in on screen. The button is hidden up
+     with the other controls that only do something when clicked, so on paper
+     the band is blank space at the top of every chart. */
+  .chart-figure {
+    padding-top: 0;
   }
 
   .answer {

@@ -1534,23 +1534,25 @@ describe('qualified charitable distribution', () => {
 
 /**
  * Both of step 2's threshold lines are off until a reader asks for them, and
- * the panel behind the Lines button is where the asking happens. Opening it is
- * the first act of every test below, so it has a helper of its own.
+ * the panel behind the Breakpoints button is where the asking happens. Opening
+ * it is the first act of every test below, so it has a helper of its own.
  */
-const openLinesPanel = (): HTMLElement => {
-  fireEvent.click(screen.getByRole('button', { name: /^Lines/ }));
-  return screen.getByRole('group', { name: /Thresholds on this chart/ });
+const openBreakpointsPanel = (): HTMLElement => {
+  fireEvent.click(screen.getByRole('button', { name: /^Breakpoints/ }));
+  return screen.getByRole('group', { name: /Health insurance breakpoints/ });
 };
 
-describe('the Lines panel on the torpedo chart', () => {
+describe('the Breakpoints panel on the torpedo chart', () => {
   it('draws neither threshold until it is asked to', () => {
     render(<App />);
     // Nothing about either cliff is on the page on arrival — not the lines
     // (App.chart.test.tsx holds those), and not a paragraph of key under the
     // plot explaining a dash that is not there.
-    expect(screen.queryByRole('group', { name: /Thresholds/ })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('group', { name: /Health insurance breakpoints/ }),
+    ).not.toBeInTheDocument();
     expect(screen.queryByRole('checkbox', { name: 'Medicare IRMAA cliffs' })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /^Lines/ })).toHaveAttribute(
+    expect(screen.getByRole('button', { name: /^Breakpoints/ })).toHaveAttribute(
       'aria-expanded',
       'false',
     );
@@ -1560,12 +1562,12 @@ describe('the Lines panel on the torpedo chart', () => {
 
   it('offers both switches, unticked, and counts what it draws', () => {
     render(<App />);
-    const button = screen.getByRole('button', { name: /^Lines/ });
+    const button = screen.getByRole('button', { name: /^Breakpoints/ });
     // Nothing drawn, so nothing counted: the button is bare until it has a
     // number to report.
-    expect(button).toHaveAccessibleName('Lines');
+    expect(button).toHaveAccessibleName('Breakpoints');
 
-    openLinesPanel();
+    openBreakpointsPanel();
     expect(button).toHaveAttribute('aria-expanded', 'true');
     const irmaa = screen.getByRole('checkbox', { name: 'Medicare IRMAA cliffs' });
     const subsidy = screen.getByRole('checkbox', { name: '400% poverty-line cliff' });
@@ -1575,120 +1577,108 @@ describe('the Lines panel on the torpedo chart', () => {
     // Three IRMAA cliffs fit the default axis, and one 400% line: the count is
     // of marks on the chart, not of ticked boxes.
     fireEvent.click(irmaa);
-    expect(button).toHaveAccessibleName('Lines (3)');
+    expect(button).toHaveAccessibleName('Breakpoints (3)');
     fireEvent.click(subsidy);
-    expect(button).toHaveAccessibleName('Lines (4)');
+    expect(button).toHaveAccessibleName('Breakpoints (4)');
     fireEvent.click(irmaa);
-    expect(button).toHaveAccessibleName('Lines (1)');
+    expect(button).toHaveAccessibleName('Breakpoints (1)');
+  });
+
+  /**
+   * The panel is two switches and their legend. Everything it used to say in
+   * prose — what each threshold costs, whether the axis reaches it — is on the
+   * chart itself: the tooltip prices the reader's own tier, the disclosures
+   * below say what a cliff is, and the count on the button says whether a
+   * ticked box drew anything. So the assertion is a shape rather than a
+   * sentence: no paragraphs at all inside a box that floats over the plot.
+   */
+  it('is two switches and nothing to read', () => {
+    render(<App />);
+    const panel = openBreakpointsPanel();
+    expect(panel.querySelectorAll('p')).toHaveLength(0);
+    expect(panel.querySelectorAll('input[type="checkbox"]')).toHaveLength(2);
+    expect(panel).not.toHaveTextContent('Neither is income tax');
+    expect(panel).not.toHaveTextContent('IRMAA 1 at');
+    expect(panel).not.toHaveTextContent('of household income, reached at');
   });
 
   it('counts nothing when a switch is on and its threshold is off the axis', () => {
     render(<App />);
-    openLinesPanel();
+    openBreakpointsPanel();
     fireEvent.click(screen.getByRole('checkbox', { name: 'Medicare IRMAA cliffs' }));
     fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Jointly' }));
     // The joint tier-1 threshold is past the right edge, so the switch is on
-    // and the chart is unchanged — which is the case the note inside the panel
-    // is written for.
+    // and the chart is unchanged — and with the panel's notes gone the count
+    // is the only thing that says so.
     expect(screen.getByRole('checkbox', { name: 'Medicare IRMAA cliffs' })).toBeChecked();
-    expect(screen.getByRole('button', { name: /^Lines/ })).toHaveAccessibleName('Lines');
+    expect(screen.getByRole('button', { name: /^Breakpoints/ })).toHaveAccessibleName(
+      'Breakpoints',
+    );
   });
 
   it('closes on Escape and puts focus back on the button', () => {
     render(<App />);
-    openLinesPanel();
+    openBreakpointsPanel();
     fireEvent.keyDown(document, { key: 'Escape' });
-    expect(screen.queryByRole('group', { name: /Thresholds/ })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /^Lines/ })).toHaveFocus();
+    expect(
+      screen.queryByRole('group', { name: /Health insurance breakpoints/ }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Breakpoints/ })).toHaveFocus();
   });
 
   it('closes on a click outside itself, and not on one inside', () => {
     render(<App />);
-    const panel = openLinesPanel();
+    const panel = openBreakpointsPanel();
     fireEvent.mouseDown(panel);
-    expect(screen.getByRole('group', { name: /Thresholds/ })).toBeInTheDocument();
+    expect(
+      screen.getByRole('group', { name: /Health insurance breakpoints/ }),
+    ).toBeInTheDocument();
 
     fireEvent.mouseDown(document.body);
-    expect(screen.queryByRole('group', { name: /Thresholds/ })).not.toBeInTheDocument();
-  });
-
-  it('says that neither line is tax, and where each is priced instead', () => {
-    render(<App />);
-    // The one thing the two paragraphs of key under the plot were carrying
-    // that a checkbox cannot: what these thresholds are not, and where what
-    // they cost went.
-    const panel = openLinesPanel();
-    expect(panel).toHaveTextContent('Neither is income tax, so neither is in the curve.');
-    expect(panel).toHaveTextContent("priced for your own income in the chart's tooltip");
+    expect(
+      screen.queryByRole('group', { name: /Health insurance breakpoints/ }),
+    ).not.toBeInTheDocument();
   });
 });
 
 describe('the IRMAA cliff lines on the torpedo chart', () => {
   /**
    * The lines themselves are asserted on in App.chart.test.tsx, which mocks
-   * ResponsiveContainer so recharts actually draws. What is checked here is the
-   * note under the switch that draws them: it is the only thing on the page
-   * that says whether ticking the box will put anything on the chart, and
-   * where — the rest of what a cliff is went to the tooltip and the disclosure.
+   * ResponsiveContainer so recharts actually draws, and what each one costs is
+   * `irmaaCliffs`', asserted in tax.test.ts. What is left here is the
+   * disclosure under the plot: the one place on the page that says what a
+   * cliff is, and the one that prices the first one this return can reach.
    */
-  const irmaaNote = (): HTMLElement => {
-    const panel = screen.getByRole('group', { name: /Thresholds on this chart/ });
-    const note = panel.querySelector<HTMLElement>('.chart-lines-note');
-    if (!note) throw new Error('no IRMAA note rendered');
-    return note;
+  const irmaaExplainer = (): HTMLElement => {
+    const heading = screen.getByRole('heading', { name: /medicare's irmaa cliffs/i });
+    const details = heading.closest('details');
+    if (!details) throw new Error('no IRMAA explainer rendered');
+    return details;
   };
-
-  it('prices every line the switch would draw', () => {
-    render(<App />);
-    openLinesPanel();
-    // Tier 1 is a $1,052.40 step; tiers 2 and 3 are $1,591 each. Rounded to
-    // whole dollars, in the order the lines are drawn.
-    expect(irmaaNote()).toHaveTextContent(
-      'IRMAA 1 at $87,876 costs $1,148/yr; IRMAA 2 at $115,876 another $1,736/yr; IRMAA 3 at $149,876 another $1,735/yr.',
-    );
-  });
-
-  it('re-prices the note when tax-exempt interest moves the lines left', () => {
-    render(<App />);
-    openLinesPanel();
-    fireEvent.change(
-      screen.getByRole('slider', { name: /tax-exempt \(municipal\) interest/i }),
-      { target: { value: '10000' } },
-    );
-    // Medicare's MAGI adds muni interest straight back, so every cliff arrives
-    // $10,000 of other income earlier.
-    expect(irmaaNote()).toHaveTextContent(
-      'IRMAA 1 at $77,876 costs $1,148/yr; IRMAA 2 at $105,876 another $1,736/yr; IRMAA 3 at $139,876 another $1,735/yr.',
-    );
-  });
-
-  it('says where the nearest cliff is when none fits on the axis', () => {
-    render(<App />);
-    openLinesPanel();
-    fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Jointly' }));
-    // $218,000 of MAGI, less the 85% of a couple's $38,496 benefit already in
-    // AGI, is past the $150,000 right edge — so the reader gets the figure
-    // instead of a switch that appears to do nothing.
-    expect(irmaaNote()).toHaveTextContent(
-      'None falls on this chart. The first one this return could reach needs $185,278 of other income, past the right edge, and would cost $1,148/yr.',
-    );
-  });
 
   it('doubles the price for a joint return with two enrollees', () => {
     render(<App />);
-    openLinesPanel();
+    // A single filer's first cliff is a $1,148.40 step, rounded to $1,148.
+    expect(irmaaExplainer()).toHaveTextContent('costs $1,148 a year — on a single dollar');
+
     fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Jointly' }));
     fireEvent.click(screen.getByRole('checkbox', { name: /age 65 or older/i }));
     fireEvent.click(
       screen.getByRole('checkbox', { name: /both spouses are 65 or older/i }),
     );
-    // Both cliffs are reachable here where the same return without the age
-    // toggle gets neither: claiming the senior deduction stretches the axis to
-    // $250,000 to fit its phaseout, and the joint cliffs come along with it.
-    // IRMAA is charged per enrollee off one household MAGI figure, so both
-    // steps are twice what a single filer pays.
-    expect(irmaaNote()).toHaveTextContent(
-      'IRMAA 1 at $185,278 costs $2,297/yr; IRMAA 2 at $241,278 another $3,473/yr, for the two of you.',
+    // IRMAA is charged per enrollee off one household MAGI figure, so the step
+    // is twice what a single filer pays — and the sentence says whose it is.
+    expect(irmaaExplainer()).toHaveTextContent(
+      'costs $2,297 a year for the two of you — on a single dollar',
+    );
+  });
+
+  it('sends the reader to the control that draws the lines, by its name', () => {
+    render(<App />);
+    // The disclosure is the only prose left that names the panel, now that the
+    // panel carries none of its own — so it has to name it correctly.
+    expect(irmaaExplainer()).toHaveTextContent(
+      'will draw the thresholds as red dashed lines if you ask it to, under Breakpoints in the corner of the plot',
     );
   });
 
@@ -1723,17 +1713,6 @@ describe('the IRMAA cliff lines on the torpedo chart', () => {
  * the section stays even though the page can no longer land on that branch.
  */
 describe('the 400% poverty-line cliff under the torpedo chart', () => {
-  /**
-   * The note under the second switch in the Lines panel. Read by position
-   * rather than by a class of its own: the panel offers the IRMAA switch
-   * first, always, so the subsidy note is the second one when it is offered
-   * at all.
-   */
-  const subsidyNote = (): HTMLElement | null => {
-    const panel = screen.queryByRole('group', { name: /Thresholds on this chart/ });
-    return panel?.querySelectorAll<HTMLElement>('.chart-lines-note')[1] ?? null;
-  };
-
   const subsidyExplainer = (): HTMLElement => {
     const heading = screen.getByRole('heading', { name: /400% poverty-line cliff/ });
     const details = heading.closest('details');
@@ -1743,16 +1722,10 @@ describe('the 400% poverty-line cliff under the torpedo chart', () => {
 
   it('prices the line for this return, and says what the household pays under it', () => {
     render(<App />);
-    openLinesPanel();
-    // 4 x the $15,650 one-person line, reached at $62,600 less the $24,852
-    // benefit that is already all of household income.
-    expect(subsidyNote()).toHaveTextContent(
-      '$62,600 of household income, reached at $37,748 of other income.',
-    );
-
-    // The rest of it — what the household pays under the line, and the
-    // guideline year the line comes from — is the explainer's, which is where
-    // the two paragraphs of key under the plot sent their prose.
+    // 4 x the $15,650 one-person line. What the household pays under it, and
+    // the guideline year the line comes from, are the explainer's: the panel
+    // that switches the line on carries no prose of its own.
+    expect(subsidyExplainer()).toHaveTextContent('$62,600');
     expect(subsidyExplainer()).toHaveTextContent(
       '$15,650 poverty line for one person',
     );
@@ -1788,23 +1761,34 @@ describe('the 400% poverty-line cliff under the torpedo chart', () => {
     expect(subsidyExplainer()).toHaveTextContent('takes $12,252 less income');
   });
 
-  it('says where the line is even when it is off the right edge', () => {
+  it('keeps the switch, and draws nothing, once the line is already behind the reader', () => {
     render(<App />);
-    openLinesPanel();
+    openBreakpointsPanel();
+    const subsidy = screen.getByRole('checkbox', { name: '400% poverty-line cliff' });
+    fireEvent.click(subsidy);
+    expect(screen.getByRole('button', { name: /^Breakpoints/ })).toHaveAccessibleName(
+      'Breakpoints (1)',
+    );
+
     fireEvent.change(screen.getByRole('slider', { name: /tax-exempt \(municipal\) interest/i }), {
       target: { value: '40000' },
     });
     // $24,852 of benefit and $40,000 of interest is $64,852 before a dollar of
-    // other income — over the line already, so there is nothing left to lose.
-    expect(subsidyNote()).toHaveTextContent('Already past it.');
-    expect(subsidyNote()).toHaveTextContent(
-      'there is no credit to lose at any point on this chart',
+    // other income — over the line already, so there is nothing left to lose
+    // and nothing to draw. The switch stays on and the count goes to nothing,
+    // which is the only report the panel makes now that its notes are gone.
+    expect(screen.getByRole('checkbox', { name: '400% poverty-line cliff' })).toBeChecked();
+    expect(screen.getByRole('button', { name: /^Breakpoints/ })).toHaveAccessibleName(
+      'Breakpoints',
     );
+    // The explainer is where the reader is told why, and it is still offered:
+    // a household past the line is exactly the one that needs telling.
+    expect(subsidyExplainer()).toHaveTextContent('That is past the cliff');
   });
 
   it('takes the switch and the section away once everyone is on Medicare', () => {
     render(<App />);
-    openLinesPanel();
+    openBreakpointsPanel();
     expect(
       screen.getByRole('checkbox', { name: '400% poverty-line cliff' }),
     ).toBeInTheDocument();
@@ -1813,7 +1797,6 @@ describe('the 400% poverty-line cliff under the torpedo chart', () => {
     expect(
       screen.queryByRole('checkbox', { name: '400% poverty-line cliff' }),
     ).not.toBeInTheDocument();
-    expect(subsidyNote()).toBeNull();
     expect(
       screen.queryByRole('heading', { name: /400% poverty-line cliff/ }),
     ).not.toBeInTheDocument();

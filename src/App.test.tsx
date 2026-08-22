@@ -290,7 +290,7 @@ describe('App', () => {
     expect(screen.getByText('Spend from Roth accounts.')).toBeInTheDocument();
     expect(screen.getByText('Spend from taxable accounts.')).toBeInTheDocument();
     expect(
-      screen.getByText("If you can't go under it, go past it."),
+      screen.getByText("If you can't stay under it, blast past it."),
     ).toBeInTheDocument();
   });
 

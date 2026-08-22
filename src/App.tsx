@@ -1895,8 +1895,7 @@ const App: React.FC = () => {
                   plus half of your benefits. Once provisional income passes{' '}
                   {formatCurrency(ssBase50)}, each extra dollar of other income also
                   drags up to 50&cent; of benefits into taxable income; past{' '}
-                  {formatCurrency(ssBase85)}, it drags in up to 85&cent;. (The
-                  thresholds shown are for the filing status selected above.)
+                  {formatCurrency(ssBase85)}, it drags in up to 85&cent;.
                 </p>
                 <p>
                   So one more dollar earned can raise taxable income by as much as
@@ -1955,7 +1954,7 @@ const App: React.FC = () => {
                     the return of your own cost basis is tax-free.
                   </li>
                   <li>
-                    <strong>If you can&apos;t go under it, go past it.</strong> Once
+                    <strong>If you can&apos;t stay under it, blast past it.</strong> Once
                     the 85% cap is reached, extra income is taxed at plain bracket
                     rates again. Bunching income — say, one large Roth conversion —
                     into a single year can cost less than sitting in the middle of the

@@ -20,8 +20,8 @@ import {
   defaultTaxYear,
   filingParams,
   FilingStatus,
-  segmentCurve,
-  standingOn,
+  bracketRateFor,
+  marginalDrag,
   incomeAxisMax,
   incomeAxisFeatures,
   MIN_INCOME_AXIS,
@@ -58,8 +58,7 @@ import { formatCurrency } from './utils/format';
 import { CHART, PALETTE } from './palette';
 import type {
   TaxYear,
-  MarginalRatePoint,
-  CurveStanding,
+  MarginalDrag,
   IrmaaCliff,
   PtcCliff,
 } from './utils/tax';
@@ -320,7 +319,7 @@ interface CustomTooltipProps {
  * recommendation about wherever a mouse happened to land — nobody's point in
  * particular, and no point at all on a touchscreen — and the page now makes
  * the same argument about the reader's own place, out loud and unprompted, in
- * `StandingNote`. Two recommendations inches apart, one of them addressed to
+ * `NextDollarNote`. Two recommendations inches apart, one of them addressed to
  * nobody, is worse than one.
  *
  * The two cliff figures went the same way. "$x of MAGI to the next cliff" and
@@ -394,188 +393,86 @@ export const CustomTooltip: React.FC<CustomTooltipProps> = ({
 };
 
 /**
- * Which of the five things `StandingNote` is about to say at length, in the
- * one sentence that opens it.
+ * What the next dollar costs, against what the reader expects it to cost.
  *
- * Lifted out because the live region reads it too — the advice paragraph is
- * five sentences of arithmetic, which is the right length to read and the
- * wrong length to have read aloud on every notch of a drag, so the region
- * takes this line and leaves the rest on the page. Sharing it is what keeps
- * the two from drifting: the branches below select on the same conditions in
- * the same order, and there is nowhere for a sixth position to be added to
- * one and not the other.
+ * Two figures and the reason they differ. The bracket table says 12%; the
+ * dollar costs 22.2%, because it drags part of the benefit into the tax base
+ * behind it. That gap is the torpedo, and it is the only thing step 2 is
+ * about — so it is said in two sentences under the slider rather than argued
+ * over six.
+ *
+ * What sat here before was five branches of arithmetic keyed to which side of
+ * the hump the reader stood on: how far back the near edge was, how far on the
+ * far one, which stretch behind was cheaper and by how much. Every figure in
+ * it was right, and all of it buried the one number the chart cannot draw —
+ * the rate the reader thought they were paying.
+ *
+ * The cause is asked rather than assumed, because two mechanisms draw the same
+ * shape here and naming the wrong one would be a lie about the return in front
+ * of the reader. See `marginalDrag`.
+ *
+ * Two strings rather than markup, because the live region reads the same
+ * sentences out and there is nowhere for a second wording to drift from.
+ * `lead` carries the expectation, `rest` the correction.
  */
-const standingHeadline = (
-  standing: CurveStanding<MarginalRatePoint> | null,
-): string => {
-  if (!standing) return '';
-  const { kind, next, hump } = standing;
-  if (kind === 'peak' && hump) return 'You are standing on the hump.';
-  if (kind === 'climbing' && hump) return 'You are on the climb.';
-  if (kind === 'valley' && next) return 'You are on the valley floor.';
-  if (kind === 'past' && hump) return 'The hump is behind you.';
-  return 'This return has no hump.';
+interface NextDollarReading {
+  lead: string;
+  rest: string;
+}
+
+const nextDollarReading = (
+  rate: number | null,
+  bracketRate: number,
+  drag: MarginalDrag,
+): NextDollarReading | null => {
+  if (rate === null) return null;
+  const bracket = `${bracketRate}% — the bracket this income lands in`;
+  const expect = `You may expect ${bracket}.`;
+
+  if (rate > bracketRate) {
+    const cents = `${Math.round(SENIOR_DEDUCTION_PHASEOUT_RATE * 100)}¢`;
+    const because = drag.benefit
+      ? drag.seniorDeduction
+        ? `it drags part of your Social Security benefit into the tax base and phases out ${cents} of the senior deduction behind it`
+        : 'it drags part of your Social Security benefit into the tax base behind it'
+      : drag.seniorDeduction
+        ? `it phases out ${cents} of the senior deduction behind it`
+        : 'it drags more than itself into the tax base';
+    return { lead: expect, rest: `The next dollar actually costs ${rate}%, because ${because}.` };
+  }
+
+  if (rate < bracketRate) {
+    return {
+      lead: expect,
+      rest: `The next dollar actually costs ${rate}%, because your deductions have not been used up yet.`,
+    };
+  }
+
+  return {
+    lead: `The next dollar costs ${bracket}.`,
+    rest: 'Nothing moves behind it: no more of the benefit is dragged into the tax base, and no deduction phases out.',
+  };
 };
 
-interface StandingNoteProps {
-  /** Where the reader is standing on step 2's curve. Null before it is drawn. */
-  standing: CurveStanding<MarginalRatePoint> | null;
-  /** The reader's own place on the axis — the figure the slider holds. */
-  at: number;
+interface NextDollarNoteProps {
+  /** The two sentences, or null before the curve is drawn. */
+  reading: NextDollarReading | null;
 }
 
 /**
- * Why this particular reader should move their income up, down, or not at all.
+ * The gap, under the slider it is keyed to.
  *
  * The one place on the chart worth saying this about is the reader's own, so
- * here it is said out loud, keyed to the slider and shown without being asked
- * for. The hover tooltip used to carry the same arithmetic — "stay under $x or
- * over $y" for a hill, "fill this valley" for a valley — but only about
- * whichever point a mouse happened to be over, which is nobody's point in
- * particular and no point at all on a touchscreen. This is now the only place
- * the page recommends a direction.
- *
- * Every branch names dollar figures the reader can act on rather than the
- * mechanism behind them: the hump is "the dearest stretch on this chart", not
- * the 85% inclusion cap, because the same shape is also drawn by the senior
- * deduction's phaseout, and the explainers below the chart are where the
- * mechanism belongs.
+ * here it is said out loud and shown without being asked for. The hover
+ * tooltip used to carry advice of its own — "stay under $x or over $y" — but
+ * only about whichever point a mouse happened to be over, which is nobody's
+ * point in particular and no point at all on a touchscreen.
  */
-export const StandingNote: React.FC<StandingNoteProps> = ({ standing, at }) => {
-  if (!standing) return null;
-  const { kind, here, prev, next, hump, cheaperBehind } = standing;
-  const rate = `${here.rate}%`;
-
-  if (kind === 'peak' && hump) {
-    const drop = at - hump.start;
-    const clear = next ? (
-      <>
-        clearing {formatCurrency(next.start)} &mdash;{' '}
-        {formatCurrency(next.start - at)} more &mdash; takes it to {next.rate}%
-      </>
-    ) : null;
-    return (
-      <p className="slider-advice">
-        <strong>{standingHeadline(standing)}</strong> The next dollar costs{' '}
-        {rate} &mdash; the highest rate this chart reaches, and it holds from{' '}
-        {formatCurrency(hump.start)} to {formatCurrency(hump.end)}.{' '}
-        {prev ? (
-          <>
-            Coming back under {formatCurrency(hump.start)}
-            {drop > 0 ? (
-              <> &mdash; {formatCurrency(drop)} less income &mdash;</>
-            ) : null}{' '}
-            takes the next dollar down to {prev.rate}%
-            {clear ? <>; {clear}</> : null}.{' '}
-          </>
-        ) : (
-          <>
-            It starts at the first dollar of other income, so there is no way
-            off it to the left
-            {clear ? <>: {clear}</> : null}.{' '}
-          </>
-        )}
-        Every dollar in between is charged the hump rate, but only the dollars
-        in between: {rate} is the price of the next one here, not the price of
-        the income already under it.{' '}
-        {next ? (
-          <>
-            So the crossing is worth finishing rather than starting &mdash; the
-            dollars between here and {formatCurrency(next.start)} cost {rate}{' '}
-            whether they are drawn in one year or a slice at a time, and only
-            the year that reaches the far edge is charged {next.rate}% on the
-            dollars past it. Take enough at once to land past it rather than
-            stopping inside.
-          </>
-        ) : (
-          <>
-            The stretch runs off the right edge of this chart, so there is
-            nowhere past it to land from here.
-          </>
-        )}
-      </p>
-    );
-  }
-
-  if (kind === 'climbing' && hump) {
-    return (
-      <p className="slider-advice">
-        <strong>{standingHeadline(standing)}</strong> The next dollar costs {rate}, and{' '}
-        {formatCurrency(hump.start - at)} further on &mdash; at{' '}
-        {formatCurrency(hump.start)} &mdash; the rate reaches {hump.rate}% and
-        holds to {formatCurrency(hump.end)}, the dearest stretch on this chart.
-        Income that stays short of {formatCurrency(hump.start)} is charged at{' '}
-        {rate}; income that cannot is cheaper taken all at once, in one year
-        that clears the hump, than a slice at a time inside it.
-      </p>
-    );
-  }
-
-  if (kind === 'valley' && next) {
-    return (
-      <p className="slider-advice">
-        <strong>{standingHeadline(standing)}</strong> The next dollar costs{' '}
-        {rate}, and so does every dollar up to {formatCurrency(next.start)}{' '}
-        &mdash; {formatCurrency(next.start - at)} of room from here &mdash;
-        after which the rate steps to {next.rate}%
-        {hump ? (
-          <>
-            {' '}
-            and climbs to {hump.rate}% by {formatCurrency(hump.start)}
-          </>
-        ) : null}
-        . That room is what a Roth conversion or a larger withdrawal is for: the
-        same dollar costs {rate} taken here
-        {hump
-          ? ` and ${hump.rate}% taken in a year that has already climbed to ${formatCurrency(hump.start)}`
-          : ''}
-        .
-      </p>
-    );
-  }
-
-  if (kind === 'past' && hump) {
-    return (
-      <p className="slider-advice">
-        <strong>{standingHeadline(standing)}</strong> The next dollar costs {rate},
-        against {hump.rate}% back between {formatCurrency(hump.start)} and{' '}
-        {formatCurrency(hump.end)}
-        {next
-          ? `, and it holds at ${rate} until ${formatCurrency(next.start)}, where it steps to ${next.rate}%`
-          : ''}
-        . Whatever that stretch was dragging into the tax base has all been
-        dragged in, so each further dollar is charged at its own bracket rate
-        again.{' '}
-        {cheaperBehind ? (
-          <>
-            Deferral is worth what the receiving year is lower by: the nearest
-            cheaper ground on this chart is {cheaperBehind.rate}% between{' '}
-            {formatCurrency(cheaperBehind.start)} and{' '}
-            {formatCurrency(cheaperBehind.end)}, so a dollar deferred into a
-            year that starts there costs {cheaperBehind.rate}% rather than {rate}.
-          </>
-        ) : (
-          <>
-            Nothing behind you on this chart is cheaper than {rate}, so
-            deferring a dollar out of this year buys nothing on its own &mdash;
-            it has to land in a year with less other income in it, not merely a
-            later one.
-          </>
-        )}
-      </p>
-    );
-  }
-
+export const NextDollarNote: React.FC<NextDollarNoteProps> = ({ reading }) => {
+  if (!reading) return null;
   return (
     <p className="slider-advice">
-      <strong>{standingHeadline(standing)}</strong> The next dollar costs {rate}
-      {next
-        ? `, and holds there to ${formatCurrency(next.start)}, where it steps to ${next.rate}%`
-        : ''}
-      . No dollar on this chart costs more than the bracket it lands in &mdash;
-      there is no stretch where an extra dollar drags something else into the
-      tax base with it &mdash; so the ordinary rule is the whole rule here: take
-      income in the years your bracket is lowest.
+      <strong>{reading.lead}</strong> {reading.rest}
     </p>
   );
 };
@@ -1114,11 +1011,6 @@ const App: React.FC = () => {
     [ssBenefit, filingStatus, seniors, muniInterest, year, axisMax, curveStep],
   );
 
-  const segments = useMemo(
-    () => segmentCurve(curve, (p) => p.income),
-    [curve],
-  );
-
   /**
    * The chart's x-axis, in the income the return actually takes in.
    *
@@ -1150,17 +1042,6 @@ const App: React.FC = () => {
   );
 
   /**
-   * And what that place is worth knowing about: which side of the hump the
-   * reader is on, and so which way their income is worth moving. The same
-   * segments the curve is drawn from, asked about the one point the reader
-   * actually holds.
-   */
-  const standing = useMemo(
-    () => standingOn(segments, ordinaryIncome),
-    [segments, ordinaryIncome],
-  );
-
-  /**
    * The reader's own return, in the shape the tax chain reads it: one object
    * that everything below prices off, rather than a different subset of the
    * state at each call site.
@@ -1175,6 +1056,25 @@ const App: React.FC = () => {
       year,
     }),
     [ordinaryIncome, ssBenefit, filingStatus, seniors, muniInterest, year],
+  );
+
+  /**
+   * The gap this page exists to point at: what the bracket table charges the
+   * next dollar, against what the return charges it, and what the difference
+   * is made of.
+   *
+   * The rate itself is the curve's own reading rather than a fourth
+   * computation of it, so the sentence under the slider and the readout above
+   * it can never quote two different rates for the same dollar.
+   */
+  const nextDollar = useMemo(
+    () =>
+      nextDollarReading(
+        herePoint?.marginalRate ?? null,
+        bracketRateFor(hereScenario),
+        marginalDrag(hereScenario),
+      ),
+    [herePoint, hereScenario],
   );
 
   /**
@@ -1386,7 +1286,7 @@ const App: React.FC = () => {
             totalIncome,
           )} of total income, an effective rate of ${formatPercent(
             effectiveRateOn(herePoint.totalTax),
-          )}. ${standingHeadline(standing)}`
+          )}. ${nextDollar ? `${nextDollar.lead} ${nextDollar.rest}` : ''}`
           : '';
       default:
         return '';
@@ -1976,7 +1876,7 @@ const App: React.FC = () => {
                 ) : null}
               </p>
 
-              <StandingNote standing={standing} at={ordinaryIncome} />
+              <NextDollarNote reading={nextDollar} />
             </div>
 
             <details className="explainer">

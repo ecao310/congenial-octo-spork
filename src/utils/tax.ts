@@ -1132,6 +1132,69 @@ export function marginalRateCurve(
   return data;
 }
 
+/**
+ * What the ordinary rate schedule alone charges the next dollar, as a
+ * percentage.
+ *
+ * This is the rate a reader expects: the one in the bracket table they looked
+ * their income up in. `marginalRateCurve` prices what the next dollar actually
+ * costs, and the gap between the two is the whole subject of this page — a
+ * dollar that drags benefit into the tax base behind it, or takes part of the
+ * senior deduction with it, costs more than the bracket it lands in.
+ *
+ * Read on the next dollar of taxable income rather than the last one, so a
+ * return sitting exactly on a bracket ceiling is quoted the rate that dollar
+ * pays rather than the one under it. A return with nothing taxable at all is
+ * quoted the bottom bracket, which is what the table says about its first
+ * taxable dollar — and what the reader is told costs less than they expect.
+ *
+ * The ordinary schedule, never `ltcgBrackets`: the page sweeps ordinary income
+ * and passes no gain. See `marginalRateCurve`.
+ */
+export function bracketRateFor(scenario: Scenario = {}): number {
+  const { ordinaryIncome } = resolveScenario(scenario);
+  const agi = agiFor(scenario);
+  // The same ordinary taxable income `totalTax` fills the brackets from.
+  const taxable = Math.max(
+    0,
+    ordinaryIncome + taxableSocialSecurity(scenario) - deductionFor(scenario, agi),
+  );
+  const { brackets } = filingParamsFor(scenario);
+  const band =
+    brackets.find(({ upTo }) => taxable + 1 <= upTo) ?? brackets[brackets.length - 1];
+  return Math.round(band.rate * 10_000) / 100;
+}
+
+/** What the next dollar of other income moves besides itself. */
+export interface MarginalDrag {
+  /** It pulls more of the Social Security benefit into the tax base behind it. */
+  benefit: boolean;
+  /** It phases out part of the senior deduction. */
+  seniorDeduction: boolean;
+}
+
+/**
+ * Why the next dollar costs more than its bracket, when it does.
+ *
+ * Two mechanisms on this page draw the same shape, and the page must not name
+ * the wrong one: the 86(a) inclusion that gives the torpedo its name, and the
+ * senior deduction phasing out at 6% of MAGI. A single filer past $75,000 of
+ * MAGI is usually clear of the first — the benefit is already at its 85% cap —
+ * and squarely inside the second, so "the tax torpedo" would be a false
+ * attribution there. Asked rather than assumed, by pricing the two terms a
+ * dollar either side.
+ */
+export function marginalDrag(scenario: Scenario = {}): MarginalDrag {
+  const { ordinaryIncome } = resolveScenario(scenario);
+  const next = { ...scenario, ordinaryIncome: ordinaryIncome + 1 };
+  return {
+    benefit: taxableSocialSecurity(next) > taxableSocialSecurity(scenario),
+    seniorDeduction:
+      seniorDeductionFor(next, agiFor(next)) <
+      seniorDeductionFor(scenario, agiFor(scenario)),
+  };
+}
+
 /* ------------------------------------------------------------------ */
 /*  Long-Term Capital Gains (LTCG) stacking                           */
 /* ------------------------------------------------------------------ */
@@ -1474,6 +1537,25 @@ export function muniInterestEffect(scenario: Scenario = {}): MuniInterestEffect 
   };
 }
 
+/*
+ * This chapter is unreached, as of the rewrite that put `bracketRateFor` and
+ * `marginalDrag` under the slider.
+ *
+ * `segmentCurve` and `standingOn` were written for a paragraph that told the
+ * reader which side of the hump they stood on and how far it was to either
+ * edge. That paragraph is gone: the page now says what the next dollar costs
+ * against what the bracket table says it costs, which is a question about one
+ * point rather than about the shape around it. Nothing on the page calls
+ * either function, and `App.tsx` no longer imports them.
+ *
+ * They stay in `utils/` until the shelf question is answered rather than
+ * because it has been. `shelf/README.md`'s rule is that the directory holds
+ * whole modules nothing renders, and these two are most of one — but the
+ * decision is which, not whether, and it is a backlog item rather than a
+ * silent default. The arithmetic below is not dormant, only its reader: the
+ * tests in `tax.test.ts` run it and are green.
+ */
+
 export interface CurveSegment<T> {
   rate: number;
   start: number;
@@ -1541,10 +1623,11 @@ export function segmentCurve<T extends { marginalRate: number }>(
  *
  * `segmentCurve` classifies every stretch of the curve; this says which
  * stretch is *theirs*, which is the difference between a chart that shows a
- * torpedo and a chart that shows them theirs. The four positions are the four
- * pieces of advice: on a valley floor there is room to fill, on the climb the
- * next dollars are the dear ones, at the peak the only cheap move is sideways,
- * and past it the cap has already taken what it can.
+ * torpedo and a chart that shows them theirs. The five positions were five
+ * pieces of advice while the page gave them: on a valley floor there is room
+ * to fill, on the climb the next dollars are the dear ones, at the peak the
+ * only cheap move is sideways, and past it the cap has already taken what it
+ * can. Past tense on purpose — see the note over `CurveSegment`.
  */
 export type CurveStandingKind = 'valley' | 'climbing' | 'peak' | 'past' | 'flat';
 

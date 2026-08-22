@@ -7,6 +7,8 @@ import {
   totalTax,
   segmentCurve,
   standingOn,
+  bracketRateFor,
+  marginalDrag,
   splitOtherIncome,
   irmaaFirstCliffMagi,
   allIrmaaTiers,
@@ -925,6 +927,121 @@ describe('standingOn', () => {
     const segments = segmentCurve(curve, (p) => p.income);
     expect(segments.some((seg) => seg.type === 'hill')).toBe(false);
     expect(standingOn(segments, 40_000)).toMatchObject({ kind: 'flat', hump: null });
+  });
+});
+
+/**
+ * The rate a reader thinks they are paying, and the reason it is not the rate
+ * they are paying.
+ *
+ * `marginalRateCurve` answers the second half — what the next dollar costs —
+ * and on its own it is a number with nothing to be surprised by. The surprise
+ * is the gap, and the gap needs the bracket table the reader looked themselves
+ * up in, which is what these two read back.
+ */
+describe('the gap between the bracket and the dollar', () => {
+  const single = (over: Record<string, unknown> = {}) => ({
+    filingStatus: 'single' as const,
+    year: PINNED_YEAR,
+    ...over,
+  });
+
+  describe('bracketRateFor', () => {
+    /* 2025 single: $15,750 off the top, then 10% to $11,925 and 12% to $48,475. */
+    it('reads the band the return’s taxable income sits in', () => {
+      expect(bracketRateFor(single({ ssBenefit: 0, ordinaryIncome: 20_000 }))).toBe(10);
+      expect(bracketRateFor(single({ ssBenefit: 0, ordinaryIncome: 40_000 }))).toBe(12);
+    });
+
+    /**
+     * On the ceiling itself the answer is the band above, because the question
+     * is about the *next* dollar and the next dollar is the first one over.
+     * $27,675 of income is $11,925 of taxable income exactly.
+     */
+    it('reads the dollar over a bracket ceiling, not the one under it', () => {
+      expect(bracketRateFor(single({ ssBenefit: 0, ordinaryIncome: 27_674 }))).toBe(10);
+      expect(bracketRateFor(single({ ssBenefit: 0, ordinaryIncome: 27_675 }))).toBe(12);
+    });
+
+    /**
+     * A return with nothing taxable is quoted the bottom band rather than
+     * nothing at all: that is what the table says about its first taxable
+     * dollar, and it is the expectation the page is about to say is wrong in
+     * the other direction — the deduction is covering the dollar, so it costs
+     * less than the table, not more.
+     */
+    it('quotes the bottom band to a return with nothing taxable yet', () => {
+      expect(bracketRateFor(single({ ssBenefit: 0, ordinaryIncome: 0 }))).toBe(10);
+      expect(bracketRateFor(single({ ssBenefit: AVG_ANNUAL_SS_BENEFIT, ordinaryIncome: 10_000 }))).toBe(10);
+    });
+
+    /**
+     * The benefit the torpedo has already dragged in is taxable income like
+     * any other, so it moves the reader up the table on its own. At $45,000 of
+     * other income the same filer is in the 12% band without a benefit and the
+     * 22% band with the average one — which is the reason the expected rate
+     * has to be read off the return rather than off the income slider.
+     */
+    it('counts the benefit already dragged into the tax base', () => {
+      expect(bracketRateFor(single({ ssBenefit: 0, ordinaryIncome: 45_000 }))).toBe(12);
+      expect(
+        bracketRateFor(single({ ssBenefit: AVG_ANNUAL_SS_BENEFIT, ordinaryIncome: 45_000 })),
+      ).toBe(22);
+    });
+
+    /** The senior deduction comes off before the table is read, like the rest. */
+    it('reads the table after every deduction the return gets', () => {
+      const at = (seniors: number) =>
+        bracketRateFor(single({ ssBenefit: 0, seniors, ordinaryIncome: 27_675 }));
+      expect(at(0)).toBe(12);
+      // $2,000 of age-65 deduction and $6,000 of senior deduction put the same
+      // income back under the 10% ceiling.
+      expect(at(1)).toBe(10);
+    });
+  });
+
+  describe('marginalDrag', () => {
+    /**
+     * Below the first base nothing is dragged; on the climb the next dollar
+     * pulls benefit in behind it; past the 85% cap there is nothing left to
+     * pull. Three answers on one curve, and the middle one is the torpedo.
+     */
+    it('says when the next dollar pulls more benefit into the tax base', () => {
+      const at = (ordinaryIncome: number) =>
+        marginalDrag(single({ ssBenefit: AVG_ANNUAL_SS_BENEFIT, ordinaryIncome })).benefit;
+      expect(at(10_000)).toBe(false);
+      expect(at(20_000)).toBe(true);
+      expect(at(60_000)).toBe(false);
+    });
+
+    it('says never of a return with no benefit to drag', () => {
+      expect(marginalDrag(single({ ssBenefit: 0, ordinaryIncome: 20_000 })).benefit).toBe(false);
+    });
+
+    /**
+     * The attribution this exists for. Past $75,000 of MAGI a single senior is
+     * losing 6 cents of deduction to every dollar while the benefit sits at
+     * its cap with nothing left to give — the same shape on the chart as the
+     * torpedo, and not the torpedo. A page that named the wrong one would be
+     * wrong about the return in front of the reader.
+     */
+    it('separates the senior deduction’s phaseout from the torpedo', () => {
+      const at = (seniors: number) =>
+        marginalDrag(single({ ssBenefit: AVG_ANNUAL_SS_BENEFIT, seniors, ordinaryIncome: 60_000 }));
+      expect(at(1)).toEqual({ benefit: false, seniorDeduction: true });
+      expect(at(0)).toEqual({ benefit: false, seniorDeduction: false });
+    });
+
+    /**
+     * And it does not have to choose: a benefit still climbing on a return
+     * already phasing out moves both at once, which is where the marginal rate
+     * reaches 43% on a 22% bracket.
+     */
+    it('names both where both move', () => {
+      expect(
+        marginalDrag(single({ ssBenefit: MAX_ANNUAL_SS_BENEFIT, seniors: 1, ordinaryIncome: 45_000 })),
+      ).toEqual({ benefit: true, seniorDeduction: true });
+    });
   });
 });
 

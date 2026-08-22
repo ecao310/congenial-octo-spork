@@ -775,22 +775,34 @@ describe('the shape every step shares', () => {
 });
 
 /**
- * The chart says what every income costs; this says what the reader's own
- * income costs and which way it is worth moving. The tooltip has carried the
- * same arithmetic all along, but only for whichever point a mouse was over —
- * which is nobody's point in particular, and no point at all on a touchscreen.
+ * The chart says what every income costs. This says what the reader's own
+ * dollar costs against what they expected it to cost — the one figure a chart
+ * of actual rates cannot draw, because the rate a reader believes they pay is
+ * not on it anywhere.
+ *
+ * What stood here until now was six sentences of arithmetic keyed to which
+ * side of the hump the reader was on: the distance back to the near edge, the
+ * distance on to the far one, the nearest cheaper stretch behind and what
+ * deferring into it was worth. Every figure in it was right. All of it buried
+ * the gap.
  *
  * Figures below are 2026, single, the $24,852 average benefit: the rate rises
  * 0% to $14,750, 15%, 18.5%, then the hump at 22.2% from $22,750 to $40,500,
- * a 12% valley to $44,000, 22% to $98,750, and 24% past that.
+ * a 12% valley to $44,000, 22% to $98,750, and 24% past that. The brackets
+ * underneath that curve are 10%, 12% and 22%.
  */
 describe('the advice under the slider', () => {
   const incomeSlider = (): HTMLElement =>
     screen.getByRole('slider', { name: /other income \(not social security\)/i });
+  const benefitSlider = (): HTMLElement =>
+    screen.getByRole('slider', { name: /social security benefit/i });
   const advice = (): HTMLElement =>
     document.querySelector('#step-torpedo .slider-advice') as HTMLElement;
   const setIncome = (value: number): void => {
     fireEvent.change(incomeSlider(), { target: { value: String(value) } });
+  };
+  const setBenefit = (value: number): void => {
+    fireEvent.change(benefitSlider(), { target: { value: String(value) } });
   };
 
   it('sits with the slider it is keyed to, under the readout', () => {
@@ -804,111 +816,128 @@ describe('the advice under the slider', () => {
     ).toBeTruthy();
   });
 
-  it('names both ways off the hump when the reader is standing on it', () => {
+  /**
+   * The default $30,000 opens the page mid-hump, which is the whole point of
+   * it: the bracket table says 12%, the dollar costs 22.2%, and the ten points
+   * between the two are the benefit being dragged in behind it.
+   */
+  it('sets the bracket the reader expects against the rate they pay', () => {
     render(<App />);
-    // The default $30,000 opens the page mid-hump, which is the whole point.
-    expect(advice()).toHaveTextContent('You are standing on the hump');
     expect(advice()).toHaveTextContent(
-      'it holds from $23,000 to $41,000',
+      'You may expect 12% — the bracket this income lands in.',
     );
     expect(advice()).toHaveTextContent(
-      'Coming back under $23,000 — $7,000 less income — takes the next dollar down to 18.5%',
+      'The next dollar actually costs 22.2%, because it drags part of your Social Security benefit into the tax base behind it.',
     );
-    expect(advice()).toHaveTextContent(
-      'clearing $41,250 — $11,250 more — takes it to 12%',
+  });
+
+  /** The expectation is what the emphasis is on, because it is the wrong one. */
+  it('leads on the expected rate and nothing else', () => {
+    render(<App />);
+    expect(advice().querySelector('strong')).toHaveTextContent(
+      'You may expect 12% — the bracket this income lands in.',
     );
   });
 
   /**
-   * The two ways off are named, but they are not offered as equals. The hump
-   * rate is marginal — charged on the dollars inside the stretch and on
-   * nothing under them — so the dollars it takes to cross cost the same
-   * however many years they are spread over, and only the year that finishes
-   * the crossing reaches the cheaper ground. Stopping short of the near edge
-   * is the move that keeps paying; the close says so.
+   * The gap runs the other way under the standard deduction, and the sentence
+   * has to survive that: a reader told they may expect 10% and are paying 0%
+   * is being told something true and useful, not being warned about a torpedo
+   * that is not there.
    */
-  it('recommends clearing the far edge rather than stopping inside', () => {
-    render(<App />);
-    expect(advice()).toHaveTextContent(
-      'but only the dollars in between: 22.2% is the price of the next one here, not the price of the income already under it',
-    );
-    expect(advice()).toHaveTextContent(
-      'the dollars between here and $41,250 cost 22.2% whether they are drawn in one year or a slice at a time',
-    );
-    expect(advice()).toHaveTextContent(
-      'only the year that reaches the far edge is charged 12% on the dollars past it',
-    );
-    expect(advice()).toHaveTextContent(
-      'Take enough at once to land past it rather than stopping inside',
-    );
-    expect(advice()).not.toHaveTextContent('stop short of the near edge');
-  });
-
-  it('measures the room left when the reader is on the valley floor', () => {
+  it('says which way the gap runs when the deduction still covers the dollar', () => {
     render(<App />);
     setIncome(10_000);
-    expect(advice()).toHaveTextContent('You are on the valley floor');
     expect(advice()).toHaveTextContent(
-      'every dollar up to $15,000 — $5,000 of room from here',
+      'You may expect 10% — the bracket this income lands in.',
     );
-    expect(advice()).toHaveTextContent('climbs to 22.2% by $23,000');
+    expect(advice()).toHaveTextContent(
+      'The next dollar actually costs 0%, because your deductions have not been used up yet.',
+    );
   });
 
-  it('measures the distance left when the reader is on the climb', () => {
+  it('names no gap at all where the dollar costs exactly its bracket', () => {
     render(<App />);
-    setIncome(20_000);
-    expect(advice()).toHaveTextContent('You are on the climb');
+    setIncome(60_000);
     expect(advice()).toHaveTextContent(
-      '$3,000 further on — at $23,000 — the rate reaches 22.2%',
+      'The next dollar costs 22% — the bracket this income lands in.',
     );
+    expect(advice()).toHaveTextContent(
+      'Nothing moves behind it: no more of the benefit is dragged into the tax base, and no deduction phases out.',
+    );
+    expect(advice()).not.toHaveTextContent('You may expect');
+  });
+
+  it('says the same of a return with no benefit to drag in', () => {
+    render(<App />);
+    setBenefit(0);
+    setIncome(40_000);
+    expect(advice()).toHaveTextContent(
+      'The next dollar costs 12% — the bracket this income lands in.',
+    );
+    expect(advice()).not.toHaveTextContent('Social Security benefit');
   });
 
   /**
-   * Past the hump the advice is about deferral, and it has to name the
-   * *nearest* cheaper ground rather than the cheapest: the cheapest is the run
-   * below the standard deduction, which is true and useless. Here that is the
-   * 12% valley the reader has just cleared, not the 0% floor at the far left.
+   * The one attribution that has to be asked rather than assumed. Past $75,000
+   * of MAGI a single return is phasing out the senior deduction at 6 cents in
+   * the dollar while its benefit sits at the 85% cap with nothing left to
+   * drag: the same shape on the chart, a different mechanism under it, and
+   * "the tax torpedo" is the wrong name for it.
    */
-  it('prices deferral against the nearest cheaper ground once the hump is behind', () => {
+  it('blames the senior deduction where that is what moves', () => {
     render(<App />);
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Age 65 or older' }));
     setIncome(60_000);
-    expect(advice()).toHaveTextContent('The hump is behind you');
     expect(advice()).toHaveTextContent(
-      'against 22.2% back between $23,000 and $41,000',
+      'The next dollar actually costs 23.32%, because it phases out 6¢ of the senior deduction behind it.',
     );
-    expect(advice()).toHaveTextContent(
-      'nearest cheaper ground on this chart is 12% between $41,250 and $45,250',
-    );
-    expect(advice()).toHaveTextContent('costs 12% rather than 22%');
-    expect(advice()).not.toHaveTextContent('0% between');
+    expect(advice()).not.toHaveTextContent('Social Security benefit');
   });
 
-  it('says there is no hump when there is no benefit to drag in', () => {
+  /** A benefit still climbing on a return already phasing out: both, named. */
+  it('names both where both move', () => {
     render(<App />);
-    fireEvent.change(
-      screen.getByRole('slider', { name: /social security benefit/i }),
-      { target: { value: '0' } },
-    );
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Age 65 or older' }));
+    setBenefit(60_000);
     setIncome(40_000);
-    expect(advice()).toHaveTextContent('This return has no hump');
     expect(advice()).toHaveTextContent(
-      'The next dollar costs 12%, and holds there to $66,500',
+      'The next dollar actually costs 43.14%, because it drags part of your Social Security benefit into the tax base and phases out 6¢ of the senior deduction behind it.',
     );
-    expect(advice()).not.toHaveTextContent('hump is behind you');
   });
 
-  it('moves the reader through all four positions on one curve', () => {
+  it('moves with the reader across the chart', () => {
     render(<App />);
-    const opening = (): string =>
-      advice().querySelector('strong')?.textContent ?? '';
+    const said = (): string => advice().textContent ?? '';
     setIncome(0);
-    expect(opening()).toBe('You are on the valley floor.');
+    expect(said()).toContain('You may expect 10%');
+    expect(said()).toContain('actually costs 0%, because your deductions');
     setIncome(20_000);
-    expect(opening()).toBe('You are on the climb.');
+    expect(said()).toContain('You may expect 10%');
+    expect(said()).toContain(
+      'actually costs 15%, because it drags part of your Social Security benefit',
+    );
     setIncome(30_000);
-    expect(opening()).toBe('You are standing on the hump.');
+    expect(said()).toContain('You may expect 12%');
+    expect(said()).toContain('actually costs 22.2%');
     setIncome(60_000);
-    expect(opening()).toBe('The hump is behind you.');
+    expect(said()).toContain('The next dollar costs 22% — the bracket');
+  });
+
+  /**
+   * The rewrite is the length, so the length is what is pinned. Six sentences
+   * of correct arithmetic is what was here before, and nothing failed as it
+   * grew — the longest sentence this can now produce is the one asserted whole
+   * in "names both where both move", at forty words.
+   */
+  it('stays short enough to be read where it stands', () => {
+    render(<App />);
+    for (const income of [0, 10_000, 20_000, 30_000, 60_000, 120_000]) {
+      setIncome(income);
+      const words = (advice().textContent ?? '').trim().split(/\s+/);
+      expect(words.length).toBeGreaterThan(10);
+      expect(words.length).toBeLessThanOrEqual(45);
+    }
   });
 });
 
@@ -1168,7 +1197,7 @@ describe('What a hovered point is worth', () => {
      * This is the assertion that keeps advice off a hover. The tooltip used to
      * close with "stay under $x or over $y" on a hill and "fill this valley"
      * on a valley — a recommendation about wherever the mouse landed, sitting
-     * inches from `StandingNote`'s recommendation about where the reader
+     * inches from `NextDollarNote`'s reading of the reader's own
      * actually stands, and disagreeing with it whenever the two points fell in
      * different segments. It also carried two distances, to the next IRMAA
      * cliff and to the 400% poverty line, which are now quoted in the close at
@@ -2781,7 +2810,11 @@ describe('the live reading under the controls', () => {
       'At $10,000 of other income the next dollar is taxed at 0%',
     );
     expect(region()).toHaveTextContent('an effective rate of');
-    expect(region()).toHaveTextContent('You are on the valley floor.');
+    // The advice under the slider, word for word: one sentence on the page is
+    // one sentence in the ear, and there is no second wording to drift from.
+    expect(region()).toHaveTextContent(
+      'You may expect 10% — the bracket this income lands in. The next dollar actually costs 0%, because your deductions have not been used up yet.',
+    );
   });
 
   /**

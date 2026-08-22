@@ -56,7 +56,7 @@ describe('App', () => {
   it('leads with what the page is for rather than with the settings', () => {
     render(<App />);
     const hero = screen.getByRole('heading', {
-      name: /how much can you take out this year/i,
+      name: /social security and marginal tax rates/i,
       level: 1,
     });
     expect(hero).toBeInTheDocument();
@@ -1837,16 +1837,19 @@ describe('the torpedo chart’s right edge', () => {
   const incomeSlider = (): HTMLElement =>
     screen.getByRole('slider', { name: /other income \(not social security\)/i });
 
-  const stepIntro = (): HTMLElement =>
+  // The span the chart draws used to be prose above it as well. That
+  // paragraph came off the page, so the plot's own accessible name is the one
+  // place left that names the edge in words, and it is where the edge is read
+  // back from here.
+  const chartLabel = (): string =>
     screen
-      .getByRole('heading', { name: 'The tax torpedo' })
-      .closest('section')!
-      .querySelector('.step-intro') as HTMLElement;
+      .getByRole('img', { name: /^Chart: the marginal tax rate/ })
+      .getAttribute('aria-label')!;
 
   it('stays where it was for a filer with only one hump to show', () => {
     render(<App />);
     expect(incomeSlider()).toHaveAttribute('max', '150000');
-    expect(stepIntro()).toHaveTextContent('$0 to $150,000 of other income');
+    expect(chartLabel()).toContain('$0 to $150,000 of other income');
   });
 
   it('widens to fit the senior deduction phaseout when it is claimed', () => {
@@ -1855,13 +1858,13 @@ describe('the torpedo chart’s right edge', () => {
     // $175,000 of MAGI, less the $20,155.20 of benefit already in AGI, is
     // $154,845 of other income — past the old fixed edge, and now inside.
     expect(incomeSlider()).toHaveAttribute('max', '175000');
-    expect(stepIntro()).toHaveTextContent('$0 to $175,000 of other income');
+    expect(chartLabel()).toContain('$0 to $175,000 of other income');
 
     fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Jointly' }));
     // The joint phaseout starts $75,000 higher and ends $250,000 of MAGI, so
     // the axis has to reach $229,845 of other income.
     expect(incomeSlider()).toHaveAttribute('max', '250000');
-    expect(stepIntro()).toHaveTextContent('$0 to $250,000 of other income');
+    expect(chartLabel()).toContain('$0 to $250,000 of other income');
   });
 
   /**
@@ -1939,14 +1942,15 @@ describe('the torpedo chart’s right edge', () => {
 
 /**
  * `totalIncomeFor` is what "total income" means on this page: other income,
- * plus the *whole* benefit, plus tax-exempt interest. Three places take a
- * figure on that axis apart for the
- * reader rather than just quoting it — the tooltip head, step 2's opening
- * line and the plot's accessible name — and each of them hands over an
- * addition the reader can do. So each of them has to name every term the
- * total contains, or the addition visibly fails: the opening line used to
+ * plus the *whole* benefit, plus tax-exempt interest. Two places take a
+ * figure on that axis apart for the reader rather than just quoting it — the
+ * tooltip head and the plot's accessible name — and each of them hands over
+ * an addition the reader can do. So each of them has to name every term the
+ * total contains, or the addition visibly fails: the accessible name used to
  * name the benefit and stop, and at $3,750 of tax-exempt interest it said the
- * axis began at $28,602 beside arithmetic that reached $24,852.
+ * axis began at $28,602 beside arithmetic that reached $24,852. Step 2's
+ * opening paragraph was the third, and it said the same addition until it
+ * came off the page.
  *
  * These read the figures back out of the prose and add them up, rather than
  * matching a sentence, so they hold whatever the wording becomes.
@@ -1955,14 +1959,6 @@ describe('the axis, taken apart', () => {
   /** Every dollar figure in a sentence, in the order it says them. */
   const dollars = (text: string): number[] =>
     [...text.matchAll(/\$[\d,]+/g)].map((m) => Number(m[0].replace(/[$,]/g, '')));
-
-  const stepIntro = (): string =>
-    (
-      screen
-        .getByRole('heading', { name: 'The tax torpedo' })
-        .closest('section')!
-        .querySelector('.step-intro') as HTMLElement
-    ).textContent!;
 
   const chartLabel = (): string =>
     screen
@@ -1976,20 +1972,10 @@ describe('the axis, taken apart', () => {
   it('adds up on the return the page opens with', () => {
     render(<App />);
     // from, to, the benefit, the $0 the other-income range starts at, the edge
-    const [from, to, benefit, , edge] = dollars(stepIntro());
+    const [from, to, benefit, , edge] = dollars(chartLabel());
     expect(benefit).toBe(AVG_ANNUAL_SS_BENEFIT);
     expect(from).toBe(benefit);
     expect(to).toBe(benefit + edge);
-  });
-
-  it('counts tax-exempt interest in both ends of the span it names', () => {
-    render(<App />);
-    setSlider(/tax-exempt \(municipal\) interest/i, '3750');
-    const [from, to, benefit, interest, , edge] = dollars(stepIntro());
-    expect(interest).toBe(3_750);
-    // Muni interest never moves: it is in the left edge and in the right one.
-    expect(from).toBe(benefit + interest);
-    expect(to).toBe(benefit + interest + edge);
   });
 
   /**
@@ -2001,10 +1987,10 @@ describe('the axis, taken apart', () => {
   it('stays a plain addition when the axis widens under it', () => {
     render(<App />);
     setSlider(/tax-exempt \(municipal\) interest/i, '3750');
-    const [, toBefore, , , , edgeBefore] = dollars(stepIntro());
+    const [, toBefore, , , , edgeBefore] = dollars(chartLabel());
 
     fireEvent.click(screen.getByRole('checkbox', { name: 'Age 65 or older' }));
-    const [from, to, benefit, interest, , edge] = dollars(stepIntro());
+    const [from, to, benefit, interest, , edge] = dollars(chartLabel());
     expect(from).toBe(benefit + interest);
     expect(to).toBe(benefit + interest + edge);
     expect(edge).toBeGreaterThan(edgeBefore);
@@ -2013,7 +1999,9 @@ describe('the axis, taken apart', () => {
 
   /**
    * The accessible name is the same sentence for a listener, and it was wrong
-   * in the same way, so it is pinned the same way.
+   * in the same way, so it is pinned the same way — including that tax-exempt
+   * interest, which never moves, sits inside both ends of the span rather
+   * than only the left one.
    */
   it('names both fixed halves to a screen reader, and still adds up', () => {
     render(<App />);
@@ -2072,9 +2060,8 @@ describe('the axis, taken apart', () => {
  *
  * Step 1 ends by naming the return step 2 prices; this ends the page by saying
  * what came of it. Six figures a reader leaves with — total income, the tax,
- * the average rate, the rate on the next dollar, how much of the benefit ended
- * up in the tax base, and which Medicare tier the MAGI landed in — all in one
- * block.
+ * the effective rate, the marginal rate, how much of the benefit is taxable,
+ * and which Medicare tier the MAGI landed in — all in one block.
  */
 describe('the closing answer', () => {
   const answer = (): HTMLElement => document.getElementById('answer') as HTMLElement;
@@ -2125,11 +2112,11 @@ describe('the closing answer', () => {
     expect(figure('Total income')).toHaveTextContent('$54,852');
     expect(figure('Federal tax')).toHaveTextContent('$2,819');
     expect(figure('Effective rate')).toHaveTextContent('5.14%');
-    expect(figure('The next dollar')).toHaveTextContent('22.2%');
-    expect(figure('Benefit in the tax base')).toHaveTextContent(
+    expect(figure('Marginal rate')).toHaveTextContent('22.2%');
+    expect(figure('Taxable social security')).toHaveTextContent(
       '$11,662 of $24,852',
     );
-    expect(figure('Benefit in the tax base')).toHaveTextContent('46.93% of it');
+    expect(figure('Taxable social security')).toHaveTextContent('46.93% of it');
     expect(figure('Medicare surcharge')).toHaveTextContent(
       'None \u2014 the standard premium',
     );
@@ -2169,7 +2156,7 @@ describe('the closing answer', () => {
 
     expect(figure('Federal tax')).toHaveTextContent('$2,819');
     expect(figure('Effective rate')).toHaveTextContent('5.14%');
-    expect(figure('The next dollar')).toHaveTextContent('22.2%');
+    expect(figure('Marginal rate')).toHaveTextContent('22.2%');
   });
 
   it('re-prices every figure when step 2 moves the income', () => {
@@ -2179,12 +2166,12 @@ describe('the closing answer', () => {
     expect(figure('Federal tax')).toHaveTextContent('$15,617');
     expect(figure('Effective rate')).toHaveTextContent('13.6%');
     // Past the torpedo: the next dollar is back to its own bracket rate.
-    expect(figure('The next dollar')).toHaveTextContent('22%');
+    expect(figure('Marginal rate')).toHaveTextContent('22%');
     // And the 85% cap is binding, which is why it is over.
-    expect(figure('Benefit in the tax base')).toHaveTextContent(
+    expect(figure('Taxable social security')).toHaveTextContent(
       '$21,124 of $24,852',
     );
-    expect(figure('Benefit in the tax base')).toHaveTextContent('85% of it');
+    expect(figure('Taxable social security')).toHaveTextContent('85% of it');
     expect(figure('Medicare surcharge')).toHaveTextContent(
       'Tier 1 of 5 \u2014 $1,148/yr',
     );
@@ -2199,7 +2186,7 @@ describe('the closing answer', () => {
     const medicare = figure('Medicare surcharge');
     expect(medicare).toHaveTextContent('On $41,662 of MAGI');
     expect(medicare).toHaveTextContent(
-      'Another $67,338 of it crosses the next cliff, which costs $1,148 a year on the strength of one dollar.',
+      'Another $67,338 of it crosses the next cliff, which costs $1,148 per year.',
     );
     expect(medicare).toHaveTextContent(
       'Billed on a 2-year lag, so this is what 2026 income sets for 2028.',
@@ -2220,7 +2207,7 @@ describe('the closing answer', () => {
     );
     // Two enrollees, so the cliff below costs twice what one filer pays.
     expect(figure('Medicare surcharge')).toHaveTextContent(
-      'costs $2,297 a year',
+      'costs $2,297 per year',
     );
   });
 
@@ -2230,8 +2217,8 @@ describe('the closing answer', () => {
     expect(intro()).toHaveTextContent(
       'with no Social Security and $30,000 of other income',
     );
-    expect(figure('Benefit in the tax base')).toHaveTextContent('None');
-    expect(figure('Benefit in the tax base')).toHaveTextContent(
+    expect(figure('Taxable social security')).toHaveTextContent('None');
+    expect(figure('Taxable social security')).toHaveTextContent(
       'Step 1 sets no benefit, so there is nothing for other income to drag in',
     );
     expect(figure('Total income')).toHaveTextContent('$30,000');
@@ -2312,14 +2299,14 @@ describe('the closing answer', () => {
       Reflect.deleteProperty(navigator, 'clipboard');
     });
 
-    it('says the address bar is the return, between the figures and the caveat', () => {
+    it('closes the block, directly under the figures it sends', () => {
       render(<App />);
-      expect(share()).toHaveTextContent('The address bar is this return.');
-      expect(share()).toHaveTextContent(
-        'Every control on this page rides in the link',
-      );
+      // The sentence that used to stand here said the address bar was the
+      // return; it and the caveat under it came off the page, so the block is
+      // now the last thing in the close and the button is all of it.
       expect(share().previousElementSibling).toHaveClass('answer-figures');
-      expect(share().nextElementSibling).toHaveClass('answer-note');
+      expect(share().nextElementSibling).toBeNull();
+      expect(answer().lastElementChild).toBe(share());
     });
 
     it('puts the address itself on the clipboard, character for character', async () => {
@@ -2402,8 +2389,9 @@ describe('the closing answer', () => {
 
     /**
      * Over plain http, and in Safari before 13.1, there is no clipboard to
-     * write to. A button that cannot copy is worse than no button, and the
-     * sentence beside it already tells the reader what to send.
+     * write to. A button that cannot copy is worse than no button, so the
+     * block draws nothing but the empty live region — the address bar still
+     * holds the return, which is what the button would have copied.
      */
     it('draws no button at all where there is no clipboard', () => {
       render(<App />);
@@ -2411,8 +2399,10 @@ describe('the closing answer', () => {
       expect(
         within(share()).queryByRole('button', { name: /copy link/i }),
       ).not.toBeInTheDocument();
-      expect(share()).toHaveTextContent('The address bar is this return.');
       expect(status()).toBeEmptyDOMElement();
+      // The live region is all that is left, and it has to stay on the page
+      // even with nothing to announce — see the note on it in App.tsx.
+      expect(share().children).toHaveLength(1);
     });
 
     /**

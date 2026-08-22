@@ -8982,3 +8982,91 @@ advice. Not wrong — it is about a hovered point, not the reader's standing —
 but a reader hovering the stretch they are standing in now reads two different
 recommendations inches apart, and the valley tooltip beside it is already
 one-sided.
+
+## Iteration — "i manually changed text. fix my tests." (Backlog 8)
+
+Opened on a clean tree for the second run running. `71606d0 fix text` was the
+user's own commit: it renamed the `<h1>` and `<title>`, cut four blocks of prose
+(step 2's opening paragraph, the muni field note, the "address bar is this
+return" sentence and the closing caveat), renamed two of the close's six figure
+labels, shortened three glosses, and demoted all five explainer headings from
+`h2` to `h3` — which happens to complete Backlog 6's heading-levels bullet,
+though that bullet is still unchecked and its `styles.test.tsx` assertion still
+unwritten, so it stays where it is.
+
+`npx vitest run` opened at 14 failed / 640 passed, all in App.test.tsx.
+
+### What changed — tests only, `src/App.test.tsx`
+
+**The `<h1>`.** One regex, `/how much can you take out this year/i` →
+`/social security and marginal tax rates/i`.
+
+**The five tests that read `.step-intro`.** That paragraph is gone, but the
+sentence it carried survives verbatim in the plot's `aria-label` (App.tsx:1765),
+which says the same span in the same words — "from $24,852 to $174,852 — a fixed
+$24,852 of Social Security plus $0 to $150,000 of other income". So the two
+right-edge tests and two of the three `axis, taken apart` tests were re-pointed
+at `chartLabel()` rather than dropped, and `dollars()` destructures the same
+positions off it because the wording matches term for term.
+
+The third, `counts tax-exempt interest in both ends of the span it names`, became
+a strict subset of `names both fixed halves to a screen reader, and still adds
+up` once both read the same sentence — identical setup, identical assertions, and
+the survivor also pins the literal phrasing. Deleted rather than duplicated; its
+doc comment now says it carries the both-ends case. 654 → 653 tests.
+
+**The close.** `figure('The next dollar')` → `figure('Marginal rate')` (3 call
+sites), `figure('Benefit in the tax base')` → `figure('Taxable social security')`
+(6). Two IRMAA gloss strings lost "on the strength of one dollar" and "a year" →
+"per year".
+
+**The share block.** `says the address bar is the return, between the figures and
+the caveat` was asserting two deleted sentences and a deleted sibling; rewritten
+as `closes the block, directly under the figures it sends`, which pins what is
+still true — it follows `.answer-figures` and is now the last thing in `#answer`.
+`draws no button at all where there is no clipboard` lost its sentence assertion
+and gained `share().children` toHaveLength(1), so the empty live region still has
+to be rendered rather than conditionally omitted.
+
+### Verification
+
+Five mutations, each reverted from `/tmp/App.tsx.bak`:
+
+- `axisMax` → `axisMax + 1000` in the aria-label: reddens all four re-pointed
+  tests plus the pre-existing `the charts as images` one. The weaker mutation I
+  tried first — appending text after "of other income." — reddened only the
+  latter, because `toContain` passes on a substring; the arithmetic assertions
+  are what actually hold the edge.
+- `axisIncludes.join(' and ')` → `axisIncludes[0]`, i.e. the fixed half forgets
+  the municipal interest: reddens `names both fixed halves` and `stays a plain
+  addition`. That is the deleted test's job, confirmed still done.
+- `<dt>Marginal rate</dt>` → `<dt>Next dollar</dt>`: reddens the three close
+  tests that read it.
+- A `<p>` appended after `.answer-share`: reddens the rewritten position test
+  alone.
+
+`npx tsc -b`, `npx eslint . --max-warnings 0`, `npx vitest run` (653/653) and
+`npm run build` all clean. Only `src/App.test.tsx` changed — no source edit this
+run, which keeps the diff readable as "what the tests now say about the text the
+user wrote".
+
+### Next
+
+Two Discovered Work items logged, both fallout from the manual pass rather than
+from this one. The first is a real content bug: `<title>` and the `<h1>` now say
+"Social Security and Marginal Tax Rates" while `og:title`, `twitter:title` and
+README.md's heading still say "How Much Can You Take Out This Year?", so a shared
+link previews under a heading the page does not have. `meta.test.ts` holds og
+against twitter and neither against `<title>`, which is why nothing caught it —
+the same blind spot, and the same one-assertion fix, as the `name="description"`
+drift two backlogs ago. Not fixed here because which of the two names wins is the
+user's copy decision, not a test's.
+
+The second is the dead stylesheet and comments the deletions left — `.step-intro`,
+`.answer-share-line`, `.answer-note`, and the comment above `.answer-share` that
+still describes the sentence it lost. All of it falls inside Backlog 8's "clean up
+dead code" task, which is two bullets down; listed there so that sweep starts from
+a list. Topmost unchecked is now the tooltip bullet: take the valley/hill advice,
+the "$x to the next cliff" line and the marketplace-premium line out of the hover
+tooltip — which also settles the tooltip-advice bullet already in Discovered Work,
+since that sentence is one of the three being removed.

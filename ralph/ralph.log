@@ -8269,3 +8269,107 @@ holds them as `{label, value}` pairs and the live-region `reading`
 one place that still points instead of saying. Note the bullet's example
 opens "One year's return:" where the page says "Everything from here on
 prices one return:", so it may want the lead rewritten too.
+
+## 2026-08-21 — Task: Summary on bottom left should dynamically include the advanced inputs
+
+Backlog 7, third bullet. Topmost unchecked was this one.
+
+### What was wrong
+
+`scenario-recap` (App.tsx, foot of step 1) named the year, the filing status,
+the ages and the benefit, and then — only when an advanced input was off $0 —
+appended `Plus whatever is set under Advanced inputs above.` That is a pointer
+at a `<details>` that is shut by default, sitting in the one sentence on the
+page whose entire job is to say which return is being priced. The figures were
+already to hand: `advancedSet` (App.tsx:955) holds them, and the live region's
+`benefit` reading (App.tsx:1274) already named them for exactly this reason —
+with a comment saying it did so *because* the recap only pointed.
+
+### The shape of the fix
+
+Not "append a Plus sentence". The recap's sentence already runs on a
+participle — "…, under 65, collecting $24,852 of Social Security a year." —
+so the two inputs join that list rather than arriving behind a lead-in:
+
+    …, collecting $24,852 of Social Security a year, holding $3,750 of
+    tax-exempt interest, and giving $26,750 straight to charity out of an IRA.
+
+The participles are the whole point and the one real decision here. A shared
+"Plus" in front of both would be two additions, one of which is a
+subtraction: "plus $26,750 given to charity" reads as $26,750 *of income*,
+which is the opposite of what a QCD is. `collecting` / `holding` / `giving`
+each carry their own direction and need nothing to share. There is a test
+pinning that the recap contains no "plus" once a gift is set.
+
+Wording follows the vocabulary the axis prose settled on last iteration
+(`axisIncludes`, `axisCaption`): "of tax-exempt interest", "straight to
+charity". The bullet's example says "municipal interest" and "qualified
+charitable distributions", but those are the slider labels, not the page's
+prose register, and the axis caption two inches below would then disagree
+with the recap about what the same dollar is called.
+
+### Code
+
+- `listSeparator(i, n)` + `joinProse(parts)` + `<ProseList items>` — three
+  small top-level helpers above `hereLine`. The list is rendered twice, as
+  JSX with bolded figures and as flat text for the live region, and two
+  hand-rolled joins would be two chances for the screen and the reading to
+  disagree about a comma. One separator rule, two renderings.
+- `advancedSet` entries gained `lead` and `tail` beside `label`. `label` is
+  still the terse chip in the disclosure's own summary strip ("Muni interest
+  $3,750 · Charitable $26,750"), which is a strip and wants labels; `lead`
+  and `tail` are what the same fact is called in a sentence.
+- `recapClauses` — the benefit clause plus one per set advanced input, as
+  `{key, node}`. The benefit's own two-way branch (`$X of Social Security a
+  year` / `no Social Security at all`) moved into it unchanged.
+- The live region's `benefit` case now builds the same list through
+  `joinProse` instead of tacking on `Muni interest $10,000`. Its no-benefit
+  branch gained "at all", which is what the screen has always said.
+
+### The lead sentence, left alone
+
+The bullet's example opens "One year's return:" where the page says
+"Everything from here on prices one return:". Left as is — the instruction is
+that the summary should *include the advanced inputs*, and the current lead is
+a deliberate choice with a comment above it explaining that the hero used to
+carry the year and filing status and no longer does. Flagging rather than
+silently rewriting: if the lead is wanted too, it is a one-line change.
+
+### Tests
+
+667 → 671. The single old test (`points at the advanced inputs only once one
+has been set`) became five:
+
+- names an advanced input once it is set, and only then — muni on, off again
+- names the gift — QCD alone, two clauses, bare "and"
+- runs both advanced inputs into the sentence it already had — the bullet's
+  own example scenario, whole sentence pinned, serial comma
+- does not add the gift on with a plus — `not.toMatch(/plus/i)`
+- keeps the no-benefit reading a sentence when an input is set
+
+Plus the live-region test rewritten to assert the reading matches the recap
+and no longer says "Muni interest".
+
+Mutation-checked twice: dropping the serial comma reddens 1 of 5; restoring
+the old "Plus whatever is set…" pointer reddens all 5.
+
+### Verification
+
+`tsc -b`, `eslint . --max-warnings 0`, `vitest run` — clean, 671/671.
+`npm run build`, then real Chromium (`playwright-core` + the Chrome for
+Testing binary already in ~/Library/Caches/ms-playwright/chromium-1228 —
+note `chromium.launch()` alone fails on this machine, the headless-shell
+build is 1234 and only 1228 is installed, so pass `executablePath`) against
+`vite preview` on 4182. Zero page errors. All six readings confirmed by eye:
+default, muni only, both, gift only, the bullet's example (which comes out
+word for word), and no-benefit-plus-muni. Live region checked after settle.
+Preview killed, driver deleted. No CSS touched.
+
+### Next
+
+Topmost unchecked is "Check against irs numbers". Note the durable notes at
+the top of this file say the tax math was verified line-by-line against Pub
+915 for **2025** — the page now defaults to `PAGE_TAX_YEAR` 2026, and the
+2026 params (brackets, standard deduction, SENIOR_DEDUCTION and its phaseout,
+IRMAA tiers, FPL, the QCD limit) are the ones that need a source check. Start
+at src/utils/tax.ts's param tables and docs/.

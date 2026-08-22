@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect } from 'react';
+import { Fragment, useState, useMemo, useRef, useEffect } from 'react';
 import {
   XAxis,
   YAxis,
@@ -185,6 +185,37 @@ function pointAt<P>(
   }
   return found;
 }
+
+/**
+ * The separator that goes before item `i` of an `n`-item English list:
+ * nothing, then ", ", then " and " or ", and " in front of the last one.
+ *
+ * The recap that closes step 1 is a list whose length is however many of this
+ * return's facts are non-zero, and it is written twice — once as JSX with the
+ * figures bolded, once flat for the live region to read out. Two hand-rolled
+ * joins would be two chances for the page and the reading to disagree about a
+ * comma, so both of them ask this.
+ */
+const listSeparator = (i: number, n: number): string =>
+  i === 0 ? '' : i < n - 1 ? ', ' : n > 2 ? ', and ' : ' and ';
+
+/** That list as flat text, for anything being read aloud rather than looked at. */
+const joinProse = (parts: string[]): string =>
+  parts.map((part, i) => listSeparator(i, parts.length) + part).join('');
+
+/** And as marks on the page, for the clauses that carry a bolded figure. */
+const ProseList: React.FC<{
+  items: { key: string; node: React.ReactNode }[];
+}> = ({ items }) => (
+  <>
+    {items.map(({ key, node }, i) => (
+      <Fragment key={key}>
+        {listSeparator(i, items.length)}
+        {node}
+      </Fragment>
+    ))}
+  </>
+);
 
 /**
  * The dashed vertical marking the reader's own place on the chart.
@@ -949,12 +980,29 @@ const App: React.FC = () => {
    * is the whole test for what belongs in here — year, filing status, age,
    * benefit and other income all change the picture the moment the page loads,
    * so they stay out. What it costs is that a slider you cannot see is a
-   * slider you forget, which is why anything moved off $0 is named in the
-   * summary line and stays named while the section is closed.
+   * slider you forget, which is why anything moved off $0 is named twice over
+   * — in the strip beside this section's own summary, and in the recap that
+   * closes the step — and stays named while the section is closed.
+   *
+   * Each carries the participle it takes in a sentence as well as the label it
+   * takes in the strip. The recap continues a list of what this return does,
+   * and the two do not go the same way: interest is *held* and a gift goes
+   * *out* of an IRA, so one shared "plus" in front of both would read as two
+   * additions, one of which is a subtraction.
    */
   const advancedSet = [
-    { label: 'Muni interest', value: muniInterest },
-    { label: 'Charitable', value: qcd },
+    {
+      label: 'Muni interest',
+      lead: 'holding',
+      tail: 'of tax-exempt interest',
+      value: muniInterest,
+    },
+    {
+      label: 'Charitable',
+      lead: 'giving',
+      tail: 'straight to charity out of an IRA',
+      value: qcd,
+    },
   ].filter(({ value }) => value > 0);
 
   /**
@@ -971,6 +1019,45 @@ const App: React.FC = () => {
         : seniors === 2
           ? 'both spouses 65 or older'
           : 'one spouse 65 or older';
+
+  /**
+   * What this return does, as a run of participles for the recap to end on.
+   *
+   * The recap used to stop at the benefit and then point — "Plus whatever is
+   * set under Advanced inputs above" — which is a pointer at a section that is
+   * shut by default, in the one sentence on the page whose whole job is to say
+   * what is being priced. It names the figures now.
+   *
+   * They join the participle the sentence already runs on rather than arriving
+   * behind a "plus", because a gift comes out of the return: "plus $26,750
+   * given to charity" reads as $26,750 of income, which is the opposite of
+   * what it is. `collecting`, `holding`, `giving` each carry their own
+   * direction and need no lead-in to share.
+   */
+  const recapClauses = [
+    {
+      key: 'benefit',
+      node:
+        ssBenefit > 0 ? (
+          <>
+            collecting <strong>{formatCurrency(ssBenefit)}</strong> of Social
+            Security a year
+          </>
+        ) : (
+          <>
+            collecting <strong>no Social Security</strong> at all
+          </>
+        ),
+    },
+    ...advancedSet.map(({ label, lead, tail, value }) => ({
+      key: label,
+      node: (
+        <>
+          {lead} <strong>{formatCurrency(value)}</strong> {tail}
+        </>
+      ),
+    })),
+  ];
 
   const baseDeduction = yearFiling.standardDeduction;
   const standardDeduction = standardDeductionFor({ filingStatus, seniors, year });
@@ -1303,18 +1390,24 @@ const App: React.FC = () => {
   const reading = ((): string => {
     switch (announceFrom) {
       case 'benefit': {
+        /* The same list the recap on screen ends on, flattened: same
+           participles, same separators, so a listener and a reader are never
+           told about two different returns. It used to end at the benefit and
+           then tack the advanced inputs on as bare labels — "Muni interest
+           $10,000" — because the recap only pointed at them and a pointer is no
+           use to someone who has just moved one. The recap says them now, so
+           this says them the same way. */
         const collecting =
           ssBenefit > 0
             ? `collecting ${formatCurrency(ssBenefit)} of Social Security a year`
-            : 'collecting no Social Security';
-        /* The recap on screen says "plus whatever is set under Advanced
-           inputs", which is a pointer, and a pointer is no use to someone who
-           has just moved one of them. So the reading names them. */
-        const extras = advancedSet
-          .map(({ label, value }) => `${label} ${formatCurrency(value)}`)
-          .join(', ');
-        return `${year} brackets, ${FILING_STATUS_PROSE[filingStatus]}, ${ageProse}, ${collecting}.${extras ? ` ${extras}.` : ''
-          }`;
+            : 'collecting no Social Security at all';
+        const doing = joinProse([
+          collecting,
+          ...advancedSet.map(
+            ({ lead, tail, value }) => `${lead} ${formatCurrency(value)} ${tail}`,
+          ),
+        ]);
+        return `${year} brackets, ${FILING_STATUS_PROSE[filingStatus]}, ${ageProse}, ${doing}.`;
       }
       case 'torpedo':
         return herePoint
@@ -1652,21 +1745,8 @@ const App: React.FC = () => {
           <p className="scenario-recap">
             Everything from here on prices one return: <strong>{year}</strong>{' '}
             brackets and standard deduction,{' '}
-            <strong>{FILING_STATUS_PROSE[filingStatus]}</strong>, {ageProse},
-            collecting{' '}
-            {ssBenefit > 0 ? (
-              <>
-                <strong>{formatCurrency(ssBenefit)}</strong> of Social Security a
-                year.
-              </>
-            ) : (
-              <>
-                <strong>no Social Security</strong> at all.
-              </>
-            )}
-            {advancedSet.length > 0
-              ? ' Plus whatever is set under Advanced inputs above.'
-              : ''}
+            <strong>{FILING_STATUS_PROSE[filingStatus]}</strong>, {ageProse},{' '}
+            <ProseList items={recapClauses} />.
           </p>
         </section>
 

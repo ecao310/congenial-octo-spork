@@ -1324,25 +1324,96 @@ describe('scenario recap', () => {
   });
 
   /**
-   * The recap names the three headline settings; the advanced disclosure keeps
-   * its own summary of the two it hides. What the recap owes the reader is not
-   * to imply the list is complete when it is not.
+   * The recap used to end at the benefit and then point at the disclosure —
+   * "Plus whatever is set under Advanced inputs above" — which is a pointer at
+   * a section that is shut by default, in the one sentence whose job is to say
+   * what is being priced. It names the figures now.
    */
-  it('points at the advanced inputs only once one has been set', () => {
+  it('names an advanced input once it is set, and only then', () => {
     render(<App />);
+    expect(scenarioRecap()).not.toHaveTextContent('tax-exempt interest');
     expect(scenarioRecap()).not.toHaveTextContent('Advanced inputs');
 
     fireEvent.change(screen.getByLabelText('Tax-Exempt (Municipal) Interest'), {
       target: { value: '5000' },
     });
     expect(scenarioRecap()).toHaveTextContent(
-      'Plus whatever is set under Advanced inputs above.',
+      'collecting $24,852 of Social Security a year and holding $5,000 of ' +
+        'tax-exempt interest.',
     );
 
     fireEvent.change(screen.getByLabelText('Tax-Exempt (Municipal) Interest'), {
       target: { value: '0' },
     });
-    expect(scenarioRecap()).not.toHaveTextContent('Advanced inputs');
+    expect(scenarioRecap()).not.toHaveTextContent('tax-exempt interest');
+  });
+
+  it('names the gift, which the benefit and the interest do not cover', () => {
+    render(<App />);
+    fireEvent.change(screen.getByLabelText('Qualified Charitable Distribution'), {
+      target: { value: '26750' },
+    });
+    expect(scenarioRecap()).toHaveTextContent(
+      'collecting $24,852 of Social Security a year and giving $26,750 ' +
+        'straight to charity out of an IRA.',
+    );
+  });
+
+  /**
+   * Three clauses take a serial comma where two take a bare "and", and the
+   * bullet that asked for this named both advanced inputs at once — so the
+   * whole sentence, from the year to the gift, is worth pinning once.
+   */
+  it('runs both advanced inputs into the sentence it already had', () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Jointly' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Age 65 or older' }));
+    fireEvent.change(
+      screen.getByRole('slider', { name: /social security benefit/i }),
+      { target: { value: '38500' } },
+    );
+    fireEvent.change(screen.getByLabelText('Tax-Exempt (Municipal) Interest'), {
+      target: { value: '3750' },
+    });
+    fireEvent.change(screen.getByLabelText('Qualified Charitable Distribution'), {
+      target: { value: '26750' },
+    });
+    expect(scenarioRecap()).toHaveTextContent(
+      'Everything from here on prices one return: 2026 brackets and standard ' +
+        'deduction, a married couple filing jointly, one spouse 65 or older, ' +
+        'collecting $38,500 of Social Security a year, holding $3,750 of ' +
+        'tax-exempt interest, and giving $26,750 straight to charity out of ' +
+        'an IRA.',
+    );
+  });
+
+  /**
+   * The gift is a subtraction from the return, so it cannot arrive behind the
+   * same "plus" as the interest: "plus $26,750 given to charity" reads as
+   * $26,750 of income, which is the opposite of what it is. Each clause
+   * carries its own verb instead.
+   */
+  it('does not add the gift on with a plus', () => {
+    render(<App />);
+    fireEvent.change(screen.getByLabelText('Qualified Charitable Distribution'), {
+      target: { value: '26750' },
+    });
+    expect(scenarioRecap().textContent).not.toMatch(/plus/i);
+  });
+
+  it('keeps the no-benefit reading a sentence when an input is set', () => {
+    render(<App />);
+    fireEvent.change(
+      screen.getByRole('slider', { name: /social security benefit/i }),
+      { target: { value: '0' } },
+    );
+    fireEvent.change(screen.getByLabelText('Tax-Exempt (Municipal) Interest'), {
+      target: { value: '5000' },
+    });
+    expect(scenarioRecap()).toHaveTextContent(
+      'collecting no Social Security at all and holding $5,000 of tax-exempt ' +
+        'interest.',
+    );
   });
 });
 
@@ -2724,12 +2795,21 @@ describe('the live reading under the controls', () => {
     expect(region()).not.toHaveTextContent('brackets, a single filer');
   });
 
-  it('names the advanced inputs the recap on screen only points at', () => {
+  /**
+   * The reading and the recap on screen describe the same return, in the same
+   * words: the reading used to tack the advanced inputs on as bare labels
+   * ("Muni interest $10,000") because the recap only pointed at them.
+   */
+  it('names the advanced inputs the way the recap on screen does', () => {
     render(<App />);
     fireEvent.click(screen.getByText('Advanced inputs'));
     set(/tax-exempt \(municipal\) interest/i, 10_000);
     settle();
-    expect(region()).toHaveTextContent('Muni interest $10,000.');
+    expect(region()).toHaveTextContent(
+      'collecting $24,852 of Social Security a year and holding $10,000 of ' +
+        'tax-exempt interest.',
+    );
+    expect(region()).not.toHaveTextContent('Muni interest');
   });
 
 });

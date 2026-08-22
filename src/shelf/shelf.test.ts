@@ -8,11 +8,12 @@ import { join } from 'node:path';
  * the file tree. See `README.md` beside this file.
  *
  * A directory only says that for as long as it stays true, which is what these
- * two tests are for: the first fails if shipping code reaches in here, the
- * second fails if a module arrives without the README admitting it. Bringing a
- * module back means moving the file to `src/utils/` in the same commit as the
- * section that renders it — reversing the move is the only way to reverse the
- * decision.
+ * three tests are for: the first fails if shipping code reaches in here, the
+ * second fails if a module arrives without the README admitting it, and the
+ * third fails if the README's table has gone stale about how big one is.
+ * Bringing a module back means moving the file to `src/utils/` in the same
+ * commit as the section that renders it — reversing the move is the only way
+ * to reverse the decision.
  */
 
 // Resolved from the working directory rather than from `import.meta.url`,
@@ -58,11 +59,29 @@ describe('the shelf', () => {
     const readme = readFileSync(join(SHELF_DIR, 'README.md'), 'utf8');
     // The rows of the "What is on it" table, which is the only place in the
     // README a module name starts a line. Prose elsewhere names modules too —
-    // the bring-one-back list names all four — so a looser match would read
-    // that list as the inventory.
+    // the bring-one-back list names every one of them — so a looser match
+    // would read that list as the inventory.
     const documented = [...readme.matchAll(/^\| `([^`]+)` \|/gm)].map((row) => row[1]).sort();
 
     expect(shelfModules).not.toEqual([]);
     expect(documented).toEqual(shelfModules);
+  });
+
+  it('has a README whose line counts are the files\' own', () => {
+    const readme = readFileSync(join(SHELF_DIR, 'README.md'), 'utf8');
+    // The same rows, read for their second column. The counts drifted by
+    // hundreds of lines before anything checked them — three of the four
+    // original rows were stale by the time two more arrived — and a table
+    // that is wrong about size reads as a table nobody maintains.
+    const documented = [...readme.matchAll(/^\| `([^`]+)` \| (\d+) \|/gm)].map((row) => [
+      row[1],
+      Number(row[2]),
+    ]);
+    const actual = documented.map(([name]) => [
+      name,
+      readFileSync(join(SHELF_DIR, String(name)), 'utf8').split('\n').length - 1,
+    ]);
+
+    expect(documented).toEqual(actual);
   });
 });

@@ -45,9 +45,12 @@ Two more steps stood here — Capital gains stacking, which split the income
 already entered into ordinary and long-term halves, and Sizing the conversion,
 which read off the largest conversion fitting under a chosen ceiling. Both came
 off the page so that it asks one question, and both are coming back. What they
-rendered is gone; what they rendered *from* is untouched and still under test:
-`ltcgRateCurve`, `conversionCeilings`, `sizeConversion` and `niitFor` are all
-still exported from `src/utils/tax.ts`.
+rendered is gone; what they rendered *from* is untouched and still under test,
+on the shelf as `src/shelf/gainsCurve.ts` and `src/shelf/conversion.ts`. The
+3.8% surtax those steps were the only route to did not go with them: it is a
+term of `totalFederalTax`, which the close still prints, so `niitFor` stays in
+`src/utils/tax.ts` under a note saying it is dormant rather than shelved. See
+[`src/shelf/README.md`](src/shelf/README.md) for why the line falls there.
 
 The page closes on the six figures the whole walk was for: total income,
 federal tax, effective rate, the rate on the next dollar, the taxable share of
@@ -142,7 +145,7 @@ longer the rate the arithmetic reaches.
 ```bash
 npm install
 npm run dev      # start dev server
-npm run test     # vitest, 680 tests
+npm run test     # vitest, 654 tests
 npm run lint     # eslint
 npm run build    # tsc -b && vite build
 ```

@@ -85,11 +85,11 @@ import type {
  * Medicare, Strategies, Over Time and State Taxes — and two were steps 3 and
  * 4, Capital Gains Stacking and Sizing the Conversion, which came off the page
  * when it narrowed to the torpedo alone. What they rendered has gone, but
- * everything they rendered *from* stays: `irmaaFor`, `ltcgRateCurve`,
- * `conversionCeilings`, `sizeConversion` and `niitFor` are all still in
- * `utils/tax.ts`, and `projectYears`, `compareSequencing`, `lumpSumElection`
- * and the state table are on the shelf — every one of them still under test,
- * every one of them still exported.
+ * everything they rendered *from* stays: `irmaaFor` and `niitFor` are still in
+ * `utils/tax.ts`, and `ltcgRateCurve`, `conversionCeilings`, `sizeConversion`,
+ * `projectYears`, `compareSequencing`, `lumpSumElection` and the state table
+ * are on the shelf — every one of them still under test, every one of them
+ * still exported.
  *
  * Both steps have the same shape: the chart, then the one control that says
  * where on that chart the reader is standing, then the collapsed explainers.
@@ -1015,8 +1015,8 @@ const App: React.FC = () => {
    * Every dollar on this axis is ordinary income. A long-term gain reaches
    * provisional income identically but is charged under its own schedule, and
    * pricing that split is what the capital-gains step did — `ltcg` is still a
-   * field on `Scenario` and `ltcgRateCurve` still sweeps it, but nothing on
-   * this page sets one, so nothing here passes one.
+   * field on `Scenario` and `shelf/gainsCurve.ts` still sweeps it, but nothing
+   * on this page sets one, so nothing here passes one.
    */
   const curve = useMemo(
     () =>

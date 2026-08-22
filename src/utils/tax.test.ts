@@ -2,17 +2,12 @@ import {
   federalIncomeTax,
   muniInterestEffect,
   FilingStatus,
-  ltcgRateCurve,
   marginalRateCurve,
   taxableSocialSecurity,
   totalTax,
   segmentCurve,
   standingOn,
   splitOtherIncome,
-  conversionCeilings,
-  conversionMeasureValue,
-  maxConversionUnder,
-  sizeConversion,
   irmaaFirstCliffMagi,
   allIrmaaTiers,
   irmaaMagiYear,
@@ -71,7 +66,6 @@ import {
   FPL_GUIDELINE_LOOKBACK_YEARS,
   IRMAA_LOOKBACK_YEARS,
   PTC_CLIFF_PERCENT,
-  CONVERSION_MEASURE_LABELS,
   niitThreshold,
   netInvestmentIncomeFor,
   netInvestmentIncomeTax,
@@ -80,7 +74,7 @@ import {
   NIIT_ENACTED,
   NIIT_THRESHOLDS,
 } from './tax';
-import type { ConversionCeiling, ConversionCeilingId, Scenario, TaxYear } from './tax';
+import type { Scenario, TaxYear } from './tax';
 import { decodeScenario } from './scenarioUrl';
 import { vi } from 'vitest';
 
@@ -495,17 +489,17 @@ describe('totalTax with capital gains stacked on top', () => {
   it('starts taxing LTCG only after the deduction and the 0% bracket are used up', () => {
     // With no other income the 0% zone runs to 15,750 + 48,350 = $64,100 of
     // gains, not $48,350.
-    const single = ltcgRateCurve(
-      { ssBenefit: 0, ordinaryIncome: 0 },
-      { maxLTCG: 100_000, step: 50 },
-    );
-    expect(single.find((d) => d.marginalRate > 0)!.ltcg).toBe(64_100);
-
-    const mfj = ltcgRateCurve(
-      { ssBenefit: 0, ordinaryIncome: 0, filingStatus: 'mfj' },
-      { maxLTCG: 200_000, step: 50 },
-    );
-    expect(mfj.find((d) => d.marginalRate > 0)!.ltcg).toBe(31_500 + 96_700);
+    const firstTaxedGain = (scenario: Scenario, maxLTCG: number): number => {
+      for (let ltcg = 0; ltcg <= maxLTCG; ltcg += 50) {
+        const at = (gain: number): number => totalTax({ ...scenario, ltcg: gain });
+        if (at(ltcg + 1) - at(ltcg) > 0) return ltcg;
+      }
+      throw new Error('the gain is never taxed across the sweep');
+    };
+    expect(firstTaxedGain({ ssBenefit: 0, ordinaryIncome: 0 }, 100_000)).toBe(64_100);
+    expect(
+      firstTaxedGain({ ssBenefit: 0, ordinaryIncome: 0, filingStatus: 'mfj' }, 200_000),
+    ).toBe(31_500 + 96_700);
   });
 
   it('never taxes more than total taxable income across the LTCG sweep', () => {
@@ -579,166 +573,7 @@ describe('totalTax with capital gains stacked on top', () => {
   });
 });
 
-describe('ltcgRateCurve', () => {
-  it('samples from zero to maxLTCG inclusive', () => {
-    const data = ltcgRateCurve(
-      { ssBenefit: 0, ordinaryIncome: 0 },
-      { maxLTCG: 10000, step: 250 },
-    );
-    expect(data).toHaveLength(41);
-    expect(data[0].ltcg).toBe(0);
-    expect(data[40].ltcg).toBe(10000);
-  });
 
-  it('shows 0% marginal rate on LTCG when all income is below the threshold', () => {
-    // Single: no SS, no ordinary income, LTCG starts at $0.
-    const data = ltcgRateCurve(
-      { ssBenefit: 0, ordinaryIncome: 0 },
-      { maxLTCG: 50000, step: 250 },
-    );
-    const at = (ltcg: number) => data.find((d) => d.ltcg === ltcg)!.marginalRate;
-    expect(at(0)).toBe(0);
-    expect(at(10000)).toBe(0);
-  });
-
-  it('shows elevated marginal rates from SS torpedo stacking', () => {
-    // Single: $30k ordinary, $30k SS. LTCG raises provisional income,
-    // dragging SS into taxability at ordinary rates while LTCG itself
-    // is taxed at capital-gains rates. The combined effect produces
-    // marginal rates well above the bare 15% LTCG rate.
-    const data = ltcgRateCurve(
-      { ssBenefit: 30000, ordinaryIncome: 30000 },
-      { maxLTCG: 100000, step: 250 },
-    );
-    const maxRate = Math.max(...data.map((d) => d.marginalRate));
-    // The stacking pushes the effective marginal rate above 25%
-    // (15% LTCG + torpedo-amplified ordinary tax on dragged-in SS).
-    expect(maxRate).toBeGreaterThan(25);
-  });
-
-  it('reports total tax as non-decreasing', () => {
-    const data = ltcgRateCurve(
-      { ssBenefit: 24000, ordinaryIncome: 30000 },
-      { maxLTCG: 100000, step: 250 },
-    );
-    for (let i = 1; i < data.length; i++) {
-      expect(data[i].totalTax).toBeGreaterThanOrEqual(data[i - 1].totalTax);
-    }
-  });
-
-  it('uses MFJ thresholds so LTCG stays at 0% longer', () => {
-    // MFJ 0% threshold is $96,700 vs single $48,350.
-    const dataSingle = ltcgRateCurve(
-      { ssBenefit: 0, ordinaryIncome: 60000 },
-      { maxLTCG: 100000, step: 250 },
-    );
-    const dataMfj = ltcgRateCurve(
-      { ssBenefit: 0, ordinaryIncome: 60000, filingStatus: 'mfj' },
-      { maxLTCG: 100000, step: 250 },
-    );
-    // Single: ordinaryTaxable = 60k - 15750 = 44250. 0% zone = $4100 of LTCG.
-    // MFJ: ordinaryTaxable = 60k - 31500 = 28500. 0% zone = $68200 of LTCG.
-    const singleFirstNonZero = dataSingle.find((d) => d.marginalRate > 0)!.ltcg;
-    const mfjFirstNonZero = dataMfj.find((d) => d.marginalRate > 0)!.ltcg;
-    expect(mfjFirstNonZero).toBeGreaterThan(singleFirstNonZero);
-  });
-
-  /**
-   * The second rate on every point: what the gain has cost as a share of
-   * itself, against the same return with that gain never realized. It is what
-   * step 3 draws, where `marginalRate` is what its tooltip quotes.
-   */
-  describe('effectiveRate', () => {
-    it('is zero where there is no gain to rate', () => {
-      const data = ltcgRateCurve(
-        { ssBenefit: 24000, ordinaryIncome: 30000 },
-        { maxLTCG: 10000, step: 250 },
-      );
-      expect(data[0].ltcg).toBe(0);
-      expect(data[0].effectiveRate).toBe(0);
-    });
-
-    it('holds at nothing under the 0% ceiling, then climbs past it', () => {
-      // Single, $20,000 of ordinary income, gain stacked on top. Taxable
-      // income clears the 0% ceiling somewhere in the middle of this sweep;
-      // everything left of that is a gain charged nothing at all.
-      const data = ltcgRateCurve(
-        { ssBenefit: 0, ordinaryIncome: 20_000 },
-        { maxLTCG: 150_000, step: 1_000 },
-      );
-      const at = (ltcg: number) => data.find((d) => d.ltcg === ltcg)!;
-      expect(at(20_000).effectiveRate).toBe(0);
-      expect(at(40_000).effectiveRate).toBe(0);
-
-      const firstCharged = data.find((d) => d.effectiveRate > 0)!;
-      expect(firstCharged.ltcg).toBeGreaterThan(40_000);
-      // Past that point it only ever climbs — an average being dragged up by
-      // 15% dollars, so it approaches the statutory rate without reaching it.
-      const charged = data.filter((d) => d.ltcg >= firstCharged.ltcg);
-      for (let i = 1; i < charged.length; i++) {
-        expect(charged[i].effectiveRate).toBeGreaterThan(charged[i - 1].effectiveRate);
-      }
-      expect(charged[charged.length - 1].effectiveRate).toBeLessThan(15);
-    });
-
-    it('is the gain\u2019s own share of the bill, not the whole return\u2019s', () => {
-      const scenario = { ssBenefit: 0, ordinaryIncome: 20_000 };
-      const data = ltcgRateCurve(scenario, { maxLTCG: 100_000, step: 1_000 });
-      const point = data.find((d) => d.ltcg === 100_000)!;
-      const withGain = totalFederalTax({ ...scenario, ltcg: 100_000 });
-      const without = totalFederalTax({ ...scenario, ltcg: 0 });
-      expect(point.effectiveRate).toBeCloseTo(
-        Math.round(((withGain - without) / 100_000) * 10_000) / 100,
-        6,
-      );
-      // Not the same figure as the whole return's effective rate, which spreads
-      // the same bill over the total income. Here it comes out *lower* than the
-      // gain's own: the deduction shelters nearly all of the $20,000 of ordinary
-      // income, so the gain is carrying the bill and the ordinary half is
-      // diluting the rate rather than adding to it.
-      expect(without).toBeLessThan(500);
-      expect(withGain / 120_000).toBeLessThan(point.effectiveRate / 100);
-    });
-
-    it('can run past 15% where the gain drags a benefit in with it', () => {
-      // The torpedo again, read off the average rather than the next dollar:
-      // the gain is charged its own preferential rate and pulls benefit into
-      // the base at ordinary rates, and both land on the same gain.
-      const data = ltcgRateCurve(
-        { ssBenefit: 30_000, ordinaryIncome: 30_000 },
-        { maxLTCG: 100_000, step: 1_000 },
-      );
-      expect(Math.max(...data.map((d) => d.effectiveRate))).toBeGreaterThan(15);
-    });
-
-    it('measures the same counterfactual on a within-income sweep', () => {
-      // The axis step 3 draws: the gain comes out of the income already there,
-      // so "without the gain" is the smaller, all-ordinary return.
-      const scenario = { ssBenefit: 24_000, ordinaryIncome: 60_000 };
-      const data = ltcgRateCurve(scenario, {
-        maxLTCG: 60_000,
-        step: 1_000,
-        gainsWithinIncome: true,
-      });
-      const point = data.find((d) => d.ltcg === 40_000)!;
-      const split = { ...scenario, ordinaryIncome: 20_000, ltcg: 40_000 };
-      const gained =
-        totalFederalTax(split) - totalFederalTax({ ...split, ltcg: 0 });
-      expect(point.effectiveRate).toBeCloseTo(
-        Math.round((gained / 40_000) * 10_000) / 100,
-        6,
-      );
-    });
-  });
-});
-
-/**
- * The app asks for one income figure and then asks how much of it is a
- * long-term gain, so a gain is a share of the income a filer has rather than
- * something stacked on top of it. The statute takes the additive reading —
- * ordinary income and gains are separate line items — which is why the sweeps
- * keep it as their default and `gainsWithinIncome` is what opts out.
- */
 /* ------------------------------------------------------------------ */
 /*  What the return takes in                                           */
 /* ------------------------------------------------------------------ */
@@ -775,6 +610,13 @@ describe('totalIncomeFor', () => {
   });
 });
 
+/**
+ * The app asks for one income figure and then asks how much of it is a
+ * long-term gain, so a gain is a share of the income a filer has rather than
+ * something stacked on top of it. The statute takes the additive reading —
+ * ordinary income and gains are separate line items — which is why the sweeps
+ * keep it as their default and `gainsWithinIncome` is what opts out.
+ */
 describe('gains carved out of income rather than stacked on top', () => {
   describe('splitOtherIncome', () => {
     it('takes the gain out of the income rather than adding to it', () => {
@@ -874,68 +716,6 @@ describe('gains carved out of income rather than stacked on top', () => {
         return point.income > 30_000 && point.marginalRate > withoutGain[i].marginalRate;
       });
       expect(dearer.length).toBeGreaterThan(0);
-    });
-  });
-
-  describe('ltcgRateCurve with gainsWithinIncome', () => {
-    const scenario = { ssBenefit: 24_000, ordinaryIncome: 60_000 };
-
-    it('holds total income still and moves only the split', () => {
-      const curve = ltcgRateCurve(scenario, {
-        maxLTCG: 60_000,
-        step: 1_000,
-        gainsWithinIncome: true,
-      });
-      const at = (gain: number): number =>
-        curve.find((d) => d.ltcg === gain)!.totalTax;
-      expect(at(0)).toBe(Math.round(totalTax(scenario)));
-      expect(at(20_000)).toBe(
-        Math.round(totalTax({ ...scenario, ordinaryIncome: 40_000, ltcg: 20_000 })),
-      );
-      expect(at(60_000)).toBe(
-        Math.round(totalTax({ ...scenario, ordinaryIncome: 0, ltcg: 60_000 })),
-      );
-    });
-
-    /**
-     * A dollar of gain and a dollar of ordinary income raise provisional
-     * income identically, so the taxable share of the benefit is the same at
-     * every point on this axis. That is what makes the curve readable: the
-     * torpedo is held fixed and only the rate schedule each dollar is charged
-     * under is moving.
-     */
-    it('leaves the taxable benefit untouched across the whole axis', () => {
-      const taxable = (gain: number): number =>
-        taxableSocialSecurity({ ...scenario, ...splitOtherIncome(60_000, gain) });
-      expect(taxable(20_000)).toBeCloseTo(taxable(0), 6);
-      expect(taxable(60_000)).toBeCloseTo(taxable(0), 6);
-    });
-
-    /**
-     * The preferential rate is below the ordinary one at every position in the
-     * stack, so re-labelling a dollar of the same income as a gain can never
-     * cost more.
-     */
-    it('never charges more for the same income as the gain share grows', () => {
-      const curve = ltcgRateCurve(scenario, {
-        maxLTCG: 60_000,
-        step: 500,
-        gainsWithinIncome: true,
-      });
-      for (let i = 1; i < curve.length; i += 1) {
-        expect(curve[i].totalTax).toBeLessThanOrEqual(curve[i - 1].totalTax);
-      }
-      expect(curve[curve.length - 1].totalTax).toBeLessThan(curve[0].totalTax);
-    });
-
-    it('still stacks on top when the flag is left off', () => {
-      const stacked = ltcgRateCurve(scenario, {
-        maxLTCG: 60_000,
-        step: 1_000,
-      });
-      expect(stacked.find((d) => d.ltcg === 20_000)!.totalTax).toBe(
-        Math.round(totalTax({ ...scenario, ltcg: 20_000 })),
-      );
     });
   });
 
@@ -1148,195 +928,6 @@ describe('standingOn', () => {
   });
 });
 
-
-describe('Roth conversion sizing', () => {
-  const SS = AVG_ANNUAL_SS_BENEFIT; // $23,712
-  const ceiling = (id: ConversionCeilingId, filingStatus: FilingStatus = 'single'): ConversionCeiling => {
-    const found = conversionCeilings({ filingStatus }).find((c) => c.id === id);
-    if (!found) throw new Error(`no ceiling ${id}`);
-    return found;
-  };
-
-  it('takes its ceiling amounts from the same tables the charts use', () => {
-    const single = conversionCeilings({ filingStatus: 'single' });
-    expect(single.map((c) => c.id)).toEqual([
-      'bracket12',
-      'bracket22',
-      'ss50',
-      'ss85',
-      'ltcg0',
-      'irmaa1',
-    ]);
-    expect(ceiling('bracket12').amount).toBe(48_475);
-    expect(ceiling('bracket22').amount).toBe(103_350);
-    expect(ceiling('ss50').amount).toBe(SS_BASES.single.ssBase50);
-    expect(ceiling('ss85').amount).toBe(SS_BASES.single.ssBase85);
-    expect(ceiling('ltcg0').amount).toBe(filingParams(PINNED_YEAR, 'single').ltcgBrackets[0].upTo);
-    expect(ceiling('irmaa1').amount).toBe(irmaaFirstCliffMagi({ filingStatus: 'single' }));
-
-    expect(ceiling('bracket12', 'mfj').amount).toBe(96_950);
-    expect(ceiling('ss85', 'mfj').amount).toBe(44_000);
-    expect(ceiling('irmaa1', 'mfj').amount).toBe(212_000);
-  });
-
-  it('sizes a conversion to the top of the 12% bracket, net of the SS drag', () => {
-    // Single, $30,000 ordinary income, average benefit. Taxable SS starts at
-    // $11,177.60, so taxable income starts at 30,000 + 11,177.60 - 15,750 =
-    // $25,427.60 and the raw headroom under $48,475 is $23,047.40. Only
-    // $14,069 of it is usable: the first $10,561 of conversion also drags in
-    // 85 cents of benefits per dollar, until the 85% cap ($20,155.20) binds.
-    expect(maxConversionUnder(
-      ceiling('bracket12'),
-      { ordinaryIncome: 30_000, ssBenefit: SS },
-    )).toBe(14_069);
-    expect(
-      conversionMeasureValue(
-        'ordinaryTaxableIncome',
-        { ordinaryIncome: 30_000, ssBenefit: SS, ltcg: 0 },
-        14_069,
-      ),
-    ).toBeCloseTo(48_474.2, 2);
-    expect(
-      conversionMeasureValue(
-        'ordinaryTaxableIncome',
-        { ordinaryIncome: 30_000, ssBenefit: SS, ltcg: 0 },
-        14_070,
-      ),
-    ).toBeGreaterThan(48_475);
-  });
-
-  it('sizes a conversion straight up to a provisional-income ceiling', () => {
-    // No other income, so provisional income is half the benefit ($11,856) and
-    // every converted dollar adds exactly one dollar of provisional income.
-    expect(maxConversionUnder(ceiling('ss50'), { ordinaryIncome: 0, ssBenefit: SS })).toBe(25_000 - 11_856);
-    expect(maxConversionUnder(ceiling('ss85'), { ordinaryIncome: 0, ssBenefit: SS })).toBe(34_000 - 11_856);
-    expect(maxConversionUnder(
-      ceiling('ss50', 'mfj'),
-      { ordinaryIncome: 0, ssBenefit: SS, ltcg: 0, filingStatus: 'mfj' },
-    )).toBe(32_000 - 11_856);
-  });
-
-  it('counts planned capital gains against the 0% capital-gains ceiling', () => {
-    // $20,000 ordinary + $30,000 of gains, no benefits: total taxable income is
-    // 50,000 - 15,750 = $34,250, leaving $14,100 under the $48,350 top of the
-    // 0% bracket.
-    expect(maxConversionUnder(
-      ceiling('ltcg0'),
-      { ordinaryIncome: 20_000, ssBenefit: 0, ltcg: 30_000 },
-    )).toBe(14_100);
-    // Without the gains the same ceiling leaves far more room.
-    expect(maxConversionUnder(
-      ceiling('ltcg0'),
-      { ordinaryIncome: 20_000, ssBenefit: 0, ltcg: 0 },
-    )).toBe(44_100);
-  });
-
-  it('measures the IRMAA ceiling against MAGI, which includes taxable benefits', () => {
-    // $50,000 ordinary + $40,000 of benefits: the 85% cap ($34,000) already
-    // binds, so MAGI is 84,000 + conversion and $22,000 fits under $106,000.
-    expect(maxConversionUnder(
-      ceiling('irmaa1'),
-      { ordinaryIncome: 50_000, ssBenefit: 40_000 },
-    )).toBe(22_000);
-    expect(conversionMeasureValue(
-      'magi',
-      { ordinaryIncome: 50_000, ssBenefit: 40_000, ltcg: 0 },
-      22_000,
-    )).toBe(106_000);
-  });
-
-  it('returns zero when the scenario is already over the ceiling', () => {
-    const sizing = sizeConversion(
-      ceiling('ss50'),
-      { ordinaryIncome: 30_000, ssBenefit: SS },
-    );
-    expect(sizing.conversion).toBe(0);
-    expect(sizing.alreadyOver).toBe(true);
-    expect(sizing.headroom).toBeCloseTo(-16_856, 6);
-    expect(sizing.taxCost).toBe(0);
-    expect(sizing.costPerDollar).toBe(0);
-  });
-
-  it('flags a ceiling the search bound never reaches', () => {
-    const sizing = sizeConversion(
-      ceiling('bracket22'),
-      { ordinaryIncome: 0, ssBenefit: 0, ltcg: 0, filingStatus: 'single', seniors: 0 },
-      1_000,
-    );
-    expect(sizing.conversion).toBe(1_000);
-    expect(sizing.unbounded).toBe(true);
-    expect(sizeConversion(ceiling('bracket22'), { ordinaryIncome: 0, ssBenefit: 0 }).unbounded).toBe(false);
-  });
-
-  it('prices the conversion and the rate on the far side of the ceiling', () => {
-    const sizing = sizeConversion(
-      ceiling('bracket12'),
-      { ordinaryIncome: 30_000, ssBenefit: SS },
-    );
-    expect(sizing.conversion).toBe(14_069);
-    expect(sizing.taxBefore).toBe(2_813);
-    expect(sizing.taxAfter).toBe(5_578);
-    expect(sizing.taxCost).toBe(2_765);
-    expect(sizing.taxAfter - sizing.taxBefore).toBe(sizing.taxCost);
-    // 19.65 cents per dollar converted while nominally "in the 12% bracket" —
-    // the torpedo is dragging benefits in alongside the conversion.
-    expect(sizing.costPerDollar).toBeCloseTo(19.65, 2);
-    // Past the top of the 12% bracket the benefits are capped, so the rate is
-    // the plain 22% statutory bracket rather than 1.85x it.
-    expect(sizing.rateAboveCeiling).toBe(22);
-  });
-
-  it('lands exactly on every ceiling, for both filing statuses', () => {
-    const scenarios = [
-      { ordinary: 0, ss: 0, ltcg: 0 },
-      { ordinary: 30_000, ss: SS, ltcg: 0 },
-      { ordinary: 12_000, ss: 61_296, ltcg: 40_000 },
-      { ordinary: 60_000, ss: 30_000, ltcg: 10_000 },
-    ];
-    const failures: string[] = [];
-    for (const filingStatus of ['single', 'mfj'] as FilingStatus[]) {
-      for (const c of conversionCeilings({ filingStatus })) {
-        for (const { ordinary, ss, ltcg } of scenarios) {
-          const sizing = sizeConversion(
-            c,
-            { ordinaryIncome: ordinary, ssBenefit: ss, ltcg, filingStatus },
-          );
-          const at = (conversion: number) =>
-            conversionMeasureValue(
-              c.measure,
-              { ordinaryIncome: ordinary, ssBenefit: ss, ltcg, filingStatus },
-              conversion,
-            );
-          const where = `${filingStatus}/${c.id}/ordinary=${ordinary}`;
-
-          if (sizing.alreadyOver) {
-            if (sizing.conversion !== 0 || at(0) <= c.amount) {
-              failures.push(`${where}: flagged already-over but ${at(0)} <= ${c.amount}`);
-            }
-            continue;
-          }
-          if (sizing.unbounded) {
-            failures.push(`${where}: unexpectedly unbounded`);
-            continue;
-          }
-          // The answer fits, and one more dollar does not.
-          if (at(sizing.conversion) > c.amount + 1e-6) {
-            failures.push(`${where}: ${sizing.conversion} overshoots (${at(sizing.conversion)} > ${c.amount})`);
-          }
-          if (at(sizing.conversion + 1) <= c.amount) {
-            failures.push(`${where}: ${sizing.conversion} undershoots (one more dollar still fits)`);
-          }
-          // Converting can never reduce the tax bill.
-          if (sizing.taxCost < 0) {
-            failures.push(`${where}: negative tax cost ${sizing.taxCost}`);
-          }
-        }
-      }
-    }
-    expect(failures).toEqual([]);
-  });
-});
-
 describe('age 65+ additional standard deduction (2025)', () => {
   const SS = AVG_ANNUAL_SS_BENEFIT;
 
@@ -1480,52 +1071,6 @@ describe('age 65+ additional standard deduction (2025)', () => {
       { ordinaryIncome: 0, ssBenefit: 0, ltcg: 100_000, filingStatus: 'single', seniors: 1 },
     )).toBe(4_410);
     expect(5_385 - 4_410).toBeCloseTo((2_000 + 4_500) * 0.15, 6);
-  });
-
-  it('leaves provisional-income ceilings alone but widens taxable-income ones', () => {
-    const ceilingFor = (id: ConversionCeilingId, fs: FilingStatus = 'single') =>
-      conversionCeilings({ filingStatus: fs }).find((c) => c.id === id) as ConversionCeiling;
-    // Provisional income is measured before any deduction, so the addition
-    // buys no extra room at all against the SS bases.
-    expect(maxConversionUnder(
-      ceilingFor('ss50'),
-      { ordinaryIncome: 0, ssBenefit: SS, ltcg: 0, filingStatus: 'single', seniors: 1 },
-    )).toBe(
-      maxConversionUnder(
-        ceilingFor('ss50'),
-        { ordinaryIncome: 0, ssBenefit: SS, ltcg: 0, filingStatus: 'single', seniors: 0 },
-      ),
-    );
-    // The top of the 12% bracket is measured against taxable income, and the
-    // 85% cap already binds by then, so the room grows dollar for dollar with
-    // the $8,000 of extra deduction.
-    expect(maxConversionUnder(
-      ceilingFor('bracket12'),
-      { ordinaryIncome: 30_000, ssBenefit: SS, ltcg: 0, filingStatus: 'single', seniors: 0 },
-    )).toBe(14_069);
-    expect(maxConversionUnder(
-      ceilingFor('bracket12'),
-      { ordinaryIncome: 30_000, ssBenefit: SS, ltcg: 0, filingStatus: 'single', seniors: 1 },
-    )).toBe(22_069);
-  });
-
-  it('prices a conversion more cheaply for a filer over 65', () => {
-    const ceilingFor = (id: ConversionCeilingId) =>
-      conversionCeilings({ filingStatus: 'single' }).find((c) => c.id === id) as ConversionCeiling;
-    const sizing = sizeConversion(
-      ceilingFor('bracket12'),
-      { ordinaryIncome: 30_000, ssBenefit: SS, ltcg: 0, filingStatus: 'single', seniors: 1 },
-    );
-    expect(sizing.conversion).toBe(22_069);
-    expect(sizing.taxBefore).toBe(1_853);
-    // Both scenarios end at the top of the 12% bracket, so the tax after is the
-    // same $5,578 — the over-65 filer simply gets $8,000 more converted for it.
-    expect(sizing.taxAfter).toBe(5_578);
-    expect(sizing.taxCost).toBe(3_725);
-    expect(sizing.costPerDollar).toBeCloseTo(16.88, 2);
-    // The conversion stops short of the $75,000 MAGI phaseout threshold, so the
-    // dollar past the ceiling is taxed at the plain bracket rate.
-    expect(sizing.rateAboveCeiling).toBe(22);
   });
 });
 
@@ -1686,37 +1231,10 @@ describe('OBBBA senior deduction (2025-2028)', () => {
     ))
       .toBeCloseTo(0.24, 6);
   });
-
-  it('prices the phaseout into a conversion ceiling and the rate past it', () => {
-    const ceiling = conversionCeilings({ filingStatus: 'single' }).find(
-      (c) => c.id === 'bracket22',
-    ) as ConversionCeiling;
-    const plain = sizeConversion(
-      ceiling,
-      { ordinaryIncome: 30_000, ssBenefit: SS, ltcg: 0, filingStatus: 'single', seniors: 0 },
-    );
-    const senior = sizeConversion(
-      ceiling,
-      { ordinaryIncome: 30_000, ssBenefit: SS, ltcg: 0, filingStatus: 'single', seniors: 1 },
-    );
-    expect(plain.conversion).toBe(68_944);
-    expect(plain.rateAboveCeiling).toBe(24);
-    // $8,000 more deduction would buy $76,944 of room, but every converted
-    // dollar above $75,000 of MAGI burns 6 cents of that deduction, so the
-    // ceiling arrives $2,949 early - and the next dollar costs 25.44%.
-    expect(senior.conversion).toBe(73_995);
-    expect(senior.rateAboveCeiling).toBe(25.44);
-  });
 });
 
 describe('tax-exempt (municipal) interest', () => {
   const SS = AVG_ANNUAL_SS_BENEFIT; // $23,712
-  const ceiling = (id: ConversionCeilingId): ConversionCeiling => {
-    const found = conversionCeilings({ filingStatus: 'single' }).find((c) => c.id === id);
-    if (!found) throw new Error(`no ceiling ${id}`);
-    return found;
-  };
-
   it('agrees with Worksheet 1 line 4 across a grid', () => {
     for (const ss of [0, 12_000, SS, MAX_ANNUAL_SS_BENEFIT]) {
       for (const income of [0, 10_000, 25_000, 60_000]) {
@@ -1805,48 +1323,6 @@ describe('tax-exempt (municipal) interest', () => {
         { ordinaryIncome: 100_000, ssBenefit: SS, filingStatus: 'single', seniors: 1 },
       ),
     );
-  });
-
-  it('is added back for the IRMAA MAGI ceiling but not for AGI', () => {
-    // $50,000 ordinary + $22,000 converted + $40,000 of benefits: the 85% cap
-    // binds, so AGI is $106,000. Medicare adds tax-exempt interest back.
-    expect(conversionMeasureValue(
-      'magi',
-      { ordinaryIncome: 50_000, ssBenefit: 40_000, ltcg: 0 },
-      22_000,
-    )).toBe(106_000);
-    expect(
-      conversionMeasureValue(
-        'magi',
-        { ordinaryIncome: 50_000, ssBenefit: 40_000, ltcg: 0, filingStatus: 'single', seniors: 0, muniInterest: 10_000 },
-        22_000,
-      ),
-    ).toBe(116_000);
-    // So $10,000 of muni interest costs exactly $10,000 of conversion room.
-    expect(maxConversionUnder(
-      ceiling('irmaa1'),
-      { ordinaryIncome: 50_000, ssBenefit: 40_000 },
-    )).toBe(22_000);
-    expect(
-      maxConversionUnder(
-        ceiling('irmaa1'),
-        { ordinaryIncome: 50_000, ssBenefit: 40_000, ltcg: 0, filingStatus: 'single', seniors: 0, muniInterest: 10_000 },
-        1_000_000,
-      ),
-    ).toBe(12_000);
-  });
-
-  it('eats provisional-income headroom dollar for dollar', () => {
-    // Provisional income is 5,000 + conversion + 11,856, so $8,144 fits under
-    // the $25,000 base amount - $2,000 less with $2,000 of muni interest.
-    expect(maxConversionUnder(ceiling('ss50'), { ordinaryIncome: 5_000, ssBenefit: SS })).toBe(8_144);
-    expect(
-      maxConversionUnder(
-        ceiling('ss50'),
-        { ordinaryIncome: 5_000, ssBenefit: SS, ltcg: 0, filingStatus: 'single', seniors: 0, muniInterest: 2_000 },
-        1_000_000,
-      ),
-    ).toBe(6_144);
   });
 });
 
@@ -2159,30 +1635,6 @@ describe('married filing separately (lived with spouse)', () => {
     expect(irmaaCliffs({ ssBenefit: SS, filingStatus: 'single' })[3].annualSurcharge).toBeCloseTo(5_826, 6);
   });
 
-  it('names the right IRMAA ceiling and collapses the two SS ceilings', () => {
-    const ceilings = conversionCeilings({ filingStatus: 'mfs' });
-    const irmaa = ceilings.find((c) => c.id === 'irmaa1')!;
-    expect(irmaa.label).toBe('IRMAA tier 4 (Medicare surcharge)');
-    expect(irmaa.amount).toBe(106_000);
-    expect(conversionCeilings({ filingStatus: 'single' }).find((c) => c.id === 'irmaa1')!.label).toBe(
-      'IRMAA tier 1 (Medicare surcharge)',
-    );
-    // Both Social Security ceilings are $0, so neither can be sized against.
-    for (const id of ['ss50', 'ss85'] as ConversionCeilingId[]) {
-      const ceiling = ceilings.find((c) => c.id === id)!;
-      expect(ceiling.amount).toBe(0);
-      expect(ceiling.note).toContain('separate return');
-      const sized = sizeConversion(
-        ceiling,
-        { ordinaryIncome: 30_000, ssBenefit: SS, ltcg: 0, filingStatus: 'mfs' },
-      );
-      expect(sized.alreadyOver).toBe(true);
-      expect(sized.conversion).toBe(0);
-      // Provisional income is already other income plus half the benefit.
-      expect(sized.headroom).toBeCloseTo(-(30_000 + SS / 2), 6);
-    }
-  });
-
   it('costs more federal tax than a single filer on identical income', () => {
     // $30,000 of other income: identical brackets and standard deduction, but
     // $20,155.20 of benefits in the base instead of $11,177.60.
@@ -2340,20 +1792,6 @@ describe('head of household', () => {
     expect(irmaaTierFor(500_000, { filingStatus: 'hoh' }).tier).toBe(5);
     expect(irmaaTierFor(499_999, { filingStatus: 'hoh' }).tier).toBe(4);
   });
-
-  it('prices the conversion ceilings off its own figures', () => {
-    const amounts = Object.fromEntries(
-      conversionCeilings({ filingStatus: 'hoh', year: 2025 }).map((c) => [c.id, c.amount]),
-    );
-    expect(amounts).toEqual({
-      bracket12: 64_850,
-      bracket22: 103_350,
-      ss50: 25_000,
-      ss85: 34_000,
-      ltcg0: 64_750,
-      irmaa1: 106_000,
-    });
-  });
 });
 
 describe('IRMAA (Medicare income-related monthly adjustment amount)', () => {
@@ -2449,7 +1887,7 @@ describe('IRMAA (Medicare income-related monthly adjustment amount)', () => {
     }
   });
 
-  it('keeps the conversion ceiling and the tier table in sync', () => {
+  it('keeps the first-cliff MAGI and the tier table in sync', () => {
     for (const year of TAX_YEARS) {
       const tiers = allIrmaaTiers(year);
       expect(irmaaFirstCliffMagi({ year, filingStatus: 'single' })).toBe(
@@ -2463,10 +1901,6 @@ describe('IRMAA (Medicare income-related monthly adjustment amount)', () => {
         tiers[4].magiOver.mfs,
       );
     }
-    // And the Roth ceiling follows the selected year rather than 2025's.
-    expect(
-      conversionCeilings({ year: 2026 }).find((c) => c.id === 'irmaa1')?.amount,
-    ).toBe(109_000);
   });
 
   it('adds tax-exempt interest back into MAGI but never into the tax base', () => {
@@ -2766,16 +2200,13 @@ describe('tax year', () => {
       taxableSocialSecurity({ ...scenario, year }),
     );
     expect(new Set(taxable).size).toBe(1);
-    // And the two ceilings measured against those thresholds hold still while
-    // the two bracket ceilings and the gain band all move.
-    const amount = (year: TaxYear, id: ConversionCeilingId): number =>
-      conversionCeilings({ year }).find((c) => c.id === id)!.amount;
-    expect(amount(2026, 'ss50')).toBe(amount(2025, 'ss50'));
-    expect(amount(2026, 'ss85')).toBe(amount(2025, 'ss85'));
-    expect(amount(2025, 'bracket12')).toBe(48_475);
-    expect(amount(2026, 'bracket12')).toBe(50_400);
-    expect(amount(2025, 'ltcg0')).toBe(48_350);
-    expect(amount(2026, 'ltcg0')).toBe(49_450);
+    // And the two bracket tables and the gain band all move underneath them.
+    const bracketTop = (year: TaxYear, rate: number): number =>
+      filingParams(year, 'single').brackets.find((b) => b.rate === rate)!.upTo;
+    expect(bracketTop(2025, 0.12)).toBe(48_475);
+    expect(bracketTop(2026, 0.12)).toBe(50_400);
+    expect(filingParams(2025, 'single').ltcgBrackets[0].upTo).toBe(48_350);
+    expect(filingParams(2026, 'single').ltcgBrackets[0].upTo).toBe(49_450);
   });
 
   it('taxes a larger share of the average benefit every year', () => {
@@ -3392,32 +2823,6 @@ describe('net investment income tax (IRC 1411)', () => {
     });
 
     /**
-     * From the other side: a gain dollar past the threshold is both net
-     * investment income and MAGI, so it enters the base from both ends and
-     * pays 3.8 on top of its own 15%.
-     */
-    it('raises the gains curve by 3.8 points on top of the capital-gain rate', () => {
-      const curve = ltcgRateCurve(
-        { ssBenefit: 0, ordinaryIncome: 260_000, filingStatus: 'single', ...YEAR },
-        { maxLTCG: 40_000, step: 5_000, gainsWithinIncome: true },
-      );
-      // MAGI is $260,000 all the way across — the sweep only moves the split —
-      // so every gain dollar on this axis is inside the surtax base.
-      for (const point of curve) {
-        expect(point.marginalRate).toBeCloseTo(18.8, 6);
-      }
-      // Under the threshold there is no surtax to add, and the same sweep is
-      // the bare 15%.
-      const below = ltcgRateCurve(
-        { ssBenefit: 0, ordinaryIncome: 150_000, filingStatus: 'single', ...YEAR },
-        { maxLTCG: 40_000, step: 5_000, gainsWithinIncome: true },
-      );
-      for (const point of below) {
-        expect(point.marginalRate).toBeCloseTo(15, 6);
-      }
-    });
-
-    /**
      * The reason `niitEnd` had to become an axis feature: the threshold sits
      * $50,000 past the axis this chart used to be fixed at, so the surtax was
      * drawn nowhere.
@@ -3441,35 +2846,6 @@ describe('net investment income tax (IRC 1411)', () => {
       );
       expect(incomeAxisMax(withGain)).toBe(275_000);
       expect(incomeAxisMax(withGain)).toBeGreaterThan(niitEnd!);
-    });
-  });
-
-  /**
-   * A conversion is ordinary income and so is never itself net investment
-   * income — which is exactly why sizing one has to price the surtax: the
-   * conversion pushes MAGI up and drags somebody's old gain in behind it.
-   */
-  describe('sizing a conversion against it', () => {
-    const scenario = {
-      ordinaryIncome: 150_000,
-      ltcg: 60_000,
-      ssBenefit: 0,
-      filingStatus: 'single' as const,
-      ...YEAR,
-    };
-
-    it('prices the surtax into the bill a conversion starts from', () => {
-      const ceiling = conversionCeilings(scenario).find((c) => c.id === 'irmaa1')!;
-      const sizing = sizeConversion(ceiling, scenario);
-      expect(sizing.taxBefore).toBe(Math.round(totalFederalTax(scenario)));
-      expect(sizing.taxBefore - Math.round(totalTax(scenario))).toBe(380);
-      // MAGI is $210,000, so $10,000 of the $60,000 gain is already surtaxed.
-      expect(niitFor(scenario).base).toBe(10_000);
-    });
-
-    it('reports the 3.8 points in the rate just past the ceiling', () => {
-      const ceiling = conversionCeilings(scenario).find((c) => c.id === 'bracket22')!;
-      expect(sizeConversion(ceiling, scenario).rateAboveCeiling).toBeCloseTo(27.8, 6);
     });
   });
 });
@@ -3725,51 +3101,6 @@ describe('the premium tax credit’s 400% cliff (IRC 36B)', () => {
         irmaaCliffs(base)[0].otherIncome - irmaaCliffs(richer)[0].otherIncome;
       expect(irmaaShift).toBeCloseTo(0.85 * step, 4);
       expect(irmaaShift).toBeLessThan(step);
-    });
-  });
-
-  describe('as a line a conversion can be sized against', () => {
-    it('joins the ceilings in a year with a cliff and is absent from one without', () => {
-      const ids = (year: TaxYear): ConversionCeilingId[] =>
-        conversionCeilings({ year }).map((c) => c.id);
-      expect(ids(2026)).toContain('fpl400');
-      expect(ids(2025)).not.toContain('fpl400');
-      // Every other ceiling is offered in both years, so this is the only id a
-      // reader's pick can be retired by switching year.
-      expect(ids(2025)).toEqual(ids(2026).filter((id) => id !== 'fpl400'));
-
-      const ceiling = conversionCeilings(Y26).find((c) => c.id === 'fpl400')!;
-      expect(ceiling.measure).toBe('acaMagi');
-      expect(ceiling.amount).toBe(CLIFF);
-      expect(CONVERSION_MEASURE_LABELS.acaMagi).toBe('household income (36B MAGI)');
-    });
-
-    it('measures the conversion against household income, benefit and all', () => {
-      const scenario = { ordinaryIncome: 30_000, ssBenefit: SS, ...Y26 };
-      const ceiling = conversionCeilings(scenario).find((c) => c.id === 'fpl400')!;
-      // $62,600 less the $24,852 benefit less the $30,000 already there. The
-      // headroom is exact rather than searched-for, because nothing about this
-      // measure bends.
-      expect(maxConversionUnder(ceiling, scenario)).toBe(7_748);
-      expect(conversionMeasureValue('acaMagi', scenario, 7_748)).toBeCloseTo(CLIFF, 6);
-
-      const sizing = sizeConversion(ceiling, scenario);
-      expect(sizing.conversion).toBe(7_748);
-      expect(sizing.alreadyOver).toBe(false);
-      expect(sizing.unbounded).toBe(false);
-      // What the dollar past the line costs in income tax is a bracket rate.
-      // What it actually costs is a year of premium tax credit, which depends
-      // on ages and county and so is nowhere in these figures.
-      expect(sizing.rateAboveCeiling).toBeGreaterThan(0);
-      expect(sizing.taxCost).toBeGreaterThan(0);
-    });
-
-    it('reports nothing fits once household income is already over the line', () => {
-      const scenario = { ordinaryIncome: 80_000, ssBenefit: SS, ...Y26 };
-      const ceiling = conversionCeilings(scenario).find((c) => c.id === 'fpl400')!;
-      expect(acaMagi(scenario)).toBeGreaterThan(CLIFF);
-      expect(maxConversionUnder(ceiling, scenario)).toBe(0);
-      expect(sizeConversion(ceiling, scenario).alreadyOver).toBe(true);
     });
   });
 });

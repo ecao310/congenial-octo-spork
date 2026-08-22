@@ -9236,3 +9236,83 @@ run on purpose — a half-moved chapter is worse than an unmoved one.
 
 Also noted: the user added a Backlog 8 item mid-run (the 65-or-older / both-
 spouses checkbox coupling). It is below the two open ones and was left alone.
+
+## Iteration — "clean up dead code" step 2: the three unreached chapters (Backlog 8)
+
+Opened on a dirty tree for the first time. `src/shelf/conversion.ts`,
+`conversion.test.ts`, `gainsCurve.ts` and `gainsCurve.test.ts` were untracked,
+`tax.ts` was 385 lines lighter, and both READMEs were rewritten — a previous
+run had done the move and never committed it. So this run's job was to audit
+what was there, finish the edges it left, and put it under one commit rather
+than to redo it.
+
+### What the audit found
+
+The move itself is faithful, and the two checks that matter both pass:
+
+- **Nothing was newly exported to make it work.** `git diff -U0 src/utils/tax.ts`
+  adds thirteen lines and every one is a comment. `conversion.ts` imports nine
+  names from `tax.ts` and `gainsCurve.ts` four, all of them already public. So
+  the engine's surface did not widen to let the shelf reach it.
+- **No test was lost.** `tax.test.ts` drops 37 `it(` and gains 1; the two new
+  files hold 38. Net +2, and 651 → 653 matches. The one added back is the
+  interesting part: the tests that used `ltcgRateCurve` and `conversionCeilings`
+  as a *vehicle* for asserting `tax.ts` facts were rewritten against the reached
+  API instead — `keeps the first-cliff MAGI and the tier table in sync` now
+  reads `irmaaFirstCliffMagi` directly, and the gain-band assertions sweep
+  `totalTax`. Facts about `utils/` did not emigrate with the chart data.
+
+The decision the bullet asked for is made and written in one voice: the unit is
+the file, and a chapter of a reached file can move only if nothing reached has
+to follow it. `ltcgRateCurve` had no caller at all; the conversion ceilings had
+exactly one, `sequencing.ts`, already shelved — `src/utils/` was holding code
+whose sole consumer was on the shelf. 1411 stays, because `totalFederalTax` is
+the close's "Federal income tax" figure and `incomeAxisFeatures.niitEnd` sizes
+the chart's axis; moving it would drag two reached functions across or invert
+the import rule. `tax.ts`'s note above `NIIT_RATE`, `shelf/README.md` and
+`README.md` all now say that, and none of them says the old thing.
+
+### What this run added
+
+Three edges the move left:
+
+- **`shelf/README.md`'s Lines column was stale by hundreds.** The move refreshed
+  it (636→480, 800→730, 256→269 — three of the four original rows wrong) but
+  nothing was checking, so it would go stale again. `shelf.test.ts` now has a
+  third test reading the same rows for their second column and comparing each
+  against the file. Mutation: `108` → `109` on `gainsCurve.ts` reddens it;
+  reverted.
+- **The prose figure contradicted the table it sits under.** "throwing away
+  1,845 sourced lines" was the sum of the *old* counts; the three files are
+  1,619 today. Rewritten to point at the table, which is now the thing under
+  test, so there is one number and it is guarded.
+- **Two comments went stale in the move and one paragraph wrapped raggedly** —
+  `shelf.test.ts`'s header still said "these two tests" and its inventory
+  comment said the bring-one-back list "names all four", of a list that now
+  names six.
+
+`README.md`'s test count was 680 against a suite of 653; it is 654 and correct.
+
+`npx tsc -b`, `npx eslint . --max-warnings 0`, `npx vitest run` (654/654) and
+`npm run build` all clean.
+
+### Committed in two
+
+The tree also held a by-hand rewrite of the 85%-cap advice ("If you can't stay
+under it, blast past it") and the deletion of the filing-status parenthetical,
+with `App.test.tsx` already updated to match. That is the user's edit and not
+this task, so it went in first as its own commit rather than riding inside a
+refactor.
+
+The parent bullet is checked too: its own breakdown was the render layer and
+these three chapters, and both are done. A scan for exports unreached outside
+tests turns up only engine internals that are exported *for* the tests
+(`federalIncomeTax`, `encodeScenario` and friends) — exported-for-test is not
+dead, so there is no third step hiding under it.
+
+### Next
+
+Top of Backlog 8 is now "sometimes the page goes black when slider moves" — a
+real defect and the only one on the list, so it goes first. It will want a
+reproduction before a fix; `App.chart.test.tsx` is where a slider-drag test
+would live.

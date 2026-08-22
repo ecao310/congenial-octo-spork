@@ -8,12 +8,8 @@ import {
   sequencingStrategy,
   simulateSequencing,
 } from './sequencing';
-import {
-  conversionCeilings,
-  conversionMeasureValue,
-  filingParams,
-  taxableSocialSecurity,
-} from '../utils/tax';
+import { conversionCeilings, conversionMeasureValue } from './conversion';
+import { filingParams, taxableSocialSecurity } from '../utils/tax';
 import { UNIFORM_LIFETIME_DIVISORS } from './projection';
 
 const ALL_IDS: SequencingStrategyId[] = SEQUENCING_STRATEGIES.map((s) => s.id);

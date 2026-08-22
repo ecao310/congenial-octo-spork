@@ -1,14 +1,16 @@
 import {
-  ConversionCeiling,
-  ConversionCeilingId,
   Scenario,
   TaxYear,
-  conversionCeilings,
-  maxConversionUnder,
   resolveScenario,
   taxableSocialSecurity,
   totalTax,
 } from '../utils/tax';
+import {
+  ConversionCeiling,
+  ConversionCeilingId,
+  conversionCeilings,
+  maxConversionUnder,
+} from './conversion';
 import {
   projectYearParams,
   rmdApplicableAge,

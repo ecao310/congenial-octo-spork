@@ -697,13 +697,11 @@ const leftBorders = (
  * Two shapes of left border, and no third.
  *
  * This page sets something apart in the margin rather than in a box more
- * often than it does anything else: the recap that closes step 1, the advice
- * under each slider and each of the six closing figures are all a rule and an
- * indent. They arrived one at a
- * time and had drifted into three alphas — 0.5 under the sliders, 0.5 under
- * the recap, 0.35 beside the figures — which is the same drift `the corners`
- * and `the type scale` were written for, in the one dimension neither of them
- * watches.
+ * often than it does anything else: the recap that closes step 1 and each of
+ * the six closing figures are a rule and an indent. They arrived one at a
+ * time and had drifted into two alphas — 0.5 under the recap, 0.35 beside the
+ * figures — which is the same drift `the corners` and `the type scale` were
+ * written for, in the one dimension neither of them watches.
  *
  * So: a margin rule is 2px, and its colour is either the page's hairline or a
  * data token at exactly half alpha. A note box is the other shape — 3px of a
@@ -721,7 +719,7 @@ describe('the margin rules', () => {
   it('draws every one of them at one weight and one alpha', () => {
     const drawn = leftBorders(screenBlock(stylesheet));
     // Guards the extractor itself: an empty list would pass vacuously.
-    expect(drawn.length).toBeGreaterThan(3);
+    expect(drawn.length).toBeGreaterThan(2);
 
     const odd = drawn
       .filter((border) =>

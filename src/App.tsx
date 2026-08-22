@@ -20,8 +20,6 @@ import {
   defaultTaxYear,
   filingParams,
   FilingStatus,
-  bracketRateFor,
-  marginalDrag,
   incomeAxisMax,
   incomeAxisFeatures,
   MIN_INCOME_AXIS,
@@ -58,7 +56,6 @@ import { formatCurrency } from './utils/format';
 import { CHART, PALETTE } from './palette';
 import type {
   TaxYear,
-  MarginalDrag,
   IrmaaCliff,
   PtcCliff,
 } from './utils/tax';
@@ -317,10 +314,9 @@ interface CustomTooltipProps {
  * Four figures and no advice. It used to close with "stay under $x or over
  * $y" on a hill and "fill this valley" here on a valley, but that is a
  * recommendation about wherever a mouse happened to land — nobody's point in
- * particular, and no point at all on a touchscreen — and the page now makes
- * the same argument about the reader's own place, out loud and unprompted, in
- * `NextDollarNote`. Two recommendations inches apart, one of them addressed to
- * nobody, is worse than one.
+ * particular, and no point at all on a touchscreen. Nothing on this page
+ * recommends a move any more; the readout under the slider says where the
+ * reader is standing and stops.
  *
  * The two cliff figures went the same way. "$x of MAGI to the next cliff" and
  * "$y of household income to the 400% poverty line" are distances, and a
@@ -389,91 +385,6 @@ export const CustomTooltip: React.FC<CustomTooltipProps> = ({
         {irmaa.tier > 0 ? ` (tier ${irmaa.tier} of 5)` : ''}
       </div>
     </div>
-  );
-};
-
-/**
- * What the next dollar costs, against what the reader expects it to cost.
- *
- * Two figures and the reason they differ. The bracket table says 12%; the
- * dollar costs 22.2%, because it drags part of the benefit into the tax base
- * behind it. That gap is the torpedo, and it is the only thing step 2 is
- * about — so it is said in two sentences under the slider rather than argued
- * over six.
- *
- * What sat here before was five branches of arithmetic keyed to which side of
- * the hump the reader stood on: how far back the near edge was, how far on the
- * far one, which stretch behind was cheaper and by how much. Every figure in
- * it was right, and all of it buried the one number the chart cannot draw —
- * the rate the reader thought they were paying.
- *
- * The cause is asked rather than assumed, because two mechanisms draw the same
- * shape here and naming the wrong one would be a lie about the return in front
- * of the reader. See `marginalDrag`.
- *
- * Two strings rather than markup, because the live region reads the same
- * sentences out and there is nowhere for a second wording to drift from.
- * `lead` carries the expectation, `rest` the correction.
- */
-interface NextDollarReading {
-  lead: string;
-  rest: string;
-}
-
-const nextDollarReading = (
-  rate: number | null,
-  bracketRate: number,
-  drag: MarginalDrag,
-): NextDollarReading | null => {
-  if (rate === null) return null;
-  const bracket = `${bracketRate}% — the bracket this income lands in`;
-  const expect = `You may expect ${bracket}.`;
-
-  if (rate > bracketRate) {
-    const cents = `${Math.round(SENIOR_DEDUCTION_PHASEOUT_RATE * 100)}¢`;
-    const because = drag.benefit
-      ? drag.seniorDeduction
-        ? `it drags part of your Social Security benefit into the tax base and phases out ${cents} of the senior deduction behind it`
-        : 'it drags part of your Social Security benefit into the tax base behind it'
-      : drag.seniorDeduction
-        ? `it phases out ${cents} of the senior deduction behind it`
-        : 'it drags more than itself into the tax base';
-    return { lead: expect, rest: `The next dollar actually costs ${rate}%, because ${because}.` };
-  }
-
-  if (rate < bracketRate) {
-    return {
-      lead: expect,
-      rest: `The next dollar actually costs ${rate}%, because your deductions have not been used up yet.`,
-    };
-  }
-
-  return {
-    lead: `The next dollar costs ${bracket}.`,
-    rest: 'Nothing moves behind it: no more of the benefit is dragged into the tax base, and no deduction phases out.',
-  };
-};
-
-interface NextDollarNoteProps {
-  /** The two sentences, or null before the curve is drawn. */
-  reading: NextDollarReading | null;
-}
-
-/**
- * The gap, under the slider it is keyed to.
- *
- * The one place on the chart worth saying this about is the reader's own, so
- * here it is said out loud and shown without being asked for. The hover
- * tooltip used to carry advice of its own — "stay under $x or over $y" — but
- * only about whichever point a mouse happened to be over, which is nobody's
- * point in particular and no point at all on a touchscreen.
- */
-export const NextDollarNote: React.FC<NextDollarNoteProps> = ({ reading }) => {
-  if (!reading) return null;
-  return (
-    <p className="slider-advice">
-      <strong>{reading.lead}</strong> {reading.rest}
-    </p>
   );
 };
 
@@ -691,7 +602,7 @@ const App: React.FC = () => {
    *
    * Every readout on this page is silent to a screen reader: moving a slider
    * announces the slider's own value and nothing else, so the "you are here"
-   * sentence, the advice under it and the effective rate all change unheard.
+   * sentence and the effective rate under it both change unheard.
    * A live region fixes that, and the whole difficulty is how much to put in
    * one — the closing figures read out on every notch of a drag would be
    * worse than the silence they replaced. So the region carries exactly one
@@ -1059,25 +970,6 @@ const App: React.FC = () => {
   );
 
   /**
-   * The gap this page exists to point at: what the bracket table charges the
-   * next dollar, against what the return charges it, and what the difference
-   * is made of.
-   *
-   * The rate itself is the curve's own reading rather than a fourth
-   * computation of it, so the sentence under the slider and the readout above
-   * it can never quote two different rates for the same dollar.
-   */
-  const nextDollar = useMemo(
-    () =>
-      nextDollarReading(
-        herePoint?.marginalRate ?? null,
-        bracketRateFor(hereScenario),
-        marginalDrag(hereScenario),
-      ),
-    [herePoint, hereScenario],
-  );
-
-  /**
    * Everything this return takes in, which is the denominator an effective
    * rate needs and the reader's own answer at the foot of the page quotes.
    *
@@ -1251,9 +1143,8 @@ const App: React.FC = () => {
    * One step's reading each, written to be listened to rather than looked at:
    * plain sentences with no markup to flatten, no em dashes, and the figures
    * in the order the eye takes them off the page. It says what that step's own
-   * readout says and stops there: the rest of the advice paragraph stays on
-   * the page, and so do the closing figures, for a reader who goes and reads
-   * them.
+   * readout says and stops there: the closing figures stay on the page, for a
+   * reader who goes and reads them.
    *
    * Not memoised: it is two string concatenations on a component that has
    * already swept a curve, and holding it as a plain value is what lets the
@@ -1286,7 +1177,7 @@ const App: React.FC = () => {
             totalIncome,
           )} of total income, an effective rate of ${formatPercent(
             effectiveRateOn(herePoint.totalTax),
-          )}. ${nextDollar ? `${nextDollar.lead} ${nextDollar.rest}` : ''}`
+          )}.`
           : '';
       default:
         return '';
@@ -1372,7 +1263,7 @@ const App: React.FC = () => {
       <header>
         <h1>Social Security and Marginal Tax Rates</h1>
         <p className="subtitle">
-          Because of how Social Security is taxed, your marginal tax rate is often very different than what you might expect.
+          Because of how Social Security is taxed, your marginal tax rate is often very different than what you might expect. Use this tool to calculate marginal tax rates based on your social security income.
         </p>
 
         {linkNotes.length > 0 && (
@@ -1875,8 +1766,6 @@ const App: React.FC = () => {
                   </>
                 ) : null}
               </p>
-
-              <NextDollarNote reading={nextDollar} />
             </div>
 
             <details className="explainer">

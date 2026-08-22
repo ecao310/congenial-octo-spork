@@ -775,173 +775,6 @@ describe('the shape every step shares', () => {
 });
 
 /**
- * The chart says what every income costs. This says what the reader's own
- * dollar costs against what they expected it to cost — the one figure a chart
- * of actual rates cannot draw, because the rate a reader believes they pay is
- * not on it anywhere.
- *
- * What stood here until now was six sentences of arithmetic keyed to which
- * side of the hump the reader was on: the distance back to the near edge, the
- * distance on to the far one, the nearest cheaper stretch behind and what
- * deferring into it was worth. Every figure in it was right. All of it buried
- * the gap.
- *
- * Figures below are 2026, single, the $24,852 average benefit: the rate rises
- * 0% to $14,750, 15%, 18.5%, then the hump at 22.2% from $22,750 to $40,500,
- * a 12% valley to $44,000, 22% to $98,750, and 24% past that. The brackets
- * underneath that curve are 10%, 12% and 22%.
- */
-describe('the advice under the slider', () => {
-  const incomeSlider = (): HTMLElement =>
-    screen.getByRole('slider', { name: /other income \(not social security\)/i });
-  const benefitSlider = (): HTMLElement =>
-    screen.getByRole('slider', { name: /social security benefit/i });
-  const advice = (): HTMLElement =>
-    document.querySelector('#step-torpedo .slider-advice') as HTMLElement;
-  const setIncome = (value: number): void => {
-    fireEvent.change(incomeSlider(), { target: { value: String(value) } });
-  };
-  const setBenefit = (value: number): void => {
-    fireEvent.change(benefitSlider(), { target: { value: String(value) } });
-  };
-
-  it('sits with the slider it is keyed to, under the readout', () => {
-    render(<App />);
-    const group = incomeSlider().closest('.input-group') as HTMLElement;
-    expect(group.contains(advice())).toBe(true);
-    expect(
-      advice().compareDocumentPosition(
-        group.querySelector('.slider-readout') as HTMLElement,
-      ) & Node.DOCUMENT_POSITION_PRECEDING,
-    ).toBeTruthy();
-  });
-
-  /**
-   * The default $30,000 opens the page mid-hump, which is the whole point of
-   * it: the bracket table says 12%, the dollar costs 22.2%, and the ten points
-   * between the two are the benefit being dragged in behind it.
-   */
-  it('sets the bracket the reader expects against the rate they pay', () => {
-    render(<App />);
-    expect(advice()).toHaveTextContent(
-      'You may expect 12% — the bracket this income lands in.',
-    );
-    expect(advice()).toHaveTextContent(
-      'The next dollar actually costs 22.2%, because it drags part of your Social Security benefit into the tax base behind it.',
-    );
-  });
-
-  /** The expectation is what the emphasis is on, because it is the wrong one. */
-  it('leads on the expected rate and nothing else', () => {
-    render(<App />);
-    expect(advice().querySelector('strong')).toHaveTextContent(
-      'You may expect 12% — the bracket this income lands in.',
-    );
-  });
-
-  /**
-   * The gap runs the other way under the standard deduction, and the sentence
-   * has to survive that: a reader told they may expect 10% and are paying 0%
-   * is being told something true and useful, not being warned about a torpedo
-   * that is not there.
-   */
-  it('says which way the gap runs when the deduction still covers the dollar', () => {
-    render(<App />);
-    setIncome(10_000);
-    expect(advice()).toHaveTextContent(
-      'You may expect 10% — the bracket this income lands in.',
-    );
-    expect(advice()).toHaveTextContent(
-      'The next dollar actually costs 0%, because your deductions have not been used up yet.',
-    );
-  });
-
-  it('names no gap at all where the dollar costs exactly its bracket', () => {
-    render(<App />);
-    setIncome(60_000);
-    expect(advice()).toHaveTextContent(
-      'The next dollar costs 22% — the bracket this income lands in.',
-    );
-    expect(advice()).toHaveTextContent(
-      'Nothing moves behind it: no more of the benefit is dragged into the tax base, and no deduction phases out.',
-    );
-    expect(advice()).not.toHaveTextContent('You may expect');
-  });
-
-  it('says the same of a return with no benefit to drag in', () => {
-    render(<App />);
-    setBenefit(0);
-    setIncome(40_000);
-    expect(advice()).toHaveTextContent(
-      'The next dollar costs 12% — the bracket this income lands in.',
-    );
-    expect(advice()).not.toHaveTextContent('Social Security benefit');
-  });
-
-  /**
-   * The one attribution that has to be asked rather than assumed. Past $75,000
-   * of MAGI a single return is phasing out the senior deduction at 6 cents in
-   * the dollar while its benefit sits at the 85% cap with nothing left to
-   * drag: the same shape on the chart, a different mechanism under it, and
-   * "the tax torpedo" is the wrong name for it.
-   */
-  it('blames the senior deduction where that is what moves', () => {
-    render(<App />);
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Age 65 or older' }));
-    setIncome(60_000);
-    expect(advice()).toHaveTextContent(
-      'The next dollar actually costs 23.32%, because it phases out 6¢ of the senior deduction behind it.',
-    );
-    expect(advice()).not.toHaveTextContent('Social Security benefit');
-  });
-
-  /** A benefit still climbing on a return already phasing out: both, named. */
-  it('names both where both move', () => {
-    render(<App />);
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Age 65 or older' }));
-    setBenefit(60_000);
-    setIncome(40_000);
-    expect(advice()).toHaveTextContent(
-      'The next dollar actually costs 43.14%, because it drags part of your Social Security benefit into the tax base and phases out 6¢ of the senior deduction behind it.',
-    );
-  });
-
-  it('moves with the reader across the chart', () => {
-    render(<App />);
-    const said = (): string => advice().textContent ?? '';
-    setIncome(0);
-    expect(said()).toContain('You may expect 10%');
-    expect(said()).toContain('actually costs 0%, because your deductions');
-    setIncome(20_000);
-    expect(said()).toContain('You may expect 10%');
-    expect(said()).toContain(
-      'actually costs 15%, because it drags part of your Social Security benefit',
-    );
-    setIncome(30_000);
-    expect(said()).toContain('You may expect 12%');
-    expect(said()).toContain('actually costs 22.2%');
-    setIncome(60_000);
-    expect(said()).toContain('The next dollar costs 22% — the bracket');
-  });
-
-  /**
-   * The rewrite is the length, so the length is what is pinned. Six sentences
-   * of correct arithmetic is what was here before, and nothing failed as it
-   * grew — the longest sentence this can now produce is the one asserted whole
-   * in "names both where both move", at forty words.
-   */
-  it('stays short enough to be read where it stands', () => {
-    render(<App />);
-    for (const income of [0, 10_000, 20_000, 30_000, 60_000, 120_000]) {
-      setIncome(income);
-      const words = (advice().textContent ?? '').trim().split(/\s+/);
-      expect(words.length).toBeGreaterThan(10);
-      expect(words.length).toBeLessThanOrEqual(45);
-    }
-  });
-});
-
-/**
  * What a chart says to a reader who cannot see it.
  *
  * A recharts chart is an SVG of unlabelled paths, so without a name the app's
@@ -949,12 +782,11 @@ describe('the advice under the slider', () => {
  * carrying one label: what is being plotted, and how far its axis runs.
  *
  * The band-by-band caption that sat under the figure until now — "0% up to
- * $14,750, 15% to $21,500, …" — is off the page. What states where the hump
- * is now is the advice under the slider, which says it relative to where the
- * reader is standing rather than as a run of every band on the curve.
+ * $14,750, 15% to $21,500, …" — is off the page. What states where the reader
+ * is standing is the readout under the slider, which quotes their own dollar
+ * rather than running through every band on the curve.
  *
- * Figures below are 2026, single, the $24,852 average benefit, the same return
- * the advice tests read.
+ * Figures below are 2026, single, the $24,852 average benefit.
  */
 describe('the charts as images', () => {
   const charts = (): HTMLElement[] =>
@@ -1196,10 +1028,9 @@ describe('What a hovered point is worth', () => {
      *
      * This is the assertion that keeps advice off a hover. The tooltip used to
      * close with "stay under $x or over $y" on a hill and "fill this valley"
-     * on a valley — a recommendation about wherever the mouse landed, sitting
-     * inches from `NextDollarNote`'s reading of the reader's own
-     * actually stands, and disagreeing with it whenever the two points fell in
-     * different segments. It also carried two distances, to the next IRMAA
+     * on a valley — a recommendation about wherever the mouse landed, which is
+     * nobody's point in particular and no point at all on a touchscreen. It
+     * also carried two distances, to the next IRMAA
      * cliff and to the 400% poverty line, which are now quoted in the close at
      * the reader's own income. `children` is pinned rather than the text,
      * because a row added back would pass every assertion written about the
@@ -2740,8 +2571,8 @@ describe('the return in the address bar', () => {
  * The one thing on this page that is heard rather than read.
  *
  * Every readout here was silent: a range input announces its own new value and
- * nothing else, so the "you are here" sentence, the advice under it, the
- * effective rate and the six closing figures all changed under a screen
+ * nothing else, so the "you are here" sentence, the effective rate under it
+ * and the six closing figures all changed under a screen
  * reader without a word. What is asserted below is as much about what the
  * region does *not* say — nothing on arrival, nothing mid-drag, and never two
  * steps' readings for one control — as about what it does.
@@ -2810,11 +2641,6 @@ describe('the live reading under the controls', () => {
       'At $10,000 of other income the next dollar is taxed at 0%',
     );
     expect(region()).toHaveTextContent('an effective rate of');
-    // The advice under the slider, word for word: one sentence on the page is
-    // one sentence in the ear, and there is no second wording to drift from.
-    expect(region()).toHaveTextContent(
-      'You may expect 10% — the bracket this income lands in. The next dollar actually costs 0%, because your deductions have not been used up yet.',
-    );
   });
 
   /**

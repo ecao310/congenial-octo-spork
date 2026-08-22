@@ -77,15 +77,14 @@ import type {
  * flow a reader can be lost in, and a nav offering to carry them past one
  * heading is furniture charging rent.
  *
- * Six more sections have stood here and are coming back. Four were tabs —
- * Medicare, Strategies, Over Time and State Taxes — and two were steps 3 and
- * 4, Capital Gains Stacking and Sizing the Conversion, which came off the page
- * when it narrowed to the torpedo alone. What they rendered has gone, but
- * everything they rendered *from* stays: `irmaaFor` and `niitFor` are still in
- * `utils/tax.ts`, and `ltcgRateCurve`, `conversionCeilings`, `sizeConversion`,
- * `projectYears`, `compareSequencing`, `lumpSumElection` and the state table
- * are on the shelf — every one of them still under test, every one of them
- * still exported.
+ * Six more sections have stood here. Four were tabs — Medicare, Strategies,
+ * Over Time and State Taxes — and two were steps 3 and 4, Capital Gains
+ * Stacking and Sizing the Conversion, which came off the page when it narrowed
+ * to the torpedo alone. What they rendered went with them, and so has the
+ * arithmetic underneath: the projection, sequencing, lump-sum, state-tax,
+ * gains-curve and conversion-sizing modules are all out of the repo. What is
+ * left in `utils/tax.ts` is what this page reads. `irmaaFor` is one of those;
+ * `niitFor` is the one exception, and the note over it says why.
  *
  * Both steps have the same shape: the chart, then the one control that says
  * where on that chart the reader is standing, then the collapsed explainers.
@@ -910,8 +909,8 @@ const App: React.FC = () => {
    * Every dollar on this axis is ordinary income. A long-term gain reaches
    * provisional income identically but is charged under its own schedule, and
    * pricing that split is what the capital-gains step did — `ltcg` is still a
-   * field on `Scenario` and `shelf/gainsCurve.ts` still sweeps it, but nothing
-   * on this page sets one, so nothing here passes one.
+   * field on `Scenario` and `totalTax` still prices one, but nothing on this
+   * page sets one, so nothing here passes one.
    */
   const curve = useMemo(
     () =>

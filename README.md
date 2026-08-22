@@ -44,13 +44,11 @@ step.
 Two more steps stood here — Capital gains stacking, which split the income
 already entered into ordinary and long-term halves, and Sizing the conversion,
 which read off the largest conversion fitting under a chosen ceiling. Both came
-off the page so that it asks one question, and both are coming back. What they
-rendered is gone; what they rendered *from* is untouched and still under test,
-on the shelf as `src/shelf/gainsCurve.ts` and `src/shelf/conversion.ts`. The
-3.8% surtax those steps were the only route to did not go with them: it is a
-term of `totalFederalTax`, which the close still prints, so `niitFor` stays in
-`src/utils/tax.ts` under a note saying it is dormant rather than shelved. See
-[`src/shelf/README.md`](src/shelf/README.md) for why the line falls there.
+off the page so that it asks one question, and what they rendered *from* has
+now gone after them: the repo holds what this page reads and nothing else. The
+3.8% surtax those steps were the only route to is the one exception, because it
+is a term of `totalFederalTax`, which the close still prints — so `niitFor`
+stays in `src/utils/tax.ts` under a note saying it is dormant rather than dead.
 
 The page closes on the six figures the whole walk was for: total income,
 federal tax, effective rate, the rate on the next dollar, the taxable share of
@@ -145,7 +143,7 @@ longer the rate the arithmetic reaches.
 ```bash
 npm install
 npm run dev      # start dev server
-npm run test     # vitest, 670 tests
+npm run test     # vitest, 454 tests
 npm run lint     # eslint
 npm run build    # tsc -b && vite build
 ```
@@ -157,13 +155,8 @@ npm run build    # tsc -b && vite build
 | `src/App.tsx` | The page: both steps, the chart, the explainers, the close. |
 | `src/utils/tax.ts` | Every figure on the page, and the only place a rate or a threshold is written down. |
 | `src/utils/scenarioUrl.ts` | The return, encoded into the address bar and clamped back out of it. |
-| `src/shelf/` | Finished, tested modules that nothing on the page imports. See [`src/shelf/README.md`](src/shelf/README.md). |
 | `public/` | The favicon, the touch icon and the link-preview card. |
 | `scripts/og-cover.mjs` | Redraws the card from the page's own arithmetic. Run by hand; see above. |
-
-Nothing outside `src/shelf/` may import from it, and a test enforces that.
-Bringing a shelved module back is a `git mv` in the same commit as the section
-that renders it.
 
 ## Deployment
 

@@ -1,16 +1,10 @@
 import {
   federalIncomeTax,
-  muniInterestEffect,
   FilingStatus,
   marginalRateCurve,
   taxableSocialSecurity,
   totalTax,
-  segmentCurve,
-  standingOn,
-  bracketRateFor,
-  marginalDrag,
   splitOtherIncome,
-  irmaaFirstCliffMagi,
   allIrmaaTiers,
   irmaaMagiYear,
   partBStandardPremium,
@@ -20,8 +14,6 @@ import {
   otherIncomeAtIrmaaMagi,
   irmaaCliffs,
   irmaaTiersFor,
-  firstIrmaaTier,
-  seniorDeductionAllowed,
   SS_BASES,
   SS_BASE50_ENACTED,
   SS_BASE85_ENACTED,
@@ -31,7 +23,6 @@ import {
   filingParams,
   filingParamsFor,
   defaultTaxYear,
-  hasPublishedParams,
   PAGE_TAX_YEAR,
   avgAnnualSSBenefit,
   maxAnnualSSBenefit,
@@ -55,7 +46,6 @@ import {
   ptcCliff,
   ptcCliffMagi,
   ptcFor,
-  ptcParams,
   acaMagi,
   povertyLine,
   povertyLineFor,
@@ -73,7 +63,6 @@ import {
   netInvestmentIncomeTax,
   totalFederalTax,
   NIIT_RATE,
-  NIIT_ENACTED,
   NIIT_THRESHOLDS,
 } from './tax';
 import type { Scenario, TaxYear } from './tax';
@@ -737,314 +726,6 @@ describe('gains carved out of income rather than stacked on top', () => {
   });
 });
 
-describe('segmentCurve', () => {
-  it('groups constant rate points and classifies hills/valleys correctly', () => {
-    const mockCurve = [
-      { income: 0, marginalRate: 0 },
-      { income: 1000, marginalRate: 0 },
-      { income: 2000, marginalRate: 15 },
-      { income: 3000, marginalRate: 15 },
-      { income: 4000, marginalRate: 22 },
-      { income: 5000, marginalRate: 22 },
-      { income: 6000, marginalRate: 12 },
-      { income: 7000, marginalRate: 12 },
-      { income: 8000, marginalRate: 22 },
-    ];
-    const segments = segmentCurve(mockCurve, (p) => p.income);
-    expect(segments).toHaveLength(5);
-
-    // Segment 0: 0% -> valley
-    expect(segments[0]).toMatchObject({
-      rate: 0,
-      start: 0,
-      end: 1000,
-      type: 'valley',
-    });
-
-    // Segment 1: 15% -> flat
-    expect(segments[1]).toMatchObject({
-      rate: 15,
-      start: 2000,
-      end: 3000,
-      type: 'flat',
-    });
-
-    // Segment 2: 22% -> hill (since 22 > 15 and 22 > 12)
-    expect(segments[2]).toMatchObject({
-      rate: 22,
-      start: 4000,
-      end: 5000,
-      type: 'hill',
-    });
-
-    // Segment 3: 12% -> valley (since 12 < 22 and 12 < 22)
-    expect(segments[3]).toMatchObject({
-      rate: 12,
-      start: 6000,
-      end: 7000,
-      type: 'valley',
-    });
-
-    // Segment 4: 22% -> flat (last segment is not classified as hill/valley)
-    expect(segments[4]).toMatchObject({
-      rate: 22,
-      start: 8000,
-      end: 8000,
-      type: 'flat',
-    });
-  });
-});
-
-describe('standingOn', () => {
-  /**
-   * The same shape the segmentCurve test uses, and for the same reason: a hand
-   * written curve says which stretch is which without depending on a year's
-   * figures. Segments run valley(0%) - flat(15%) - hill(22%) - valley(12%) -
-   * flat(22%).
-   */
-  const mockCurve = [
-    { income: 0, marginalRate: 0 },
-    { income: 1000, marginalRate: 0 },
-    { income: 2000, marginalRate: 15 },
-    { income: 3000, marginalRate: 15 },
-    { income: 4000, marginalRate: 22 },
-    { income: 5000, marginalRate: 22 },
-    { income: 6000, marginalRate: 12 },
-    { income: 7000, marginalRate: 12 },
-    { income: 8000, marginalRate: 22 },
-  ];
-  const mockSegments = segmentCurve(mockCurve, (p) => p.income);
-  const standAt = (x: number) => standingOn(mockSegments, x);
-
-  it('puts a reader below the first rise on the valley floor, hump ahead', () => {
-    const standing = standAt(0);
-    expect(standing).toMatchObject({
-      kind: 'valley',
-      here: { rate: 0 },
-      prev: null,
-      next: { rate: 15 },
-      hump: { rate: 22, start: 4000, end: 5000 },
-    });
-  });
-
-  it('puts a reader on a raised stretch below the hump on the climb', () => {
-    expect(standAt(2500)).toMatchObject({
-      kind: 'climbing',
-      here: { rate: 15 },
-      prev: { rate: 0 },
-      hump: { rate: 22, start: 4000 },
-    });
-  });
-
-  it('puts a reader inside the hump at the peak, with both ways off it', () => {
-    expect(standAt(4000)).toMatchObject({
-      kind: 'peak',
-      here: { rate: 22, start: 4000, end: 5000 },
-      prev: { rate: 15 },
-      next: { rate: 12 },
-      hump: { rate: 22, start: 4000 },
-    });
-  });
-
-  it('prefers the hump ahead to the hump behind', () => {
-    // The dip after a hump is a valley by shape, but with nothing higher left
-    // to warn about the advice is about the one already cleared.
-    expect(standAt(6500)).toMatchObject({
-      kind: 'past',
-      here: { rate: 12 },
-      hump: { rate: 22, start: 4000, end: 5000 },
-    });
-    expect(standAt(8000)).toMatchObject({ kind: 'past', here: { rate: 22, start: 8000 } });
-  });
-
-  it('reads a curve with no hump as flat, whichever end the reader is at', () => {
-    const climbing = segmentCurve(
-      [
-        { income: 0, marginalRate: 0 },
-        { income: 1000, marginalRate: 10 },
-        { income: 2000, marginalRate: 12 },
-      ],
-      (p) => p.income,
-    );
-    expect(standingOn(climbing, 0)).toMatchObject({ kind: 'flat', hump: null });
-    expect(standingOn(climbing, 2000)).toMatchObject({ kind: 'flat', hump: null });
-  });
-
-  it('clamps to the nearest stretch at or below a value that misses a sample', () => {
-    // Between segment 0's last sample ($1,000) and segment 1's first ($2,000).
-    expect(standAt(1500)).toMatchObject({ kind: 'valley', here: { rate: 0 } });
-    // Past the right edge of the curve entirely.
-    expect(standAt(80_000)).toMatchObject({ here: { rate: 22, start: 8000 } });
-  });
-
-  it('has nothing to say about an empty curve', () => {
-    expect(standingOn([], 0)).toBeNull();
-  });
-
-  /**
-   * What deferral is worth: the nearest stretch behind the reader that charges
-   * less than they do. Nearest rather than cheapest, because the cheapest is
-   * almost always the run below the standard deduction — true, and no use to
-   * anyone deciding whether to hold a withdrawal back a year.
-   */
-  it('finds the nearest cheaper ground behind, not the cheapest', () => {
-    // From the 22% at the far right: the 12% dip it just cleared, not the 0%
-    // floor at the left edge.
-    expect(standAt(8000)?.cheaperBehind).toMatchObject({ rate: 12, start: 6000 });
-    // From the 12% dip: everything between it and the 0% floor is dearer.
-    expect(standAt(6500)?.cheaperBehind).toMatchObject({ rate: 0, start: 0 });
-    // Nothing at all behind the first stretch.
-    expect(standAt(0)?.cheaperBehind).toBeNull();
-  });
-
-  it('walks a real single filer from the valley floor over the torpedo', () => {
-    const curve = marginalRateCurve(
-      { ssBenefit: AVG_ANNUAL_SS_BENEFIT, filingStatus: 'single', year: PINNED_YEAR },
-      { maxIncome: 150_000, step: 250 },
-    );
-    const segments = segmentCurve(curve, (p) => p.income);
-    const hump = segments.find((seg) => seg.type === 'hill');
-    if (!hump) throw new Error('the average benefit should still make a hump');
-
-    // Every dollar of the hump is dearer than either side of it: that is what
-    // makes the advice on it "go round, not through".
-    expect(standingOn(segments, hump.start)?.kind).toBe('peak');
-    expect(standingOn(segments, hump.end)?.kind).toBe('peak');
-    expect(standingOn(segments, 0)?.kind).toBe('valley');
-    expect(standingOn(segments, 150_000)?.kind).toBe('past');
-
-    // And the hump the reader is warned about from below is the one they are
-    // standing on when they get there.
-    expect(standingOn(segments, 0)?.hump).toBe(hump);
-    expect(standingOn(segments, 150_000)?.hump).toBe(hump);
-  });
-
-  it('sends a return with no benefit to drag in past the humps entirely', () => {
-    const curve = marginalRateCurve(
-      { ssBenefit: 0, filingStatus: 'single', year: PINNED_YEAR },
-      { maxIncome: 150_000, step: 250 },
-    );
-    const segments = segmentCurve(curve, (p) => p.income);
-    expect(segments.some((seg) => seg.type === 'hill')).toBe(false);
-    expect(standingOn(segments, 40_000)).toMatchObject({ kind: 'flat', hump: null });
-  });
-});
-
-/**
- * The rate a reader thinks they are paying, and the reason it is not the rate
- * they are paying.
- *
- * `marginalRateCurve` answers the second half — what the next dollar costs —
- * and on its own it is a number with nothing to be surprised by. The surprise
- * is the gap, and the gap needs the bracket table the reader looked themselves
- * up in, which is what these two read back.
- */
-describe('the gap between the bracket and the dollar', () => {
-  const single = (over: Record<string, unknown> = {}) => ({
-    filingStatus: 'single' as const,
-    year: PINNED_YEAR,
-    ...over,
-  });
-
-  describe('bracketRateFor', () => {
-    /* 2025 single: $15,750 off the top, then 10% to $11,925 and 12% to $48,475. */
-    it('reads the band the return’s taxable income sits in', () => {
-      expect(bracketRateFor(single({ ssBenefit: 0, ordinaryIncome: 20_000 }))).toBe(10);
-      expect(bracketRateFor(single({ ssBenefit: 0, ordinaryIncome: 40_000 }))).toBe(12);
-    });
-
-    /**
-     * On the ceiling itself the answer is the band above, because the question
-     * is about the *next* dollar and the next dollar is the first one over.
-     * $27,675 of income is $11,925 of taxable income exactly.
-     */
-    it('reads the dollar over a bracket ceiling, not the one under it', () => {
-      expect(bracketRateFor(single({ ssBenefit: 0, ordinaryIncome: 27_674 }))).toBe(10);
-      expect(bracketRateFor(single({ ssBenefit: 0, ordinaryIncome: 27_675 }))).toBe(12);
-    });
-
-    /**
-     * A return with nothing taxable is quoted the bottom band rather than
-     * nothing at all: that is what the table says about its first taxable
-     * dollar, and it is the expectation the page is about to say is wrong in
-     * the other direction — the deduction is covering the dollar, so it costs
-     * less than the table, not more.
-     */
-    it('quotes the bottom band to a return with nothing taxable yet', () => {
-      expect(bracketRateFor(single({ ssBenefit: 0, ordinaryIncome: 0 }))).toBe(10);
-      expect(bracketRateFor(single({ ssBenefit: AVG_ANNUAL_SS_BENEFIT, ordinaryIncome: 10_000 }))).toBe(10);
-    });
-
-    /**
-     * The benefit the torpedo has already dragged in is taxable income like
-     * any other, so it moves the reader up the table on its own. At $45,000 of
-     * other income the same filer is in the 12% band without a benefit and the
-     * 22% band with the average one — which is the reason the expected rate
-     * has to be read off the return rather than off the income slider.
-     */
-    it('counts the benefit already dragged into the tax base', () => {
-      expect(bracketRateFor(single({ ssBenefit: 0, ordinaryIncome: 45_000 }))).toBe(12);
-      expect(
-        bracketRateFor(single({ ssBenefit: AVG_ANNUAL_SS_BENEFIT, ordinaryIncome: 45_000 })),
-      ).toBe(22);
-    });
-
-    /** The senior deduction comes off before the table is read, like the rest. */
-    it('reads the table after every deduction the return gets', () => {
-      const at = (seniors: number) =>
-        bracketRateFor(single({ ssBenefit: 0, seniors, ordinaryIncome: 27_675 }));
-      expect(at(0)).toBe(12);
-      // $2,000 of age-65 deduction and $6,000 of senior deduction put the same
-      // income back under the 10% ceiling.
-      expect(at(1)).toBe(10);
-    });
-  });
-
-  describe('marginalDrag', () => {
-    /**
-     * Below the first base nothing is dragged; on the climb the next dollar
-     * pulls benefit in behind it; past the 85% cap there is nothing left to
-     * pull. Three answers on one curve, and the middle one is the torpedo.
-     */
-    it('says when the next dollar pulls more benefit into the tax base', () => {
-      const at = (ordinaryIncome: number) =>
-        marginalDrag(single({ ssBenefit: AVG_ANNUAL_SS_BENEFIT, ordinaryIncome })).benefit;
-      expect(at(10_000)).toBe(false);
-      expect(at(20_000)).toBe(true);
-      expect(at(60_000)).toBe(false);
-    });
-
-    it('says never of a return with no benefit to drag', () => {
-      expect(marginalDrag(single({ ssBenefit: 0, ordinaryIncome: 20_000 })).benefit).toBe(false);
-    });
-
-    /**
-     * The attribution this exists for. Past $75,000 of MAGI a single senior is
-     * losing 6 cents of deduction to every dollar while the benefit sits at
-     * its cap with nothing left to give — the same shape on the chart as the
-     * torpedo, and not the torpedo. A page that named the wrong one would be
-     * wrong about the return in front of the reader.
-     */
-    it('separates the senior deduction’s phaseout from the torpedo', () => {
-      const at = (seniors: number) =>
-        marginalDrag(single({ ssBenefit: AVG_ANNUAL_SS_BENEFIT, seniors, ordinaryIncome: 60_000 }));
-      expect(at(1)).toEqual({ benefit: false, seniorDeduction: true });
-      expect(at(0)).toEqual({ benefit: false, seniorDeduction: false });
-    });
-
-    /**
-     * And it does not have to choose: a benefit still climbing on a return
-     * already phasing out moves both at once, which is where the marginal rate
-     * reaches 43% on a 22% bracket.
-     */
-    it('names both where both move', () => {
-      expect(
-        marginalDrag(single({ ssBenefit: MAX_ANNUAL_SS_BENEFIT, seniors: 1, ordinaryIncome: 45_000 })),
-      ).toEqual({ benefit: true, seniorDeduction: true });
-    });
-  });
-});
-
 describe('age 65+ additional standard deduction (2025)', () => {
   const SS = AVG_ANNUAL_SS_BENEFIT;
 
@@ -1443,86 +1124,6 @@ describe('tax-exempt (municipal) interest', () => {
   });
 });
 
-describe('muniInterestEffect', () => {
-  const SS = AVG_ANNUAL_SS_BENEFIT;
-
-  it('prices the benefits the interest drags into taxable income', () => {
-    const effect = muniInterestEffect(
-      { muniInterest: 5_000, ordinaryIncome: 20_000, ssBenefit: SS },
-    );
-    expect(effect.taxableSSWithout).toBe(3_428);
-    expect(effect.taxableSSWith).toBe(6_928); // 6,927.60 rounded
-    expect(effect.taxableSSDelta).toBe(3_500);
-    expect(effect.taxWithout).toBe(768);
-    expect(effect.taxWith).toBe(1_118);
-    expect(effect.taxCost).toBe(350);
-    // $3,499.60 of extra taxable benefits, all inside the 10% bracket, on
-    // $5,000 of interest: 7 cents of tax per "tax-free" dollar.
-    expect(effect.costPerDollar).toBeCloseTo(7, 2);
-    // The next dollar lands above $34,000 of provisional income, so it drags
-    // in 85 cents of benefits at 10%.
-    expect(effect.ratePerNextDollar).toBeCloseTo(8.5, 2);
-  });
-
-  it('is all zeros when provisional income stays under the first threshold', () => {
-    const effect = muniInterestEffect(
-      { muniInterest: 5_000, ordinaryIncome: 5_000, ssBenefit: SS },
-    );
-    expect(effect.taxableSSDelta).toBe(0);
-    expect(effect.taxCost).toBe(0);
-    expect(effect.costPerDollar).toBe(0);
-    expect(effect.ratePerNextDollar).toBe(0);
-  });
-
-  it('is all zeros once the 85% cap already binds', () => {
-    const effect = muniInterestEffect(
-      { muniInterest: 10_000, ordinaryIncome: 100_000, ssBenefit: SS },
-    );
-    expect(effect.taxableSSWithout).toBe(20_155);
-    expect(effect.taxableSSDelta).toBe(0);
-    expect(effect.taxCost).toBe(0);
-    expect(effect.ratePerNextDollar).toBe(0);
-  });
-
-  it('reports zero cost per dollar rather than dividing by zero', () => {
-    expect(muniInterestEffect(
-      { muniInterest: 0, ordinaryIncome: 30_000, ssBenefit: SS },
-    ).costPerDollar).toBe(0);
-  });
-
-  it('counts planned capital gains in the provisional income it prices against', () => {
-    // $20,000 of gains on top of $20,000 of ordinary income already puts
-    // provisional income at $51,856, which leaves only $477.60 of benefits
-    // below the 85% cap. The gains have spent the torpedo before the interest
-    // gets to it, so the same $5,000 that cost $350 without them now drags in
-    // $478 and the dollar after that is free.
-    expect(muniInterestEffect(
-      { muniInterest: 5_000, ordinaryIncome: 20_000, ssBenefit: SS, ltcg: 0 },
-    ).taxableSSDelta).toBe(3_500);
-    const withGains = muniInterestEffect(
-      { muniInterest: 5_000, ordinaryIncome: 20_000, ssBenefit: SS, ltcg: 20_000 },
-    );
-    expect(withGains.taxableSSDelta).toBe(478);
-    expect(withGains.ratePerNextDollar).toBe(0);
-  });
-
-  it('matches the marginal rate the tax chain reports at the same point', () => {
-    const effect = muniInterestEffect(
-      { muniInterest: 5_000, ordinaryIncome: 20_000, ssBenefit: SS, ltcg: 0, filingStatus: 'mfj', seniors: 1 },
-    );
-    const direct =
-      totalTax(
-        { ordinaryIncome: 20_000, ssBenefit: SS, filingStatus: 'mfj', seniors: 1, muniInterest: 5_001 },
-      ) - totalTax(
-        { ordinaryIncome: 20_000, ssBenefit: SS, filingStatus: 'mfj', seniors: 1, muniInterest: 5_000 },
-      );
-    expect(effect.ratePerNextDollar).toBeCloseTo(
-      Math.round(direct * 10_000) / 100,
-      6,
-    );
-  });
-});
-
 /* ------------------------------------------------------------------ */
 /*  Married filing separately, having lived with the spouse           */
 /* ------------------------------------------------------------------ */
@@ -1658,7 +1259,6 @@ describe('married filing separately (lived with spouse)', () => {
 
   it('gets no senior deduction at all, at any income', () => {
     // Section 151(d)(5)(C)(v) conditions it on filing jointly.
-    expect(seniorDeductionAllowed('mfs')).toBe(false);
     expect(seniorDeductionPhaseoutEnd('mfs')).toBeNull();
     for (const magi of [0, 40_000, 75_000, 100_000, 175_000]) {
       expect(seniorDeductionFor({ filingStatus: 'mfs', seniors: 1 }, magi)).toBe(0);
@@ -1701,10 +1301,9 @@ describe('married filing separately (lived with spouse)', () => {
     expect(irmaaTiersFor({ filingStatus: 'single' }).map((t) => t.tier)).toEqual([
       0, 1, 2, 3, 4, 5,
     ]);
-    expect(firstIrmaaTier({ filingStatus: 'mfs' }).tier).toBe(4);
-    expect(irmaaFirstCliffMagi({ filingStatus: 'mfs' })).toBe(106_000);
+    expect(irmaaTiersFor({ filingStatus: 'mfs' })[1].magiOver.mfs).toBe(106_000);
     // Same first threshold as a single filer, four times the surcharge.
-    expect(irmaaFirstCliffMagi({ filingStatus: 'single' })).toBe(106_000);
+    expect(irmaaTiersFor({ filingStatus: 'single' })[1].magiOver.single).toBe(106_000);
     expect(irmaaFor(106_001, { filingStatus: 'mfs' }).annualSurcharge).toBeCloseTo(5_826, 6);
     expect(irmaaFor(106_001, { filingStatus: 'single' }).annualSurcharge).toBeCloseTo(1_052.4, 6);
   });
@@ -1874,7 +1473,6 @@ describe('head of household', () => {
   it('gets the senior deduction at the unmarried threshold', () => {
     // 151(d)(5)(C)(i) reads "$150,000 in the case of a joint return" and
     // $75,000 otherwise; clause (v) only excludes married separate filers.
-    expect(seniorDeductionAllowed('hoh')).toBe(true);
     expect(SENIOR_DEDUCTION_PHASEOUT_START.hoh).toBe(75_000);
     expect(seniorDeductionPhaseoutEnd('hoh')).toBe(175_000);
     expect(seniorDeductionFor({ filingStatus: 'hoh', seniors: 1 }, 100_000)).toBeCloseTo(4_500, 6);
@@ -1898,9 +1496,8 @@ describe('head of household', () => {
       irmaaTiersFor({ filingStatus: 'single' }),
     );
     expect(irmaaTiersFor({ filingStatus: 'hoh' })).toHaveLength(6);
-    expect(firstIrmaaTier({ filingStatus: 'hoh' }).tier).toBe(1);
-    expect(irmaaFirstCliffMagi({ filingStatus: 'hoh', year: 2025 })).toBe(106_000);
-    expect(irmaaFirstCliffMagi({ filingStatus: 'hoh', year: 2026 })).toBe(109_000);
+    expect(irmaaTiersFor({ filingStatus: 'hoh', year: 2025 })[1].magiOver.hoh).toBe(106_000);
+    expect(irmaaTiersFor({ filingStatus: 'hoh', year: 2026 })[1].magiOver.hoh).toBe(109_000);
     // The top rung is inclusive for every status, this one included.
     expect(irmaaTierFor(500_000, { filingStatus: 'hoh' }).tier).toBe(5);
     expect(irmaaTierFor(499_999, { filingStatus: 'hoh' }).tier).toBe(4);
@@ -1997,22 +1594,6 @@ describe('IRMAA (Medicare income-related monthly adjustment amount)', () => {
       // is the one threshold that does not move between 2025 and 2026.
       expect(tiers[5].magiOver.single).toBe(500_000);
       expect(tiers[5].magiOver.mfj).toBe(750_000);
-    }
-  });
-
-  it('keeps the first-cliff MAGI and the tier table in sync', () => {
-    for (const year of TAX_YEARS) {
-      const tiers = allIrmaaTiers(year);
-      expect(irmaaFirstCliffMagi({ year, filingStatus: 'single' })).toBe(
-        tiers[1].magiOver.single,
-      );
-      expect(irmaaFirstCliffMagi({ year, filingStatus: 'mfj' })).toBe(
-        tiers[1].magiOver.mfj,
-      );
-      // A separate return's first cliff is tier 4, not tier 1.
-      expect(irmaaFirstCliffMagi({ year, filingStatus: 'mfs' })).toBe(
-        tiers[4].magiOver.mfs,
-      );
     }
   });
 
@@ -2184,7 +1765,6 @@ describe('tax year', () => {
    */
   it('prices a year that is on file', () => {
     expect(TAX_YEARS).toContain(PAGE_TAX_YEAR);
-    expect(hasPublishedParams(PAGE_TAX_YEAR)).toBe(true);
     // Deliberately not `defaultTaxYear()`: a constant is what keeps a link
     // sent in December meaning the same thing in January. They coincide today
     // and the point is that nothing requires them to.
@@ -2734,9 +2314,6 @@ describe('net investment income tax (IRC 1411)', () => {
         expect(niitFor({ ...scenario, year }).threshold).toBe(200_000);
         expect(niitFor({ ...scenario, year }).tax).toBeCloseTo(760, 6);
       }
-      // Enacted in 2010, effective for tax years beginning after 2012.
-      expect(NIIT_ENACTED).toBe(2013);
-      expect(NIIT_ENACTED).toBeGreaterThan(SS_BASE85_ENACTED);
     });
   });
 
@@ -2985,7 +2562,7 @@ describe('the premium tax credit’s 400% cliff (IRC 36B)', () => {
       expect(FPL_GUIDELINE_LOOKBACK_YEARS).toBe(1);
       expect(fplGuidelineYear(2026)).toBe(2025);
       expect(fplGuidelineYear(2025)).toBe(2024);
-      expect(ptcParams(2026).guidelineYear).toBe(2025);
+      expect(FPL_YEAR_PARAMS[2026].guidelineYear).toBe(2025);
       // Medicare looks back two, and for the same reason at twice the distance.
       expect(FPL_GUIDELINE_LOOKBACK_YEARS).toBeLessThan(IRMAA_LOOKBACK_YEARS);
       expect(fplGuidelineYear()).toBe(PINNED_YEAR - 1);
@@ -3416,7 +2993,7 @@ describe('the published IRS figures', () => {
     // Rev. Proc. 2025-25 section 3.01, last row: "At least 300% but not more
     // than 400% — 9.96%, 9.96%". 2025 has no such row: ARPA replaced the table
     // with one that runs past 400% and tops out at 8.5%.
-    expect(ptcParams(2026).topApplicablePercentage).toBe(0.0996);
-    expect(ptcParams(2025).topApplicablePercentage).toBe(0.085);
+    expect(FPL_YEAR_PARAMS[2026].topApplicablePercentage).toBe(0.0996);
+    expect(FPL_YEAR_PARAMS[2025].topApplicablePercentage).toBe(0.085);
   });
 });

@@ -69,43 +69,6 @@ export interface Scenario {
    * Security thresholds ignore this, because they are not indexed at all.
    */
   year?: TaxYear;
-  /**
-   * A year past the last one Congress and the IRS have published figures for,
-   * with those figures indexed forward — see `projectFilingParams`.
-   *
-   * `year` can only name a year in `TAX_YEAR_PARAMS`, which is the right
-   * constraint everywhere except the multi-year projection, where the whole
-   * point is to run past it. When this is set it wins: `filingParamsFor` uses
-   * its brackets and deductions, and `scenarioYear` reports its calendar year,
-   * so the OBBBA senior deduction can expire on schedule. Nothing else about
-   * the scenario changes — in particular `SS_BASES` is frozen either way,
-   * which is exactly what the projection exists to show.
-   */
-  projected?: ProjectedYear | null;
-  /**
-   * A ceiling on how much benefit 86(a) may include in gross income — the
-   * lump-sum election of IRC 86(e) — or null, which is every ordinary year.
-   *
-   * A cap rather than a substitution because that is what the statute is:
-   * "the amount included in gross income under this section ... shall not
-   * exceed the sum of the increases in gross income ... for prior taxable
-   * years". Electing can therefore never raise the bill, which is why Pub 915
-   * Worksheet 4 ends by telling you to use the smaller of the two figures.
-   *
-   * Set by `lumpSumElection` and by nothing else. Because it lands inside
-   * `taxableSocialSecurity`, everything downstream — AGI, the senior
-   * deduction's phaseout, the gain stacking, Medicare's MAGI two years later —
-   * follows it without knowing it exists.
-   */
-  taxableSSCap?: number | null;
-}
-
-/** One tax year's figures, for a year `TAX_YEAR_PARAMS` does not cover. */
-export interface ProjectedYear {
-  /** The calendar year these figures are for. May be any year, past 2026. */
-  year: number;
-  /** Brackets, standard deduction and capital-gain bands, indexed forward. */
-  filing: FilingYearParams;
 }
 
 /**
@@ -129,22 +92,7 @@ export function resolveScenario(scenario: Scenario = {}): Required<Scenario> {
     beneficiaries: scenario.beneficiaries ?? 1,
     householdSize: scenario.householdSize ?? defaultHouseholdSize(filingStatus),
     year: scenario.year ?? defaultTaxYear(),
-    projected: scenario.projected ?? null,
-    taxableSSCap: scenario.taxableSSCap ?? null,
   };
-}
-
-/**
- * The calendar year a scenario is being taxed in.
- *
- * The same as `year` for every scenario the charts build, and the projected
- * year for one the multi-year projection builds. Use this — not `year` — for
- * anything that turns on the calendar, such as whether a temporary provision
- * has expired.
- */
-export function scenarioYear(scenario: Scenario = {}): number {
-  const { year, projected } = resolveScenario(scenario);
-  return projected ? projected.year : year;
 }
 
 /** One rate band. `upTo` is the top of the band; the last band is Infinity. */
@@ -515,32 +463,6 @@ export function defaultTaxYear(calendarYear = new Date().getFullYear()): TaxYear
   return TAX_YEARS.find((y) => y === calendarYear) ?? last;
 }
 
-/** Whether this app has published figures for a calendar year. */
-export function hasPublishedParams(year: number): year is TaxYear {
-  return TAX_YEARS.some((y) => y === year);
-}
-
-/**
- * The latest year with published figures at or below `year`.
- *
- * This is the base a projection past `TAX_YEARS` should index forward from:
- * for a year Congress and the IRS have already priced, the published figure is
- * not an estimate to be improved on. Scanned rather than compared against the
- * last element, so a gap in the years on file (2025 and 2027 but not 2026)
- * anchors on 2025 for 2026 instead of on a year with no parameters behind it.
- *
- * Falls back to the earliest year on file for anything below it — unreachable
- * from the page, which prices `PAGE_TAX_YEAR` and nothing else, but it keeps
- * the return type honest.
- */
-export function publishedAnchorYear(year: number): TaxYear {
-  let anchor = TAX_YEARS[0];
-  for (const y of TAX_YEARS) {
-    if (y <= year) anchor = y;
-  }
-  return anchor;
-}
-
 /** The parameters for one tax year. */
 export function taxYearParams(year: TaxYear = defaultTaxYear()): TaxYearParams {
   return TAX_YEAR_PARAMS[year];
@@ -556,8 +478,8 @@ export function filingParams(
 
 /** The same, read straight off a scenario. */
 export function filingParamsFor(scenario: Scenario = {}): FilingYearParams {
-  const { year, filingStatus, projected } = resolveScenario(scenario);
-  return projected ? projected.filing : filingParams(year, filingStatus);
+  const { year, filingStatus } = resolveScenario(scenario);
+  return filingParams(year, filingStatus);
 }
 
 /**
@@ -647,11 +569,6 @@ export const SENIOR_DEDUCTION_PHASEOUT_START = {
   // number without a check for a case the statute does not give it.
 } satisfies Record<FilingStatus, number | null>;
 
-/** Whether a filing status can claim the senior deduction at all. */
-export function seniorDeductionAllowed(filingStatus: FilingStatus): boolean {
-  return SENIOR_DEDUCTION_PHASEOUT_START[filingStatus] !== null;
-}
-
 /**
  * MAGI at which the senior deduction is gone: $175,000 single, $250,000 MFJ.
  * Independent of how many spouses qualify, because the phaseout applies to each
@@ -692,11 +609,10 @@ export function seniorDeductionFor(scenario: Scenario = {}, magi = 0): number {
   const count = seniorCount(filingStatus, seniors);
   if (count === 0) return 0;
   // 151(d)(5)(D): "shall not apply to taxable years beginning after December
-  // 31, 2028." Unreachable while `year` is the only dating on a scenario, since
-  // every published year is inside the window — but the projection runs past
-  // 2028, and the deduction vanishing there is a step in the curve, not a
-  // rounding error.
-  const taxYear = scenarioYear(scenario);
+  // 31, 2028." Every year this app prices is inside the window, so this never
+  // fires today — it is here so that adding 2029 to `TAX_YEAR_PARAMS` expires
+  // the deduction rather than quietly extending it.
+  const { year: taxYear } = resolveScenario(scenario);
   if (taxYear < SENIOR_DEDUCTION_FIRST_YEAR || taxYear > SENIOR_DEDUCTION_LAST_YEAR) {
     return 0;
   }
@@ -761,19 +677,9 @@ export function avgAnnualSSBenefit(
  * `muniInterest` is interest exempt from tax under IRC 103 — municipal bond
  * income. IRC 86(b)(2)(B) adds it back when figuring provisional income even
  * though it never enters gross income, so it moves the taxable share of
- * benefits without moving the ordinary tax base at all. See
- * `muniInterestEffect` for what that costs.
+ * benefits without moving the ordinary tax base at all.
  */
 export function taxableSocialSecurity(scenario: Scenario = {}): number {
-  const included = includedUnder86a(scenario);
-  const { taxableSSCap } = resolveScenario(scenario);
-  // IRC 86(e) caps the inclusion; it never raises it. See `Scenario.taxableSSCap`.
-  return taxableSSCap === null ? included : Math.min(included, taxableSSCap);
-}
-
-/** 86(a) on its own, before the 86(e) ceiling. Split out only so the cap has
- * one place to apply rather than three early returns to chase. */
-function includedUnder86a(scenario: Scenario = {}): number {
   const { ordinaryIncome, ssBenefit, ltcg, muniInterest, filingStatus } =
     resolveScenario(scenario);
   // Deliberately not read off the tax year: IRC 86(c) has never been indexed.
@@ -915,12 +821,9 @@ function otherIncomeAt(
  * half the benefit alone.
  */
 export function otherIncomeAtTaxableSSCap(scenario: Scenario = {}): number {
-  const { ssBenefit, filingStatus, ltcg, taxableSSCap } = resolveScenario(scenario);
+  const { ssBenefit, filingStatus, ltcg } = resolveScenario(scenario);
   if (ssBenefit <= 0) return 0;
-  // 86(e) can hold the inclusion below 85% for a retroactive award, and then
-  // the curve flattens at the ceiling instead. See `Scenario.taxableSSCap`.
-  const cap =
-    taxableSSCap === null ? 0.85 * ssBenefit : Math.min(0.85 * ssBenefit, taxableSSCap);
+  const cap = 0.85 * ssBenefit;
   // Provisional income is other income plus muni interest and half the
   // benefit, and the cap needs at most `ssBase85` plus the whole benefit of
   // it — so this always overshoots.
@@ -1132,69 +1035,6 @@ export function marginalRateCurve(
   return data;
 }
 
-/**
- * What the ordinary rate schedule alone charges the next dollar, as a
- * percentage.
- *
- * This is the rate a reader expects: the one in the bracket table they looked
- * their income up in. `marginalRateCurve` prices what the next dollar actually
- * costs, and the gap between the two is the whole subject of this page — a
- * dollar that drags benefit into the tax base behind it, or takes part of the
- * senior deduction with it, costs more than the bracket it lands in.
- *
- * Read on the next dollar of taxable income rather than the last one, so a
- * return sitting exactly on a bracket ceiling is quoted the rate that dollar
- * pays rather than the one under it. A return with nothing taxable at all is
- * quoted the bottom bracket, which is what the table says about its first
- * taxable dollar — and what the reader is told costs less than they expect.
- *
- * The ordinary schedule, never `ltcgBrackets`: the page sweeps ordinary income
- * and passes no gain. See `marginalRateCurve`.
- */
-export function bracketRateFor(scenario: Scenario = {}): number {
-  const { ordinaryIncome } = resolveScenario(scenario);
-  const agi = agiFor(scenario);
-  // The same ordinary taxable income `totalTax` fills the brackets from.
-  const taxable = Math.max(
-    0,
-    ordinaryIncome + taxableSocialSecurity(scenario) - deductionFor(scenario, agi),
-  );
-  const { brackets } = filingParamsFor(scenario);
-  const band =
-    brackets.find(({ upTo }) => taxable + 1 <= upTo) ?? brackets[brackets.length - 1];
-  return Math.round(band.rate * 10_000) / 100;
-}
-
-/** What the next dollar of other income moves besides itself. */
-export interface MarginalDrag {
-  /** It pulls more of the Social Security benefit into the tax base behind it. */
-  benefit: boolean;
-  /** It phases out part of the senior deduction. */
-  seniorDeduction: boolean;
-}
-
-/**
- * Why the next dollar costs more than its bracket, when it does.
- *
- * Two mechanisms on this page draw the same shape, and the page must not name
- * the wrong one: the 86(a) inclusion that gives the torpedo its name, and the
- * senior deduction phasing out at 6% of MAGI. A single filer past $75,000 of
- * MAGI is usually clear of the first — the benefit is already at its 85% cap —
- * and squarely inside the second, so "the tax torpedo" would be a false
- * attribution there. Asked rather than assumed, by pricing the two terms a
- * dollar either side.
- */
-export function marginalDrag(scenario: Scenario = {}): MarginalDrag {
-  const { ordinaryIncome } = resolveScenario(scenario);
-  const next = { ...scenario, ordinaryIncome: ordinaryIncome + 1 };
-  return {
-    benefit: taxableSocialSecurity(next) > taxableSocialSecurity(scenario),
-    seniorDeduction:
-      seniorDeductionFor(next, agiFor(next)) <
-      seniorDeductionFor(scenario, agiFor(scenario)),
-  };
-}
-
 /* ------------------------------------------------------------------ */
 /*  Long-Term Capital Gains (LTCG) stacking                           */
 /* ------------------------------------------------------------------ */
@@ -1267,17 +1107,13 @@ export function totalTax(scenario: Scenario = {}): number {
  * `tax.test.ts` pins that, and it fails the moment a gain is back — which is
  * the signal to come back here and delete this note.
  *
- * It stays in `src/utils/` while the other two unreached chapters left. The
- * shelf holds files, and a chapter can only become one if nothing reached has
- * to follow it across: `ltcgRateCurve` and the conversion ceilings had no
- * caller a reader could get to, so they are now `shelf/gainsCurve.ts` and
- * `shelf/conversion.ts`. This chapter has two. `totalFederalTax` is the
- * "Federal income tax" figure at the foot of the page and the tax the shipped
- * chart plots, and `incomeAxisFeatures.niitEnd` is one of the three features
- * the axis is sized by — so moving 1411 would either drag two reached
- * functions onto the shelf behind it or make `src/utils/` import from there,
- * and the shelf's one rule is that nothing outside it does. What is dormant
- * here is a term of a live sum, not a section that lost its section.
+ * It stays where the other unreached chapters did not. Those had no caller a
+ * reader could get to and went with the sweep that took them out; this one has
+ * two. `totalFederalTax` is the "Federal income tax" figure at the foot of the
+ * page and the tax the shipped chart plots, and `incomeAxisFeatures.niitEnd`
+ * is one of the three features the axis is sized by. Both sit on top of the
+ * surtax, so deleting 1411 would take two reached functions with it. What is
+ * dormant here is a term of a live sum, not a chapter that lost its reader.
  *
  * The arithmetic is not dormant, only its reader: the tests below run the
  * statute against explicit gains and are green.
@@ -1293,18 +1129,6 @@ export function totalTax(scenario: Scenario = {}): number {
  * page for a return that owed both. None that this page can build does.
  */
 export const NIIT_RATE = 0.038;
-
-/**
- * The first year 1411 applied. Enacted in 2010 and effective for tax years
- * beginning after 31 December 2012.
- *
- * Kept here for the same reason `SS_BASE50_ENACTED` is: the thresholds below
- * carry no inflation adjustment and 1411(b) provides for none, so every year
- * since has moved more filers over a line drawn against a different decade's
- * dollars. The page already tells that story about the $25,000 and $32,000
- * bases of 1983 and 1993; this is the third instance of it.
- */
-export const NIIT_ENACTED = 2013;
 
 /**
  * The 1411(b) threshold amounts, by filing status. Not indexed, ever.
@@ -1471,245 +1295,6 @@ export function totalFederalTax(scenario: Scenario = {}): number {
 /* ------------------------------------------------------------------ */
 /*  Tax-exempt (municipal bond) interest                              */
 /* ------------------------------------------------------------------ */
-
-export interface MuniInterestEffect {
-  /** The tax-exempt interest the scenario holds. */
-  muniInterest: number;
-  /** Taxable Social Security if the same portfolio threw off no muni interest. */
-  taxableSSWithout: number;
-  /** Taxable Social Security once the tax-exempt interest is counted. */
-  taxableSSWith: number;
-  /** Benefits dragged into taxable income by the tax-exempt interest alone. */
-  taxableSSDelta: number;
-  /** Federal tax without the tax-exempt interest. */
-  taxWithout: number;
-  /** Federal tax with it. */
-  taxWith: number;
-  /** taxWith - taxWithout: what the "tax-free" interest still costs. */
-  taxCost: number;
-  /** Average federal tax cost per dollar of tax-exempt interest, in percent. */
-  costPerDollar: number;
-  /** Federal tax on the *next* dollar of tax-exempt interest, in percent. */
-  ratePerNextDollar: number;
-}
-
-/**
- * What tax-exempt interest actually costs a Social Security recipient.
- *
- * Municipal bond interest is excluded from gross income by IRC 103, so it never
- * reaches taxable income — but IRC 86(b)(2)(B) adds it straight back into
- * provisional income. The only thing it can move, therefore, is the taxable
- * share of benefits, and it moves that dollar for dollar with ordinary income:
- * inside the torpedo a dollar of "tax-free" interest can pull 85 cents of
- * benefits into the tax base and cost 10 to 40 cents in federal tax.
- *
- * Because the interest itself is invisible on the return, this is the effect
- * retirees are least likely to notice: the tax shows up on line 6b, attached to
- * benefits they cannot control, rather than anywhere near the bonds that caused
- * it.
- */
-export function muniInterestEffect(scenario: Scenario = {}): MuniInterestEffect {
-  const { muniInterest } = resolveScenario(scenario);
-  const withoutMuni: Scenario = { ...scenario, muniInterest: 0 };
-
-  const taxableSSWithout = taxableSocialSecurity(withoutMuni);
-  const taxableSSWith = taxableSocialSecurity(scenario);
-
-  const taxAt = (muni: number): number => totalTax({ ...scenario, muniInterest: muni });
-
-  const taxWithRaw = taxAt(muniInterest);
-  const taxWithout = Math.round(taxAt(0));
-  const taxWith = Math.round(taxWithRaw);
-  const taxCost = taxWith - taxWithout;
-
-  return {
-    muniInterest,
-    taxableSSWithout: Math.round(taxableSSWithout),
-    taxableSSWith: Math.round(taxableSSWith),
-    taxableSSDelta: Math.round(taxableSSWith - taxableSSWithout),
-    taxWithout,
-    taxWith,
-    taxCost,
-    costPerDollar:
-      muniInterest > 0 ? Math.round((taxCost / muniInterest) * 10_000) / 100 : 0,
-    ratePerNextDollar:
-      Math.round((taxAt(muniInterest + 1) - taxWithRaw) * 10_000) / 100,
-  };
-}
-
-/*
- * This chapter is unreached, as of the rewrite that put `bracketRateFor` and
- * `marginalDrag` under the slider.
- *
- * `segmentCurve` and `standingOn` were written for a paragraph that told the
- * reader which side of the hump they stood on and how far it was to either
- * edge. That paragraph is gone: the page now says what the next dollar costs
- * against what the bracket table says it costs, which is a question about one
- * point rather than about the shape around it. Nothing on the page calls
- * either function, and `App.tsx` no longer imports them.
- *
- * They stay in `utils/` until the shelf question is answered rather than
- * because it has been. `shelf/README.md`'s rule is that the directory holds
- * whole modules nothing renders, and these two are most of one — but the
- * decision is which, not whether, and it is a backlog item rather than a
- * silent default. The arithmetic below is not dormant, only its reader: the
- * tests in `tax.test.ts` run it and are green.
- */
-
-export interface CurveSegment<T> {
-  rate: number;
-  start: number;
-  end: number;
-  points: T[];
-  type: 'hill' | 'valley' | 'flat';
-}
-
-/**
- * Groups a curve into segments of constant marginal rate and classifies them.
- */
-export function segmentCurve<T extends { marginalRate: number }>(
-  points: T[],
-  getX: (p: T) => number,
-): CurveSegment<T>[] {
-  if (points.length === 0) return [];
-
-  const rawSegments: { rate: number; start: number; end: number; points: T[] }[] = [];
-  for (const p of points) {
-    const x = getX(p);
-    const rate = p.marginalRate;
-    if (rawSegments.length === 0 || rawSegments[rawSegments.length - 1].rate !== rate) {
-      rawSegments.push({
-        rate,
-        start: x,
-        end: x,
-        points: [p]
-      });
-    } else {
-      const last = rawSegments[rawSegments.length - 1];
-      last.end = x;
-      last.points.push(p);
-    }
-  }
-
-  return rawSegments.map((seg, idx) => {
-    const prevRate = idx > 0 ? rawSegments[idx - 1].rate : null;
-    const nextRate = idx < rawSegments.length - 1 ? rawSegments[idx + 1].rate : null;
-
-    let type: 'flat' | 'hill' | 'valley' = 'flat';
-
-    if (prevRate !== null && nextRate !== null) {
-      if (seg.rate > prevRate && seg.rate > nextRate) {
-        type = 'hill';
-      } else if (seg.rate < prevRate && seg.rate < nextRate) {
-        type = 'valley';
-      }
-    } else if (prevRate === null && nextRate !== null) {
-      if (seg.rate < nextRate) {
-        type = 'valley';
-      } else if (seg.rate > nextRate) {
-        type = 'hill';
-      }
-    }
-
-    return {
-      ...seg,
-      type,
-    };
-  });
-}
-
-/**
- * Where the reader is standing relative to the nearest hump.
- *
- * `segmentCurve` classifies every stretch of the curve; this says which
- * stretch is *theirs*, which is the difference between a chart that shows a
- * torpedo and a chart that shows them theirs. The five positions were five
- * pieces of advice while the page gave them: on a valley floor there is room
- * to fill, on the climb the next dollars are the dear ones, at the peak the
- * only cheap move is sideways, and past it the cap has already taken what it
- * can. Past tense on purpose — see the note over `CurveSegment`.
- */
-export type CurveStandingKind = 'valley' | 'climbing' | 'peak' | 'past' | 'flat';
-
-export interface CurveStanding<T> {
-  kind: CurveStandingKind;
-  /** The segment the reader's own value falls in. */
-  here: CurveSegment<T>;
-  /** The stretch below `here`, or null at the left edge. */
-  prev: CurveSegment<T> | null;
-  /** The stretch above `here`, or null at the right edge. */
-  next: CurveSegment<T> | null;
-  /**
-   * The hump in play: the one ahead when climbing or filling a valley, the one
-   * underfoot at the peak, the one behind once it has been cleared. Null only
-   * when the curve has no hump at all — a return with no benefit to drag in,
-   * where the rate climbs with the brackets and never comes back down.
-   */
-  hump: CurveSegment<T> | null;
-  /**
-   * The nearest stretch below the reader that charges less than they do, or
-   * null if every dollar behind them was at least as dear.
-   *
-   * This is what deferral is worth: a dollar held out of this year is only
-   * cheaper in a year that sits lower on this same curve, and the nearest such
-   * stretch is the reachable one. The *cheapest* stretch behind is almost
-   * always the run below the standard deduction, which is true and useless.
-   */
-  cheaperBehind: CurveSegment<T> | null;
-}
-
-/**
- * Reads a segmented curve back at one x and says what the reader should do
- * about it.
- *
- * The nearest hump *ahead* wins over the one behind, because the advice is
- * about the next dollar rather than the last one; a reader in the dip between
- * the Social Security torpedo and the senior deduction's phaseout is filling a
- * valley, not standing past a hump.
- */
-export function standingOn<T extends { marginalRate: number }>(
-  segments: CurveSegment<T>[],
-  x: number,
-): CurveStanding<T> | null {
-  if (segments.length === 0) return null;
-
-  // The last stretch that starts at or below the reader. Sliders step in a
-  // multiple of what the curve samples, so this is an exact hit in practice;
-  // the search is written to survive a value that falls between samples.
-  let hereIdx = 0;
-  for (let i = 0; i < segments.length; i += 1) {
-    if (segments[i].start > x) break;
-    hereIdx = i;
-  }
-
-  const here = segments[hereIdx];
-  const prev = hereIdx > 0 ? segments[hereIdx - 1] : null;
-  const next = hereIdx < segments.length - 1 ? segments[hereIdx + 1] : null;
-  const earlier = segments.slice(0, hereIdx).reverse();
-  const cheaperBehind =
-    earlier.find((seg) => seg.rate < here.rate) ?? null;
-  const at = { here, prev, next, cheaperBehind };
-
-  if (here.type === 'hill') {
-    return { kind: 'peak', ...at, hump: here };
-  }
-
-  const ahead = segments.slice(hereIdx + 1).find((seg) => seg.type === 'hill');
-  if (ahead) {
-    return {
-      kind: here.type === 'valley' ? 'valley' : 'climbing',
-      ...at,
-      hump: ahead,
-    };
-  }
-
-  const behind = earlier.find((seg) => seg.type === 'hill');
-  if (behind) {
-    return { kind: 'past', ...at, hump: behind };
-  }
-
-  return { kind: 'flat', ...at, hump: null };
-}
 
 /* ------------------------------------------------------------------ */
 /*  IRMAA - Medicare's income-related monthly adjustment amount        */
@@ -1908,11 +1493,6 @@ export const IRMAA_YEAR_PARAMS: Record<TaxYear, IrmaaYearParams> = {
   },
 };
 
-/** One premium year's schedule. */
-export function irmaaParams(year: TaxYear = defaultTaxYear()): IrmaaYearParams {
-  return IRMAA_YEAR_PARAMS[year];
-}
-
 /** Standard Part B premium per beneficiary per month, before any surcharge. */
 export function partBStandardPremium(year: TaxYear = defaultTaxYear()): number {
   return IRMAA_YEAR_PARAMS[year].partBStandardPremium;
@@ -1935,20 +1515,6 @@ export function irmaaTiersFor(scenario: Scenario = {}): IrmaaTier[] {
   return allIrmaaTiers(year).filter(
     (t) => t.tier === 0 || Number.isFinite(t.magiOver[filingStatus]),
   );
-}
-
-/** The first surcharge tier a filing status can reach. Tier 1, except for MFS. */
-export function firstIrmaaTier(scenario: Scenario = {}): IrmaaTier {
-  return irmaaTiersFor(scenario)[1];
-}
-
-/**
- * The MAGI at which a scenario meets its first IRMAA cliff. A true cliff: one
- * dollar over triggers a full year of Part B and Part D surcharges.
- */
-export function irmaaFirstCliffMagi(scenario: Scenario = {}): number {
-  const { filingStatus } = resolveScenario(scenario);
-  return firstIrmaaTier(scenario).magiOver[filingStatus];
 }
 
 /** Whether a MAGI has reached a tier, honouring the inclusive top threshold. */
@@ -2242,11 +1808,6 @@ export const FPL_YEAR_PARAMS: Record<TaxYear, PtcYearParams> = {
     topApplicablePercentage: 0.0996,
   },
 };
-
-/** One coverage year's poverty-line figures. */
-export function ptcParams(year: TaxYear = defaultTaxYear()): PtcYearParams {
-  return FPL_YEAR_PARAMS[year];
-}
 
 /**
  * The poverty line for a household of `householdSize`, for a coverage year.

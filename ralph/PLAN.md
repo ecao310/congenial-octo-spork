@@ -1,3 +1,9 @@
+Backlog 8
+[ ] i manually changed text. fix my tests.
+[ ] remove tax valley hill from tooltip entirely. also, remove from the tool tip the text about $x to next cliff, and the text about marketplace premium.
+[ ] clean up dead code. the tool is now only about social security and marginal tax rates. break this down into multiple steps if necessary. 
+[ ] sometimes the page goes black when slider moves. diagnose and fix.
+
 Backlog 7
 [x] make "Lines" dropdown render on the corner of the graph to take up less vertical space. simplify it to just have checkmarks for irmaa and 400% fpl. no explainers there needed. also call the dropdown something different like "breakpoints".
 [x] Charity and municipal interest. Includes municipal interest in total income, but excludes QCD.

@@ -1415,7 +1415,7 @@ const App: React.FC = () => {
           title and the subtitle are — and because content outside every
           landmark is content a reader jumping by landmark never lands on. */}
       <header>
-        <h1>How Much Can You Take Out This Year?</h1>
+        <h1>Social Security and Marginal Tax Rates</h1>
         <p className="subtitle">
           Because of how Social Security is taxed, your marginal tax rate is often very different than what you might expect.
         </p>
@@ -1614,11 +1614,6 @@ const App: React.FC = () => {
                 <span className="advanced-state">At $0</span>
               )}
             </summary>
-            <p className="field-note">
-              Interest a municipal bond pays. It sits at $0 until you move it,
-              and at $0 it changes not a single figure on this return — so set
-              it only if it is yours.
-            </p>
             <div className="input-group">
               <div className="slider-header">
                 <label htmlFor="muni-interest">Tax-Exempt (Municipal) Interest</label>
@@ -1697,13 +1692,6 @@ const App: React.FC = () => {
             <h2 className="step-heading" id="step-torpedo-heading">
               The tax torpedo
             </h2>
-            <p className="step-intro">
-              The chart prices every total income from{' '}
-              {formatCurrency(axisDomain[0])} to {formatCurrency(axisDomain[1])}{' '}
-              &mdash; a fixed {axisFixedProse} set above, plus $0 to{' '}
-              {formatCurrency(axisMax)} of other income. The slider says which
-              point along it is yours.
-            </p>
 
             <figure className="chart-figure">
               {/* The chart's own settings, and the only control on the page
@@ -1931,7 +1919,7 @@ const App: React.FC = () => {
 
             <details className="explainer">
               <summary>
-                <h2 id="tax-torpedo-heading">What is the tax torpedo?</h2>
+                <h3 id="tax-torpedo-heading">What is the tax torpedo?</h3>
               </summary>
               <div className="explainer-content">
                 <p>
@@ -1985,7 +1973,7 @@ const App: React.FC = () => {
 
             <details className="explainer">
               <summary>
-                <h2 id="torpedo-strategies-heading">How to mitigate the tax torpedo</h2>
+                <h3 id="torpedo-strategies-heading">How to mitigate the tax torpedo</h3>
               </summary>
               <div className="explainer-content">
                 <ul>
@@ -2017,9 +2005,9 @@ const App: React.FC = () => {
 
             <details className="explainer">
               <summary>
-                <h2 id="irmaa-cliffs-heading">
+                <h3 id="irmaa-cliffs-heading">
                   Medicare&apos;s IRMAA cliffs
-                </h2>
+                </h3>
               </summary>
               <div className="explainer-content">
                 <p>
@@ -2078,9 +2066,9 @@ const App: React.FC = () => {
             {preMedicare && subsidyCliff ? (
               <details className="explainer">
                 <summary>
-                  <h2 id="subsidy-cliff-heading">
+                  <h3 id="subsidy-cliff-heading">
                     The {PTC_CLIFF_PERCENT * 100}% poverty-line cliff
-                  </h2>
+                  </h3>
                 </summary>
                 <div className="explainer-content">
                   <p>
@@ -2180,10 +2168,10 @@ const App: React.FC = () => {
 
             <details className="explainer">
               <summary>
-                <h2 id="senior-deduction-heading">
+                <h3 id="senior-deduction-heading">
                   The senior deduction phaseout ({SENIOR_DEDUCTION_FIRST_YEAR}&ndash;
                   {SENIOR_DEDUCTION_LAST_YEAR})
-                </h2>
+                </h3>
               </summary>
               <div className="explainer-content">
                 <p>
@@ -2277,7 +2265,7 @@ const App: React.FC = () => {
                 <dd>
                   <strong>{formatCurrency(totalIncome)}</strong>
                   <span className="answer-gloss">
-                    Other income plus the <em>whole</em> benefit
+                    Social security plus other income
                     {muniInterest > 0
                       ? `, plus ${formatCurrency(muniInterest)} of tax-exempt interest`
                       : ''}
@@ -2317,22 +2305,19 @@ const App: React.FC = () => {
               </div>
 
               <div className="answer-figure">
-                <dt>The next dollar</dt>
+                <dt>Marginal rate</dt>
                 <dd>
                   <strong>
                     {herePoint ? `${herePoint.marginalRate}%` : '\u2014'}
                   </strong>
                   <span className="answer-gloss">
-                    What one more dollar of ordinary income costs, where the amber
-                    line crosses step 2&apos;s curve. The average above it is what
-                    the income already in has been charged; this is the price of
-                    taking any more.
+                    What one more dollar of ordinary income costs.
                   </span>
                 </dd>
               </div>
 
               <div className="answer-figure">
-                <dt>Benefit in the tax base</dt>
+                <dt>Taxable social security</dt>
                 <dd>
                   <strong>
                     {ssBenefit > 0
@@ -2341,7 +2326,7 @@ const App: React.FC = () => {
                   </strong>
                   <span className="answer-gloss">
                     {ssBenefit > 0
-                      ? `${formatPercent(taxableSS / ssBenefit)} of it. 86(a) can never make more than 85% taxable, and whatever is left never reaches the return at all.`
+                      ? `${formatPercent(taxableSS / ssBenefit)} of it. 86(a) can never make more than 85% taxable.`
                       : 'Step 1 sets no benefit, so there is nothing for other income to drag in \u2014 the rate follows the ordinary brackets and nothing else.'}
                   </span>
                 </dd>
@@ -2359,7 +2344,7 @@ const App: React.FC = () => {
                     On {formatCurrency(hereMagi)} of MAGI
                     {beneficiaries > 1 ? ', charged to each of you' : ''}.{' '}
                     {hereIrmaa.headroom !== null
-                      ? `Another ${formatCurrency(hereIrmaa.headroom)} of it crosses the next cliff, which costs ${formatCurrency(hereIrmaa.nextStep)} a year on the strength of one dollar.`
+                      ? `Another ${formatCurrency(hereIrmaa.headroom)} of it crosses the next cliff, which costs ${formatCurrency(hereIrmaa.nextStep)} per year.`
                       : 'This is the top tier; there is no cliff above it.'}{' '}
                     Billed on a {IRMAA_LOOKBACK_YEARS}-year lag, so this is what{' '}
                     {year} income sets for {year + IRMAA_LOOKBACK_YEARS}.
@@ -2382,12 +2367,6 @@ const App: React.FC = () => {
                 together. The sentence is the feature and the button is the
                 convenience — see `canCopyLink`. */}
             <div className="answer-share">
-              <p className="answer-share-line">
-                <strong>The address bar is this return.</strong> Every control on
-                this page rides in the link, so sending it sends the figures above
-                exactly as they stand &mdash; and whoever opens it can move the
-                sliders themselves without disturbing yours.
-              </p>
               {canCopyLink && (
                 <button
                   type="button"
@@ -2410,14 +2389,6 @@ const App: React.FC = () => {
                     : ''}
               </p>
             </div>
-
-            <p className="answer-note">
-              Every figure here moves the moment any slider does, and none of them
-              is a filing: this is the standard deduction with nothing itemised,
-              no credits, no other household member&apos;s income and no
-              withholding. What they are for is the comparison &mdash; this year
-              against the years the same money would otherwise come out in.
-            </p>
           </section>
         </div>
       </main>

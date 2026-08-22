@@ -9431,3 +9431,89 @@ from this loop, and that trade is worth deciding rather than assuming.
 Top of Backlog 8 is now "if age 65 or older gets unchecked, the both spouses
 box should also automatically uncheck" — small, and the state lives in
 `isSenior`/`spouseIsSenior` with `seniors` derived from both in App.tsx.
+
+## Iteration — "if age 65 or older gets unchecked, the both spouses box should also automatically uncheck" (Backlog 8)
+
+### First, the tree was dirty again
+
+The previous run finished the black-page fix, marked it `[x]`, and never
+committed: six files modified, `npx tsc -b`, `npx eslint`, `npx vitest run`
+(655/655) and `npm run build` all clean on arrival. Committed as `f016f4d`
+before starting anything, since the work was done and verified and the only
+thing missing was the commit.
+
+That is the **seventh** occurrence, and PLAN.md:151 — written after the sixth
+— says in as many words "worth picking one rather than recording a seventh".
+So this run does not record an eighth quietly: a bullet is added below naming
+the two candidate guards and asking for a decision, as a task a run can pick.
+
+### What was actually wrong with the checkbox
+
+"Both spouses are 65 or older" was `disabled={!isSenior}` and nothing more, so
+unchecking "Age 65 or older" left it **checked and greyed out**. Three things
+followed from that, in rising order of how much they cost a reader:
+
+1. A checked box that prices nothing. `seniors` in App.tsx has always read
+   `isSenior ? (mfj && spouseIsSenior ? 2 : 1) : 0`, so the arithmetic already
+   ignored it — the control and the engine disagreed, and the control was the
+   one lying.
+2. The link carried `spouse=1` for a return that did not claim it, so a
+   shared link opened on the same checked-and-greyed box.
+3. Turning 65 again silently handed back a second $1,650 of standard deduction
+   and a second $6,000 senior deduction. The reader last saw that box greyed
+   out; nothing on the page said it was still armed.
+
+### The fix, and the one place it had to be repeated
+
+`onChange` on the filer's box clears the spouse's when it goes off. Two lines.
+
+The second half is `decodeScenario`: the page can no longer *produce*
+`spouse=1` without `senior=1`, but every link written before today can, and a
+link is the one input this app did not produce itself. So `spouseIsSenior` is
+now `isSenior && flag('spouse')`.
+
+Read past in **silence**, with no note, and that is the deliberate part: the
+deduction already counted nobody, so no figure on the page differs from what
+that link priced yesterday. The only thing dropping it changes is a checked
+box that bought nothing — nothing to tell the reader, and the same reading
+`year=2025` gets four paragraphs up in that file's header.
+
+What is *not* enforced there: `spouse=1` on a `filing=single` return survives.
+Switching the strip to single hides that checkbox without forgetting its
+answer, so decode has to keep it too or a misclick on the radio would cost a
+reader a box they had set. The invariant is "the spouse's flag needs the
+filer's", not "the spouse's flag needs a joint return". Written into the
+comment, because the asymmetry looks like an oversight otherwise.
+
+### Tests
+
+Four new, 655 → 659.
+
+- `clears the spouse toggle when the filer stops being 65` — checks both,
+  asserts $35,500, unchecks the filer, asserts the spouse box is unchecked
+  *and* disabled and the deduction is back to $32,200, then re-checks the
+  filer and asserts $33,850 rather than $35,500. That last assertion is the
+  one about the reader, not the state.
+- `drops the spouse flag when the filer stops being 65` — the address side,
+  in the fake-timer block with `settle()`: `?filing=mfj&senior=1&spouse=1`
+  becomes `?filing=mfj`.
+- `opens a link that names the spouse alone on neither box` — the decode side
+  through the real page, including `queryByRole('status')` absent, which is
+  the assertion that the silence is deliberate.
+- `drops a spouse flag with no filer flag behind it` in scenarioUrl.test.ts —
+  unit-level, and pins the asymmetry: `senior=1&spouse=1` still round-trips on
+  a single return.
+
+Mutation-checked both halves at once: removing the `setSpouseIsSenior(false)`
+line and reverting decode to `flag('spouse')` reddens exactly those four and
+nothing else (655 pass, 4 fail). Restored, then `npx tsc -b`, `npx eslint .
+--max-warnings 0`, `npx vitest run` (659/659) and `npm run build` all clean.
+README's count 655 → 659.
+
+### Next
+
+Top of Backlog 8 is the wordy hump paragraph — "simplify it down to something
+like 'while you may expect your marginal rate at this income to be x%, it's
+actually y% because of social security's tax torpedo'". That is a copy task
+with a live figure in it, so the work is finding where that sentence is built
+in App.tsx and what its tests assert word for word.

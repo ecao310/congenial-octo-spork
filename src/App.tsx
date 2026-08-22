@@ -1560,6 +1560,14 @@ const App: React.FC = () => {
                   aria-describedby="senior-deduction-hint"
                   onChange={(e) => {
                     setIsSenior(e.target.checked);
+                    // The spouse's box answers "and the other one too?", so it
+                    // cannot outlive the question. Leaving it set left a
+                    // checked box greyed out under `disabled`, put a `spouse=1`
+                    // in the link that priced nothing, and made re-checking
+                    // this box hand back a second $1,650 nobody asked for
+                    // again. `seniors` below already ignored it; this is the
+                    // control agreeing with the arithmetic.
+                    if (!e.target.checked) setSpouseIsSenior(false);
                     announce('benefit');
                   }}
                 />

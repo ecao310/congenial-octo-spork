@@ -310,13 +310,32 @@ export function decodeScenario(search: string): DecodedScenario {
     reason: 'the right edge of the slider that sets it',
   });
 
+  /**
+   * The spouse's flag means nothing without the filer's, on the way in as well
+   * as on the page: unchecking "Age 65 or older" now clears "Both spouses are
+   * 65 or older" with it, and a link may not put the pair back into the state
+   * the control no longer allows. Links written before that rule carry the
+   * combination, so this is the one place it can still arrive.
+   *
+   * Read past in silence, unlike a clamped figure: `seniors` in App.tsx
+   * already counted nobody, so no figure on the page differs from what this
+   * link priced before. The only thing dropping it changes is a checked box
+   * that bought nothing.
+   *
+   * Note what is *not* enforced here: `spouse=1` on a single return survives.
+   * Switching the strip to single hides that checkbox without forgetting its
+   * answer, so a refresh has to keep it too or a misclick on the radio would
+   * cost the reader a box they had set.
+   */
+  const isSenior = flag('senior');
+
   return {
     scenario: {
       filingStatus,
       ssBenefit,
       ordinaryIncome,
-      isSenior: flag('senior'),
-      spouseIsSenior: flag('spouse'),
+      isSenior,
+      spouseIsSenior: isSenior && flag('spouse'),
       muniInterest,
     },
     notes,

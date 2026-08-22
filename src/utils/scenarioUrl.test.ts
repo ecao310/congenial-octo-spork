@@ -185,6 +185,27 @@ describe('decodeScenario', () => {
     }
   });
 
+  /**
+   * The page stopped letting the spouse's box stand on its own — unchecking
+   * "Age 65 or older" clears it — so a link is the only way the pair can still
+   * arrive, and every link written before that rule may carry it. Read past in
+   * silence, because the deduction already counted nobody: no figure changes,
+   * only a checked box that priced nothing.
+   */
+  it('drops a spouse flag with no filer flag behind it', () => {
+    const { scenario, notes } = decodeScenario('filing=mfj&spouse=1');
+    expect(scenario.isSenior).toBe(false);
+    expect(scenario.spouseIsSenior).toBe(false);
+    expect(notes).toEqual([]);
+
+    // With the filer's flag on it stands, on either return: the strip hides
+    // that box for a single filer without forgetting the answer.
+    expect(decodeScenario('filing=mfj&senior=1&spouse=1').scenario.spouseIsSenior).toBe(
+      true,
+    );
+    expect(decodeScenario('senior=1&spouse=1').scenario.spouseIsSenior).toBe(true);
+  });
+
   it('ignores a flag that is not set to 1', () => {
     expect(decodeScenario('senior=0').scenario.isSenior).toBe(false);
     expect(decodeScenario('senior=true').scenario.isSenior).toBe(false);

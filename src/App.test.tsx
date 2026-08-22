@@ -363,6 +363,43 @@ describe('App', () => {
     );
   });
 
+  /**
+   * The spouse's box answers the filer's question, so it goes when the
+   * question does. Before this it stayed checked behind `disabled` — a box
+   * that bought nothing, since the deduction had already stopped counting it —
+   * and turning 65 again handed back a second $1,650 the reader had last seen
+   * greyed out.
+   */
+  it('clears the spouse toggle when the filer stops being 65', () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Jointly' }));
+    const senior = screen.getByRole('checkbox', { name: 'Age 65 or older' });
+    const spouse = screen.getByRole('checkbox', {
+      name: 'Both spouses are 65 or older',
+    });
+
+    fireEvent.click(senior);
+    fireEvent.click(spouse);
+    expect(spouse).toBeChecked();
+    expect(screen.getByText(/^Standard deduction/)).toHaveTextContent(
+      'Standard deduction $35,500 — $32,200 base plus $3,300 for age 65 or older.',
+    );
+
+    fireEvent.click(senior);
+    expect(spouse).not.toBeChecked();
+    expect(spouse).toBeDisabled();
+    expect(screen.getByText(/^Standard deduction/)).toHaveTextContent(
+      'Standard deduction $32,200. Turning 65 adds $1,650 per qualifying spouse.',
+    );
+
+    // And the second one does not come back with the first.
+    fireEvent.click(senior);
+    expect(spouse).not.toBeChecked();
+    expect(screen.getByText(/^Standard deduction/)).toHaveTextContent(
+      'Standard deduction $33,850 — $32,200 base plus $1,650 for age 65 or older.',
+    );
+  });
+
   it('describes the senior deduction and its phaseout beside the age toggle', () => {
     render(<App />);
     expect(screen.getByText(/^Filers 65 or older/)).toHaveTextContent(
@@ -2447,6 +2484,37 @@ describe('the return in the address bar', () => {
     expect(
       document.querySelector('#step-torpedo .slider-readout'),
     ).toHaveTextContent('At $120,000 of other income');
+  });
+
+  /**
+   * Both ends of the same rule: a link may not carry the pair the control no
+   * longer allows, and one written before the rule does not put it back.
+   */
+  it('drops the spouse flag when the filer stops being 65', () => {
+    openAt('?filing=mfj&senior=1&spouse=1');
+    render(<App />);
+    const spouse = screen.getByRole('checkbox', {
+      name: 'Both spouses are 65 or older',
+    });
+    expect(spouse).toBeChecked();
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Age 65 or older' }));
+    settle();
+    expect(spouse).not.toBeChecked();
+    expect(window.location.search).toBe('?filing=mfj');
+  });
+
+  it('opens a link that names the spouse alone on neither box', () => {
+    openAt('?filing=mfj&spouse=1');
+    render(<App />);
+
+    expect(screen.getByRole('checkbox', { name: 'Age 65 or older' })).not.toBeChecked();
+    expect(
+      screen.getByRole('checkbox', { name: 'Both spouses are 65 or older' }),
+    ).not.toBeChecked();
+    // Nothing to tell the reader: the deduction never counted that spouse.
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(window.location.search).toBe('?filing=mfj');
   });
 
   it('writes what the reader moves back into the address', () => {

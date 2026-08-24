@@ -1,9 +1,31 @@
 name: Deploy to GitHub Pages
 
+# The repo has one GitHub Pages site and two branches that publish to it:
+# PRODUCTION_BRANCH at the root, PREVIEW_BRANCH nested under PREVIEW_BASE.
+# A Pages deploy replaces the whole site, so a workflow that published only
+# the branch that pushed would take the other branch's build down with every
+# run — which is what happened: each push to main wiped /preview/ until dev
+# was next pushed. So a push to either branch runs this one job, which checks
+# out both, builds both, and publishes the combined tree.
+#
+# `the front door` in src/guards/meta.test.ts reads the three values under
+# `env` and the branch list under `on.push` and holds README.md's Deployment
+# section to them, so a change here that the README does not describe turns
+# the test suite red.
+
 on:
   push:
-    branches: [ main ]
+    branches: [ main, dev ]
   workflow_dispatch:
+
+env:
+  PRODUCTION_BRANCH: main
+  PREVIEW_BRANCH: dev
+  PREVIEW_BASE: /congenial-octo-spork/preview/
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
 
 jobs:
   deploy:
@@ -17,22 +39,65 @@ jobs:
       id-token: write
 
     steps:
-      - uses: actions/checkout@v4
-      
-      - name: Install dependencies
-        run: npm install
-      
-      - name: Run Tests
-        run: npm run test
-      
-      - name: Build
-        run: npm run build
-      
+      - name: Check out production branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.PRODUCTION_BRANCH }}
+          path: production-src
+
+      - name: Check out preview branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.PREVIEW_BRANCH }}
+          path: preview-src
+
+      # Production builds with vite.config's own `base`, the site root.
+      - name: Test and build production site
+        working-directory: production-src
+        run: |
+          npm install
+          npm run test
+          npm run build
+
+      # Best-effort when production pushed: a broken preview branch must not
+      # hold up production, so its failure is recorded and production ships
+      # without it. The step after this turns that failure back into a red
+      # run when the preview branch is the one that pushed.
+      - name: Test and build preview site
+        id: preview
+        continue-on-error: true
+        working-directory: preview-src
+        run: |
+          npm install
+          npm run test
+          npx tsc -b
+          npx vite build --base="$PREVIEW_BASE"
+
+      - name: Fail if the preview branch pushed a build that does not pass
+        if: steps.preview.outcome == 'failure' && github.ref_name == env.PREVIEW_BRANCH
+        run: |
+          echo "::error::${PREVIEW_BRANCH} failed its tests or build; nothing published."
+          exit 1
+
+      - name: Assemble combined site
+        run: |
+          mkdir -p site
+          cp -R production-src/dist/. site/
+          if [ -d preview-src/dist ]; then
+            preview_dir="site/$(basename "$PREVIEW_BASE")"
+            mkdir -p "$preview_dir"
+            cp -R preview-src/dist/. "$preview_dir/"
+          else
+            echo "::warning::${PREVIEW_BRANCH} did not build; publishing production without ${PREVIEW_BASE}"
+          fi
+          echo "--- published tree ---"
+          find site -maxdepth 2 -mindepth 1 | sort
+
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: './dist'
-      
+          path: './site'
+
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4

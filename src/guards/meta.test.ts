@@ -248,12 +248,12 @@ describe('the search snippet', () => {
  * The fix is a link, and a link rots the moment the branch under it moves. So
  * this reads the README's own account of what deploys where — every "push to
  * `branch`" sentence in its Deployment section, paired with the Pages URL that
- * sentence gives — finds the workflow that fires on each branch, and derives
- * the URL that workflow actually publishes to: `--base=` if the job overrides
- * it, `vite.config.ts`'s `base` if it does not. **Live:** must then be one of
- * the URLs the README says a branch publishes. Retiring a branch, adding a
- * workflow, or moving a base path therefore turns red here until the README
- * says so too.
+ * sentence gives — and holds it to the one workflow that publishes the site:
+ * the branches it fires on, and the branch→base pairs it declares under
+ * `env`. Production builds with `vite.config.ts`'s `base`; the preview with
+ * `PREVIEW_BASE`. **Live:** must then be one of the URLs the README says a
+ * branch publishes. Retiring a branch, adding a workflow, or moving a base
+ * path therefore turns red here until the README says so too.
  */
 describe('the front door', () => {
   const readme = readFileSync(root('README.md'), 'utf8');
@@ -275,54 +275,63 @@ describe('the front door', () => {
     ),
   ].map(([, branch, url]) => ({ branch, url: url.endsWith('/') ? url : `${url}/` }));
 
-  /**
-   * Every deploy workflow, as the branch it fires on and the base path it
-   * hands the build. `deploy-preview.yml` passes `--base=` on the command
-   * line; `deploy.yml` runs `npm run build` and takes vite.config's.
-   */
   const configBase = /^\s*base:\s*'([^']+)'/m.exec(
     readFileSync(root('vite.config.ts'), 'utf8'),
   )?.[1];
 
-  const workflows = readdirSync(root('.github/workflows')).map((file) => {
-    const yaml = readFileSync(root(`.github/workflows/${file}`), 'utf8');
-    return {
-      file,
-      branches: (/branches:\s*\[([^\]]*)\]/.exec(yaml)?.[1] ?? '')
-        .split(',')
-        .map((b) => b.trim())
-        .filter(Boolean),
-      base: /--base=(\S+)/.exec(yaml)?.[1] ?? configBase,
-    };
+  /**
+   * The workflow, as the branches it fires on and the branch→base pairs its
+   * `env` declares. There is exactly one: a Pages deploy replaces the whole
+   * site, so a second workflow publishing on its own would wipe whatever the
+   * first one put there — which is how `/preview/` kept going 404.
+   */
+  const workflowFiles = readdirSync(root('.github/workflows'));
+  const yaml = readFileSync(root('.github/workflows/deploy.yml'), 'utf8');
+  const env = (name: string) => new RegExp(`^\\s*${name}:\\s*(\\S+)`, 'm').exec(yaml)?.[1];
+
+  const triggers = (/branches:\s*\[([^\]]*)\]/.exec(yaml)?.[1] ?? '')
+    .split(',')
+    .map((b) => b.trim())
+    .filter(Boolean);
+
+  const publishes = [
+    { branch: env('PRODUCTION_BRANCH'), base: configBase },
+    { branch: env('PREVIEW_BRANCH'), base: env('PREVIEW_BASE') },
+  ];
+
+  it('is published by one workflow, from the branches it declares', () => {
+    expect(workflowFiles).toEqual(['deploy.yml']);
+    expect(configBase).toBe('/congenial-octo-spork/');
+
+    // The `env` values are only what the job publishes if the steps read
+    // them: the checkouts by ref, the preview build by `--base=`.
+    expect(yaml).toContain('ref: ${{ env.PRODUCTION_BRANCH }}');
+    expect(yaml).toContain('ref: ${{ env.PREVIEW_BRANCH }}');
+    expect(yaml).toMatch(/--base="?\$PREVIEW_BASE"?/);
+
+    // `on.push.branches` cannot read `env`, so the list is written twice and
+    // the two copies have to agree. Sorted, so a diff names the branch.
+    expect([...triggers].sort()).toEqual(publishes.map((p) => p.branch).sort());
   });
 
   it('says which branches deploy, and where', () => {
     expect(liveUrl).toBeDefined();
-    expect(configBase).toBe('/congenial-octo-spork/');
-    expect(workflows.length).toBeGreaterThan(1);
     expect(described.length).toBeGreaterThan(0);
 
-    // Every branch a workflow fires on is one the README describes, and the
-    // other way round — sorted, so a diff names the branch rather than the
-    // order.
-    const documented = described.map((d) => d.branch).sort();
-    const deploying = workflows.flatMap((w) => w.branches).sort();
-    expect(documented).toEqual(deploying);
+    // Every branch the workflow fires on is one the README describes, and
+    // the other way round.
+    expect(described.map((d) => d.branch).sort()).toEqual([...triggers].sort());
   });
 
-  it('gives each branch the URL its workflow publishes', () => {
+  it('gives each branch the URL the workflow publishes it at', () => {
     for (const { branch, url } of described) {
-      // Named by workflow file rather than counted, so a failure says which
-      // ones fired on the branch instead of only how many did.
-      const deploying = workflows.filter((w) => w.branches.includes(branch));
-      expect(deploying.map((w) => w.file)).toHaveLength(1);
-
-      // Compared as paths: the origin is asserted on its own, and a whole-URL
-      // diff is long enough that vitest elides the half that differs.
+      // Compared as paths, and with the branch alongside: the origin is
+      // asserted on its own, and a whole-URL diff is long enough that vitest
+      // elides the half that differs.
       expect(url.startsWith(`${ORIGIN}/`)).toBe(true);
       expect({ branch, base: url.slice(ORIGIN.length) }).toEqual({
         branch,
-        base: deploying[0].base,
+        base: publishes.find((p) => p.branch === branch)?.base,
       });
     }
   });
@@ -332,7 +341,7 @@ describe('the front door', () => {
   });
 
   it('names no Pages URL that no workflow publishes', () => {
-    const published = new Set(workflows.map((w) => `${ORIGIN}${w.base}`));
+    const published = new Set(publishes.map((p) => `${ORIGIN}${p.base}`));
     const named = new Set(
       (readme.match(new RegExp(`${ORIGIN}/[\\w./-]*`, 'g')) ?? []).map((u) =>
         u.endsWith('/') ? u : `${u}/`,

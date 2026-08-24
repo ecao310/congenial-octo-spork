@@ -158,22 +158,31 @@ close.
 
 ## Deployment
 
-Every push to `main` runs the tests, builds, and deploys to GitHub Pages:
+The repo has one GitHub Pages site and one workflow that publishes it,
+`.github/workflows/deploy.yml`, which runs on a push to either branch. Every
+push to `main` tests, builds and publishes it at
 https://ecao310.github.io/congenial-octo-spork/
 
-Every push to `dev` publishes a preview alongside it, at
-https://ecao310.github.io/congenial-octo-spork/preview/ . The repo has one
-Pages site, so `.github/workflows/deploy-preview.yml` rebuilds main's site
-verbatim from `main` and nests the dev build underneath it. The production URL
-therefore always serves `main`, and `dev` never needs to be merged to be seen.
+Every push to `dev` publishes a preview nested under it, at
+https://ecao310.github.io/congenial-octo-spork/preview/ .
 
-`the front door` in `src/guards/meta.test.ts` holds the two together: it reads
-each "push to `branch`" sentence above and the URL it gives, finds the workflow
-that triggers on that branch, derives the base that workflow builds with, and
-fails if the sentence and the workflow stop agreeing — or if **Live:** at the
-top names a URL no branch here publishes. What it cannot see is which branch
-is ahead of which: this file went on calling `main` the pre-rewrite app after
-the merge had already landed, and the test stayed green the whole time, because
+Whichever branch pushed, the run checks out both, builds `main` at the root
+and `dev` under `/preview/`, and publishes the combined tree. It has to: a
+Pages deploy replaces the whole site, and when each branch had a workflow of
+its own, every push to `main` published `main`'s build alone and took the
+preview down until `dev` was next pushed. The production URL therefore always
+serves `main`, and `dev` never needs to be merged to be seen. A broken `dev`
+does not hold `main` back — pushed from `main`, a preview that fails its tests
+or build is logged and production ships without it; pushed from `dev`, it
+fails the run and nothing is published.
+
+`the front door` in `src/guards/meta.test.ts` holds this section to that
+file: it reads each "push to `branch`" sentence above and the URL it gives,
+the branches the workflow fires on and the branch→base pairs its `env`
+declares, and fails if any of them stop agreeing — or if **Live:** at the top
+names a URL no branch here publishes. What it cannot see is which branch is
+ahead of which: this file went on calling `main` the pre-rewrite app after the
+merge had already landed, and the test stayed green the whole time, because
 the link and the workflow it named still agreed with each other. Moving the
 front door is a README edit; noticing that nobody made it is still a human
 job.

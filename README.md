@@ -168,14 +168,14 @@ verbatim from `main` and nests the dev build underneath it. The production URL
 therefore always serves `main`, and `dev` never needs to be merged to be seen.
 
 `the front door` in `src/guards/meta.test.ts` holds the two together: it reads
-the
-working branch out of the sentence under that link, finds the workflow that
-triggers on that branch, derives the base that workflow builds with, and fails
-if the link and the workflow stop agreeing. What it cannot see is which branch
+each "push to `branch`" sentence above and the URL it gives, finds the workflow
+that triggers on that branch, derives the base that workflow builds with, and
+fails if the sentence and the workflow stop agreeing — or if **Live:** at the
+top names a URL no branch here publishes. What it cannot see is which branch
 is ahead of which: this file went on calling `main` the pre-rewrite app after
 the merge had already landed, and the test stayed green the whole time, because
 the link and the workflow it named still agreed with each other. Moving the
-working branch is a README edit; noticing that nobody made it is still a human
+front door is a README edit; noticing that nobody made it is still a human
 job.
 
 ---

@@ -238,27 +238,42 @@ describe('the search snippet', () => {
  * The repo's own front door, which is a different surface from the page's.
  *
  * `README.md:12` named the bare Pages URL as **Live:** for the whole rewrite.
- * That URL serves `main`, which is seventy-odd commits behind `dev` and still
- * opens as *Marginal Tax Rate* out of a package called `growth-projector`, so
+ * That URL served `main`, which was seventy-odd commits behind `dev` and still
+ * opened as *Marginal Tax Rate* out of a package called `growth-projector`, so
  * every reader who followed the front-door link landed on the app this one was
- * rewritten out of. Nothing caught it because nothing here reads `README.md`
- * and no build breaks: both URLs are live, both return 200, and the wrong one
- * is a perfectly good page.
+ * rewritten out of. Nothing caught it because nothing here read `README.md`
+ * and no build breaks: both URLs were live, both returned 200, and the wrong
+ * one was a perfectly good page.
  *
  * The fix is a link, and a link rots the moment the branch under it moves. So
- * this reads the working branch out of the README's own prose rather than
- * hardcoding it, finds the workflow that deploys on push to that branch, and
- * derives the URL that workflow actually publishes to — `--base=` if the job
- * overrides it, `vite.config.ts`'s `base` if it does not. Merging `dev` into
- * `main` therefore turns red here until the README says so too.
+ * this reads the README's own account of what deploys where — every "push to
+ * `branch`" sentence in its Deployment section, paired with the Pages URL that
+ * sentence gives — finds the workflow that fires on each branch, and derives
+ * the URL that workflow actually publishes to: `--base=` if the job overrides
+ * it, `vite.config.ts`'s `base` if it does not. **Live:** must then be one of
+ * the URLs the README says a branch publishes. Retiring a branch, adding a
+ * workflow, or moving a base path therefore turns red here until the README
+ * says so too.
  */
 describe('the front door', () => {
   const readme = readFileSync(root('README.md'), 'utf8');
   const ORIGIN = 'https://ecao310.github.io';
 
-  /** The URL under **Live:**, and the branch the sentence below it names. */
+  /** The URL under **Live:**. */
   const liveUrl = /^\*\*Live:\*\*\s+(\S+)/m.exec(readme)?.[1];
-  const workingBranch = /`([\w.-]+)` is the working branch/.exec(readme)?.[1];
+
+  /**
+   * What the README says deploys where: each branch its Deployment section
+   * names in a "push to `branch`" sentence, with the first Pages URL that
+   * follows it. Non-greedy so that each URL is claimed by the nearest branch
+   * before it rather than the first one in the section.
+   */
+  const deployment = readme.slice(readme.indexOf('## Deployment'));
+  const described = [
+    ...deployment.matchAll(
+      new RegExp(`push to \`([\\w.-]+)\`[\\s\\S]*?(${ORIGIN}/[\\w./-]*)`, 'g'),
+    ),
+  ].map(([, branch, url]) => ({ branch, url: url.endsWith('/') ? url : `${url}/` }));
 
   /**
    * Every deploy workflow, as the branch it fires on and the base path it
@@ -281,23 +296,39 @@ describe('the front door', () => {
     };
   });
 
-  it('says which branch it is describing', () => {
+  it('says which branches deploy, and where', () => {
     expect(liveUrl).toBeDefined();
-    expect(workingBranch).toBeDefined();
     expect(configBase).toBe('/congenial-octo-spork/');
     expect(workflows.length).toBeGreaterThan(1);
+    expect(described.length).toBeGreaterThan(0);
+
+    // Every branch a workflow fires on is one the README describes, and the
+    // other way round — sorted, so a diff names the branch rather than the
+    // order.
+    const documented = described.map((d) => d.branch).sort();
+    const deploying = workflows.flatMap((w) => w.branches).sort();
+    expect(documented).toEqual(deploying);
   });
 
-  it('points at the URL the working branch publishes', () => {
-    // Named by workflow file rather than counted, so a failure says which
-    // ones fired on the branch instead of only how many did.
-    const deploying = workflows.filter((w) => w.branches.includes(workingBranch!));
-    expect(deploying.map((w) => w.file)).toHaveLength(1);
+  it('gives each branch the URL its workflow publishes', () => {
+    for (const { branch, url } of described) {
+      // Named by workflow file rather than counted, so a failure says which
+      // ones fired on the branch instead of only how many did.
+      const deploying = workflows.filter((w) => w.branches.includes(branch));
+      expect(deploying.map((w) => w.file)).toHaveLength(1);
 
-    // Compared as paths: the origin is asserted on its own, and a whole-URL
-    // diff is long enough that vitest elides the half that differs.
-    expect(liveUrl?.startsWith(`${ORIGIN}/`)).toBe(true);
-    expect(liveUrl?.slice(ORIGIN.length)).toBe(deploying[0].base);
+      // Compared as paths: the origin is asserted on its own, and a whole-URL
+      // diff is long enough that vitest elides the half that differs.
+      expect(url.startsWith(`${ORIGIN}/`)).toBe(true);
+      expect({ branch, base: url.slice(ORIGIN.length) }).toEqual({
+        branch,
+        base: deploying[0].base,
+      });
+    }
+  });
+
+  it('points Live: at a URL some branch publishes', () => {
+    expect(described.map((d) => d.url)).toContain(liveUrl);
   });
 
   it('names no Pages URL that no workflow publishes', () => {

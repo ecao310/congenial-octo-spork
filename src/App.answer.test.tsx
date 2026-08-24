@@ -593,8 +593,13 @@ describe('the return in the address bar', () => {
    * the document: the reader moved a slider and the page went black. So a
    * drag has to be one write, and a `replaceState` that fails has to stay
    * inside the page rather than take it down.
+   *
+   * Sixty notches is sixty synchronous re-renders of the whole page, chart
+   * included, under jsdom: about 2s on a laptop and over 5s on a shared CI
+   * runner, which is exactly vitest's default timeout. The timeout is the
+   * test's own so that a slow runner is not read as a hung drag.
    */
-  it('spends one write on a whole drag, and survives one that fails', () => {
+  it('spends one write on a whole drag, and survives one that fails', { timeout: 20_000 }, () => {
     const calls: string[] = [];
     const real = window.history.replaceState.bind(window.history);
     const spy = vi

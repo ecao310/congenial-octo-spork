@@ -228,9 +228,16 @@ describe('the Breakpoints panel on the torpedo chart', () => {
     openBreakpointsPanel();
     expect(button).toHaveAttribute('aria-expanded', 'true');
     const irmaa = screen.getByRole('checkbox', { name: 'Medicare IRMAA cliffs' });
-    const subsidy = screen.getByRole('checkbox', { name: '400% poverty-line cliff' });
     expect(irmaa).toBeChecked();
+    // The 400% switch is only offered to a reader still buying their own
+    // coverage, and the page opens with the filer on Medicare.
+    expect(
+      screen.queryByRole('checkbox', { name: '400% poverty-line cliff' }),
+    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Age 65 or older' }));
+    const subsidy = screen.getByRole('checkbox', { name: '400% poverty-line cliff' });
     expect(subsidy).not.toBeChecked();
+    expect(button).toHaveAccessibleName('Breakpoints (3)');
 
     // One 400% line on top of the three: the count is of marks on the chart,
     // not of ticked boxes — and with the IRMAA switch off it is the one line.
@@ -252,6 +259,8 @@ describe('the Breakpoints panel on the torpedo chart', () => {
    */
   it('is two switches and nothing to read', () => {
     render(<App />);
+    // Under 65, so that both switches are on offer.
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Age 65 or older' }));
     const panel = openBreakpointsPanel();
     expect(panel.querySelectorAll('p')).toHaveLength(0);
     expect(panel.querySelectorAll('input[type="checkbox"]')).toHaveLength(2);
@@ -262,6 +271,9 @@ describe('the Breakpoints panel on the torpedo chart', () => {
 
   it('counts nothing when a switch is on and its threshold is off the axis', () => {
     render(<App />);
+    // Under 65, so the joint axis is the narrow $150,000 rather than the one
+    // stretched to the couple's phaseout, which would reach two cliffs.
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Age 65 or older' }));
     openBreakpointsPanel();
     fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Jointly' }));
     // The joint tier-1 threshold is past the right edge, so the switch is on
@@ -319,7 +331,6 @@ describe('the IRMAA cliff lines on the torpedo chart', () => {
     expect(irmaaExplainer()).toHaveTextContent('costs $1,148 a year — on a single dollar');
 
     fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Jointly' }));
-    fireEvent.click(screen.getByRole('checkbox', { name: /age 65 or older/i }));
     fireEvent.click(
       screen.getByRole('checkbox', { name: /both spouses are 65 or older/i }),
     );
@@ -379,6 +390,9 @@ describe('the 400% poverty-line cliff under the torpedo chart', () => {
 
   it('prices the line for this return, and says what the household pays under it', () => {
     render(<App />);
+    // The section is only offered to a reader still buying their own
+    // coverage, and the page opens with the filer on Medicare.
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Age 65 or older' }));
     // 4 x the $15,650 one-person line. What the household pays under it, and
     // the guideline year the line comes from, are the explainer's: the panel
     // that switches the line on carries no prose of its own.
@@ -403,6 +417,7 @@ describe('the 400% poverty-line cliff under the torpedo chart', () => {
 
   it('quotes the reader their own distance from the line', () => {
     render(<App />);
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Age 65 or older' }));
     const income = screen.getByRole('slider', {
       name: /other income \(excluding social security\)/i,
     });
@@ -435,6 +450,7 @@ describe('the 400% poverty-line cliff under the torpedo chart', () => {
 
   it('keeps the switch, and draws nothing, once the line is already behind the reader', () => {
     render(<App />);
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Age 65 or older' }));
     openBreakpointsPanel();
     // The IRMAA lines off, so the count below is the 400% line's alone.
     fireEvent.click(screen.getByRole('checkbox', { name: 'Medicare IRMAA cliffs' }));
@@ -460,20 +476,24 @@ describe('the 400% poverty-line cliff under the torpedo chart', () => {
     expect(subsidyExplainer()).toHaveTextContent('That is past the cliff');
   });
 
-  it('takes the switch and the section away once everyone is on Medicare', () => {
+  it('offers neither the switch nor the section while everyone is on Medicare', () => {
     render(<App />);
+    // Which is how the page opens: the filer is 65.
     openBreakpointsPanel();
-    expect(
-      screen.getByRole('checkbox', { name: '400% poverty-line cliff' }),
-    ).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Age 65 or older' }));
     expect(
       screen.queryByRole('checkbox', { name: '400% poverty-line cliff' }),
     ).not.toBeInTheDocument();
     expect(
       screen.queryByRole('heading', { name: /400% poverty-line cliff/ }),
     ).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Age 65 or older' }));
+    expect(
+      screen.getByRole('checkbox', { name: '400% poverty-line cliff' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: /400% poverty-line cliff/ }),
+    ).toBeInTheDocument();
   });
 });
 
@@ -505,17 +525,17 @@ describe('the torpedo chart’s right edge', () => {
       .getByRole('img', { name: /^Chart: the marginal tax rate/ })
       .getAttribute('aria-label')!;
 
-  it('stays where it was for a filer with only one hump to show', () => {
+  it('narrows to the one hump for a filer who does not claim the deduction', () => {
     render(<App />);
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Age 65 or older' }));
     expect(incomeSlider()).toHaveAttribute('max', '150000');
     expect(chartLabel()).toContain('$0 to $150,000 of other income');
   });
 
-  it('widens to fit the senior deduction phaseout when it is claimed', () => {
+  it('opens wide enough for the senior deduction phaseout, which the opening return claims', () => {
     render(<App />);
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Age 65 or older' }));
     // $175,000 of MAGI, less the $20,155.20 of benefit already in AGI, is
-    // $154,845 of other income — past the old fixed edge, and now inside.
+    // $154,845 of other income — past the old fixed edge, and inside.
     expect(incomeSlider()).toHaveAttribute('max', '175000');
     expect(chartLabel()).toContain('$0 to $175,000 of other income');
 
@@ -537,10 +557,10 @@ describe('the torpedo chart’s right edge', () => {
       screen
         .getByRole('heading', { name: /the senior deduction phaseout/i })
         .closest('details') as HTMLElement;
-    expect(explainer()).toHaveTextContent('sits past the right edge of the chart');
+    expect(explainer()).toHaveTextContent('is inside the chart');
 
     fireEvent.click(screen.getByRole('checkbox', { name: 'Age 65 or older' }));
-    expect(explainer()).toHaveTextContent('is inside the chart');
+    expect(explainer()).toHaveTextContent('sits past the right edge of the chart');
   });
 
   /**
@@ -550,7 +570,6 @@ describe('the torpedo chart’s right edge', () => {
    */
   it('never pulls in behind where the reader is standing', () => {
     render(<App />);
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Age 65 or older' }));
     fireEvent.change(incomeSlider(), { target: { value: '175000' } });
     expect(incomeSlider()).toHaveValue('175000');
 
@@ -574,7 +593,6 @@ describe('the torpedo chart’s right edge', () => {
     render(<App />);
     expect(incomeSlider()).toHaveAttribute('step', '500');
 
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Age 65 or older' }));
     fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Jointly' }));
     expect(incomeSlider()).toHaveAttribute('max', '250000');
     expect(incomeSlider()).toHaveAttribute('step', '500');
@@ -645,6 +663,8 @@ describe('the axis, taken apart', () => {
    */
   it('stays a plain addition when the axis widens under it', () => {
     render(<App />);
+    // Start narrow — under 65 — and widen by claiming the deduction.
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Age 65 or older' }));
     setSlider(/tax-exempt \(municipal\) interest/i, '3750');
     const [, toBefore, , , , edgeBefore] = dollars(chartLabel());
 

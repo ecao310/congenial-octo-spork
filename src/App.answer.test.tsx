@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, within, act } from '@testing-library/react';
+import { render, screen, fireEvent, within, act, cleanup } from '@testing-library/react';
 import { vi } from 'vitest';
 import App from './App';
 import { ADDRESS_SETTLE_MS } from './hooks/useScenarioAddress';
@@ -41,9 +41,10 @@ describe('the total the return owes', () => {
 
   it('states the bill and the effective rate under the torpedo slider', () => {
     render(<App />);
-    // $40,000 of other income and the $24,852 average benefit.
+    // $40,000 of other income and the $24,852 average benefit, for a filer at
+    // 65: the base deduction, the age-65 addition and the senior deduction.
     expect(readout('torpedo')).toHaveTextContent(
-      'owes $5,039 in federal tax on $64,852 of total income — an effective rate of 7.77%',
+      'owes $4,073 in federal tax on $64,852 of total income — an effective rate of 6.28%',
     );
   });
 
@@ -75,7 +76,7 @@ describe('the total the return owes', () => {
     render(<App />);
     set(/other income \(excluding social security\)/i, 90_000);
     expect(readout('torpedo')).toHaveTextContent(
-      'owes $15,617 in federal tax on $114,852 of total income — an effective rate of 13.6%',
+      'owes $14,323 in federal tax on $114,852 of total income — an effective rate of 12.47%',
     );
   });
 
@@ -88,7 +89,7 @@ describe('the total the return owes', () => {
     render(<App />);
     set(/tax-exempt \(municipal\) interest/i, 10_000);
     expect(readout('torpedo')).toHaveTextContent(
-      'owes $5,155 in federal tax on $74,852 of total income',
+      'owes $4,189 in federal tax on $74,852 of total income',
     );
   });
 
@@ -156,8 +157,8 @@ describe('the closing answer', () => {
   it('answers with the six figures the default return produces', () => {
     render(<App />);
     expect(figure('Total income')).toHaveTextContent('$64,852');
-    expect(figure('Federal tax')).toHaveTextContent('$5,039');
-    expect(figure('Effective rate')).toHaveTextContent('7.77%');
+    expect(figure('Federal tax')).toHaveTextContent('$4,073');
+    expect(figure('Effective rate')).toHaveTextContent('6.28%');
     expect(figure('Marginal rate')).toHaveTextContent('22.2%');
     expect(figure('Taxable social security')).toHaveTextContent(
       '$20,162 of $24,852',
@@ -177,11 +178,12 @@ describe('the closing answer', () => {
   it('restates the return it prices', () => {
     render(<App />);
     expect(intro()).toHaveTextContent(
-      'Priced for 2026: a single filer, under 65, with $24,852 of Social Security and $40,000 of other income.',
+      'Priced for 2026: a single filer, 65 or older, with $24,852 of Social Security and $40,000 of other income.',
     );
 
+    // The filer is 65 as the page opens, so a joint return is one spouse 65
+    // until the second box is ticked.
     fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Jointly' }));
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Age 65 or older' }));
     expect(intro()).toHaveTextContent(
       'Priced for 2026: a married couple filing jointly, one spouse 65 or older,',
     );
@@ -197,11 +199,11 @@ describe('the closing answer', () => {
     const torpedoReadout = document.querySelector(
       '#step-torpedo .slider-readout',
     ) as HTMLElement;
-    expect(torpedoReadout).toHaveTextContent('owes $5,039 in federal tax');
-    expect(torpedoReadout).toHaveTextContent('an effective rate of 7.77%');
+    expect(torpedoReadout).toHaveTextContent('owes $4,073 in federal tax');
+    expect(torpedoReadout).toHaveTextContent('an effective rate of 6.28%');
 
-    expect(figure('Federal tax')).toHaveTextContent('$5,039');
-    expect(figure('Effective rate')).toHaveTextContent('7.77%');
+    expect(figure('Federal tax')).toHaveTextContent('$4,073');
+    expect(figure('Effective rate')).toHaveTextContent('6.28%');
     expect(figure('Marginal rate')).toHaveTextContent('22.2%');
   });
 
@@ -209,10 +211,11 @@ describe('the closing answer', () => {
     render(<App />);
     setIncome(90_000);
     expect(figure('Total income')).toHaveTextContent('$114,852');
-    expect(figure('Federal tax')).toHaveTextContent('$15,617');
-    expect(figure('Effective rate')).toHaveTextContent('13.6%');
-    // Past the torpedo: the next dollar is back to its own bracket rate.
-    expect(figure('Marginal rate')).toHaveTextContent('22%');
+    expect(figure('Federal tax')).toHaveTextContent('$14,323');
+    expect(figure('Effective rate')).toHaveTextContent('12.47%');
+    // Past the torpedo but inside the senior deduction's phaseout: the 22%
+    // bracket, amplified by the 6¢ of deduction each dollar takes with it.
+    expect(figure('Marginal rate')).toHaveTextContent('23.32%');
     // And the 85% cap is binding, which is why it is over.
     expect(figure('Taxable social security')).toHaveTextContent(
       '$21,124 of $24,852',
@@ -241,7 +244,6 @@ describe('the closing answer', () => {
   it('charges the surcharge to each enrollee on a joint return', () => {
     render(<App />);
     fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Jointly' }));
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Age 65 or older' }));
     fireEvent.click(
       screen.getByRole('checkbox', { name: 'Both spouses are 65 or older' }),
     );
@@ -265,7 +267,7 @@ describe('the closing answer', () => {
       'Step 1 sets no benefit, so there is nothing for other income to drag in',
     );
     expect(figure('Total income')).toHaveTextContent('$40,000');
-    expect(figure('Effective rate')).toHaveTextContent('6.55%');
+    expect(figure('Effective rate')).toHaveTextContent('4.14%');
   });
 
   /**
@@ -285,7 +287,7 @@ describe('the closing answer', () => {
     expect(figure('Total income')).toHaveTextContent(
       'plus $10,000 of tax-exempt interest',
     );
-    expect(figure('Effective rate')).toHaveTextContent('6.89%');
+    expect(figure('Effective rate')).toHaveTextContent('5.6%');
 
     fireEvent.change(
       screen.getByRole('slider', { name: /tax-exempt \(municipal\) interest/i }),
@@ -548,20 +550,35 @@ describe('the return in the address bar', () => {
     fireEvent.click(screen.getByRole('checkbox', { name: 'Age 65 or older' }));
     settle();
     expect(spouse).not.toBeChecked();
-    expect(window.location.search).toBe('?filing=mfj');
+    // The filer under 65 is the thing the link has to say now, since the
+    // page opens at 65; the spouse's flag goes with the box.
+    expect(window.location.search).toBe('?filing=mfj&senior=0');
   });
 
-  it('opens a link that names the spouse alone on neither box', () => {
+  it('opens a link that names the spouse alone on both boxes, and one that unticks the filer on neither', () => {
+    // The page opens with the filer at 65, so a link that says nothing about
+    // the filer and everything about the spouse is a couple both at 65.
     openAt('?filing=mfj&spouse=1');
     render(<App />);
+    expect(screen.getByRole('checkbox', { name: 'Age 65 or older' })).toBeChecked();
+    expect(
+      screen.getByRole('checkbox', { name: 'Both spouses are 65 or older' }),
+    ).toBeChecked();
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(window.location.search).toBe('?filing=mfj&spouse=1');
 
+    // Unticking the filer takes the spouse with it, on the way in as on the
+    // page — and nothing to tell the reader: the deduction never counted
+    // that spouse.
+    cleanup();
+    openAt('?filing=mfj&senior=0&spouse=1');
+    render(<App />);
     expect(screen.getByRole('checkbox', { name: 'Age 65 or older' })).not.toBeChecked();
     expect(
       screen.getByRole('checkbox', { name: 'Both spouses are 65 or older' }),
     ).not.toBeChecked();
-    // Nothing to tell the reader: the deduction never counted that spouse.
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
-    expect(window.location.search).toBe('?filing=mfj');
+    expect(window.location.search).toBe('?filing=mfj&senior=0');
   });
 
   it('writes what the reader moves back into the address', () => {
@@ -580,7 +597,7 @@ describe('the return in the address bar', () => {
 
     fireEvent.click(screen.getByRole('checkbox', { name: 'Age 65 or older' }));
     settle();
-    expect(window.location.search).toContain('senior=1');
+    expect(window.location.search).toContain('senior=0');
   });
 
   /**
@@ -864,7 +881,7 @@ describe('the live reading under the controls', () => {
     set(benefit, 30_000);
     settle();
     expect(region()).toHaveTextContent(
-      '2026 brackets, a single filer, under 65, collecting $30,000 of Social Security per year.',
+      '2026 brackets, a single filer, 65 or older, collecting $30,000 of Social Security per year.',
     );
     expect(region()).not.toHaveTextContent('the next dollar is taxed at');
 

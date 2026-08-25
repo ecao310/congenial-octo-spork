@@ -87,20 +87,22 @@ const herePositions = (container: HTMLElement): number[] =>
   positionsOf(container, '.recharts-reference-line.here-line');
 
 /**
- * Ask step 2 for both threshold lines.
+ * Ask step 2 for both threshold lines, for a reader not yet on Medicare.
  *
  * The IRMAA cliffs are drawn as the page opens; the 400% line is not, because
- * it belongs to a reader not yet on Medicare, so it waits to be switched on.
- * Every test below is about where a line lands once both are drawn, so each
- * one asks for the second first — on a fresh render, before any filing status
- * or age is changed, because the 400% switch is only offered to a return that
- * could still claim the credit.
+ * it belongs to a reader still buying their own coverage — and the page opens
+ * with the filer at 65, for whom the switch is not even offered. So this
+ * takes the filer back under 65 first, which also puts the axis back on the
+ * $150,000 every dollar figure below is written against, and then asks for
+ * the second line. Every test below is about where a line lands once both
+ * are drawn.
  *
  * The panel is shut again afterwards. It is not a dialog and nothing traps
  * focus in it, but leaving it open puts two more checkboxes in the same
  * accessible-name space as the age toggles for the rest of the test.
  */
 const showBothThresholds = (): void => {
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Age 65 or older' }));
   const open = screen.getByRole('button', { name: /^Breakpoints/ });
   fireEvent.click(open);
   fireEvent.click(screen.getByRole('checkbox', { name: '400% poverty-line cliff' }));

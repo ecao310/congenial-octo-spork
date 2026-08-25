@@ -269,8 +269,8 @@ const opening = defaultScenario();
 const scenario = {
   filingStatus: opening.filingStatus,
   ssBenefit: opening.ssBenefit,
-  isSenior: opening.isSenior,
-  spouseIsSenior: opening.spouseIsSenior,
+  // What the engine reads is a count, not the two boxes.
+  seniors: opening.isSenior ? (opening.spouseIsSenior ? 2 : 1) : 0,
   muniInterest: opening.muniInterest,
 };
 const curve = marginalRateCurve(scenario, { maxIncome: incomeAxisMax(scenario), step: 250 });

@@ -70,14 +70,16 @@ describe('encodeScenario', () => {
     expect(encodeScenario(moved({ ssBenefit: 40_000 }))).toContain('ss=40000');
   });
 
-  it('writes the age toggles as flags, and only when they are on', () => {
+  it('writes the age toggles as flags, and only when they have been moved', () => {
+    // The page opens with the filer at 65, so it is unticking the box that a
+    // link has to say; the spouse's box opens unticked, so it is the reverse.
     expect(encodeScenario(moved())).not.toContain('senior');
-    expect(encodeScenario(moved({ isSenior: true }))).toBe('senior=1');
+    expect(encodeScenario(moved({ isSenior: false }))).toBe('senior=0');
     expect(
       encodeScenario(
         moved({ filingStatus: 'mfj', isSenior: true, spouseIsSenior: true }),
       ),
-    ).toBe('filing=mfj&senior=1&spouse=1');
+    ).toBe('filing=mfj&spouse=1');
   });
 
   it('round-trips a return that moved every control', () => {
@@ -193,10 +195,13 @@ describe('decodeScenario', () => {
    * only a checked box that priced nothing.
    */
   it('drops a spouse flag with no filer flag behind it', () => {
-    const { scenario, notes } = decodeScenario('filing=mfj&spouse=1');
+    // The filer's flag has to be *off* to be missing: the page opens at 65,
+    // so a link that says nothing about the filer says they are.
+    const { scenario, notes } = decodeScenario('filing=mfj&senior=0&spouse=1');
     expect(scenario.isSenior).toBe(false);
     expect(scenario.spouseIsSenior).toBe(false);
     expect(notes).toEqual([]);
+    expect(decodeScenario('filing=mfj&spouse=1').scenario.spouseIsSenior).toBe(true);
 
     // With the filer's flag on it stands, on either return: the strip hides
     // that box for a single filer without forgetting the answer.
@@ -206,10 +211,12 @@ describe('decodeScenario', () => {
     expect(decodeScenario('senior=1&spouse=1').scenario.spouseIsSenior).toBe(true);
   });
 
-  it('ignores a flag that is not set to 1', () => {
+  it('reads the filer\u2019s flag as 1, 0, or the page\u2019s own', () => {
     expect(decodeScenario('senior=0').scenario.isSenior).toBe(false);
-    expect(decodeScenario('senior=true').scenario.isSenior).toBe(false);
     expect(decodeScenario('senior=1').scenario.isSenior).toBe(true);
+    // Neither answer is the page's own answer, which is a filer at 65.
+    expect(decodeScenario('senior=true').scenario.isSenior).toBe(true);
+    expect(decodeScenario('').scenario.isSenior).toBe(true);
   });
 
   /**

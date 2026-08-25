@@ -303,21 +303,23 @@ describe('App', () => {
     });
     expect(slider).toHaveValue('40000');
     expect(slider).toHaveAttribute('min', '0');
-    expect(slider).toHaveAttribute('max', '150000');
+    // Wide enough for the senior deduction's phaseout, which the opening
+    // return claims.
+    expect(slider).toHaveAttribute('max', '175000');
   });
 
-  it('offers an age 65 or older toggle, off by default, that widens the standard deduction', () => {
+  it('offers an age 65 or older toggle, on by default, that widens the standard deduction', () => {
     render(<App />);
     const senior = screen.getByRole('checkbox', { name: 'Age 65 or older' });
-    expect(senior).not.toBeChecked();
-    expect(screen.getByText(/^Standard deduction/)).toHaveTextContent(
-      'Standard deduction $16,100. Turning 65 adds $2,050.',
-    );
-
-    fireEvent.click(senior);
     expect(senior).toBeChecked();
     expect(screen.getByText(/^Standard deduction/)).toHaveTextContent(
       'Standard deduction $18,150 — $16,100 base plus $2,050 for age 65 or older.',
+    );
+
+    fireEvent.click(senior);
+    expect(senior).not.toBeChecked();
+    expect(screen.getByText(/^Standard deduction/)).toHaveTextContent(
+      'Standard deduction $16,100. Turning 65 adds $2,050.',
     );
   });
 
@@ -328,7 +330,14 @@ describe('App', () => {
     ).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Jointly' }));
+    // The filer is 65 as the page opens, so the spouse's box is live at once.
     const spouse = screen.getByRole('checkbox', { name: 'Both spouses are 65 or older' });
+    expect(spouse).toBeEnabled();
+    expect(screen.getByText(/^Standard deduction/)).toHaveTextContent(
+      'Standard deduction $33,850 — $32,200 base plus $1,650 for age 65 or older.',
+    );
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Age 65 or older' }));
     expect(spouse).toBeDisabled();
     expect(screen.getByText(/^Standard deduction/)).toHaveTextContent(
       'Standard deduction $32,200. Turning 65 adds $1,650 per qualifying spouse.',
@@ -336,10 +345,6 @@ describe('App', () => {
 
     fireEvent.click(screen.getByRole('checkbox', { name: 'Age 65 or older' }));
     expect(spouse).toBeEnabled();
-    expect(screen.getByText(/^Standard deduction/)).toHaveTextContent(
-      'Standard deduction $33,850 — $32,200 base plus $1,650 for age 65 or older.',
-    );
-
     fireEvent.click(spouse);
     expect(screen.getByText(/^Standard deduction/)).toHaveTextContent(
       'Standard deduction $35,500 — $32,200 base plus $3,300 for age 65 or older.',
@@ -361,7 +366,7 @@ describe('App', () => {
       name: 'Both spouses are 65 or older',
     });
 
-    fireEvent.click(senior);
+    // The filer opens at 65, so only the spouse's box needs ticking.
     fireEvent.click(spouse);
     expect(spouse).toBeChecked();
     expect(screen.getByText(/^Standard deduction/)).toHaveTextContent(
@@ -385,15 +390,17 @@ describe('App', () => {
 
   it('describes the senior deduction and its phaseout beside the age toggle', () => {
     render(<App />);
+    // Claimed as the page opens, so the note prices it and its phaseout.
+    expect(screen.getByText(/^Senior deduction/)).toHaveTextContent(
+      'Senior deduction $6,000 on top of that, shrinking by 6¢ per dollar of MAGI above $75,000 and gone at $175,000. It expires after tax year 2028.',
+    );
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Age 65 or older' }));
     expect(screen.getByText(/^Filers 65 or older/)).toHaveTextContent(
       'Filers 65 or older also get the temporary senior deduction — $6,000 each, for tax years 2025–2028 only.',
     );
 
     fireEvent.click(screen.getByRole('checkbox', { name: 'Age 65 or older' }));
-    expect(screen.getByText(/^Senior deduction/)).toHaveTextContent(
-      'Senior deduction $6,000 on top of that, shrinking by 6¢ per dollar of MAGI above $75,000 and gone at $175,000. It expires after tax year 2028.',
-    );
-
     fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Jointly' }));
     fireEvent.click(screen.getByRole('checkbox', { name: 'Both spouses are 65 or older' }));
     // Two spouses lose 6¢ each, so the couple's $12,000 is gone $100,000 past
@@ -419,8 +426,12 @@ describe('App', () => {
     expect(explainer()).toHaveTextContent('$1.96');
     expect(explainer()).toHaveTextContent('43.14%');
     expect(explainer()).toHaveTextContent('gone at $175,000');
-    // At the average benefit, MAGI at the right edge of the chart is $170,155,
-    // so the far side of the phaseout is off-chart.
+    // The deduction is claimed as the page opens, so the axis is sized to
+    // its phaseout and the far side is on the chart. Take the box off and
+    // the axis narrows back to $150,000 of other income — at the average
+    // benefit, $170,155 of MAGI at the right edge — and the far side is not.
+    expect(explainer()).toHaveTextContent('is inside the chart');
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Age 65 or older' }));
     expect(explainer()).toHaveTextContent('sits past the right edge of the chart');
 
     fireEvent.click(screen.getByRole('checkbox', { name: 'Age 65 or older' }));
@@ -797,14 +808,15 @@ describe('the charts as images', () => {
     // about which of the two they control.
     expect(chart('torpedo').getAttribute('aria-label')).toBe(
       'Chart: the marginal tax rate on the next dollar of other income, ' +
-        'plotted against total income from $24,852 to $174,852 — a fixed ' +
-        '$24,852 of Social Security plus $0 to $150,000 of other income.',
+        'plotted against total income from $24,852 to $199,852 — a fixed ' +
+        '$24,852 of Social Security plus $0 to $175,000 of other income.',
     );
-    // The axis is sized to the return, and the label follows it out — here by
-    // the senior deduction's phaseout, which runs to $175,000 of MAGI.
+    // The axis is sized to the return, and the label follows it in — the
+    // $175,000 is the senior deduction's phaseout, and a filer under 65 has
+    // no phaseout to fit.
     fireEvent.click(screen.getByRole('checkbox', { name: /65 or older/i }));
     expect(chart('torpedo').getAttribute('aria-label')).toMatch(
-      /plus \$0 to \$1(7|8)\d,\d{3} of other income\.$/,
+      /plus \$0 to \$150,000 of other income\.$/,
     );
   });
 });
@@ -935,7 +947,7 @@ describe('scenario recap', () => {
     render(<App />);
     expect(scenarioRecap()).toHaveTextContent(
       'One year’s return: 2026 brackets and standard deduction, a single ' +
-        'filer, under 65, collecting $24,852 of Social Security per year.',
+        'filer, 65 or older, collecting $24,852 of Social Security per year.',
     );
   });
 
@@ -948,7 +960,7 @@ describe('scenario recap', () => {
     );
     expect(scenarioRecap()).toHaveTextContent(
       'One year’s return: 2026 brackets and standard deduction, a married ' +
-        'couple filing jointly, under 65, collecting $48,000 of Social ' +
+        'couple filing jointly, one spouse 65 or older, collecting $48,000 of Social ' +
         'Security per year.',
     );
   });
@@ -961,7 +973,6 @@ describe('scenario recap', () => {
   it('distinguishes one senior from two on a joint return', () => {
     render(<App />);
     fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Jointly' }));
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Age 65 or older' }));
     expect(scenarioRecap()).toHaveTextContent('one spouse 65 or older');
 
     fireEvent.click(
@@ -972,8 +983,9 @@ describe('scenario recap', () => {
 
   it('says 65 or older once for a return with only one filer', () => {
     render(<App />);
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Age 65 or older' }));
     expect(scenarioRecap()).toHaveTextContent('a single filer, 65 or older,');
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Age 65 or older' }));
+    expect(scenarioRecap()).toHaveTextContent('a single filer, under 65,');
   });
 
   it('says so when there is no benefit at all', () => {
@@ -1021,7 +1033,6 @@ describe('scenario recap', () => {
   it('names the advanced input in the sentence the filer’s does not cover', () => {
     render(<App />);
     fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Jointly' }));
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Age 65 or older' }));
     fireEvent.change(
       screen.getByRole('slider', { name: /social security benefit/i }),
       { target: { value: '38500' } },
@@ -1090,7 +1101,7 @@ describe('the year the page prices', () => {
       `${PAGE_TAX_YEAR} brackets and standard deduction`,
     );
     expect(screen.getByText(/^Standard deduction/)).toHaveTextContent(
-      'Standard deduction $16,100. Turning 65 adds $2,050.',
+      'Standard deduction $18,150 — $16,100 base plus $2,050 for age 65 or older.',
     );
   });
 

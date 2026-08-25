@@ -108,7 +108,7 @@ export function defaultScenario(): PageScenario {
     filingStatus: 'single',
     ssBenefit: avgAnnualSSBenefit(PAGE_TAX_YEAR, 'single'),
     ordinaryIncome: DEFAULT_ORDINARY_INCOME,
-    isSenior: false,
+    isSenior: true,
     spouseIsSenior: false,
     muniInterest: 0,
   };
@@ -150,7 +150,12 @@ export function encodeScenario(scenario: PageScenario): string {
   if (scenario.muniInterest !== opening.muniInterest) {
     params.set('muni', String(scenario.muniInterest));
   }
-  if (scenario.isSenior) params.set('senior', '1');
+  // The page opens with the filer at 65, so it is the box being *unticked*
+  // that a link has to carry. `spouse` starts off and is written when on,
+  // which is the same rule from the other side.
+  if (scenario.isSenior !== opening.isSenior) {
+    params.set('senior', scenario.isSenior ? '1' : '0');
+  }
   if (scenario.spouseIsSenior) params.set('spouse', '1');
   return params.toString();
 }
@@ -307,7 +312,14 @@ export function decodeScenario(search: string): DecodedScenario {
    * answer, so a refresh has to keep it too or a misclick on the radio would
    * cost the reader a box they had set.
    */
-  const isSenior = flag('senior');
+  /**
+   * Three answers, not two: `senior=1` and `senior=0` are the reader's, and
+   * anything else — the key absent, or a value that is neither — is the
+   * page's own, which is a filer at 65. `flag` cannot say that, because its
+   * one job is a box that starts off.
+   */
+  const senior = params.get('senior');
+  const isSenior = senior === '1' ? true : senior === '0' ? false : defaultScenario().isSenior;
 
   return {
     scenario: {

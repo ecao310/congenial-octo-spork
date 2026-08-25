@@ -158,8 +158,10 @@ describe('the cover', () => {
     const scenario = {
       filingStatus: opening.filingStatus,
       ssBenefit: opening.ssBenefit,
-      isSenior: opening.isSenior,
-      spouseIsSenior: opening.spouseIsSenior,
+      // What the engine reads is a count, not the two boxes: the page
+      // opens with the filer at 65, and a card drawn for a filer under it
+      // would be a card for a return the page never opens on.
+      seniors: opening.isSenior ? (opening.spouseIsSenior ? 2 : 1) : 0,
       muniInterest: opening.muniInterest,
     };
     const curve = marginalRateCurve(scenario, { maxIncome: incomeAxisMax(scenario), step: 250 });

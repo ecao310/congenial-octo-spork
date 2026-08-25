@@ -189,9 +189,10 @@ describe('What a hovered point is worth', () => {
 });
 
 /**
- * Both of step 2's threshold lines are off until a reader asks for them, and
- * the panel behind the Breakpoints button is where the asking happens. Opening
- * it is the first act of every test below, so it has a helper of its own.
+ * The IRMAA cliffs are drawn as the page opens and the 400% line waits to be
+ * asked for; the panel behind the Breakpoints button is where either is
+ * switched. Opening it is the first act of every test below, so it has a
+ * helper of its own.
  */
 const openBreakpointsPanel = (): HTMLElement => {
   fireEvent.click(screen.getByRole('button', { name: /^Breakpoints/ }));
@@ -199,11 +200,10 @@ const openBreakpointsPanel = (): HTMLElement => {
 };
 
 describe('the Breakpoints panel on the torpedo chart', () => {
-  it('draws neither threshold until it is asked to', () => {
+  it('opens with the panel shut and no key on the page', () => {
     render(<App />);
-    // Nothing about either cliff is on the page on arrival — not the lines
-    // (App.chart.test.tsx holds those), and not a paragraph of key under the
-    // plot explaining a dash that is not there.
+    // The lines are on the plot on arrival (App.chart.test.tsx holds those);
+    // the panel is not, and neither is a paragraph of key under the plot.
     expect(
       screen.queryByRole('group', { name: /Health insurance breakpoints/ }),
     ).not.toBeInTheDocument();
@@ -212,34 +212,34 @@ describe('the Breakpoints panel on the torpedo chart', () => {
       'aria-expanded',
       'false',
     );
-    // And no key at all. The key is the swatch beside each switch now, so
-    // with the panel shut there is nothing tying a colour to a cliff —
-    // which is right, because neither cliff is drawn.
+    // And no key at all. The key is the swatch beside each switch, so with
+    // the panel shut there is nothing tying a colour to a cliff but the
+    // cliff's own label on the plot.
     expect(document.querySelector('.chart-key-swatch')).toBeNull();
   });
 
-  it('offers both switches, unticked, and counts what it draws', () => {
+  it('offers both switches, the IRMAA one ticked, and counts what it draws', () => {
     render(<App />);
     const button = screen.getByRole('button', { name: /^Breakpoints/ });
-    // Nothing drawn, so nothing counted: the button is bare until it has a
-    // number to report.
-    expect(button).toHaveAccessibleName('Breakpoints');
+    // Three IRMAA cliffs fit the default axis and are drawn on arrival, so
+    // the button opens with that number to report.
+    expect(button).toHaveAccessibleName('Breakpoints (3)');
 
     openBreakpointsPanel();
     expect(button).toHaveAttribute('aria-expanded', 'true');
     const irmaa = screen.getByRole('checkbox', { name: 'Medicare IRMAA cliffs' });
     const subsidy = screen.getByRole('checkbox', { name: '400% poverty-line cliff' });
-    expect(irmaa).not.toBeChecked();
+    expect(irmaa).toBeChecked();
     expect(subsidy).not.toBeChecked();
 
-    // Three IRMAA cliffs fit the default axis, and one 400% line: the count is
-    // of marks on the chart, not of ticked boxes.
-    fireEvent.click(irmaa);
-    expect(button).toHaveAccessibleName('Breakpoints (3)');
+    // One 400% line on top of the three: the count is of marks on the chart,
+    // not of ticked boxes — and with the IRMAA switch off it is the one line.
     fireEvent.click(subsidy);
     expect(button).toHaveAccessibleName('Breakpoints (4)');
     fireEvent.click(irmaa);
     expect(button).toHaveAccessibleName('Breakpoints (1)');
+    fireEvent.click(subsidy);
+    expect(button).toHaveAccessibleName('Breakpoints');
   });
 
   /**
@@ -263,7 +263,6 @@ describe('the Breakpoints panel on the torpedo chart', () => {
   it('counts nothing when a switch is on and its threshold is off the axis', () => {
     render(<App />);
     openBreakpointsPanel();
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Medicare IRMAA cliffs' }));
     fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Jointly' }));
     // The joint tier-1 threshold is past the right edge, so the switch is on
     // and the chart is unchanged — and with the panel's notes gone the count
@@ -336,7 +335,7 @@ describe('the IRMAA cliff lines on the torpedo chart', () => {
     // The disclosure is the only prose left that names the panel, now that the
     // panel carries none of its own — so it has to name it correctly.
     expect(irmaaExplainer()).toHaveTextContent(
-      'will draw the thresholds as red dashed lines if you ask it to, under Breakpoints in the corner of the plot',
+      'draws the thresholds as red dashed lines, and Breakpoints in the corner of the plot switches them off',
     );
   });
 
@@ -404,8 +403,17 @@ describe('the 400% poverty-line cliff under the torpedo chart', () => {
 
   it('quotes the reader their own distance from the line', () => {
     render(<App />);
-    // $30,000 of other income plus the whole $24,852 benefit: $54,852, which
-    // is 350% of the $15,650 line with $7,748 of it left to go.
+    const income = screen.getByRole('slider', {
+      name: /other income \(excluding social security\)/i,
+    });
+    // $40,000 of other income plus the whole $24,852 benefit: $64,852, which
+    // is already $2,252 past the $62,600 line.
+    expect(subsidyExplainer()).toHaveTextContent('That is past the cliff');
+    expect(subsidyExplainer()).toHaveTextContent('takes $2,252 less income');
+
+    // Back under it: $54,852 is 350% of the $15,650 line with $7,748 of it
+    // left to go.
+    fireEvent.change(income, { target: { value: '30000' } });
     expect(subsidyExplainer()).toHaveTextContent(
       'household income is $54,852, 350% of the poverty line',
     );
@@ -420,10 +428,7 @@ describe('the 400% poverty-line cliff under the torpedo chart', () => {
     );
     expect(subsidyExplainer()).not.toHaveTextContent(/hover/i);
 
-    fireEvent.change(
-      screen.getByRole('slider', { name: /other income \(excluding social security\)/i }),
-      { target: { value: '50000' } },
-    );
+    fireEvent.change(income, { target: { value: '50000' } });
     expect(subsidyExplainer()).toHaveTextContent('That is past the cliff');
     expect(subsidyExplainer()).toHaveTextContent('takes $12,252 less income');
   });
@@ -431,6 +436,8 @@ describe('the 400% poverty-line cliff under the torpedo chart', () => {
   it('keeps the switch, and draws nothing, once the line is already behind the reader', () => {
     render(<App />);
     openBreakpointsPanel();
+    // The IRMAA lines off, so the count below is the 400% line's alone.
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Medicare IRMAA cliffs' }));
     const subsidy = screen.getByRole('checkbox', { name: '400% poverty-line cliff' });
     fireEvent.click(subsidy);
     expect(screen.getByRole('button', { name: /^Breakpoints/ })).toHaveAccessibleName(

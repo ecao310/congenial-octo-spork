@@ -31,10 +31,10 @@ where the chart stands below it.
    dollars rather than leaving the split to be inferred from a position. The
    senior-deduction phaseout is in the curve, because it is tax. The IRMAA
    cliffs and the 400% poverty-line cliff are not: they are a Medicare premium
-   and a Marketplace credit, so they are priced for the reader's own income in
-   the chart's tooltip and drawn across the axis only when the **Breakpoints**
-   button in the corner of the plot is asked for them. Every figure under it is
-   a federal one.
+   and a Marketplace credit, so both are priced for the reader's own income in
+   the chart's tooltip. The IRMAA cliffs are drawn across the axis from the
+   start; the 400% line only when the **Breakpoints** button in the corner of
+   the plot is asked for it. Every figure under it is a federal one.
 
 The page closes on the six figures the whole walk was for: total income,
 federal tax, effective rate, the rate on the next dollar, the taxable share of
@@ -118,7 +118,9 @@ node scripts/og-cover.mjs   # rewrites public/og-cover.png and public/apple-touc
 ```
 
 It is run by hand rather than in CI, because rasterising needs a browser and
-neither deploy workflow installs one — so the PNG is committed. `the cover` in
+neither deploy workflow installs one — so the PNG is committed. It needs a
+network too: the card is set in the page's own faces, Newsreader and IBM Plex
+Mono, and fetches them from Google Fonts while it draws. `the cover` in
 `src/guards/meta.test.ts` is what notices when it goes stale: it reads the
 image's
 size back out of the file, checks the mark and the card are still painted in

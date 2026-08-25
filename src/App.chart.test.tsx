@@ -21,7 +21,7 @@ vi.mock('recharts', async () => {
 });
 
 import App from './App';
-import { CHART } from './styles/palette';
+import { CHART, PALETTE } from './styles/palette';
 import {
   avgAnnualSSBenefit,
   FPL_YEAR_PARAMS,
@@ -89,13 +89,12 @@ const herePositions = (container: HTMLElement): number[] =>
 /**
  * Ask step 2 for both threshold lines.
  *
- * Neither is drawn until a reader switches it on: they are a Medicare premium
- * and a Marketplace credit, so neither is income tax and neither belongs on a
- * chart of marginal rates by default. Every test below is about where a line
- * lands once it has been asked for, so each one asks first — and the asking
- * is done on a fresh render, before any filing status or age is changed,
- * because the 400% switch is only offered to a return that could still claim
- * the credit.
+ * The IRMAA cliffs are drawn as the page opens; the 400% line is not, because
+ * it belongs to a reader not yet on Medicare, so it waits to be switched on.
+ * Every test below is about where a line lands once both are drawn, so each
+ * one asks for the second first — on a fresh render, before any filing status
+ * or age is changed, because the 400% switch is only offered to a return that
+ * could still claim the credit.
  *
  * The panel is shut again afterwards. It is not a dialog and nothing traps
  * focus in it, but leaving it open puts two more checkboxes in the same
@@ -104,20 +103,20 @@ const herePositions = (container: HTMLElement): number[] =>
 const showBothThresholds = (): void => {
   const open = screen.getByRole('button', { name: /^Breakpoints/ });
   fireEvent.click(open);
-  fireEvent.click(screen.getByRole('checkbox', { name: 'Medicare IRMAA cliffs' }));
   fireEvent.click(screen.getByRole('checkbox', { name: '400% poverty-line cliff' }));
   fireEvent.click(open);
 };
 
 describe('IRMAA cliffs on the ordinary-income chart', () => {
-  it('draws nothing until the reader asks for it', () => {
+  it('opens with the IRMAA cliffs drawn and the 400% line waiting to be asked for', () => {
     const { container } = render(<App />);
-    // The default render is the curve and the reader's own marker, and that is
-    // all: the same return that draws three IRMAA cliffs and a 400% line in
-    // the test below draws none of them here.
-    expect(cliffPositions(container)).toHaveLength(0);
+    // The default render is the curve, the reader's own marker and the three
+    // Medicare cliffs the default axis reaches. The 400% line is the one
+    // threshold that waits: it belongs to a reader still buying their own
+    // coverage, and a return on Medicare has no use for it.
+    expect(cliffPositions(container)).toHaveLength(3);
+    expect(screen.getAllByText(/^IRMAA [123]$/)).toHaveLength(3);
     expect(subsidyPositions(container)).toHaveLength(0);
-    expect(screen.queryByText(/^IRMAA \d$/)).not.toBeInTheDocument();
     expect(screen.queryByText('400% FPL')).not.toBeInTheDocument();
     expect(herePositions(container).length).toBeGreaterThan(0);
   });
@@ -356,7 +355,7 @@ describe('the \u201cyou are here\u201d marker', () => {
       Array.from(
         container.querySelectorAll('.recharts-reference-line.here-line line'),
       ).map((line) => line.getAttribute('stroke')),
-    ).toEqual(['#f59e0b']);
+    ).toEqual([PALETTE.amber]);
   });
 
   /**
@@ -372,9 +371,9 @@ describe('the \u201cyou are here\u201d marker', () => {
     expect(container.querySelectorAll('text.here-label')).toHaveLength(0);
 
     // Stated as the whole plot rather than as this one label: as the page
-    // opens, both cliff switches are off, so the axis's own numbers are the
-    // only words over the curve and anything else appearing there is a
-    // regression worth hearing about.
+    // opens, the only words over the curve besides the axis's own numbers are
+    // the three cliffs' names, each on the line it names. Anything else
+    // appearing there is a regression worth hearing about.
     const words = Array.from(container.querySelectorAll('.recharts-wrapper text'));
     // Guards the extractor: a plot that rendered no text would pass vacuously.
     expect(words.length).toBeGreaterThan(5);
@@ -382,7 +381,7 @@ describe('the \u201cyou are here\u201d marker', () => {
       words
         .filter((t) => !t.classList.contains('recharts-cartesian-axis-tick-value'))
         .map((t) => t.textContent),
-    ).toEqual([]);
+    ).toEqual(['IRMAA 1', 'IRMAA 2', 'IRMAA 3']);
   });
 
   it('moves with its own slider', () => {
@@ -541,22 +540,25 @@ describe('the chart register', () => {
 
     expect(container.querySelectorAll('.recharts-cartesian-grid-horizontal')).toHaveLength(1);
     expect(container.querySelectorAll('.recharts-cartesian-grid-vertical')).toHaveLength(0);
-    // Only the reader's own marker is dashed on the page as it opens; the
-    // cliff lines are behind their own switch, and each is a `4 4`.
-    expect(drawnWith(container, 'stroke-dasharray').sort()).toEqual(['6 4']);
+    // Two dashes and no third: the reader's own marker is a `6 4`, and every
+    // cliff — the three IRMAA lines the page opens with, and the 400% line
+    // behind its switch — is a `4 4`.
+    expect(drawnWith(container, 'stroke-dasharray').sort()).toEqual(['4 4', '6 4']);
   });
 
   /**
-   * The gradient runs from `CHART.fill` down to nothing, so the wash under the
-   * curve is the one token rather than a number typed into this chart.
+   * The hatching under the curve is one hairline at `CHART.fill`, so the
+   * wash is the one token rather than a number typed into this chart — and
+   * it is a pattern of lines rather than a gradient, which is what makes it
+   * a broadsheet's plot rather than a dashboard's.
    */
-  it('washes every fill at one alpha', () => {
+  it('hatches the fill at one alpha, in the curve\u2019s own hairline', () => {
     const { container } = render(<App />);
 
-    expect(drawnWith(container, 'stop-opacity').sort()).toEqual(
-      ['0', String(CHART.fill)].sort(),
-    );
-    // recharts would otherwise multiply the stop above by its own 0.6.
+    expect(drawnOn(container, '.recharts-area-area', 'fill')).toEqual(['url(#rateHatch)']);
+    expect(drawnOn(container, 'pattern line', 'stroke-opacity')).toEqual([String(CHART.fill)]);
+    expect(drawnOn(container, 'pattern line', 'stroke-width')).toEqual([String(CHART.hairline)]);
+    // recharts would otherwise multiply the alpha above by its own 0.6.
     expect(drawnOn(container, '.recharts-area-area', 'fill-opacity')).toEqual(['1']);
   });
 });

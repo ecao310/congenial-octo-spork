@@ -480,12 +480,16 @@ describe('the type scale', () => {
     '0.75rem',
     '0.8125rem',
     '0.875rem',
-    '0.9375rem',
-    '1.125rem',
+    '1rem',
+    '1.0625rem',
     '1.25rem',
-    '1.35rem',
+    '1.375rem',
     '1.5rem',
     '1.75rem',
+    '2.125rem',
+    '2.75rem',
+    '2.875rem',
+    '5.75rem',
   ];
 
   it('sets every size from one closed list of steps', () => {
@@ -602,7 +606,7 @@ const mediaBlock = (css: string, prelude: string): string => {
 
 /** The block that collapses the two columns into one. */
 const collapseBlock = (css: string): string =>
-  mediaBlock(css, '@media (max-width: 992px)');
+  mediaBlock(css, '@media (max-width: 1100px)');
 
 /** The other ground: the same page on paper. */
 const printBlock = (css: string): string => mediaBlock(css, '@media print');
@@ -737,8 +741,10 @@ describe('the margin rules', () => {
 
   it('draws every one of them at one weight and one alpha', () => {
     const drawn = leftBorders(screenBlock(stylesheet));
-    // Guards the extractor itself: an empty list would pass vacuously.
-    expect(drawn.length).toBeGreaterThan(2);
+    // Guards the extractor itself: an empty list would pass vacuously. Two
+    // rules take this shape today — the recap's margin rule and the link
+    // note's box.
+    expect(drawn.length).toBeGreaterThan(1);
 
     const odd = drawn
       .filter((border) =>
@@ -820,20 +826,18 @@ describe('the skip link', () => {
 });
 
 describe('the corners', () => {
-  const STEPS = ['var(--radius-lg)', 'var(--radius-md)', 'var(--radius-sm)', '0'];
-
-  it('rounds every box from one closed list of steps', () => {
+  /**
+   * None. The broadsheet is ink on paper, and a rule on paper is a line, not
+   * a box — so the only `border-radius` the sheet writes is the `0` that
+   * takes a browser's own rounding off a button. The old three steps went
+   * with the cards they rounded; a corner typed into one rule would not look
+   * wrong from inside that rule, and this is what would catch it.
+   */
+  it('draws every box square', () => {
     const drawn = corners(screenBlock(stylesheet));
     // Guards the extractor itself: an empty list would pass vacuously.
-    expect(drawn.length).toBeGreaterThan(10);
+    expect(drawn.length).toBeGreaterThan(0);
 
-    expect([...new Set(drawn)].filter((step) => !STEPS.includes(step)).sort()).toEqual(
-      [],
-    );
-  });
-
-  it('spends every step it declares', () => {
-    const drawn = new Set(corners(screenBlock(stylesheet)));
-    expect(STEPS.filter((step) => !drawn.has(step))).toEqual([]);
+    expect([...new Set(drawn)]).toEqual(['0']);
   });
 });

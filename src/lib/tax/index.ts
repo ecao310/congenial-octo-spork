@@ -110,4 +110,4 @@ export {
 } from './axis';
 
 export type { MarginalRatePoint, IncomeCurveRange } from './curve';
-export { marginalRateCurve } from './curve';
+export { marginalRateCurve, torpedoPeak } from './curve';

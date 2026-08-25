@@ -76,7 +76,7 @@ export interface PageScenario {
 }
 
 /** The other income the page opens with, before the reader touches anything. */
-export const DEFAULT_ORDINARY_INCOME = 30_000;
+export const DEFAULT_ORDINARY_INCOME = 40_000;
 
 /** Roughly a $1.4M muni ladder at 2025 yields — well past any realistic retiree. */
 export const MAX_MUNI_INTEREST = 50_000;

@@ -28,9 +28,9 @@ export const IrmaaExplainer: React.FC<IrmaaExplainerProps> = ({
         Part B and Part D premiums of everyone on the return who is
         enrolled. Unlike the torpedo, it is not a phase-in: one dollar over
         a threshold triggers the whole surcharge for twelve months. The
-        chart above prices your own tier on hover and will draw the
-        thresholds as red dashed lines if you ask it to, under{' '}
-        <strong>Breakpoints</strong> in the corner of the plot. The
+        chart above prices your own tier on hover and draws the
+        thresholds as red dashed lines, and{' '}
+        <strong>Breakpoints</strong> in the corner of the plot switches them off. The
         first cliff this return
         can reach costs{' '}
         <strong>{formatCurrency(firstCliffStep)}</strong> a year

@@ -41,9 +41,9 @@ describe('the total the return owes', () => {
 
   it('states the bill and the effective rate under the torpedo slider', () => {
     render(<App />);
-    // $30,000 of other income and the $24,852 average benefit.
+    // $40,000 of other income and the $24,852 average benefit.
     expect(readout('torpedo')).toHaveTextContent(
-      'owes $2,819 in federal tax on $54,852 of total income — an effective rate of 5.14%',
+      'owes $5,039 in federal tax on $64,852 of total income — an effective rate of 7.77%',
     );
   });
 
@@ -88,7 +88,7 @@ describe('the total the return owes', () => {
     render(<App />);
     set(/tax-exempt \(municipal\) interest/i, 10_000);
     expect(readout('torpedo')).toHaveTextContent(
-      'owes $3,839 in federal tax on $64,852 of total income',
+      'owes $5,155 in federal tax on $74,852 of total income',
     );
   });
 
@@ -155,14 +155,14 @@ describe('the closing answer', () => {
 
   it('answers with the six figures the default return produces', () => {
     render(<App />);
-    expect(figure('Total income')).toHaveTextContent('$54,852');
-    expect(figure('Federal tax')).toHaveTextContent('$2,819');
-    expect(figure('Effective rate')).toHaveTextContent('5.14%');
+    expect(figure('Total income')).toHaveTextContent('$64,852');
+    expect(figure('Federal tax')).toHaveTextContent('$5,039');
+    expect(figure('Effective rate')).toHaveTextContent('7.77%');
     expect(figure('Marginal rate')).toHaveTextContent('22.2%');
     expect(figure('Taxable social security')).toHaveTextContent(
-      '$11,662 of $24,852',
+      '$20,162 of $24,852',
     );
-    expect(figure('Taxable social security')).toHaveTextContent('46.93% of it');
+    expect(figure('Taxable social security')).toHaveTextContent('81.13% of it');
     expect(figure('Medicare surcharge')).toHaveTextContent(
       'None \u2014 the standard premium',
     );
@@ -177,7 +177,7 @@ describe('the closing answer', () => {
   it('restates the return it prices', () => {
     render(<App />);
     expect(intro()).toHaveTextContent(
-      'Priced for 2026: a single filer, under 65, with $24,852 of Social Security and $30,000 of other income.',
+      'Priced for 2026: a single filer, under 65, with $24,852 of Social Security and $40,000 of other income.',
     );
 
     fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Jointly' }));
@@ -197,11 +197,11 @@ describe('the closing answer', () => {
     const torpedoReadout = document.querySelector(
       '#step-torpedo .slider-readout',
     ) as HTMLElement;
-    expect(torpedoReadout).toHaveTextContent('owes $2,819 in federal tax');
-    expect(torpedoReadout).toHaveTextContent('an effective rate of 5.14%');
+    expect(torpedoReadout).toHaveTextContent('owes $5,039 in federal tax');
+    expect(torpedoReadout).toHaveTextContent('an effective rate of 7.77%');
 
-    expect(figure('Federal tax')).toHaveTextContent('$2,819');
-    expect(figure('Effective rate')).toHaveTextContent('5.14%');
+    expect(figure('Federal tax')).toHaveTextContent('$5,039');
+    expect(figure('Effective rate')).toHaveTextContent('7.77%');
     expect(figure('Marginal rate')).toHaveTextContent('22.2%');
   });
 
@@ -258,14 +258,14 @@ describe('the closing answer', () => {
     render(<App />);
     setBenefit(0);
     expect(intro()).toHaveTextContent(
-      'with no Social Security and $30,000 of other income',
+      'with no Social Security and $40,000 of other income',
     );
     expect(figure('Taxable social security')).toHaveTextContent('None');
     expect(figure('Taxable social security')).toHaveTextContent(
       'Step 1 sets no benefit, so there is nothing for other income to drag in',
     );
-    expect(figure('Total income')).toHaveTextContent('$30,000');
-    expect(figure('Effective rate')).toHaveTextContent('4.73%');
+    expect(figure('Total income')).toHaveTextContent('$40,000');
+    expect(figure('Effective rate')).toHaveTextContent('6.55%');
   });
 
   /**
@@ -281,17 +281,17 @@ describe('the closing answer', () => {
       screen.getByRole('slider', { name: /tax-exempt \(municipal\) interest/i }),
       { target: { value: '10000' } },
     );
-    expect(figure('Total income')).toHaveTextContent('$64,852');
+    expect(figure('Total income')).toHaveTextContent('$74,852');
     expect(figure('Total income')).toHaveTextContent(
       'plus $10,000 of tax-exempt interest',
     );
-    expect(figure('Effective rate')).toHaveTextContent('5.92%');
+    expect(figure('Effective rate')).toHaveTextContent('6.89%');
 
     fireEvent.change(
       screen.getByRole('slider', { name: /tax-exempt \(municipal\) interest/i }),
       { target: { value: '0' } },
     );
-    expect(figure('Total income')).toHaveTextContent('$54,852');
+    expect(figure('Total income')).toHaveTextContent('$64,852');
     expect(figure('Total income')).not.toHaveTextContent('tax-exempt interest');
   });
 

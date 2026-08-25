@@ -99,7 +99,9 @@ export interface TorpedoStepProps {
  * The chart, then the one control that says where on that chart the reader is
  * standing, then the collapsed explainers. Which of the two threshold lines
  * are drawn is the one piece of state that belongs to this step and nowhere
- * else — neither is income tax, so both start off, and what each costs *this*
+ * else — neither is income tax. The Medicare cliffs start on, because every
+ * reader meets them sooner or later; the 400% line starts off, because it
+ * belongs only to a reader still buying their own coverage. What each costs *this*
  * return is in the close rather than on the plot. Not in the query string
  * either: every key there describes the return, and a link carries a scenario
  * rather than a view of it. See `scenarioUrl`.
@@ -127,7 +129,7 @@ export const TorpedoStep: React.FC<TorpedoStepProps> = ({
   subsidyCliffOnChart,
   hereSubsidy,
 }) => {
-  const [showIrmaaLines, setShowIrmaaLines] = useState(false);
+  const [showIrmaaLines, setShowIrmaaLines] = useState(true);
   const [showSubsidyLine, setShowSubsidyLine] = useState(false);
 
   /**
@@ -188,6 +190,11 @@ export const TorpedoStep: React.FC<TorpedoStepProps> = ({
       <h2 className="step-heading" id="step-torpedo-heading">
         The tax torpedo
       </h2>
+      <p className="step-deck">
+        The marginal rate on the next dollar of other income, plotted against
+        total income — the benefit set in step 1, which the slider cannot move,
+        plus the other income it can.
+      </p>
 
       <figure className="chart-figure">
         <BreakpointsMenu
@@ -261,6 +268,9 @@ export const TorpedoStep: React.FC<TorpedoStepProps> = ({
         </p>
       </div>
 
+      {/* The notes: every explainer under one kicker, numbered by the
+          stylesheet. */}
+      <p className="notes-kicker">Notes</p>
       <TorpedoExplainer filingStatus={filingStatus} />
       <MitigationExplainer />
       <IrmaaExplainer

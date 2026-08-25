@@ -82,3 +82,25 @@ export function marginalRateCurve(
   }
   return data;
 }
+
+/**
+ * The torpedo on a swept curve, as the two rates the masthead sets against
+ * each other: the rate just before the curve first falls back, and the rate
+ * it falls back to.
+ *
+ * The hump is the local maximum the benefit's inclusion makes, not the high
+ * ground the curve ends up on — the sweep finishes in the top bracket it
+ * reaches, so the global peak would name the bracket rather than the
+ * torpedo. The valley is the ordinary bracket rate again, which is what
+ * "your bracket says" means. A curve that never falls back has no torpedo
+ * to name, and answers null rather than pointing at something else.
+ */
+export function torpedoPeak(
+  curve: MarginalRatePoint[],
+): { hump: number; valley: number } | null {
+  const fallBack = curve.findIndex(
+    (point, i) => i > 0 && point.marginalRate < curve[i - 1].marginalRate,
+  );
+  if (fallBack <= 0) return null;
+  return { hump: curve[fallBack - 1].marginalRate, valley: curve[fallBack].marginalRate };
+}

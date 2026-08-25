@@ -606,7 +606,7 @@ const mediaBlock = (css: string, prelude: string): string => {
 
 /** The block that collapses the two columns into one. */
 const collapseBlock = (css: string): string =>
-  mediaBlock(css, '@media (max-width: 992px)');
+  mediaBlock(css, '@media (max-width: 1100px)');
 
 /** The other ground: the same page on paper. */
 const printBlock = (css: string): string => mediaBlock(css, '@media print');

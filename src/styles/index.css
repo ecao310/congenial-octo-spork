@@ -1161,12 +1161,13 @@ footer p {
 }
 
 /* The second half of a figure that is a pair — "of $24,852", "the standard
-   premium" — a size down and a tier lighter, so the figure reads first. */
+   premium" — a size down and a tier lighter, so the figure reads first. It
+   wraps: a phrase held to one line was what pushed the whole page past the
+   right edge of a 1024px window. */
 .answer-of {
   font-family: var(--font-mono);
   font-size: 1.25rem;
   color: var(--ink-muted);
-  white-space: nowrap;
 }
 
 .answer-gloss {
@@ -1378,12 +1379,28 @@ footer p {
 
 /* ───── The collapse ────────────────────────────────────────────────────────
  *
- * Below this the two columns become one and the page is the walk it was: the
- * return first, then the curve. Last in the screen half on purpose — a media
- * query adds no specificity, so a rule it overrides has to be above it in the
- * file or the override silently loses.
+ * Two steps down. Below 1200px the page's own margins halve and the ledger
+ * goes to two columns, because three 44px figures do not fit in three columns
+ * of a laptop window. Below 1100px the two columns become one and the page is
+ * the walk it was: the return first, then the curve. 1100 rather than lower
+ * because the rail is 22.5rem and the gutter 4rem, so under it the reading
+ * column — and the plot in it — would be narrower than the rail is tall.
+ *
+ * Last in the screen half on purpose — a media query adds no specificity, so
+ * a rule it overrides has to be above it in the file or the override silently
+ * loses.
  */
-@media (max-width: 992px) {
+@media (max-width: 1200px) {
+  #root {
+    padding: 0 3rem 3rem;
+  }
+
+  .answer-figures {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1100px) {
   .shell {
     grid-template-columns: minmax(0, 1fr);
     row-gap: 3rem;

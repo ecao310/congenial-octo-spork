@@ -10,19 +10,24 @@ export interface HeaderProps {
 }
 
 /**
- * The banner: what this is, and what the link that opened it did.
+ * The masthead: the title and the deck, and what the link that opened the
+ * page did.
  *
  * The note is in here rather than loose above the steps because it is about
  * the arrival rather than about the return — the same thing the title and the
- * subtitle are — and because content outside every landmark is content a
- * reader jumping by landmark never lands on.
+ * deck are — and because content outside every landmark is content a reader
+ * jumping by landmark never lands on.
  */
 export const Header: React.FC<HeaderProps> = ({ linkNotes, onDismissNotes }) => (
-  <header>
-    <h1>Social Security and Marginal Tax Rates</h1>
-    <p className="subtitle">
-      Because of how Social Security is taxed, your marginal tax rate is often very different than what you might expect. Use this tool to calculate marginal tax rates based on your social security income.
-    </p>
+  <header className="masthead">
+    <div className="masthead-body">
+      <h1>Social Security and Marginal Tax Rates</h1>
+      <p className="subtitle">
+        Because of how Social Security is taxed, your marginal tax rate is often
+        very different than what you might expect. Use this tool to calculate
+        marginal tax rates based on your social security income.
+      </p>
+    </div>
 
     {linkNotes.length > 0 && (
       <div className="link-note" role="status">

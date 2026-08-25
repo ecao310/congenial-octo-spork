@@ -215,6 +215,10 @@ export const BenefitStep: React.FC<BenefitStepProps> = ({
       </fieldset>
 
       <div className="input-group">
+        {/* Where this figure goes on the return: Form 1040, line 6a. */}
+        <span className="line-ref" aria-hidden="true">
+          6a
+        </span>
         <div className="slider-header">
           <label htmlFor="ss-benefit">
             Annual Social Security Benefit
@@ -246,6 +250,10 @@ export const BenefitStep: React.FC<BenefitStepProps> = ({
 
       <details className="advanced-inputs">
         <summary>
+          {/* Line 2a: tax-exempt interest, which is the one input in here. */}
+          <span className="line-ref" aria-hidden="true">
+            2a
+          </span>
           <span className="advanced-label">Advanced inputs</span>
           {advanced.length > 0 ? (
             <span className="advanced-state advanced-state-set">

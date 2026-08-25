@@ -146,10 +146,27 @@ export const TorpedoChart: React.FC<TorpedoChartProps> = ({
       <ResponsiveContainer width="100%" height="100%">
         <AreaChart data={curve} margin={{ top: 22, right: 28, left: 10, bottom: 0 }}>
           <defs>
-            <linearGradient id="rateGradient" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor={PALETTE.accent} stopOpacity={CHART.fill} />
-              <stop offset="95%" stopColor={PALETTE.accent} stopOpacity={0} />
-            </linearGradient>
+            {/* The engraver's hatch under the curve: a diagonal hairline in
+                the curve's own blue, at `CHART.fill`. A pattern rather than a
+                gradient because a broadsheet's plot is drawn in lines, and
+                because `the chart register` reads the alpha back off it. */}
+            <pattern
+              id="rateHatch"
+              width="6"
+              height="6"
+              patternUnits="userSpaceOnUse"
+              patternTransform="rotate(45)"
+            >
+              <line
+                x1="0"
+                y1="0"
+                x2="0"
+                y2="6"
+                stroke={PALETTE.accent}
+                strokeWidth={CHART.hairline}
+                strokeOpacity={CHART.fill}
+              />
+            </pattern>
           </defs>
           <CartesianGrid
             stroke={PALETTE.edge}
@@ -225,7 +242,7 @@ export const TorpedoChart: React.FC<TorpedoChartProps> = ({
             dataKey="marginalRate"
             stroke={PALETTE.accent}
             strokeWidth={CHART.line}
-            fill="url(#rateGradient)"
+            fill="url(#rateHatch)"
             fillOpacity={1}
             activeDot={HOVER_DOT}
           />

@@ -73,7 +73,9 @@ export const Answer: React.FC<AnswerProps> = ({
 
     <dl className="answer-figures">
       <div className="answer-figure">
-        <dt>Total income</dt>
+        <dt>
+          Total income<span className="answer-line">Line 9</span>
+        </dt>
         <dd>
           <strong>{formatCurrency(totalIncome)}</strong>
           <span className="answer-gloss">
@@ -87,7 +89,9 @@ export const Answer: React.FC<AnswerProps> = ({
       </div>
 
       <div className="answer-figure">
-        <dt>Federal tax</dt>
+        <dt>
+          Federal tax<span className="answer-line">Line 16</span>
+        </dt>
         <dd>
           <strong>{formatCurrency(tax)}</strong>
           <span className="answer-gloss">
@@ -121,13 +125,17 @@ export const Answer: React.FC<AnswerProps> = ({
       </div>
 
       <div className="answer-figure">
-        <dt>Taxable social security</dt>
+        <dt>
+          Taxable social security<span className="answer-line">Line 6b</span>
+        </dt>
         <dd>
-          <strong>
-            {ssBenefit > 0
-              ? `${formatCurrency(taxableSS)} of ${formatCurrency(ssBenefit)}`
-              : 'None'}
-          </strong>
+          <strong>{ssBenefit > 0 ? formatCurrency(taxableSS) : 'None'}</strong>
+          {ssBenefit > 0 && (
+            <>
+              {' '}
+              <span className="answer-of">of {formatCurrency(ssBenefit)}</span>
+            </>
+          )}
           <span className="answer-gloss">
             {ssBenefit > 0
               ? `${formatPercent(taxableSS / ssBenefit)} of it. 86(a) can never make more than 85% taxable.`
@@ -139,11 +147,12 @@ export const Answer: React.FC<AnswerProps> = ({
       <div className="answer-figure">
         <dt>Medicare surcharge</dt>
         <dd>
-          <strong>
+          <strong>{irmaa.tier > 0 ? `Tier ${irmaa.tier} of 5` : 'None'}</strong>{' '}
+          <span className="answer-of">
             {irmaa.tier > 0
-              ? `Tier ${irmaa.tier} of 5 — ${formatCurrency(irmaa.annualSurcharge)}/yr`
-              : 'None — the standard premium'}
-          </strong>
+              ? `— ${formatCurrency(irmaa.annualSurcharge)}/yr`
+              : '— the standard premium'}
+          </span>
           <span className="answer-gloss">
             Billed on a {IRMAA_LOOKBACK_YEARS}-year lag, so this is what{' '}
             {year} income sets for {year + IRMAA_LOOKBACK_YEARS}.

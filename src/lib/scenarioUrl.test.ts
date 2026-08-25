@@ -303,7 +303,7 @@ describe('decodeScenario', () => {
       const { scenario, notes } = decodeScenario('income=lots');
       expect(scenario.ordinaryIncome).toBe(DEFAULT_ORDINARY_INCOME);
       expect(notes[0]).toContain('not an amount');
-      expect(notes[0]).toContain('$30,000');
+      expect(notes[0]).toContain('$40,000');
     });
 
     /** An empty value is a key nobody filled in, not a value to complain about. */

@@ -296,12 +296,12 @@ describe('App', () => {
     ).toBeInTheDocument();
   });
 
-  it('renders the ordinary income slider defaulting to $30,000', () => {
+  it('renders the ordinary income slider defaulting to $40,000', () => {
     render(<App />);
     const slider = screen.getByRole('slider', {
       name: /other income \(excluding social security\)/i,
     });
-    expect(slider).toHaveValue('30000');
+    expect(slider).toHaveValue('40000');
     expect(slider).toHaveAttribute('min', '0');
     expect(slider).toHaveAttribute('max', '150000');
   });
@@ -723,7 +723,7 @@ describe('the shape every step shares', () => {
     render(<App />);
     const readout = (): HTMLElement =>
       document.querySelector('#step-torpedo .slider-readout') as HTMLElement;
-    expect(readout()).toHaveTextContent('At $30,000 of other income');
+    expect(readout()).toHaveTextContent('At $40,000 of other income');
 
     fireEvent.change(
       screen.getByRole('slider', { name: /other income \(excluding social security\)/i }),
@@ -752,7 +752,7 @@ describe('the shape every step shares', () => {
     render(<App />);
     const readout =
       document.querySelector('#step-torpedo .slider-readout') as HTMLElement;
-    expect(readout).toHaveTextContent(/^At \$30,000 of other income/);
+    expect(readout).toHaveTextContent(/^At \$40,000 of other income/);
     expect(readout.querySelector('strong')).toHaveTextContent('22.2%');
   });
 });

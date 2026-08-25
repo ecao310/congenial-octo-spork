@@ -192,8 +192,7 @@ export const TorpedoStep: React.FC<TorpedoStepProps> = ({
       </h2>
       <p className="step-deck">
         The marginal rate on the next dollar of other income, plotted against
-        total income — the benefit set in step 1, which the slider cannot move,
-        plus the other income it can.
+        total income.
       </p>
 
       <figure className="chart-figure">

@@ -47,7 +47,7 @@ describe('App', () => {
     const subtitle = hero.nextElementSibling as HTMLElement;
     expect(subtitle).toHaveClass('subtitle');
     expect(subtitle).toHaveTextContent(/how Social Security is taxed/);
-    expect(subtitle).toHaveTextContent(/different than what you might expect/);
+    expect(subtitle).toHaveTextContent(/can actually decrease as income increases/);
     expect(subtitle).not.toHaveTextContent(/single filer/i);
     expect(subtitle).not.toHaveTextContent(/2025|2026/);
 

@@ -172,6 +172,11 @@ a:hover {
   color: var(--accent-bright);
 }
 
+a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 /* The page's top rule: the one heavy stroke on it, the way a broadsheet's
    nameplate sits under one. */
 .card {
@@ -987,6 +992,99 @@ footer p {
   line-height: 1.5;
 }
 
+/* ───── Further reading ─────────────────────────────────────────────────────
+ *
+ * The back matter, set as one more of the notes under the footer's own rule:
+ * a closed row with its heading and a plus that turns to a minus, and inside
+ * it one hairline row per piece — its title as the link, its source in the
+ * margin the way a closing figure carries its 1040 line. No number in the
+ * margin: the notes are counted in the step they belong to, and this one
+ * belongs to none of them.
+ */
+.reading {
+  margin: 0 0 1.5rem;
+  padding: 0.25rem 0 1.125rem;
+  border-bottom: 1px solid var(--edge);
+}
+
+.reading > summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 1.5rem;
+  column-gap: 0.75rem;
+  align-items: center;
+  min-height: 2.75rem;
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+}
+
+.reading > summary::-webkit-details-marker {
+  display: none;
+}
+
+/* Set like `.explainer h3`: the same heading, one level up. */
+.reading-heading {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 500;
+  line-height: 1.15;
+  font-variation-settings: 'opsz' 36;
+  color: var(--ink-bright);
+  transition: color 0.2s ease;
+}
+
+.reading > summary::after {
+  content: '+';
+  justify-self: end;
+  font-family: var(--font-mono);
+  font-size: 1.5rem;
+  font-weight: 300;
+  line-height: 1;
+  color: var(--ink);
+}
+
+.reading[open] > summary::after {
+  content: '−';
+}
+
+.reading > summary:hover .reading-heading {
+  color: var(--accent);
+}
+
+.reading > summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+
+.reading-list {
+  margin: 0.875rem 0 0;
+  padding: 0;
+  max-width: 45rem;
+  list-style: none;
+  cursor: default;
+}
+
+.reading-item {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.25rem 1rem;
+  padding: 0.875rem 0;
+  border-top: 1px solid var(--edge);
+}
+
+/* Set like `.answer-line`: the mono margin note beside a serif label. */
+.reading-source {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  white-space: nowrap;
+}
+
+
 /* ───── The step flow ────────────────────────────────────────────────────────
  *
  * Two sections, both mounted, read top to bottom. Step 1 is the rail and
@@ -1559,6 +1657,7 @@ footer p {
      Controls that only do something when clicked, and the marks that promise
      something will open. */
 
+  .reading,
   .answer-share-button,
   .link-note button,
   .chart-lines,

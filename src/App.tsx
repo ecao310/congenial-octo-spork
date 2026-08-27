@@ -34,6 +34,7 @@ import { useScenarioAddress } from './hooks/useScenarioAddress';
 import { useSettledReading } from './hooks/useSettledReading';
 import { Answer } from './components/Answer';
 import { BenefitStep } from './components/BenefitStep';
+import { FurtherReading } from './components/FurtherReading';
 import { Header } from './components/Header';
 import { TorpedoStep } from './components/TorpedoStep';
 
@@ -494,14 +495,14 @@ const App: React.FC = () => {
 
           Where it sits changes nothing about when it is read, so it sits above
           the steps rather than below them: the close is the last thing before
-          the disclaimer, and that adjacency is part of the shape. Empty and a
+          the footer, and that adjacency is part of the shape. Empty and a
           pixel wide, it interrupts nothing here. */}
       <p className="live-reading" aria-live="polite" aria-atomic="true">
         {announcement}
       </p>
 
       {/* The main landmark, and everything that is not the title or the
-          disclaimer: both steps and the close.
+          footer: both steps and the close.
 
           `.shell` is already the box that holds exactly that, so it becomes the
           landmark rather than gaining a wrapper — a second box here would be a
@@ -585,7 +586,12 @@ const App: React.FC = () => {
         </div>
       </main>
 
+      {/* The back matter: where to read on, then the disclaimer. In the footer
+          because `contentinfo` is the landmark for what is about a document
+          rather than part of it, so the close stays the last thing in the main
+          and the disclaimer the last word. */}
       <footer>
+        <FurtherReading />
         <p>
           This tool is for educational purposes only and does not constitute tax
           or financial advice. Please consult a qualified tax professional

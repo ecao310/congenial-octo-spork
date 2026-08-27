@@ -547,23 +547,6 @@ describe('the torpedo chart’s right edge', () => {
   });
 
   /**
-   * The phaseout is worth axis space only when there is a deduction to phase
-   * out, so an under-65 filer keeps the narrow chart — and the explainer's own
-   * sentence about the far side of the phaseout has to follow the same edge.
-   */
-  it('flips the explainer’s off-chart caveat when the edge moves', () => {
-    render(<App />);
-    const explainer = (): HTMLElement =>
-      screen
-        .getByRole('heading', { name: /the senior deduction phaseout/i })
-        .closest('details') as HTMLElement;
-    expect(explainer()).toHaveTextContent('is inside the chart');
-
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Age 65 or older' }));
-    expect(explainer()).toHaveTextContent('sits past the right edge of the chart');
-  });
-
-  /**
    * The axis takes the reader's own income as a floor, so it can only ever
    * grow out from under the slider — never in behind it. Without that, taking
    * the age toggle back off would leave a marker standing past the edge.

@@ -21,14 +21,13 @@ export interface HeaderProps {
 export const Header: React.FC<HeaderProps> = ({ linkNotes, onDismissNotes }) => (
   <header className="masthead">
     <div className="masthead-body">
-      <h1>Social Security and Marginal Tax Rates</h1>
+      <h1>Income Taxes in Retirement</h1>
       <p className="subtitle">
-        Many think of marginal tax rates as monotonically increasing, starting
-        at 10% after standard deduction and climbing to 37%. However, because of
-        how Social Security is taxed, your marginal tax rate can actually decrease
-        and in some cases exceed 40% before reaching the
-        highest brackets. Use this tool to calculate marginal tax rates based on
-        your social security benefit.
+        Many think of income tax rates as monotonically increasing, starting
+        at 10% and climbing to 37%. However, because of how income tax works
+        with Social Security, your marginal rate forms a
+        torpedo shape, increasing and then decreasing. Use this tool to calculate
+        your marginal tax rate based on your social security benefit.
       </p>
     </div>
 

@@ -1,7 +1,6 @@
 import {
   SENIOR_DEDUCTION_PHASEOUT_RATE,
   SENIOR_DEDUCTION_PHASEOUT_START,
-  incomeAxisFeatures,
   seniorDeductionPhaseoutEnd,
 } from '../lib/tax';
 import type {
@@ -159,21 +158,6 @@ export const TorpedoStep: React.FC<TorpedoStepProps> = ({
   // With the age toggle off there is nothing to phase out, but the explainer
   // still needs a rate to talk about, so describe one qualifying person.
   const phaseoutRate = SENIOR_DEDUCTION_PHASEOUT_RATE * Math.max(1, seniors);
-  /**
-   * Where the far side of the phaseout lands on the chart's own axis, and
-   * whether it fits. It is inside by construction whenever the deduction is
-   * actually claimed — that is what sizes the axis — so this is really about
-   * the reader who has not ticked the age box, and is reading the explainer to
-   * find out what they would be looking at if they had.
-   */
-  const phaseoutEndOnAxis = incomeAxisFeatures({
-    ssBenefit,
-    filingStatus,
-    seniors: Math.max(1, seniors),
-    muniInterest,
-    year,
-  }).seniorPhaseoutEnd;
-
   const effectiveRate = (tax: number): number =>
     totalIncome > 0 ? tax / totalIncome : 0;
 
@@ -297,7 +281,6 @@ export const TorpedoStep: React.FC<TorpedoStepProps> = ({
         phaseoutStart={phaseoutStart}
         phaseoutEnd={phaseoutEnd}
         phaseoutRate={phaseoutRate}
-        endsOnChart={phaseoutEndOnAxis !== null && phaseoutEndOnAxis <= axisMax}
       />
     </section>
   );

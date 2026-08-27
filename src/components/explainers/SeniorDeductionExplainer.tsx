@@ -13,8 +13,6 @@ export interface SeniorDeductionExplainerProps {
   phaseoutEnd: number;
   /** 6% per qualifying person: 12% on a joint return where both qualify. */
   phaseoutRate: number;
-  /** Whether the far end of the band lands inside the chart above. */
-  endsOnChart: boolean;
 }
 
 /**
@@ -25,7 +23,6 @@ export const SeniorDeductionExplainer: React.FC<SeniorDeductionExplainerProps> =
   phaseoutStart,
   phaseoutEnd,
   phaseoutRate,
-  endsOnChart,
 }) => {
   const taxableIncomePerDollar = 1 + phaseoutRate;
   return (
@@ -50,9 +47,7 @@ export const SeniorDeductionExplainer: React.FC<SeniorDeductionExplainerProps> =
           {formatCurrency(SENIOR_DEDUCTION)} shrinks by{' '}
           {formatCents(SENIOR_DEDUCTION_PHASEOUT_RATE)} for every dollar of
           MAGI above {formatCurrency(phaseoutStart)}, so it is gone at{' '}
-          {formatCurrency(phaseoutEnd)} — exactly $100,000 later, for every
-          status that has one, because a couple where both spouses qualify has
-          twice as much deduction to lose and loses it twice as fast.
+          {formatCurrency(phaseoutEnd)}.
         </p>
         <p>
           Inside that range every extra dollar of income does double duty: it
@@ -76,14 +71,10 @@ export const SeniorDeductionExplainer: React.FC<SeniorDeductionExplainerProps> =
         </p>
         <p>
           On the chart above, the second hump starts where MAGI clears{' '}
-          {formatCurrency(phaseoutStart)} — at less of your own income than
-          that, since the taxable part of your benefits counts toward MAGI too.
+          {formatCurrency(phaseoutStart)}.
           The rate falls back once the deduction is fully gone at{' '}
-          {formatCurrency(phaseoutEnd)} of MAGI, which{' '}
-          {endsOnChart
-            ? 'is inside the chart at the benefit selected above'
-            : 'sits past the right edge of the chart at the benefit selected above'}
-          . Note that tax-exempt interest is <em>not</em> added back for this
+          {formatCurrency(phaseoutEnd)} of MAGI. Note that tax-exempt interest
+          is <em>not</em> added back for this
           phaseout, unlike the MAGI Medicare uses for IRMAA.
         </p>
       </div>

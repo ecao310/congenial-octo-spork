@@ -35,7 +35,7 @@ describe('App', () => {
   it('leads with what the page is for rather than with the settings', () => {
     render(<App />);
     const hero = screen.getByRole('heading', {
-      name: /social security and marginal tax rates/i,
+      name: /income taxes in retirement/i,
       level: 1,
     });
     expect(hero).toBeInTheDocument();
@@ -46,8 +46,8 @@ describe('App', () => {
     // the reader came expecting, which is the whole page in one line.
     const subtitle = hero.nextElementSibling as HTMLElement;
     expect(subtitle).toHaveClass('subtitle');
-    expect(subtitle).toHaveTextContent(/how Social Security is taxed/);
-    expect(subtitle).toHaveTextContent(/different than what you might expect/);
+    expect(subtitle).toHaveTextContent(/Social Security/);
+    expect(subtitle).toHaveTextContent(/increasing and then decreasing/);
     expect(subtitle).not.toHaveTextContent(/single filer/i);
     expect(subtitle).not.toHaveTextContent(/2025|2026/);
 
@@ -426,15 +426,7 @@ describe('App', () => {
     expect(explainer()).toHaveTextContent('$1.96');
     expect(explainer()).toHaveTextContent('43.14%');
     expect(explainer()).toHaveTextContent('gone at $175,000');
-    // The deduction is claimed as the page opens, so the axis is sized to
-    // its phaseout and the far side is on the chart. Take the box off and
-    // the axis narrows back to $150,000 of other income — at the average
-    // benefit, $170,155 of MAGI at the right edge — and the far side is not.
-    expect(explainer()).toHaveTextContent('is inside the chart');
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Age 65 or older' }));
-    expect(explainer()).toHaveTextContent('sits past the right edge of the chart');
 
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Age 65 or older' }));
     fireEvent.click(screen.getByRole('radio', { name: 'Married Filing Jointly' }));
     fireEvent.click(screen.getByRole('checkbox', { name: 'Both spouses are 65 or older' }));
     expect(explainer()).toHaveTextContent('24.64%');

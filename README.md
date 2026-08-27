@@ -38,7 +38,11 @@ where the chart stands below it.
 
 The page closes on the six figures the whole walk was for: total income,
 federal tax, effective rate, the rate on the next dollar, the taxable share of
-the benefit, and the Medicare surcharge that MAGI buys.
+the benefit, and the Medicare surcharge that MAGI buys. Under the footer's
+rule, one more note, closed like the rest: three links to read on — a
+Fidelity piece on the torpedo and the cliffs around it, Kitces on the
+benefit's taxation as a marginal rate, and IRS Publication 915, whose
+Worksheet 1 the engine reproduces — and then the disclaimer.
 
 ## What is priced
 
@@ -132,7 +136,7 @@ longer the rate the arithmetic reaches.
 ```bash
 npm install
 npm run dev      # start dev server
-npm run test     # vitest, 391 tests
+npm run test     # vitest, 398 tests
 npm run lint     # eslint
 npm run build    # tsc -b && vite build
 ```
@@ -142,11 +146,11 @@ npm run build    # tsc -b && vite build
 | Path | What it is |
 | --- | --- |
 | `src/App.tsx` | The composition root: the return in state, the figures derived from it, and the three sections it hands them to. |
-| `src/components/` | What the page is made of — the two steps, the chart and its tooltip, the Breakpoints panel, the five explainers, the close. |
+| `src/components/` | What the page is made of — the two steps, the chart and its tooltip, the Breakpoints panel, the five explainers, the close, the reading list. |
 | `src/hooks/` | The three pieces of behaviour that are not markup: the live region's debounce, the address bar, and dismissing a panel. |
 | `src/lib/tax/` | Every figure on the page, and the only place a rate or a threshold is written down. One module per chapter of the code, behind `index.ts`. |
 | `src/lib/scenarioUrl.ts` | The return, encoded into the address bar and clamped back out of it. |
-| `src/lib/format.ts`, `src/lib/returnProse.ts` | How a figure is rendered, and how a return is described in words. |
+| `src/lib/format.ts`, `src/lib/returnProse.ts`, `src/lib/furtherReading.ts` | How a figure is rendered, how a return is described in words, and the reading list's one copy. |
 | `src/styles/` | `index.css` and the subset of its palette the charts hand to SVG attributes. |
 | `src/guards/` | The four suites that hold down what no other test reads: the build's chunking, the link preview and the README, the rendered prose, the stylesheet. |
 | `src/test/` | Test setup and the fixtures more than one suite shares. |
@@ -154,9 +158,9 @@ npm run build    # tsc -b && vite build
 | `scripts/og-cover.mjs` | Redraws the card from the page's own arithmetic. Run by hand; see above. |
 
 Tests sit beside what they test: `src/lib/tax/irmaa.test.ts` next to `irmaa.ts`,
-and the three `src/App.*.test.tsx` suites next to `App.tsx`, each rendering the
-whole page and asking about one subject — the steps, the chart's thresholds, the
-close.
+and the five `src/App.*.test.tsx` suites next to `App.tsx`, each rendering the
+whole page and asking about one subject — the steps, the chart, its thresholds,
+the close, the reading list.
 
 ## Deployment
 

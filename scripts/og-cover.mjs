@@ -208,7 +208,7 @@ function cover(curve, hook) {
   <rect width="${WIDTH}" height="${HEIGHT}" fill="${SURFACE}"/>
   <rect width="${WIDTH}" height="8" fill="${INK}"/>
 
-  <text x="72" y="52" fill="${INK}" font-family="${MONO}" font-size="15" letter-spacing="3">RETIREMENT TAX TORPEDO</text>
+  <text x="72" y="52" fill="${INK}" font-family="${MONO}" font-size="15" letter-spacing="3">TAX TORPEDO</text>
   <text x="1128" y="52" fill="${INK_MUTED}" font-family="${MONO}" font-size="15" letter-spacing="3" text-anchor="end">TAX YEAR ${hook.year} · FEDERAL ONLY</text>
   <line x1="72" y1="64" x2="1128" y2="64" stroke="${INK}" stroke-width="1"/>
 
